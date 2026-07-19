@@ -2,6 +2,27 @@ plugins {
     id 'com.android.application'
 }
 
+// App version is derived from the current git tag (e.g. tag "v0.0.1" -> versionName "0.0.1",
+// versionCode 1). Falls back to a dev value when no tag/git is available.
+// Uses providers.exec (not String.execute) so it stays compatible with the Gradle
+// configuration cache.
+def gitDescribe = ""
+try {
+    gitDescribe = providers.exec {
+        commandLine 'git', 'describe', '--tags', '--always', '--dirty'
+        ignoreExitValue = true
+    }.standardOutput.asText.get().trim()
+} catch (ignored) {
+}
+
+def tagVersionName = gitDescribe ? (gitDescribe.startsWith('v') ? gitDescribe.substring(1) : gitDescribe) : '0.0.0'
+
+def tagVersionCode = 1
+def versionMatcher = (gitDescribe.replaceFirst(/^v/, '') =~ /(\d+)\.(\d+)\.(\d+)/)
+if (versionMatcher.find()) {
+    tagVersionCode = versionMatcher.group(1).toInteger() * 1000000 + versionMatcher.group(2).toInteger() * 1000 + versionMatcher.group(3).toInteger()
+}
+
 android {
     namespace 'com.brouken.player'
     compileSdk = 36
@@ -12,8 +33,8 @@ android {
         applicationId "com.justplus.player"
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 214
-        versionName "0.${versionCode}"
+        versionCode tagVersionCode
+        versionName tagVersionName
         if (abiFilter) {
             def abiCodeMap = ["x86": 1, "x86_64": 2, "armeabi-v7a": 3, "arm64-v8a": 4]
             versionCode = versionCode * 10 + abiCodeMap[abiFilter]

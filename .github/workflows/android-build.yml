@@ -3,14 +3,19 @@ name: Android Build APK
 on:
   push:
     tags:
-      - 'v0.*'
+      - 'v*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -31,6 +36,8 @@ jobs:
           files: |
             app/build/outputs/apk/latestUniversal/release/*.apk
             app/build/outputs/apk/legacyUniversal/release/*.apk
+            app/build/outputs/bundle/latestUniversalRelease/*.aab
+            app/build/outputs/bundle/legacyUniversalRelease/*.aab
           prerelease: true
           draft: true
 

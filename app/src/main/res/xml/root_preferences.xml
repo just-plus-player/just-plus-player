@@ -53,6 +53,24 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/pref_skip_header">
+
+        <SwitchPreferenceCompat
+            app:key="skipEnabled"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_skip_enabled_on"
+            app:summaryOff="@string/pref_skip_enabled_off"
+            app:title="@string/pref_skip_enabled" />
+
+        <ListPreference
+            app:defaultValue="button"
+            app:dependency="skipEnabled"
+            app:entries="@array/skip_mode_entries"
+            app:entryValues="@array/skip_mode_values"
+            app:key="skipMode"
+            app:title="@string/pref_skip_mode"
+            app:defaultValue="true"
+            app:dependency="skipEnabled"
     <PreferenceCategory app:title="@string/pref_subtitle_header">
 
         <SwitchPreferenceCompat

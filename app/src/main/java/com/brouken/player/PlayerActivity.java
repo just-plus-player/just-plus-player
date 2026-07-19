@@ -111,6 +111,9 @@ import androidx.media3.ui.TimeBar;
 
 import com.brouken.player.dtpv.DoubleTapPlayerView;
 import com.brouken.player.dtpv.youtube.YouTubeOverlay;
+import com.brouken.player.skip.IntentSegmentsSource;
+import com.brouken.player.skip.SkipManager;
+import com.brouken.player.skip.SkipSegment;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
@@ -268,6 +271,7 @@ public class PlayerActivity extends Activity {
     boolean apiAccessPartial;
     String apiTitle;
     Uri apiThumbnailUri;
+    String apiSegments;
     String[] apiHeaders;
     final List<MediaItem> apiMediaItems = new ArrayList<>();
     final List<String> apiPlaylistSegments = new ArrayList<>();
@@ -290,6 +294,19 @@ public class PlayerActivity extends Activity {
         }
     };
 
+    static final long SKIP_POLL_INTERVAL_MS = 250;
+    static final int SKIP_HIGHLIGHT_COLOR = 0x99fe6f61; // translucent coral — skip segments
+    static final int AD_HIGHLIGHT_COLOR = 0x99FFA000;   // translucent amber — ad segments
+    SkipManager skipManager;
+    boolean skipBuilt;
+    Button buttonSkip;
+        }
+    };
+    SkipSegment pendingSkip;
+    final Runnable skipRunnable = new Runnable() {
+        @Override
+        public void run() {
+            skipTick();
             if (player != null && player.isPlaying()) {
                 playerView.postDelayed(this, SKIP_POLL_INTERVAL_MS);
             }
@@ -374,6 +391,8 @@ public class PlayerActivity extends Activity {
                     final String thumbnail = bundle.getString(API_THUMBNAIL);
                     if (thumbnail != null) {
                         apiThumbnailUri = Uri.parse(thumbnail);
+                    }
+                    apiSegments = bundle.getString(API_SEGMENTS);
                     apiHeaders = bundle.getStringArray(API_HEADERS);
                     apiSeason = bundle.getInt(API_SEASON, -1);
                     apiEpisode = bundle.getInt(API_EPISODE, -1);
@@ -671,6 +690,56 @@ public class PlayerActivity extends Activity {
         });
 
         topInfoPanel.addView(headerClockColumn);
+
+        centerView.addView(topInfoPanel);
+
+        // Skip button — floats over the video (bottom-end), independent of the controller.
+        // Styled to match the app's control buttons: chrome-coloured pill, icon + label, and the
+        // same selectableItemBackground focus/press highlight (white on TV via colorControlHighlight).
+        final int skipCornerRadius = Utils.dpToPx(6);
+        buttonSkip = new Button(this);
+        buttonSkip.setText(R.string.button_skip);
+        buttonSkip.setAllCaps(false);
+        buttonSkip.setTextColor(Color.WHITE);
+        buttonSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 15 : 13);
+        buttonSkip.setTypeface(Typeface.DEFAULT_BOLD);
+        buttonSkip.setMinHeight(0);
+        buttonSkip.setMinimumHeight(0);
+        buttonSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(6), Utils.dpToPx(16), Utils.dpToPx(6));
+
+        final Drawable skipIcon = ContextCompat.getDrawable(this, R.drawable.exo_styled_controls_next);
+        if (skipIcon != null) {
+            final int skipIconSize = Utils.dpToPx(18);
+            skipIcon.setBounds(0, 0, skipIconSize, skipIconSize);
+            buttonSkip.setCompoundDrawablesRelative(skipIcon, null, null, null);
+            buttonSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
+            buttonSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
+        }
+
+        final GradientDrawable skipButtonBackground = new GradientDrawable();
+        skipButtonBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        skipButtonBackground.setCornerRadius(skipCornerRadius);
+        buttonSkip.setBackground(skipButtonBackground);
+        // Round the corners and clip the focus/press ripple to them, like the other controls.
+        buttonSkip.setClipToOutline(true);
+        buttonSkip.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), skipCornerRadius);
+            }
+        });
+        final TypedValue skipHighlight = new TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackground, skipHighlight, true)
+                && skipHighlight.resourceId != 0) {
+            buttonSkip.setForeground(ContextCompat.getDrawable(this, skipHighlight.resourceId));
+        }
+        buttonSkip.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        buttonSkip.setOnClickListener(v -> {
+            if (pendingSkip != null && player != null) {
+                pendingSkip.skipped = true;
+                final long endMs = pendingSkip.endMs();
+                hideSkipButton();
 
         titleView.setOnLongClickListener(view -> {
         coordinatorLayout.addView(notificationSkip);
@@ -1332,6 +1401,7 @@ public class PlayerActivity extends Activity {
         apiAccessPartial = false;
         apiTitle = null;
         apiThumbnailUri = null;
+        apiSegments = null;
         apiHeaders = null;
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
@@ -1340,11 +1410,59 @@ public class PlayerActivity extends Activity {
         apiEpisode = -1;
         apiSubs.clear();
         mPrefs.setPersistent(true);
+        if (skipManager != null) {
+            skipManager.clear();
+        hideSkipButton();
+        }
+    }
+
+    // Skip segments (intro/ad) received via the launch Intent — see com.brouken.player.skip.
+
+    private void setupSkipSource() {
+        if (skipManager == null) {
+            skipManager = new SkipManager();
+        final String json = currentSegmentsJson();
+        skipManager.setSource(json != null && !json.isEmpty() ? new IntentSegmentsSource(json) : null);
+        // Source (re)set → the manager holds no segments until rebuildSkip() runs against the new
         // duration. Drop any highlights from the previous item right now so switching episodes never
+        }
+    }
+
+    private String currentSegmentsJson() {
         if (player != null && !apiPlaylistSegments.isEmpty()) {
             final int index = player.getCurrentMediaItemIndex();
             if (index >= 0 && index < apiPlaylistSegments.size()) {
                 return apiPlaylistSegments.get(index);
+            }
+            return null;
+        }
+        return apiSegments;
+    }
+
+    private void rebuildSkip() {
+        if (skipManager == null) {
+            return;
+        }
+        double durationSec = 0;
+        if (player != null) {
+            final long durationMs = player.getDuration();
+            if (durationMs != C.TIME_UNSET && durationMs > 0) {
+                durationSec = durationMs / 1000.0;
+            }
+        }
+        skipManager.rebuild(durationSec);
+        updateSkipHighlights();
+    }
+
+    // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
+    // fetch them by imdb/season/episode and feed the result through the same SkipManager path.
+        if (player == null || skipManager == null) {
+        if (player == null || skipManager == null || segments == null || segments.isEmpty()) {
+            return;
+        }
+        // Ignore if the media item changed since the fetch started, or intent segments have appeared.
+        if (player.getCurrentMediaItemIndex() != targetIndex || skipManager.hasSegments()) {
+        rebuildSkip();
                 return season != null ? season : -1;
             }
             return -1;
@@ -1355,6 +1473,70 @@ public class PlayerActivity extends Activity {
             return -1;
         }
         return apiEpisode;
+    }
+
+    private void updateSkipHighlights() {
+        if (timeBar == null) {
+            return;
+        }
+        final java.util.List<SkipSegment> segments = skipManager != null ? skipManager.getSegments() : null;
+        final long durationMs = player != null ? player.getDuration() : C.TIME_UNSET;
+        if (segments == null || segments.isEmpty() || durationMs == C.TIME_UNSET || durationMs <= 0 || !mPrefs.skipEnabled) {
+            return;
+        }
+        final int count = segments.size();
+        final long[] starts = new long[count];
+        final long[] ends = new long[count];
+        final int[] colors = new int[count];
+        for (int i = 0; i < count; i++) {
+            final SkipSegment segment = segments.get(i);
+            starts[i] = segment.startMs();
+            ends[i] = segment.endMs();
+            colors[i] = segment.type == SkipSegment.Type.AD ? AD_HIGHLIGHT_COLOR : SKIP_HIGHLIGHT_COLOR;
+        }
+        timeBar.setSkipHighlights(starts, ends, colors, durationMs);
+    }
+
+    private void skipTick() {
+        if (player == null || skipManager == null || !mPrefs.skipEnabled) {
+            hideSkipButton();
+            return;
+        }
+        final double posSec = player.getCurrentPosition() / 1000.0;
+        final SkipSegment segment = skipManager.activeSegment(posSec);
+        if (segment == null) {
+            hideSkipButton();
+            return;
+        }
+        // Ad segments are always skipped silently; skip segments follow the button/auto preference.
+        final boolean auto = segment.type == SkipSegment.Type.AD
+                || Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipMode);
+        if (auto) {
+            segment.skipped = true;
+            hideSkipButton();
+            showSkipButton(segment);
+        player.seekTo(positionMs);
+    }
+
+    private void showSkipButton(SkipSegment segment) {
+            if (isTvBox) {
+                buttonSkip.requestFocus();
+            }
+        }
+    }
+
+    private void hideSkipButton() {
+    }
+
+    private void startSkipPolling() {
+        if (playerView == null) {
+            return;
+        }
+        playerView.removeCallbacks(skipRunnable);
+        playerView.post(skipRunnable);
+    }
+
+    private void stopSkipPolling() {
         if (playerView != null) {
             playerView.removeCallbacks(skipRunnable);
         }
@@ -2404,6 +2586,8 @@ public class PlayerActivity extends Activity {
 
             updateTopInfo();
 
+            setupSkipSource();
+
             updateButtons(true);
 
             ((DoubleTapPlayerView)playerView).setDoubleTapEnabled(true);
@@ -2483,7 +2667,8 @@ public class PlayerActivity extends Activity {
             player.release();
             player = null;
         }
-        titleView.setVisibility(View.GONE);
+        stopSkipPolling();
+        hideSkipButton();
         }
         stopEndsAtUpdates();
         if (overlayClock != null) {
@@ -2520,6 +2705,8 @@ public class PlayerActivity extends Activity {
         @Override
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
             updateTopInfo();
+            hideSkipButton();
+            setupSkipSource();
         }
 
         @Override
@@ -2572,6 +2759,12 @@ public class PlayerActivity extends Activity {
             if (!isPlaying) {
                 PlayerActivity.locked = false;
             }
+
+            if (isPlaying) {
+                startSkipPolling();
+            } else {
+                stopSkipPolling();
+            }
         }
 
         @SuppressLint("SourceLockedOrientationActivity")
@@ -2594,6 +2787,9 @@ public class PlayerActivity extends Activity {
                 // the initial open) so episode switches, which don't set videoLoading, are also cleared.
                 updateLoading(false);
                 setEpisodeNavLoading(false);
+
+                if (!skipBuilt) {
+                    rebuildSkip();
                 }
 
                 updateMediaInfo();

@@ -28,6 +28,14 @@
     <string name="pref_skip_silence_off">Відтворювати контент як є</string>
     <string name="pref_repeat_toggle">Переключення повтору</string>
     <string name="pref_repeat_toggle_summary">Додатковий контроль, що дозволяє необмежений цикл відео (потрібно перезапустити додаток)</string>
+    <string name="pref_skip_header">Пропуск сегментів</string>
+    <string name="pref_skip_enabled">Увімкнено</string>
+    <string name="pref_skip_enabled_on">Пропускати заставки та рекламні сегменти від застосунку</string>
+    <string name="pref_skip_enabled_off">Відтворювати контент як є</string>
+    <string name="pref_skip_mode">Режим пропуску</string>
+    <string name="pref_skip_mode_button">Показувати кнопку «Пропустити»</string>
+    <string name="pref_skip_mode_auto">Пропускати автоматично</string>
+    <string name="button_skip">Пропустити</string>
     <string name="pref_show_clock">Показувати годинник</string>
     <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
     <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>

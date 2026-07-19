@@ -25,4 +25,14 @@
     <item>2</item>
     <item>0</item>
   </string-array>
+
+  <string-array name="skip_mode_entries">
+    <item>@string/pref_skip_mode_button</item>
+    <item>@string/pref_skip_mode_auto</item>
+  </string-array>
+
+  <string-array name="skip_mode_values">
+    <item>button</item>
+    <item>auto</item>
+  </string-array>
 </resources>

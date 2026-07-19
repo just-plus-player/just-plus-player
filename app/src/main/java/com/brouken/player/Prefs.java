@@ -47,7 +47,12 @@ class Prefs {
     private static final String PREF_KEY_LANGUAGE_AUDIO = "languageAudio";
     private static final String PREF_KEY_SUBTITLE_STYLE_EMBEDDED = "subtitleStyleEmbedded";
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
+    private static final String PREF_KEY_SKIP_ENABLED = "skipEnabled";
+    private static final String PREF_KEY_SKIP_MODE = "skipMode";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
+
+    public static final String SKIP_MODE_BUTTON = "button";
+    public static final String SKIP_MODE_AUTO = "auto";
 
     public static final String TRACK_DEFAULT = "default";
     public static final String TRACK_DEVICE = "device";
@@ -82,6 +87,8 @@ class Prefs {
     public String languageAudio = TRACK_DEVICE;
     public boolean subtitleStyleEmbedded = true;
     public boolean subtitleStyleBold = false;
+    public boolean skipEnabled = true;
+    public String skipMode = SKIP_MODE_BUTTON;
     public boolean showClock = false;
 
     private LinkedHashMap positions;
@@ -132,6 +139,8 @@ class Prefs {
         languageAudio = mSharedPreferences.getString(PREF_KEY_LANGUAGE_AUDIO, languageAudio);
         subtitleStyleEmbedded = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_EMBEDDED, subtitleStyleEmbedded);
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
+        skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
+        skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
     }
 

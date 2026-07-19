@@ -27,6 +27,14 @@
     <string name="pref_title">Настройки</string>
     <string name="pref_repeat_toggle">Переключение повтора</string>
     <string name="pref_repeat_toggle_summary">Дополнительное управление, позволяющее бесконечно зацикливать видео (требуется перезапуск приложения)</string>
+    <string name="pref_skip_header">Пропуск сегментов</string>
+    <string name="pref_skip_enabled">Включено</string>
+    <string name="pref_skip_enabled_on">Пропускать заставки и рекламные сегменты от запускающего приложения</string>
+    <string name="pref_skip_enabled_off">Воспроизводить как есть</string>
+    <string name="pref_skip_mode">Режим пропуска</string>
+    <string name="pref_skip_mode_button">Показывать кнопку «Пропустить»</string>
+    <string name="pref_skip_mode_auto">Пропускать автоматически</string>
+    <string name="button_skip">Пропустить</string>
     <string name="pref_show_clock">Показывать часы</string>
     <string name="pref_show_clock_on">Часы всегда в правом верхнем углу поверх видео</string>
     <string name="pref_show_clock_off">Часы показываются только с элементами управления</string>

@@ -20,12 +20,12 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
           cache: gradle
 
       - run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${GITHUB_WORKSPACE}/keystore.jks
 
-      - run: ./gradlew assembleRelease bundleRelease
+      - run: ./gradlew assembleLatestUniversalRelease
           -Pandroid.injected.signing.store.file=${GITHUB_WORKSPACE}/keystore.jks
           -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }}
           -Pandroid.injected.signing.key.alias=key
@@ -37,10 +37,3 @@ jobs:
             app/build/outputs/apk/latestUniversal/release/*.apk
           prerelease: true
           draft: true
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release
-          path: |
-            app/build/outputs/apk/*/release/*.apk
-            app/build/outputs/bundle/*/*.aab

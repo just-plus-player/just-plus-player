@@ -66,12 +66,17 @@ android {
 
         universal {
             dimension "distribution"
+            // In-app self-update: only the sideloaded universal build may update itself.
+            buildConfigField "boolean", "ENABLE_UPDATE", "true"
         }
         amazon {
             dimension "distribution"
+            // Store distribution handles updates; self-update would violate store policy.
+            buildConfigField "boolean", "ENABLE_UPDATE", "false"
         }
         accrescent {
             dimension "distribution"
+            buildConfigField "boolean", "ENABLE_UPDATE", "false"
         }
     }
     variantFilter { variant ->

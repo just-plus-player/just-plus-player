@@ -51,6 +51,9 @@ class Prefs {
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
     private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
+    private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
+    private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
+    private static final String PREF_KEY_UPDATE_SKIPPED = "updateSkippedVersionCode";
 
     public static final String SKIP_MODE_BUTTON = "button";
     public static final String SKIP_MODE_AUTO = "auto";
@@ -92,6 +95,9 @@ class Prefs {
     public String skipMode = SKIP_MODE_BUTTON;
     public boolean skipFetchOnline = true;
     public boolean showClock = false;
+    public boolean autoUpdate = true;
+    public long updateLastCheck = 0L;
+    public int updateSkippedVersionCode = 0;
 
     private LinkedHashMap positions;
 
@@ -126,6 +132,8 @@ class Prefs {
             scopeUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SCOPE_URI, null));
         askScope = mSharedPreferences.getBoolean(PREF_KEY_ASK_SCOPE, askScope);
         speed = mSharedPreferences.getFloat(PREF_KEY_SPEED, speed);
+        updateLastCheck = mSharedPreferences.getLong(PREF_KEY_UPDATE_LAST_CHECK, updateLastCheck);
+        updateSkippedVersionCode = mSharedPreferences.getInt(PREF_KEY_UPDATE_SKIPPED, updateSkippedVersionCode);
         loadUserPreferences();
     }
 
@@ -145,6 +153,7 @@ class Prefs {
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
         skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
+        autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {
@@ -226,6 +235,20 @@ class Prefs {
         this.askScope = false;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_ASK_SCOPE, false);
+        sharedPreferencesEditor.apply();
+    }
+
+    public void setUpdateLastCheck(final long timestamp) {
+        this.updateLastCheck = timestamp;
+        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
+        sharedPreferencesEditor.putLong(PREF_KEY_UPDATE_LAST_CHECK, timestamp);
+        sharedPreferencesEditor.apply();
+    }
+
+    public void setUpdateSkippedVersionCode(final int versionCode) {
+        this.updateSkippedVersionCode = versionCode;
+        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
+        sharedPreferencesEditor.putInt(PREF_KEY_UPDATE_SKIPPED, versionCode);
         sharedPreferencesEditor.apply();
     }
 

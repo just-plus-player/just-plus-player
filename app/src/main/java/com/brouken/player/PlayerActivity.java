@@ -116,6 +116,8 @@ import com.brouken.player.skip.NetworkSegmentsSource;
 import com.brouken.player.skip.SegmentFinder;
 import com.brouken.player.skip.SkipManager;
 import com.brouken.player.skip.SkipSegment;
+import com.brouken.player.update.UpdateUi;
+import com.brouken.player.update.Updater;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
@@ -1141,6 +1143,45 @@ public class PlayerActivity extends Activity {
                 Utils.scanMediaStorage(this);
             }
         }
+
+        maybeCheckForUpdate(launchIntent);
+    }
+
+    // Silent, non-intrusive self-update check. Only the sideloaded universal build self-updates
+    // (BuildConfig.ENABLE_UPDATE); the check runs only on an idle launch (no media intent), is
+    // throttled to once a day, and the "update available" dialog is shown only while nothing is
+    // playing — it must never cover a video the user just launched.
+    private static final long UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L;
+
+    private void maybeCheckForUpdate(final Intent launchIntent) {
+        if (!BuildConfig.ENABLE_UPDATE || !mPrefs.autoUpdate) {
+            return;
+        }
+        final String action = launchIntent.getAction();
+        final boolean launchedIdle = launchIntent.getData() == null
+                && !Intent.ACTION_SEND.equals(action)
+                && !"com.brouken.player.action.SHORTCUT_VIDEOS".equals(action);
+        if (!launchedIdle) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (now - mPrefs.updateLastCheck < UPDATE_CHECK_INTERVAL_MS) {
+            return;
+        }
+        mPrefs.setUpdateLastCheck(now);
+        Updater.find(info -> runOnUiThread(() -> {
+            if (isFinishing() || info == null) {
+                return;
+            }
+            if (info.versionCode == mPrefs.updateSkippedVersionCode) {
+                return;
+            }
+            if (haveMedia && player != null && player.isPlaying()) {
+                return;
+            }
+            UpdateUi.showAvailableDialog(PlayerActivity.this, info,
+                    () -> mPrefs.setUpdateSkippedVersionCode(info.versionCode));
+        }));
     }
 
     @Override

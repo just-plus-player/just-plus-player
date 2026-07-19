@@ -9,12 +9,19 @@ import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import android.app.Activity;
+import android.widget.Toast;
+
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.brouken.player.update.Updater;
+import com.brouken.player.update.UpdateUi;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -117,6 +124,35 @@ public class SettingsActivity extends AppCompatActivity {
                 entries.putAll(getLanguages());
                 listPreferenceLanguageAudio.setEntries(entries.values().toArray(new String[0]));
                 listPreferenceLanguageAudio.setEntryValues(entries.keySet().toArray(new String[0]));
+            }
+
+            PreferenceCategory updateCategory = findPreference("updateCategory");
+            if (!BuildConfig.ENABLE_UPDATE) {
+                if (updateCategory != null) {
+                    updateCategory.setVisible(false);
+                }
+            } else {
+                Preference checkUpdate = findPreference("checkUpdateNow");
+                if (checkUpdate != null) {
+                    checkUpdate.setOnPreferenceClickListener(preference -> {
+                        final Activity activity = getActivity();
+                        if (activity == null) {
+                            return true;
+                        }
+                        Toast.makeText(activity, R.string.update_checking, Toast.LENGTH_SHORT).show();
+                        Updater.find(info -> activity.runOnUiThread(() -> {
+                            if (activity.isFinishing()) {
+                                return;
+                            }
+                            if (info != null) {
+                                UpdateUi.showAvailableDialog(activity, info, null);
+                            } else {
+                                Toast.makeText(activity, R.string.update_none, Toast.LENGTH_SHORT).show();
+                            }
+                        }));
+                        return true;
+                    });
+                }
             }
         }
 

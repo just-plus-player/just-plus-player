@@ -132,6 +132,10 @@ public class SettingsActivity extends AppCompatActivity {
                     updateCategory.setVisible(false);
                 }
             } else {
+                Preference currentVersion = findPreference("currentVersion");
+                if (currentVersion != null) {
+                    currentVersion.setSummary(BuildConfig.VERSION_NAME);
+                }
                 Preference checkUpdate = findPreference("checkUpdateNow");
                 if (checkUpdate != null) {
                     checkUpdate.setOnPreferenceClickListener(preference -> {

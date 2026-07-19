@@ -104,24 +104,6 @@
 
     </PreferenceCategory>
 
-    <PreferenceCategory
-        app:key="updateCategory"
-        app:title="@string/pref_update_header">
-
-        <SwitchPreferenceCompat
-            app:key="autoUpdate"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_auto_update_on"
-            app:summaryOff="@string/pref_auto_update_off"
-            app:title="@string/pref_auto_update" />
-
-        <Preference
-            app:key="checkUpdateNow"
-            app:summary="@string/pref_check_update_summary"
-            app:title="@string/pref_check_update" />
-
-    </PreferenceCategory>
-
     <PreferenceCategory app:title="@string/pref_dangerous_header">
 
         <Preference
@@ -148,6 +130,29 @@
             app:summaryOn="@string/pref_map_dv7_on"
             app:summaryOff="@string/pref_map_dv7_off"
             app:title="@string/pref_map_dv7" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:key="updateCategory"
+        app:title="@string/pref_update_header">
+
+        <Preference
+            app:key="currentVersion"
+            app:selectable="false"
+            app:title="@string/pref_current_version" />
+
+        <SwitchPreferenceCompat
+            app:key="autoUpdate"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_auto_update_on"
+            app:summaryOff="@string/pref_auto_update_off"
+            app:title="@string/pref_auto_update" />
+
+        <Preference
+            app:key="checkUpdateNow"
+            app:summary="@string/pref_check_update_summary"
+            app:title="@string/pref_check_update" />
 
     </PreferenceCategory>
 

@@ -45,6 +45,7 @@
     <string name="pref_show_clock_on">Clock stays in the top-right corner over the video</string>
     <string name="pref_show_clock_off">Clock shows only with the player controls</string>
     <string name="pref_update_header">Updates</string>
+    <string name="pref_current_version">Current version</string>
     <string name="pref_auto_update">Automatic updates</string>
     <string name="pref_auto_update_on">Check for new releases in the background and offer to install them</string>
     <string name="pref_auto_update_off">Never check for updates automatically</string>

@@ -2020,7 +2020,7 @@ public class PlayerActivity extends Activity {
             case "video/webm": return "WebM";
             case "video/avi":
             case "video/x-msvideo": return "AVI";
-            case "video/mp2t": return "TS";
+            case "video/mp2t": return "MPEG-TS";
             case "video/quicktime": return "MOV";
             case "video/mpeg": return "MPEG";
             case "video/3gpp": return "3GP";
@@ -2055,7 +2055,7 @@ public class PlayerActivity extends Activity {
             case "mkv": return "MKV";
             case "webm": return "WebM";
             case "avi": return "AVI";
-            case "ts": case "m2ts": return "TS";
+            case "ts": case "m2ts": return "MPEG-TS";
             case "mov": return "MOV";
             case "m3u8": return "HLS";
             case "flv": return "FLV";

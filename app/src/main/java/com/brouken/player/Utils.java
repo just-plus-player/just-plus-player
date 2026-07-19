@@ -403,6 +403,30 @@ class Utils {
             return (time < 0 ? "−" : "+") + formatMilis(time);
     }
 
+    public static String formatChannels(int count) {
+        switch (count) {
+            case 1: return "1.0";
+            case 2: return "2.0";
+            case 3: return "2.1";
+            case 4: return "4.0";
+            case 5: return "5.0";
+            case 6: return "5.1";
+            case 7: return "6.1";
+            case 8: return "7.1";
+            default: return count + "ch";
+        }
+    }
+
+    public static String formatBitrate(int bitrate) {
+        if (bitrate <= 0) { // Format.NO_VALUE is -1
+            return null;
+        }
+        if (bitrate >= 1_000_000) {
+            return String.format(Locale.US, "%.1f Mbps", bitrate / 1_000_000f);
+        }
+        return (bitrate / 1000) + " kbps";
+    }
+
     public static void log(final String text) {
         if (BuildConfig.DEBUG) {
             Log.d("JustPlayer", text);

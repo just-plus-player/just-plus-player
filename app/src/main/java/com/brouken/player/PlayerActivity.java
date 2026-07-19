@@ -140,6 +140,24 @@ public class PlayerActivity extends Activity {
     private DefaultTrackSelector trackSelector;
     public static LoudnessEnhancer loudnessEnhancer;
 
+    private CustomDefaultTrackNameProvider trackNameProvider;
+    // Track names read from the container (MP4 udta/name, MKV TrackEntry/Name), and the resolved
+    // Format.id -> name map that the track list and header read from once tracks are known.
+    private final java.util.List<TrackMetadata> containerTracks = new java.util.ArrayList<>();
+    private final java.util.Map<String, String> resolvedTrackNames = new java.util.HashMap<>();
+    private final TrackNameParsingDataSource.Listener trackNameListener = new TrackNameParsingDataSource.Listener() {
+        @Override
+        public void onMetadataParsed(java.util.List<TrackMetadata> tracks) {
+            // Parser runs on a background thread; hop to the UI thread to touch player/views.
+            runOnUiThread(() -> onContainerMetadata(tracks));
+        }
+
+        @Override
+        public boolean isMetadataParsed() {
+            return !containerTracks.isEmpty();
+        }
+    };
+
     public CustomPlayerView playerView;
     public static ExoPlayer player;
     private YouTubeOverlay youTubeOverlay;
@@ -181,6 +199,11 @@ public class PlayerActivity extends Activity {
     private TextView posterPlaceholderView;
     private TextView posterBadgeView;
     private TextView titleView;
+    private TextView videoInfoView;
+    private TextView audioInfoView;
+    private TextView endsAtView;
+    private OutlineTextClock overlayClock;
+    private OutlineTextClock headerClock;
     private ImageButton buttonOpen;
     private ImageButton buttonPlaylist;
     private android.app.Dialog playlistDialog;
@@ -263,6 +286,22 @@ public class PlayerActivity extends Activity {
     Runnable barsHider = () -> {
         if (playerView != null && !controllerVisible) {
             Utils.toggleSystemUi(PlayerActivity.this, playerView, false);
+        }
+    };
+
+            if (player != null && player.isPlaying()) {
+                playerView.postDelayed(this, SKIP_POLL_INTERVAL_MS);
+            }
+        }
+    };
+
+    final Runnable endsAtRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateEndsAt();
+            if (controllerVisible) {
+                playerView.postDelayed(this, 1000);
+            }
         }
     };
 
@@ -563,19 +602,98 @@ public class PlayerActivity extends Activity {
         posterSlot.addView(posterBadgeView);
 
         topInfoPanel.addView(posterSlot);
+
+        // Info column (title + media info lines); a small gap separates it from the clock column at the end.
+        final LinearLayout infoColumn = new LinearLayout(this);
+        infoColumn.setOrientation(LinearLayout.VERTICAL);
+        final LinearLayout.LayoutParams infoColumnParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        infoColumnParams.gravity = Gravity.CENTER_VERTICAL;
+        infoColumnParams.setMarginEnd(Utils.dpToPx(16));
+        infoColumn.setLayoutParams(infoColumnParams);
+
         titleView = new TextView(this);
-        titleView.setBackgroundResource(R.color.ui_controls_background);
         titleView.setTextColor(Color.WHITE);
-        titleView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        titleView.setPadding(titleViewPaddingHorizontal, titleViewPaddingVertical, titleViewPaddingHorizontal, titleViewPaddingVertical);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        titleView.setVisibility(View.GONE);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         titleView.setMaxLines(1);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         titleView.setTextDirection(View.TEXT_DIRECTION_LOCALE);
-        centerView.addView(titleView);
+        infoColumn.addView(titleView);
+
+        videoInfoView = createInfoLine(Utils.dpToPx(2));
+        infoColumn.addView(videoInfoView);
+        audioInfoView = createInfoLine(0);
+        infoColumn.addView(audioInfoView);
+
+        topInfoPanel.addView(infoColumn);
+
+        // Right part of the header: clock over the "ends at" estimate, vertically centered so it lines up
+        // with the poster/title. A separate floating clock (below) covers the controls-hidden state.
+        final LinearLayout headerClockColumn = new LinearLayout(this);
+        headerClockColumn.setOrientation(LinearLayout.VERTICAL);
+        headerClockColumn.setGravity(Gravity.END);
+        final LinearLayout.LayoutParams headerClockColumnParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        headerClockColumnParams.gravity = Gravity.CENTER_VERTICAL;
+        headerClockColumn.setLayoutParams(headerClockColumnParams);
+
+        headerClock = new OutlineTextClock(this);
+        headerClock.setFormat12Hour("h:mm a");
+        headerClock.setFormat24Hour("HH:mm");
+        headerClock.setTextColor(Color.WHITE);
+        headerClock.setTypeface(Typeface.DEFAULT_BOLD);
+        headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 20 : 18);
+        final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        headerClockLp.gravity = Gravity.END;
+        headerClock.setLayoutParams(headerClockLp);
+        headerClockColumn.addView(headerClock);
+
+        endsAtView = new TextView(this);
+        endsAtView.setTextColor(0xB3FFFFFF);
+        endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 13 : 11);
+        final LinearLayout.LayoutParams endsAtLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        endsAtLp.gravity = Gravity.END;
+        endsAtView.setLayoutParams(endsAtLp);
+        endsAtView.setVisibility(View.GONE);
+        headerClockColumn.addView(endsAtView);
+
+        // Long-press the clock to copy the full launch intent to the clipboard, for diagnostics.
+        headerClockColumn.setOnLongClickListener(view -> {
+            copyLaunchIntentToClipboard();
+            return true;
+        });
+
+        topInfoPanel.addView(headerClockColumn);
 
         titleView.setOnLongClickListener(view -> {
+        coordinatorLayout.addView(notificationSkip);
+
+        // Persistent clock over the video, shown only when the controls (and thus the in-header clock) are
+        // hidden and the "show clock" preference is on. It is positioned to exactly mirror the in-header
+        // clock (see syncOverlayClockPosition), so toggling the controls swaps between the two clocks in the
+        // same spot with no jump.
+        overlayClock = new OutlineTextClock(this);
+        overlayClock.setFormat12Hour("h:mm a");
+        overlayClock.setFormat24Hour("HH:mm");
+        overlayClock.setTextColor(Color.WHITE);
+        overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
+        overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 20 : 18);
+        final CoordinatorLayout.LayoutParams overlayClockLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        overlayClockLp.gravity = Gravity.TOP | Gravity.START;
+        overlayClock.setLayoutParams(overlayClockLp);
+        overlayClock.setVisibility(View.GONE);
+        coordinatorLayout.addView(overlayClock);
+
+        // Whenever the in-header clock is (re)laid out, mirror its position onto the floating clock.
+        headerClock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> syncOverlayClockPosition());
+
+        topInfoPanel.setOnLongClickListener(view -> {
             // Prevent FileUriExposedException
             if (mPrefs.mediaUri != null && ContentResolver.SCHEME_FILE.equals(mPrefs.mediaUri.getScheme())) {
                 return false;
@@ -767,6 +885,14 @@ public class PlayerActivity extends Activity {
             public void onVisibilityChanged(int visibility) {
                 controllerVisible = visibility == View.VISIBLE;
                 controllerVisibleFully = playerView.isControllerFullyVisible();
+
+                if (controllerVisible) {
+                    updateMediaInfo();
+                    startEndsAtUpdates();
+                } else {
+                    stopEndsAtUpdates();
+                }
+                updateOverlayClock();
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -1292,6 +1418,11 @@ public class PlayerActivity extends Activity {
             // Keep segments aligned by index with apiMediaItems (null when absent)
             apiPlaylistSegments.add(segments != null && i < segments.length ? segments[i] : null);
             // Episode metadata, aligned by index (null when absent). Stored, not yet used.
+                    && imdbIds[i] != null && !imdbIds[i].isEmpty() ? imdbIds[i] : null);
+        }
+    }
+
+    private static Integer parseIntOrNull(String[] array, int i) {
         if (array == null || i >= array.length || array[i] == null || array[i].isEmpty()) {
             return null;
         }
@@ -1303,6 +1434,26 @@ public class PlayerActivity extends Activity {
     }
 
     private static String[] getSmartStringArray(Bundle bundle, String key) {
+        final String[] array = bundle.getStringArray(key);
+        if (array != null) {
+            return array;
+        }
+        final ArrayList<String> list = bundle.getStringArrayList(key);
+        if (list != null) {
+            return list.toArray(new String[0]);
+        }
+        final CharSequence[] charSequences = bundle.getCharSequenceArray(key);
+        if (charSequences != null) {
+            final String[] result = new String[charSequences.length];
+            for (int i = 0; i < charSequences.length; i++) {
+                result[i] = charSequences[i] == null ? null : charSequences[i].toString();
+            }
+            return result;
+        }
+        return null;
+    }
+
+    void updateTopInfo() {
         if (player == null) {
             return;
         }
@@ -1323,6 +1474,366 @@ public class PlayerActivity extends Activity {
             buttonPlaylist.setVisibility(hasPlaylist ? View.VISIBLE : View.GONE);
         }
         // Show prev/next episode arrows (Media3 built-in, flanking play/pause) only for playlists
+        playerView.setShowNextButton(hasPlaylist);
+        playerView.setShowPreviousButton(hasPlaylist);
+
+        topInfoPanel.setVisibility(View.VISIBLE);
+        updateMediaInfo();
+        updateEndsAt();
+    }
+
+    private TextView createInfoLine(int topMargin) {
+        final TextView view = new TextView(this);
+        view.setTextColor(0x99FFFFFF); // text_secondary
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 14 : 12);
+        view.setMaxLines(1);
+        view.setEllipsize(TextUtils.TruncateAt.END);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = topMargin;
+        view.setLayoutParams(lp);
+        view.setVisibility(View.GONE);
+        return view;
+    }
+
+    void updateMediaInfo() {
+        if (player == null) {
+            return;
+        }
+        final Format video = player.getVideoFormat();
+        String container = video != null ? containerFromMime(video.containerMimeType) : null;
+        if (container == null) {
+            container = containerFromCurrentUri();
+        }
+        setInfoLine(videoInfoView, buildVideoInfo(video, container));
+        setInfoLine(audioInfoView, buildAudioInfo(getSelectedAudioFormat()));
+    }
+
+    private static void setInfoLine(TextView view, String text) {
+        if (view == null) {
+            return;
+        }
+        if (text != null && !text.isEmpty()) {
+            view.setText(text);
+            view.setVisibility(View.VISIBLE);
+        } else {
+            view.setVisibility(View.GONE);
+        }
+    }
+
+    private static String buildVideoInfo(Format video, String container) {
+        if (video == null) {
+            return null;
+        }
+        final StringBuilder b = new StringBuilder();
+        appendField(b, container);
+        if (video.width > 0 && video.height > 0) {
+            appendField(b, video.width + "×" + video.height);
+        }
+        appendField(b, codecName(video));
+        appendField(b, formatFrameRate(video.frameRate));
+        appendField(b, hdrName(video.colorInfo));
+        appendField(b, Utils.formatBitrate(bestBitrate(video)));
+        return b.toString();
+    }
+
+    private static String formatFrameRate(float fps) {
+        if (fps <= 0) {
+            return null;
+        }
+        return Math.round(fps) + " fps";
+    }
+
+    private static String containerFromMime(String mime) {
+        if (mime == null) {
+            return null;
+        }
+        switch (mime) {
+            case "video/mp4":
+            case "application/mp4": return "MP4";
+            case "video/x-matroska": return "MKV";
+            case "video/webm": return "WebM";
+            case "video/avi":
+            case "video/x-msvideo": return "AVI";
+            case "video/mp2t": return "TS";
+            case "video/quicktime": return "MOV";
+            case "video/mpeg": return "MPEG";
+            case "video/3gpp": return "3GP";
+            case "application/x-mpegURL":
+            case "application/vnd.apple.mpegurl": return "HLS";
+            default: return null;
+        }
+    }
+
+    private String containerFromCurrentUri() {
+        Uri uri = null;
+        final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
+        if (item != null && item.localConfiguration != null) {
+            uri = item.localConfiguration.uri;
+        }
+        if (uri == null) {
+            uri = mPrefs.mediaUri;
+        }
+        if (uri == null) {
+            return null;
+        }
+        final String path = uri.getLastPathSegment();
+        if (path == null) {
+            return null;
+        }
+        final int dot = path.lastIndexOf('.');
+        if (dot < 0 || dot >= path.length() - 1) {
+            return null;
+        }
+        switch (path.substring(dot + 1).toLowerCase(Locale.US)) {
+            case "mp4": case "m4v": return "MP4";
+            case "mkv": return "MKV";
+            case "webm": return "WebM";
+            case "avi": return "AVI";
+            case "ts": case "m2ts": return "TS";
+            case "mov": return "MOV";
+            case "m3u8": return "HLS";
+            case "flv": return "FLV";
+            case "wmv": return "WMV";
+            case "mpg": case "mpeg": return "MPEG";
+            case "3gp": return "3GP";
+            default: return null;
+        }
+    }
+
+    private String buildAudioInfo(Format audio) {
+        if (audio == null) {
+            return null;
+        }
+        // Same shape as the track list: <label or container name or language> [<codec> <channels> <bitrate>k] (<lang>)
+        final String language = languageDisplayName(audio.language);
+        // Rich release label: Media3's Format.label first, then the name read from the container.
+        String metaName = audio.label;
+        if ((metaName == null || metaName.isEmpty()) && audio.id != null) {
+            metaName = resolvedTrackNames.get(audio.id);
+        }
+        final String title = (metaName != null && !metaName.isEmpty()) ? metaName : language;
+        final StringBuilder b = new StringBuilder();
+        if (title != null && !title.isEmpty()) {
+            b.append(title);
+        }
+        final String tech = CustomDefaultTrackNameProvider.techInfo(audio);
+        if (!tech.isEmpty()) {
+            if (b.length() > 0) b.append(' ');
+            b.append('[').append(tech).append(']');
+        }
+        // If we led with a rich name, still surface the language after it.
+        if (metaName != null && !metaName.isEmpty() && language != null) {
+            if (b.length() > 0) b.append(' ');
+            b.append('(').append(language).append(')');
+        }
+        return b.toString();
+    }
+
+    /** Called on the UI thread once the container parser has recovered track names. */
+    private void onContainerMetadata(java.util.List<TrackMetadata> tracks) {
+        containerTracks.clear();
+        containerTracks.addAll(tracks);
+        resolveTrackNames();
+        updateMediaInfo();
+    }
+
+    /**
+     * Maps container track names onto the player's current tracks by {@code Format.id} (the tkhd
+     * trackId / MKV TrackNumber), falling back to order within each type, and stores the result in
+     * {@link #resolvedTrackNames} (shared live with {@link #trackNameProvider}).
+     */
+    private void resolveTrackNames() {
+        resolvedTrackNames.clear();
+        if (player == null || containerTracks.isEmpty()) {
+            return;
+        }
+        resolveNamesForType(C.TRACK_TYPE_AUDIO, TrackMetadata.Type.AUDIO);
+        resolveNamesForType(C.TRACK_TYPE_TEXT, TrackMetadata.Type.SUBTITLE);
+    }
+
+    private void resolveNamesForType(int trackType, TrackMetadata.Type metaType) {
+        final java.util.List<TrackMetadata> ordered = new java.util.ArrayList<>();
+        for (TrackMetadata t : containerTracks) {
+            if (t.type == metaType) {
+                ordered.add(t);
+            }
+        }
+        java.util.Collections.sort(ordered, (a, b) -> Integer.compare(a.trackId, b.trackId));
+
+        int counter = 0;
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != trackType) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                final Format format = group.getMediaTrackGroup().getFormat(i);
+                String name = null;
+                // 1. Match by trackId (Format.id == tkhd trackId / MKV TrackNumber).
+                if (format.id != null) {
+                    final Integer id = tryParseInt(format.id);
+                    if (id != null) {
+                        for (TrackMetadata t : containerTracks) {
+                            if (t.trackId == id && t.name != null && !t.name.isEmpty()) {
+                                name = t.name;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 2. Fall back to order within this type.
+                if (name == null && counter < ordered.size()) {
+                    final String byOrder = ordered.get(counter).name;
+                    if (byOrder != null && !byOrder.isEmpty()) {
+                        name = byOrder;
+                    }
+                }
+                if (name != null && format.id != null) {
+                    resolvedTrackNames.put(format.id, name);
+                }
+                counter++;
+            }
+        }
+    }
+
+    private static Integer tryParseInt(String s) {
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String codecName(Format format) {
+        final String codec = CustomDefaultTrackNameProvider.formatNameFromMime(format.sampleMimeType);
+        return codec != null ? codec : CustomDefaultTrackNameProvider.formatNameFromMime(format.codecs);
+    }
+
+    private static int bestBitrate(Format format) {
+        return format.averageBitrate != Format.NO_VALUE ? format.averageBitrate : format.peakBitrate;
+    }
+
+    private static void appendField(StringBuilder builder, String field) {
+        if (field != null && !field.isEmpty()) {
+            if (builder.length() > 0) builder.append(" · ");
+            builder.append(field);
+        }
+    }
+
+    private static String hdrName(ColorInfo colorInfo) {
+        if (colorInfo == null) {
+            return null;
+        }
+        switch (colorInfo.colorTransfer) {
+            case C.COLOR_TRANSFER_ST2084:
+                return "HDR10";
+            case C.COLOR_TRANSFER_HLG:
+                return "HLG";
+            default:
+                return null;
+        }
+    }
+
+    private Format getSelectedAudioFormat() {
+        if (player == null) {
+            return null;
+        }
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() == C.TRACK_TYPE_AUDIO && group.isSelected()) {
+                for (int i = 0; i < group.length; i++) {
+                    if (group.isTrackSelected(i)) {
+                        return group.getMediaTrackGroup().getFormat(i);
+                    }
+                }
+                return group.getMediaTrackGroup().getFormat(0);
+            }
+        }
+        return null;
+    }
+
+    private static String languageDisplayName(final String language) {
+        if (language == null || language.isEmpty() || "und".equals(language)) {
+            return null;
+        }
+        try {
+            final String name = new Locale(language).getDisplayLanguage();
+            if (name != null && !name.isEmpty() && !name.equalsIgnoreCase(language)) {
+                return name.substring(0, 1).toUpperCase(Locale.getDefault()) + name.substring(1);
+            }
+        } catch (Exception ignored) {
+        }
+        return language;
+    }
+
+    void updateEndsAt() {
+        if (player == null || endsAtView == null) {
+            return;
+        }
+        final long duration = player.getDuration();
+        if (!controllerVisible || duration == C.TIME_UNSET || duration <= 0) {
+            endsAtView.setVisibility(View.GONE);
+            return;
+        }
+        final long remaining = Math.max(0, duration - player.getCurrentPosition());
+        float speed = player.getPlaybackParameters().speed;
+        if (speed <= 0) {
+            speed = 1f;
+        }
+        final long endMs = System.currentTimeMillis() + (long) (remaining / speed);
+        final String time = DateFormat.getTimeFormat(this).format(new Date(endMs));
+        endsAtView.setText(getString(R.string.time_ends_at, time));
+        endsAtView.setVisibility(View.VISIBLE);
+    }
+
+    // When the controls are visible the in-header clock is shown; this floating clock only covers the
+    // controls-hidden state, and then only when the "show clock" preference is on.
+    void updateOverlayClock() {
+        if (overlayClock == null) {
+            return;
+        }
+        final boolean show = !controllerVisible && mPrefs.showClock;
+        if (show) {
+            syncOverlayClockPosition();
+        }
+        overlayClock.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    // Mirror the floating clock onto the in-header clock's on-screen position so switching between the two
+    // (as the controls hide/show) is seamless. Skips while the header clock isn't laid out, keeping the last
+    // known position rather than snapping to the top-left corner.
+    private void syncOverlayClockPosition() {
+        if (overlayClock == null || headerClock == null || coordinatorLayout == null
+                || headerClock.getWidth() == 0) {
+            return;
+        }
+        final int[] clockLoc = new int[2];
+        final int[] rootLoc = new int[2];
+        headerClock.getLocationInWindow(clockLoc);
+        coordinatorLayout.getLocationInWindow(rootLoc);
+        final ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) overlayClock.getLayoutParams();
+        final int left = clockLoc[0] - rootLoc[0];
+        final int top = clockLoc[1] - rootLoc[1];
+        if (lp.leftMargin != left || lp.topMargin != top) {
+            lp.leftMargin = left;
+            lp.topMargin = top;
+            overlayClock.setLayoutParams(lp);
+        }
+    }
+
+    private void startEndsAtUpdates() {
+        if (playerView == null) {
+            return;
+        }
+        playerView.removeCallbacks(endsAtRunnable);
+        playerView.post(endsAtRunnable);
+    }
+
+    private void stopEndsAtUpdates() {
+        if (playerView != null) {
+            playerView.removeCallbacks(endsAtRunnable);
+        }
+        if (endsAtView != null) {
+            endsAtView.setVisibility(View.GONE);
         }
     }
 
@@ -1654,6 +2165,7 @@ public class PlayerActivity extends Activity {
         } else if (requestCode == REQUEST_SETTINGS) {
             mPrefs.loadUserPreferences();
             updateSubtitleStyle(this);
+            updateOverlayClock();
         } else {
             super.onActivityResult(requestCode, resultCode, data);
         }
@@ -1739,11 +2251,16 @@ public class PlayerActivity extends Activity {
                 if (userInfo != null && userInfo.length() > 0 && userInfo.contains(":")) {
                     headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
                     DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory();
+        // read rich track names straight from the container (see TrackNameParsingDataSource).
                     defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
                     playerBuilder.setMediaSourceFactory(new DefaultMediaSourceFactory(defaultHttpDataSourceFactory, extractorsFactory));
                 }
             }
         }
+
+        final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
+        playerBuilder.setMediaSourceFactory(
+                new DefaultMediaSourceFactory(this, extractorsFactory).setDataSourceFactory(dataSourceFactory));
 
         player = playerBuilder.build();
 
@@ -1841,10 +2358,7 @@ public class PlayerActivity extends Activity {
                 play = true;
             }
 
-            } else {
-                titleView.setText(Utils.getFileName(this, mPrefs.mediaUri));
-            }
-            titleView.setVisibility(View.VISIBLE);
+            updateTopInfo();
 
             updateButtons(true);
 
@@ -1927,6 +2441,10 @@ public class PlayerActivity extends Activity {
         }
         titleView.setVisibility(View.GONE);
         }
+        stopEndsAtUpdates();
+        if (overlayClock != null) {
+            overlayClock.setVisibility(View.GONE);
+        }
         setEpisodeNavLoading(false);
         Glide.with(getApplicationContext()).clear(posterView);
         posterSlot.setVisibility(View.GONE);
@@ -1955,6 +2473,9 @@ public class PlayerActivity extends Activity {
             notifyAudioSessionUpdate(true);
         }
 
+        @Override
+        public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+            updateTopInfo();
         }
 
         @Override
@@ -1966,6 +2487,18 @@ public class PlayerActivity extends Activity {
                 playerView.post(() -> {
                     if (episodeNavLoading) {
                         applyEpisodeNavEnabled(false);
+                    }
+                });
+            }
+        }
+
+        @Override
+        public void onTracksChanged(Tracks tracks) {
+            // Tracks are now known — (re)map any container names onto them, then refresh the header.
+            resolveTrackNames();
+            updateMediaInfo();
+        }
+
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
             playerView.setKeepScreenOn(isPlaying);
@@ -2017,6 +2550,10 @@ public class PlayerActivity extends Activity {
                 // the initial open) so episode switches, which don't set videoLoading, are also cleared.
                 updateLoading(false);
                 setEpisodeNavLoading(false);
+                }
+
+                updateMediaInfo();
+
                 if (videoLoading) {
                     videoLoading = false;
 

@@ -28,6 +28,11 @@
     <string name="pref_skip_silence_off">Відтворювати контент як є</string>
     <string name="pref_repeat_toggle">Переключення повтору</string>
     <string name="pref_repeat_toggle_summary">Додатковий контроль, що дозволяє необмежений цикл відео (потрібно перезапустити додаток)</string>
+    <string name="pref_show_clock">Показувати годинник</string>
+    <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
+    <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>
+    <string name="time_ends_at">Закінчиться о %s</string>
+    <string name="playlist">Список відтворення</string>
     <string name="pref_map_dv7">Резервний варіант Dolby Vision profile 7</string>
     <string name="pref_map_dv7_on">Відтворення контенту Dolby Vision profile 7 на дисплеях HDR</string>
     <string name="pref_map_dv7_off">Відтворення вмісту UHD Blu-ray, що містить Dolby Vision, як є</string>

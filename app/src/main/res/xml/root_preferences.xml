@@ -32,6 +32,13 @@
             app:title="@string/pref_auto_pip" />
 
         <SwitchPreferenceCompat
+            app:key="showClock"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_show_clock_on"
+            app:summaryOff="@string/pref_show_clock_off"
+            app:title="@string/pref_show_clock" />
+
+        <SwitchPreferenceCompat
             app:key="skipSilence"
             app:defaultValue="false"
             app:summaryOn="@string/pref_skip_silence_on"

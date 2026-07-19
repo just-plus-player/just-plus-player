@@ -27,6 +27,11 @@
     <string name="pref_title">Настройки</string>
     <string name="pref_repeat_toggle">Переключение повтора</string>
     <string name="pref_repeat_toggle_summary">Дополнительное управление, позволяющее бесконечно зацикливать видео (требуется перезапуск приложения)</string>
+    <string name="pref_show_clock">Показывать часы</string>
+    <string name="pref_show_clock_on">Часы всегда в правом верхнем углу поверх видео</string>
+    <string name="pref_show_clock_off">Часы показываются только с элементами управления</string>
+    <string name="time_ends_at">Закончится в %s</string>
+    <string name="playlist">Плейлист</string>
     <string name="shortcut_videos">Видео</string>
     <string name="button_open">Открыть</string>
     <string name="button_crop">Изменить размер</string>

@@ -1,7 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="BaseTheme.Player" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:statusBarColor">@color/ui_controls_background</item>
+        <!-- Transparent so the OS-toggled status bar doesn't paint its own @color/ui_controls_background strip,
+             which desyncs from the controller fade. The controller-synced exo_top scrim (given a height on all
+             SDKs in PlayerActivity's insets listener) provides the darkening behind the status-bar icons. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/ui_controls_background</item>
         <item name="android:windowBackground">@color/black</item>
         <item name="android:windowLayoutInDisplayCutoutMode" tools:ignore="NewApi">shortEdges</item>

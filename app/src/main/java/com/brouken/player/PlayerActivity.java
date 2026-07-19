@@ -268,6 +268,7 @@ public class PlayerActivity extends Activity {
     boolean apiAccessPartial;
     String apiTitle;
     Uri apiThumbnailUri;
+    String[] apiHeaders;
     final List<MediaItem> apiMediaItems = new ArrayList<>();
     final List<String> apiPlaylistSegments = new ArrayList<>();
     int apiPlaylistStartIndex;
@@ -373,6 +374,7 @@ public class PlayerActivity extends Activity {
                     final String thumbnail = bundle.getString(API_THUMBNAIL);
                     if (thumbnail != null) {
                         apiThumbnailUri = Uri.parse(thumbnail);
+                    apiHeaders = bundle.getStringArray(API_HEADERS);
                     apiSeason = bundle.getInt(API_SEASON, -1);
                     apiEpisode = bundle.getInt(API_EPISODE, -1);
                     if (bundle.containsKey(API_VIDEO_LIST)) {
@@ -751,13 +753,15 @@ public class PlayerActivity extends Activity {
                 int bottomBarPaddingBottom = 0;
                 int progressBarMarginBottom = 0;
 
+                // Don't use exo_top (the built-in top scrim): it is a sibling of exo_controls_background and Media3
+                // animates it on a different schedule, so it appears before / lingers after the header. Instead the
+                // header panel's own background is extended up over the status-bar area (see topInfoPanel below) —
+                // being the header itself, it can never desync from it. Keep exo_top collapsed.
+                findViewById(R.id.exo_top).getLayoutParams().height = 0;
+
                 if (Build.VERSION.SDK_INT >= 35) {
                     final int left = windowInsets.getInsets(WindowInsets.Type.navigationBars()).left;
                     final int right = windowInsets.getInsets(WindowInsets.Type.navigationBars()).right;
-
-                    final View exoTop = findViewById(R.id.exo_top);
-                    exoTop.getLayoutParams().height = windowInsets.getSystemWindowInsetTop();
-                    Utils.setViewMargins(exoTop, left, 0, right, 0);
 
                     final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
                     ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
@@ -1328,6 +1332,7 @@ public class PlayerActivity extends Activity {
         apiAccessPartial = false;
         apiTitle = null;
         apiThumbnailUri = null;
+        apiHeaders = null;
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
         apiPlaylistStartIndex = 0;
@@ -1820,6 +1825,16 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    private void copyLaunchIntentToClipboard() {
+        final String report = Utils.buildIntentReport(getIntent());
+        final android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("intent", report));
+            android.widget.Toast.makeText(this, R.string.intent_copied, android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void startEndsAtUpdates() {
         if (playerView == null) {
             return;
@@ -2241,20 +2256,49 @@ public class PlayerActivity extends Activity {
                 .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
 
         ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this, renderersFactory)
-                .setTrackSelector(trackSelector)
-                .setMediaSourceFactory(new DefaultMediaSourceFactory(this, extractorsFactory));
+                .setTrackSelector(trackSelector);
 
-        if (haveMedia && isNetworkUri) {
-            if (mPrefs.mediaUri.getScheme().toLowerCase().startsWith("http")) {
-                HashMap<String, String> headers = new HashMap<>();
-                String userInfo = mPrefs.mediaUri.getUserInfo();
-                if (userInfo != null && userInfo.length() > 0 && userInfo.contains(":")) {
-                    headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
-                    DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory();
+        // Build the upstream data source factory (content://, file://, http(s)), applying any
+        // launch-intent HTTP headers/User-Agent, then wrap it so we can tap the byte stream and
         // read rich track names straight from the container (see TrackNameParsingDataSource).
-                    defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
-                    playerBuilder.setMediaSourceFactory(new DefaultMediaSourceFactory(defaultHttpDataSourceFactory, extractorsFactory));
+        androidx.media3.datasource.DataSource.Factory upstreamFactory = new DefaultDataSource.Factory(this);
+
+        if (haveMedia && isNetworkUri && mPrefs.mediaUri.getScheme().toLowerCase().startsWith("http")) {
+            HashMap<String, String> headers = new HashMap<>();
+            String userAgent = null;
+
+            // Headers supplied by the launching app as a flat [name, value, name, value, ...] array
+            // (MX Player / Lampa convention). Some CDNs require a specific User-Agent to authorize.
+            if (apiHeaders != null) {
+                for (int i = 0; i + 1 < apiHeaders.length; i += 2) {
+                    final String name = apiHeaders[i];
+                    final String value = apiHeaders[i + 1];
+                    if (name == null || value == null) {
+                        continue;
+                    }
+                    if ("User-Agent".equalsIgnoreCase(name)) {
+                        userAgent = value;
+                    } else {
+                        headers.put(name, value);
+                    }
                 }
+            }
+
+            String userInfo = mPrefs.mediaUri.getUserInfo();
+            if (userInfo != null && userInfo.length() > 0 && userInfo.contains(":")) {
+                headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
+            }
+
+            if (!headers.isEmpty() || userAgent != null) {
+                DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory()
+                        .setAllowCrossProtocolRedirects(true);
+                if (userAgent != null) {
+                    defaultHttpDataSourceFactory.setUserAgent(userAgent);
+                }
+                if (!headers.isEmpty()) {
+                    defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
+                }
+                upstreamFactory = new DefaultDataSource.Factory(this, defaultHttpDataSourceFactory);
             }
         }
 

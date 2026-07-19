@@ -35,9 +35,6 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/latestUniversal/release/*.apk
-            app/build/outputs/apk/legacyUniversal/release/*.apk
-            app/build/outputs/bundle/latestUniversalRelease/*.aab
-            app/build/outputs/bundle/legacyUniversalRelease/*.aab
           prerelease: true
           draft: true
 

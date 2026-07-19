@@ -37,6 +37,7 @@
     <string name="pref_skip_mode_button">Show Skip button</string>
     <string name="pref_skip_mode_auto">Skip automatically</string>
     <string name="button_skip">Skip</string>
+    <string name="notification_skipped">Segment skipped</string>
     <string name="pref_show_clock">Show clock</string>
     <string name="pref_show_clock_on">Clock stays in the top-right corner over the video</string>
     <string name="pref_show_clock_off">Clock shows only with the player controls</string>

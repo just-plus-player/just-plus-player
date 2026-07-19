@@ -36,6 +36,7 @@
     <string name="pref_skip_mode_button">Показувати кнопку «Пропустити»</string>
     <string name="pref_skip_mode_auto">Пропускати автоматично</string>
     <string name="button_skip">Пропустити</string>
+    <string name="notification_skipped">Сегмент пропущено</string>
     <string name="pref_show_clock">Показувати годинник</string>
     <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
     <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>

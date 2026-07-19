@@ -300,6 +300,13 @@ public class PlayerActivity extends Activity {
     SkipManager skipManager;
     boolean skipBuilt;
     Button buttonSkip;
+    ClipDrawable skipButtonProgress;
+    LinearLayout skipButtonContainer;
+    TextView notificationSkip;
+    final Runnable skipNotificationHider = new Runnable() {
+        @Override
+        public void run() {
+            hideSkipNotification();
         }
     };
     SkipSegment pendingSkip;
@@ -740,8 +747,80 @@ public class PlayerActivity extends Activity {
                 pendingSkip.skipped = true;
                 final long endMs = pendingSkip.endMs();
                 hideSkipButton();
+                skipSeekTo(endMs);
+            }
+        });
 
-        titleView.setOnLongClickListener(view -> {
+        // Thin progress bar under the button (player-timebar style) showing how long the button stays
+        // available — i.e. the remaining skip-section duration. The coral fill drains as it plays out.
+        final int skipBarCorner = Utils.dpToPx(2);
+        final GradientDrawable skipBarTrack = new GradientDrawable();
+        skipBarTrack.setColor(Color.parseColor("#40fe6f61"));
+        skipBarTrack.setCornerRadius(skipBarCorner);
+        final GradientDrawable skipBarFill = new GradientDrawable();
+        skipBarFill.setColor(Color.parseColor("#fe6f61"));
+        skipBarFill.setCornerRadius(skipBarCorner);
+        skipButtonProgress = new ClipDrawable(skipBarFill, Gravity.START, ClipDrawable.HORIZONTAL);
+        skipButtonProgress.setLevel(0);
+        final View skipProgressBar = new View(this);
+        skipProgressBar.setBackground(new LayerDrawable(new Drawable[]{skipBarTrack, skipButtonProgress}));
+        final LinearLayout.LayoutParams skipBarParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(3));
+        skipBarParams.topMargin = Utils.dpToPx(3);
+        skipProgressBar.setLayoutParams(skipBarParams);
+
+        // Button + progress bar travel together as one bottom-end floating unit.
+        skipButtonContainer = new LinearLayout(this);
+        skipButtonContainer.setOrientation(LinearLayout.VERTICAL);
+        skipButtonContainer.addView(buttonSkip);
+        skipButtonContainer.addView(skipProgressBar);
+        final CoordinatorLayout.LayoutParams skipButtonParams = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        skipButtonParams.gravity = Gravity.BOTTOM | Gravity.END;
+        skipButtonParams.setMargins(0, 0, Utils.dpToPx(24), Utils.dpToPx(96));
+        skipButtonContainer.setLayoutParams(skipButtonParams);
+        skipButtonContainer.setVisibility(View.GONE);
+        coordinatorLayout.addView(skipButtonContainer);
+
+        // Toast-style notification shown after an automatic skip: same pill as the Skip button (icon + label,
+        // no progress bar), floating top-centre. Auto-hides after 5s or on any interaction (see onUserInteraction).
+        notificationSkip = new TextView(this);
+        notificationSkip.setText(R.string.notification_skipped);
+        notificationSkip.setAllCaps(false);
+        notificationSkip.setTextColor(Color.WHITE);
+        notificationSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 15 : 13);
+        notificationSkip.setTypeface(Typeface.DEFAULT_BOLD);
+        notificationSkip.setGravity(Gravity.CENTER_VERTICAL);
+        notificationSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(6), Utils.dpToPx(16), Utils.dpToPx(6));
+
+        final Drawable skipDoneIcon = ContextCompat.getDrawable(this, R.drawable.exo_styled_controls_next);
+        if (skipDoneIcon != null) {
+            final int skipDoneIconSize = Utils.dpToPx(18);
+            skipDoneIcon.setBounds(0, 0, skipDoneIconSize, skipDoneIconSize);
+            notificationSkip.setCompoundDrawablesRelative(skipDoneIcon, null, null, null);
+            notificationSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
+            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
+        }
+
+        final GradientDrawable notificationBackground = new GradientDrawable();
+        notificationBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        notificationBackground.setCornerRadius(skipCornerRadius);
+        notificationSkip.setBackground(notificationBackground);
+        notificationSkip.setClipToOutline(true);
+        notificationSkip.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), skipCornerRadius);
+            }
+        });
+
+        final CoordinatorLayout.LayoutParams notificationParams = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        notificationParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        notificationParams.setMargins(0, Utils.dpToPx(28), 0, 0);
+        notificationSkip.setLayoutParams(notificationParams);
+        notificationSkip.setVisibility(View.GONE);
+        notificationSkip.setOnClickListener(v -> hideSkipNotification());
         coordinatorLayout.addView(notificationSkip);
 
         // Persistent clock over the video, shown only when the controls (and thus the in-header clock) are
@@ -859,6 +938,20 @@ public class PlayerActivity extends Activity {
 
                 Utils.setViewParams(findViewById(R.id.exo_progress), windowInsets.getSystemWindowInsetLeft(), 0, windowInsets.getSystemWindowInsetRight(), 0,
                         0, 0, 0, getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom) + progressBarMarginBottom);
+
+                // Keep the Skip pill above the seek bar and clear of the nav-bar inset. It floats on the
+                // full-screen coordinator (not the controller), so a fixed bottom offset overlapped the
+                // progress bar on tablets — derive it from the seek bar's own geometry (its top sits at
+                // insetBottom + progress margin + progress layout height above the screen bottom).
+                if (skipButtonContainer != null) {
+                    final CoordinatorLayout.LayoutParams skipLp = (CoordinatorLayout.LayoutParams) skipButtonContainer.getLayoutParams();
+                    skipLp.bottomMargin = windowInsets.getSystemWindowInsetBottom()
+                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
+                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_layout_height)
+                            + Utils.dpToPx(10);
+                    skipLp.rightMargin = Utils.dpToPx(24) + insetRight;
+                    skipButtonContainer.setLayoutParams(skipLp);
+                }
 
                 Utils.setViewMargins(findViewById(R.id.exo_error_message), 0, windowInsets.getSystemWindowInsetTop() / 2, 0, getResources().getDimensionPixelSize(R.dimen.exo_error_message_margin_bottom) + windowInsets.getSystemWindowInsetBottom() / 2);
 
@@ -1413,6 +1506,8 @@ public class PlayerActivity extends Activity {
         if (skipManager != null) {
             skipManager.clear();
         hideSkipButton();
+        if (timeBar != null) {
+            timeBar.clearSkipHighlights();
         }
     }
 
@@ -1421,10 +1516,16 @@ public class PlayerActivity extends Activity {
     private void setupSkipSource() {
         if (skipManager == null) {
             skipManager = new SkipManager();
+        }
+        skipBuilt = false;
+        hideSkipNotification();
         final String json = currentSegmentsJson();
         skipManager.setSource(json != null && !json.isEmpty() ? new IntentSegmentsSource(json) : null);
         // Source (re)set → the manager holds no segments until rebuildSkip() runs against the new
         // duration. Drop any highlights from the previous item right now so switching episodes never
+        // leaves stale timecodes on the bar; the new segments (intent or online) repaint on rebuild.
+        if (timeBar != null) {
+            timeBar.clearSkipHighlights();
         }
     }
 
@@ -1482,6 +1583,7 @@ public class PlayerActivity extends Activity {
         final java.util.List<SkipSegment> segments = skipManager != null ? skipManager.getSegments() : null;
         final long durationMs = player != null ? player.getDuration() : C.TIME_UNSET;
         if (segments == null || segments.isEmpty() || durationMs == C.TIME_UNSET || durationMs <= 0 || !mPrefs.skipEnabled) {
+            timeBar.clearSkipHighlights();
             return;
         }
         final int count = segments.size();
@@ -1514,11 +1616,40 @@ public class PlayerActivity extends Activity {
         if (auto) {
             segment.skipped = true;
             hideSkipButton();
+            skipSeekTo(segment.endMs());
+            showSkipNotification();
+        } else {
+            updateSkipButtonProgress(segment);
             showSkipButton(segment);
+        }
+    }
+
+    /** Sizes the coral fill to the fraction of the segment still remaining (1 at start, 0 at the end). */
+    private void updateSkipButtonProgress(SkipSegment segment) {
+        if (skipButtonProgress == null || player == null || segment == null)
+            return;
+        final long totalMs = segment.endMs() - segment.startMs();
+        if (totalMs <= 0) {
+            skipButtonProgress.setLevel(0);
+            return;
+        }
+        final long remainingMs = segment.endMs() - player.getCurrentPosition();
+        final double fraction = Math.max(0, Math.min(1, remainingMs / (double) totalMs));
+        skipButtonProgress.setLevel((int) Math.round(fraction * 10000));
+    }
+
+    private void skipSeekTo(long positionMs) {
+        if (player == null)
+            return;
+        // Exact seek so playback resumes precisely at the segment end, not at an earlier keyframe.
+        player.setSeekParameters(SeekParameters.EXACT);
         player.seekTo(positionMs);
     }
 
     private void showSkipButton(SkipSegment segment) {
+        pendingSkip = segment;
+        if (skipButtonContainer != null && skipButtonContainer.getVisibility() != View.VISIBLE) {
+            skipButtonContainer.setVisibility(View.VISIBLE);
             if (isTvBox) {
                 buttonSkip.requestFocus();
             }
@@ -1526,6 +1657,38 @@ public class PlayerActivity extends Activity {
     }
 
     private void hideSkipButton() {
+        pendingSkip = null;
+        if (skipButtonContainer != null) {
+            skipButtonContainer.setVisibility(View.GONE);
+        }
+    }
+
+    private void showSkipNotification() {
+        if (notificationSkip == null) {
+            return;
+        }
+        notificationSkip.setVisibility(View.VISIBLE);
+        playerView.removeCallbacks(skipNotificationHider);
+        playerView.postDelayed(skipNotificationHider, 5000);
+    }
+
+    private void hideSkipNotification() {
+        if (notificationSkip == null) {
+            return;
+        }
+        if (playerView != null) {
+            playerView.removeCallbacks(skipNotificationHider);
+        }
+        if (notificationSkip.getVisibility() != View.GONE) {
+            notificationSkip.setVisibility(View.GONE);
+        }
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        // Any touch or key dispatched to the player dismisses the auto-skip notification.
+        hideSkipNotification();
     }
 
     private void startSkipPolling() {
@@ -2669,6 +2832,10 @@ public class PlayerActivity extends Activity {
         }
         stopSkipPolling();
         hideSkipButton();
+        hideSkipNotification();
+        skipBuilt = false;
+        if (timeBar != null) {
+            timeBar.clearSkipHighlights();
         }
         stopEndsAtUpdates();
         if (overlayClock != null) {

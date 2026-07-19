@@ -114,6 +114,7 @@ dependencies {
     implementation 'androidx.preference:preference:1.2.1'
     implementation 'com.squareup.okhttp3:okhttp:5.3.2'
     implementation 'com.sigpwned:chardet4j:78.1.0'
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
     implementation project(path: ':doubletapplayerview')
     implementation project(path: ':android-file-chooser')
     implementation fileTree(dir: "libs", include: ["lib-*.aar"])

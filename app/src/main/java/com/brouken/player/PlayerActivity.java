@@ -22,7 +22,14 @@ import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Typeface;
+import android.content.res.ColorStateList;
+import android.graphics.drawable.ClipDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
@@ -35,23 +42,28 @@ import android.os.Parcelable;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.text.format.DateFormat;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Rational;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.accessibility.CaptioningManager;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -65,6 +77,7 @@ import androidx.core.content.ContextCompat;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
+import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
@@ -75,6 +88,7 @@ import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
+import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
@@ -97,6 +111,11 @@ import androidx.media3.ui.TimeBar;
 
 import com.brouken.player.dtpv.DoubleTapPlayerView;
 import com.brouken.player.dtpv.youtube.YouTubeOverlay;
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.target.Target;
 import com.getkeepsafe.taptargetview.TapTarget;
 import com.getkeepsafe.taptargetview.TapTargetView;
 import com.google.android.material.snackbar.Snackbar;
@@ -107,6 +126,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -155,13 +175,23 @@ public class PlayerActivity extends Activity {
     private static final int CONTROL_TYPE_PAUSE = 2;
 
     private CoordinatorLayout coordinatorLayout;
+    private LinearLayout topInfoPanel;
+    private FrameLayout posterSlot;
+    private ImageView posterView;
+    private TextView posterPlaceholderView;
+    private TextView posterBadgeView;
     private TextView titleView;
     private ImageButton buttonOpen;
+    private ImageButton buttonPlaylist;
+    private android.app.Dialog playlistDialog;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
     private ImageButton buttonRotation;
     private ImageButton exoSettings;
     private ImageButton exoPlayPause;
+    private ImageButton exoPrev;
+    private ImageButton exoNext;
+    private boolean episodeNavLoading;
     private ProgressBar loadingProgressBar;
     private PlayerControlView controlView;
     private CustomDefaultTimeBar timeBar;
@@ -196,11 +226,32 @@ public class PlayerActivity extends Activity {
     static final String API_SUBS_ENABLE = "subs.enable";
     static final String API_SUBS_NAME = "subs.name";
     static final String API_TITLE = "title";
+    static final String API_THUMBNAIL = "thumbnail";
+    static final String API_SEGMENTS = "segments";
+    static final String API_HEADERS = "headers";
+    static final String API_VIDEO_LIST = "video_list";
+    static final String API_VIDEO_LIST_NAME = "video_list.name";
+    static final String API_VIDEO_LIST_FILENAME = "video_list.filename";
+    static final String API_VIDEO_LIST_THUMBNAIL = "video_list.thumbnail";
+    static final String API_VIDEO_LIST_SEGMENTS = "video_list.segments";
+    static final String API_VIDEO_LIST_SEASON = "video_list.season";
+    static final String API_VIDEO_LIST_EPISODE = "video_list.episode";
+    static final String API_VIDEO_LIST_IMDB_ID = "video_list.imdb_id";
+    static final String API_SEASON = "season";
+    static final String API_EPISODE = "episode";
+    static final String API_IMDB_ID = "imdb_id";
     static final String API_END_BY = "end_by";
     boolean apiAccess;
     boolean apiAccessPartial;
     String apiTitle;
+    Uri apiThumbnailUri;
+    final List<MediaItem> apiMediaItems = new ArrayList<>();
+    final List<String> apiPlaylistSegments = new ArrayList<>();
+    int apiPlaylistStartIndex;
     // Episode metadata received via the launch Intent (from LAMPA, com.justplus.player branch). Stored for
+    // now; not consumed yet. apiSeason/apiEpisode are -1 when absent; the per-item lists hold null.
+    int apiSeason = -1;
+    int apiEpisode = -1;
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
@@ -272,13 +323,22 @@ public class PlayerActivity extends Activity {
                 Bundle bundle = launchIntent.getExtras();
                 if (bundle != null) {
                     apiAccess = bundle.containsKey(API_POSITION) || bundle.containsKey(API_RETURN_RESULT)
-                            || bundle.containsKey(API_SUBS) || bundle.containsKey(API_SUBS_ENABLE);
+                            || bundle.containsKey(API_SUBS) || bundle.containsKey(API_SUBS_ENABLE)
+                            || bundle.containsKey(API_VIDEO_LIST);
                     if (apiAccess) {
                         mPrefs.setPersistent(false);
                     } else if (bundle.containsKey(API_TITLE)) {
                         apiAccessPartial = true;
                     }
                     apiTitle = bundle.getString(API_TITLE);
+                    final String thumbnail = bundle.getString(API_THUMBNAIL);
+                    if (thumbnail != null) {
+                        apiThumbnailUri = Uri.parse(thumbnail);
+                    apiSeason = bundle.getInt(API_SEASON, -1);
+                    apiEpisode = bundle.getInt(API_EPISODE, -1);
+                    if (bundle.containsKey(API_VIDEO_LIST)) {
+                        parseApiPlaylist(bundle, uri);
+                    }
                 }
 
                 mPrefs.updateMedia(this, uri, type);
@@ -324,6 +384,9 @@ public class PlayerActivity extends Activity {
         playerView = findViewById(R.id.video_view);
         exoPlayPause = findViewById(R.id.exo_play_pause);
         loadingProgressBar = findViewById(R.id.loading);
+        exoPrev = findViewById(R.id.exo_prev);
+        exoNext = findViewById(R.id.exo_next);
+        setupEpisodeNavButtons();
 
         playerView.setShowNextButton(false);
         playerView.setShowPreviousButton(false);
@@ -392,6 +455,13 @@ public class PlayerActivity extends Activity {
             return true;
         });
 
+        buttonPlaylist = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonPlaylist.setImageResource(R.drawable.ic_playlist_24dp);
+        buttonPlaylist.setId(View.generateViewId());
+        buttonPlaylist.setContentDescription("Playlist");
+        buttonPlaylist.setVisibility(View.GONE);
+        buttonPlaylist.setOnClickListener(view -> showPlaylistDialog());
+
         if (Utils.isPiPSupported(this)) {
             // TODO: Android 12 improvements:
             // https://developer.android.com/about/versions/12/features/pip-improvements
@@ -445,6 +515,54 @@ public class PlayerActivity extends Activity {
         final int titleViewPaddingHorizontal = Utils.dpToPx(14);
         final int titleViewPaddingVertical = getResources().getDimensionPixelOffset(R.dimen.exo_styled_bottom_bar_time_padding);
         FrameLayout centerView = playerView.findViewById(R.id.exo_controls_background);
+
+        topInfoPanel = new LinearLayout(this);
+        topInfoPanel.setOrientation(LinearLayout.HORIZONTAL);
+        topInfoPanel.setGravity(Gravity.CENTER_VERTICAL);
+        topInfoPanel.setBackgroundResource(R.color.ui_controls_background);
+        topInfoPanel.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        topInfoPanel.setPadding(titleViewPaddingHorizontal, titleViewPaddingVertical, titleViewPaddingHorizontal, titleViewPaddingVertical);
+        topInfoPanel.setVisibility(View.GONE);
+
+        posterSlot = new FrameLayout(this);
+        final LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(54));
+        slotParams.setMarginEnd(Utils.dpToPx(16));
+        slotParams.gravity = Gravity.CENTER_VERTICAL;
+        posterSlot.setLayoutParams(slotParams);
+        posterSlot.setBackgroundColor(0xFF333333); // bg_placeholder_card
+        final int posterCornerRadius = Utils.dpToPx(4);
+        posterSlot.setClipToOutline(true);
+        posterSlot.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), posterCornerRadius);
+            }
+        });
+        posterSlot.setVisibility(View.GONE);
+
+        posterView = new ImageView(this);
+        posterView.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        posterView.setAdjustViewBounds(true);
+        posterView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        posterSlot.addView(posterView);
+
+        posterPlaceholderView = new TextView(this);
+        posterPlaceholderView.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        posterPlaceholderView.setMinWidth(Utils.dpToPx(54));
+        posterPlaceholderView.setGravity(Gravity.CENTER);
+        posterPlaceholderView.setTextColor(0x80FFFFFF); // text_tertiary
+        posterPlaceholderView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        posterPlaceholderView.setTypeface(Typeface.DEFAULT_BOLD);
+        posterPlaceholderView.setVisibility(View.GONE);
+        posterSlot.addView(posterPlaceholderView);
+
+        posterBadgeView = createPosterNumberBadge();
+        posterSlot.addView(posterBadgeView);
+
+        topInfoPanel.addView(posterSlot);
         titleView = new TextView(this);
         titleView.setBackgroundResource(R.color.ui_controls_background);
         titleView.setTextColor(Color.WHITE);
@@ -534,11 +652,16 @@ public class PlayerActivity extends Activity {
                     bottomBarPaddingBottom = windowInsets.getSystemWindowInsetBottom();
                     progressBarMarginBottom = windowInsets.getSystemWindowInsetBottom();
                 } else {
-                    view.setPadding(0, windowInsets.getSystemWindowInsetTop(),0, windowInsets.getSystemWindowInsetBottom());
+                    // No top padding: the header panel's background (below) covers the status-bar area instead.
+                    view.setPadding(0, 0, 0, windowInsets.getSystemWindowInsetBottom());
                 }
 
-                Utils.setViewParams(titleView, paddingLeft + titleViewPaddingHorizontal, titleViewPaddingVertical, paddingRight + titleViewPaddingHorizontal, titleViewPaddingVertical,
-                        marginLeft, windowInsets.getSystemWindowInsetTop(), marginRight, 0);
+                // Extend the header's background up over the status-bar area (top margin -> 0, top inset moved into
+                // the top padding). The content position is unchanged (padding pushes it down by the same amount the
+                // margin used to), but the panel now paints the status-bar strip, in perfect sync with the header.
+                Utils.setViewParams(topInfoPanel, paddingLeft + titleViewPaddingHorizontal, windowInsets.getSystemWindowInsetTop() + titleViewPaddingVertical, paddingRight + titleViewPaddingHorizontal, titleViewPaddingVertical,
+                        marginLeft, 0, marginRight, 0);
+
 
                 Utils.setViewParams(findViewById(R.id.exo_bottom_bar), paddingLeft, 0, paddingRight, bottomBarPaddingBottom,
                         marginLeft, 0, marginRight, 0);
@@ -556,10 +679,11 @@ public class PlayerActivity extends Activity {
         timeBar.setPlayedAdMarkerColor(Color.argb(0x98, 0xFF, 0xFF, 0xFF));
 
         try {
-            CustomDefaultTrackNameProvider customDefaultTrackNameProvider = new CustomDefaultTrackNameProvider(getResources());
+            trackNameProvider = new CustomDefaultTrackNameProvider(getResources());
+            trackNameProvider.setTrackNames(resolvedTrackNames);
             final Field field = PlayerControlView.class.getDeclaredField("trackNameProvider");
             field.setAccessible(true);
-            field.set(controlView, customDefaultTrackNameProvider);
+            field.set(controlView, trackNameProvider);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             e.printStackTrace();
         }
@@ -618,6 +742,7 @@ public class PlayerActivity extends Activity {
         final LinearLayout controls = horizontalScrollView.findViewById(R.id.controls);
 
         controls.addView(buttonOpen);
+        controls.addView(buttonPlaylist);
         controls.addView(exoSubtitle);
         controls.addView(buttonAspectRatio);
         if (Utils.isPiPSupported(this) && buttonPiP != null) {
@@ -770,6 +895,14 @@ public class PlayerActivity extends Activity {
     public void finish() {
         if (intentReturnResult) {
             Intent intent = new Intent("com.mxtech.intent.result.VIEW");
+            // Report which item finished so the launcher can attribute the position to the
+            // correct playlist entry (and mark preceding ones watched), not just the launched one.
+            if (player != null) {
+                final MediaItem currentMediaItem = player.getCurrentMediaItem();
+                if (currentMediaItem != null && currentMediaItem.localConfiguration != null) {
+                    intent.setData(currentMediaItem.localConfiguration.uri);
+                }
+            }
             intent.putExtra(API_END_BY, playbackFinished ? "playback_completion" : "user");
             if (!playbackFinished) {
                 if (player != null) {
@@ -1068,8 +1201,371 @@ public class PlayerActivity extends Activity {
         apiAccess = false;
         apiAccessPartial = false;
         apiTitle = null;
+        apiThumbnailUri = null;
+        apiMediaItems.clear();
+        apiPlaylistSegments.clear();
+        apiPlaylistStartIndex = 0;
+        apiSeason = -1;
+        apiEpisode = -1;
         apiSubs.clear();
         mPrefs.setPersistent(true);
+        // duration. Drop any highlights from the previous item right now so switching episodes never
+        if (player != null && !apiPlaylistSegments.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            if (index >= 0 && index < apiPlaylistSegments.size()) {
+                return apiPlaylistSegments.get(index);
+                return season != null ? season : -1;
+            }
+            return -1;
+        }
+        return apiSeason;
+                return episode != null ? episode : -1;
+            }
+            return -1;
+        }
+        return apiEpisode;
+        if (playerView != null) {
+            playerView.removeCallbacks(skipRunnable);
+        }
+    }
+
+    private void parseApiPlaylist(Bundle bundle, Uri dataUri) {
+        final Parcelable[] parcelableList = bundle.getParcelableArray(API_VIDEO_LIST);
+        final String[] stringList = parcelableList == null ? getSmartStringArray(bundle, API_VIDEO_LIST) : null;
+        final int size = parcelableList != null ? parcelableList.length
+                : (stringList != null ? stringList.length : 0);
+        if (size == 0) {
+            return;
+        }
+        final String[] names = getSmartStringArray(bundle, API_VIDEO_LIST_NAME);
+        final String[] filenames = getSmartStringArray(bundle, API_VIDEO_LIST_FILENAME);
+        final String[] posters = getSmartStringArray(bundle, API_VIDEO_LIST_THUMBNAIL);
+        final String[] segments = getSmartStringArray(bundle, API_VIDEO_LIST_SEGMENTS);
+        final String[] seasons = getSmartStringArray(bundle, API_VIDEO_LIST_SEASON);
+        final String[] episodes = getSmartStringArray(bundle, API_VIDEO_LIST_EPISODE);
+        final String[] imdbIds = getSmartStringArray(bundle, API_VIDEO_LIST_IMDB_ID);
+
+        apiMediaItems.clear();
+        apiPlaylistSegments.clear();
+        apiPlaylistStartIndex = 0;
+
+        for (int i = 0; i < size; i++) {
+            Uri uri = null;
+            if (parcelableList != null) {
+                if (parcelableList[i] instanceof Uri) {
+                    uri = (Uri) parcelableList[i];
+                }
+            } else if (stringList[i] != null) {
+                uri = Uri.parse(stringList[i]);
+            }
+            if (uri == null) {
+                continue;
+            }
+
+            String title = names != null && i < names.length ? names[i] : null;
+            if (title == null || title.isEmpty()) {
+                title = filenames != null && i < filenames.length ? filenames[i] : null;
+            }
+            if (title == null || title.isEmpty()) {
+                title = uri.getLastPathSegment();
+            }
+
+            Uri poster = null;
+            if (posters != null && i < posters.length && posters[i] != null && !posters[i].isEmpty()) {
+                poster = Uri.parse(posters[i]);
+            }
+
+            final MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setDisplayTitle(title);
+            if (poster != null) {
+                metadataBuilder.setArtworkUri(poster);
+            }
+
+            if (dataUri != null && uri.equals(dataUri)) {
+                apiPlaylistStartIndex = apiMediaItems.size();
+            }
+            apiMediaItems.add(new MediaItem.Builder()
+                    .setUri(uri)
+                    .setMediaMetadata(metadataBuilder.build())
+                    .build());
+            // Keep segments aligned by index with apiMediaItems (null when absent)
+            apiPlaylistSegments.add(segments != null && i < segments.length ? segments[i] : null);
+            // Episode metadata, aligned by index (null when absent). Stored, not yet used.
+        if (array == null || i >= array.length || array[i] == null || array[i].isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(array[i].trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String[] getSmartStringArray(Bundle bundle, String key) {
+        if (player == null) {
+            return;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        final MediaMetadata metadata = item != null ? item.mediaMetadata : null;
+
+        CharSequence title = metadata != null ? metadata.title : null;
+        if (title == null || title.length() == 0) {
+            title = Utils.getFileName(this, mPrefs.mediaUri);
+        }
+        titleView.setText(title);
+
+        final Uri artworkUri = metadata != null ? metadata.artworkUri : null;
+        updatePoster(artworkUri, player.getCurrentMediaItemIndex(), player.getMediaItemCount());
+
+        final boolean hasPlaylist = player.getMediaItemCount() > 1;
+        if (buttonPlaylist != null) {
+            buttonPlaylist.setVisibility(hasPlaylist ? View.VISIBLE : View.GONE);
+        }
+        // Show prev/next episode arrows (Media3 built-in, flanking play/pause) only for playlists
+        }
+    }
+
+    // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
+    // clash with the poster's rounded clip. Reused by the header poster and the playlist rows.
+    private TextView createPosterNumberBadge() {
+        final TextView badge = new TextView(this);
+        final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        lp.setMargins(Utils.dpToPx(3), Utils.dpToPx(3), 0, 0);
+        badge.setLayoutParams(lp);
+        final GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xCC000000);
+        bg.setCornerRadius(Utils.dpToPx(3));
+        badge.setBackground(bg);
+        badge.setGravity(Gravity.CENTER);
+        badge.setMinWidth(Utils.dpToPx(18));
+        badge.setPadding(Utils.dpToPx(5), 0, Utils.dpToPx(5), Utils.dpToPx(1));
+        badge.setTextColor(Color.WHITE);
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        badge.setTypeface(Typeface.DEFAULT_BOLD);
+        badge.setVisibility(View.GONE);
+        return badge;
+    }
+
+    private void updatePoster(final Uri uri, final int index, final int count) {
+        final boolean isPlaylist = count > 1;
+        final String number = String.valueOf(index + 1);
+        posterBadgeView.setText(number);
+        posterPlaceholderView.setText(number);
+
+        if (uri != null) {
+            posterSlot.setVisibility(View.VISIBLE);
+            posterView.setVisibility(View.VISIBLE);
+            posterPlaceholderView.setVisibility(View.GONE);
+            posterBadgeView.setVisibility(isPlaylist ? View.VISIBLE : View.GONE);
+            Glide.with(this)
+                    .load(uri)
+                    .listener(new RequestListener<Drawable>() {
+                        @Override
+                        public boolean onLoadFailed(GlideException e, Object model, Target<Drawable> target, boolean isFirstResource) {
+                            showPosterFallback(isPlaylist);
+                            return false;
+                        }
+
+                        @Override
+                        public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
+                            return false;
+                        }
+                    })
+                    .into(posterView);
+        } else {
+            showPosterFallback(isPlaylist);
+        }
+    }
+
+    private void showPosterFallback(final boolean isPlaylist) {
+        if (isPlaylist) {
+            posterSlot.setVisibility(View.VISIBLE);
+            posterView.setVisibility(View.GONE);
+            posterBadgeView.setVisibility(View.GONE);
+            posterPlaceholderView.setVisibility(View.VISIBLE);
+        } else {
+            posterSlot.setVisibility(View.GONE);
+        }
+    }
+
+    private void showPlaylistDialog() {
+        if (player == null || player.getMediaItemCount() <= 1) {
+            return;
+        }
+        final int count = player.getMediaItemCount();
+        final int current = player.getCurrentMediaItemIndex();
+        final int radius = Utils.dpToPx(4);
+        final View[] currentRow = new View[1];
+
+        final LinearLayout listLayout = new LinearLayout(this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+        final int listPad = Utils.dpToPx(10);
+        listLayout.setPadding(listPad, listPad, listPad, listPad);
+
+        final TextView header = new TextView(this);
+        header.setText(getString(R.string.playlist));
+        header.setTextColor(Color.WHITE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+        listLayout.addView(header);
+
+        final View divider = new View(this);
+        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        dividerLp.bottomMargin = Utils.dpToPx(4);
+        divider.setLayoutParams(dividerLp);
+        divider.setBackgroundColor(0x1AFFFFFF);
+        listLayout.addView(divider);
+
+        for (int i = 0; i < count; i++) {
+            final int index = i;
+            final MediaItem item = player.getMediaItemAt(i);
+            final MediaMetadata md = item.mediaMetadata;
+            CharSequence title = md != null ? md.title : null;
+            if (title == null || title.length() == 0) {
+                title = "Video " + (i + 1);
+            }
+            final Uri artwork = md != null ? md.artworkUri : null;
+            final boolean isCurrent = i == current;
+
+            final LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
+            row.setClickable(true);
+            row.setFocusable(true);
+            // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? 0x24FFFFFF : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            if (isCurrent) {
+                currentRow[0] = row;
+            }
+
+            final FrameLayout box = new FrameLayout(this);
+            final LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(56));
+            boxLp.setMarginEnd(Utils.dpToPx(12));
+            boxLp.gravity = Gravity.CENTER_VERTICAL;
+            box.setLayoutParams(boxLp);
+            box.setMinimumWidth(Utils.dpToPx(40));
+            box.setBackgroundColor(0xFF2A2A2A);
+            box.setClipToOutline(true);
+            box.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                }
+            });
+
+            final ImageView poster = new ImageView(this);
+            poster.setLayoutParams(new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            poster.setAdjustViewBounds(true);
+            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            box.addView(poster);
+
+            if (artwork != null) {
+                Glide.with(this).load(artwork).into(poster);
+                final TextView numberChip = createPosterNumberBadge();
+                numberChip.setText(String.valueOf(i + 1));
+                numberChip.setVisibility(View.VISIBLE);
+                box.addView(numberChip);
+            } else {
+                poster.setVisibility(View.GONE);
+                final TextView number = new TextView(this);
+                number.setText(String.valueOf(i + 1));
+                number.setTypeface(Typeface.DEFAULT_BOLD);
+                number.setLayoutParams(new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                number.setGravity(Gravity.CENTER);
+                number.setMinWidth(Utils.dpToPx(40));
+                number.setTextColor(0x99FFFFFF);
+                number.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+                box.addView(number);
+            }
+            row.addView(box);
+
+            final TextView titleText = new TextView(this);
+            titleText.setText(title);
+            titleText.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            titleText.setMaxLines(2);
+            titleText.setEllipsize(TextUtils.TruncateAt.END);
+            if (isCurrent) {
+                titleText.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            final LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            titleLp.gravity = Gravity.CENTER_VERTICAL;
+            titleText.setLayoutParams(titleLp);
+            row.addView(titleText);
+
+            row.setOnClickListener(v -> {
+                if (player != null) {
+                    player.seekToDefaultPosition(index);
+                    player.setPlayWhenReady(true);
+                }
+                if (playlistDialog != null) {
+                    playlistDialog.dismiss();
+                }
+            });
+
+            listLayout.addView(row);
+        }
+
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.addView(listLayout);
+        // The dialog spans the full height behind the status/navigation bars, so pad the content clear of
+        // them. Use a FIXED inset captured now (the status bar is visible while the controls — and thus this
+        // dialog — are shown): a dynamic inset listener would drop to 0 when hideController() flips the
+        // activity to immersive flags, making the list visibly "jump" up under the still-visible status bar.
+        int padTop = 0;
+        int padBottom = 0;
+        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
+        if (rootInsets != null) {
+            padTop = rootInsets.getSystemWindowInsetTop();
+            padBottom = rootInsets.getSystemWindowInsetBottom();
+        }
+        scrollView.setPadding(0, padTop, 0, padBottom);
+
+        if (playlistDialog != null) {
+            playlistDialog.dismiss();
+        }
+        playlistDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        playlistDialog.setContentView(scrollView);
+        playlistDialog.setCanceledOnTouchOutside(true);
+        final Window window = playlistDialog.getWindow();
+        if (window != null) {
+            // Draw the dialog full-screen and edge-to-edge (content under the system bars) so its size and
+            // content position never change while it is open — the fixed padding above is then the ONLY inset.
+            // Without this the decor adds its own status-bar inset on top of that padding, then settles to one,
+            // making the list visibly slide up ("jump"). The status bar itself stays visible.
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
+            if (Build.VERSION.SDK_INT >= 30) {
+                window.setDecorFitsSystemWindows(false);
+            } else {
+                window.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            }
+            window.setLayout(Utils.dpToPx(360), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
+        // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
+        playerView.hideController();
+        playlistDialog.show();
+        if (currentRow[0] != null) {
+            currentRow[0].post(() -> currentRow[0].requestFocus());
+        }
     }
 
     @Override
@@ -1179,6 +1675,10 @@ public class PlayerActivity extends Activity {
     public void initializePlayer() {
         boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null;
+
+        // Fresh media — drop any container track names so the tap re-parses for this item.
+        containerTracks.clear();
+        resolvedTrackNames.clear();
 
         if (player != null) {
             player.removeListener(playerListener);
@@ -1306,6 +1806,7 @@ public class PlayerActivity extends Activity {
                 final MediaMetadata mediaMetadata = new MediaMetadata.Builder()
                         .setTitle(title)
                         .setDisplayTitle(title)
+                        .setArtworkUri(apiThumbnailUri)
                         .build();
                 mediaItemBuilder.setMediaMetadata(mediaMetadata);
             }
@@ -1315,7 +1816,11 @@ public class PlayerActivity extends Activity {
                 MediaItem.SubtitleConfiguration subtitle = SubtitleUtils.buildSubtitle(this, mPrefs.subtitleUri, null, true);
                 mediaItemBuilder.setSubtitleConfigurations(Collections.singletonList(subtitle));
             }
-            player.setMediaItem(mediaItemBuilder.build(), mPrefs.getPosition());
+            if (!apiMediaItems.isEmpty()) {
+                player.setMediaItems(new ArrayList<>(apiMediaItems), apiPlaylistStartIndex, mPrefs.getPosition());
+            } else {
+                player.setMediaItem(mediaItemBuilder.build(), mPrefs.getPosition());
+            }
 
             try {
                 if (loudnessEnhancer != null) {
@@ -1336,8 +1841,6 @@ public class PlayerActivity extends Activity {
                 play = true;
             }
 
-            if (apiTitle != null) {
-                titleView.setText(apiTitle);
             } else {
                 titleView.setText(Utils.getFileName(this, mPrefs.mediaUri));
             }
@@ -1423,6 +1926,18 @@ public class PlayerActivity extends Activity {
             player = null;
         }
         titleView.setVisibility(View.GONE);
+        }
+        setEpisodeNavLoading(false);
+        Glide.with(getApplicationContext()).clear(posterView);
+        posterSlot.setVisibility(View.GONE);
+        topInfoPanel.setVisibility(View.GONE);
+        if (playlistDialog != null) {
+            playlistDialog.dismiss();
+            playlistDialog = null;
+        }
+        if (buttonPlaylist != null) {
+            buttonPlaylist.setVisibility(View.GONE);
+        }
         updateButtons(false);
     }
 
@@ -1440,6 +1955,17 @@ public class PlayerActivity extends Activity {
             notifyAudioSessionUpdate(true);
         }
 
+        }
+
+        @Override
+        public void onEvents(Player player, Player.Events events) {
+            // Media3 re-enables/brightens the prev/next arrows on navigation events (timeline, position
+            // discontinuity, available commands) — exactly what fires while switching episodes. Re-assert
+            // the disabled look after that update (deferred, so it wins) while the video is loading.
+            if (episodeNavLoading && playerView != null) {
+                playerView.post(() -> {
+                    if (episodeNavLoading) {
+                        applyEpisodeNavEnabled(false);
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
             playerView.setKeepScreenOn(isPlaying);
@@ -1487,6 +2013,10 @@ public class PlayerActivity extends Activity {
             if (state == Player.STATE_READY) {
                 frameRendered = true;
 
+                // Ready — hide the spinner and re-enable the episode arrows. Done unconditionally (not only on
+                // the initial open) so episode switches, which don't set videoLoading, are also cleared.
+                updateLoading(false);
+                setEpisodeNavLoading(false);
                 if (videoLoading) {
                     videoLoading = false;
 
@@ -1564,8 +2094,6 @@ public class PlayerActivity extends Activity {
                         }
                     }
 
-                    updateLoading(false);
-
                     if (mPrefs.speed <= 0.99f || mPrefs.speed >= 1.01f) {
                         player.setPlaybackSpeed(mPrefs.speed);
                     }
@@ -1573,6 +2101,10 @@ public class PlayerActivity extends Activity {
                         setSelectedTracks(mPrefs.subtitleTrackId, mPrefs.audioTrackId);
                     }
                 }
+            } else if (state == Player.STATE_BUFFERING) {
+                // Buffering (e.g. switching episodes) — show the spinner in place of play and disable the arrows.
+                updateLoading(true);
+                setEpisodeNavLoading(true);
             } else if (state == Player.STATE_ENDED) {
                 playbackFinished = true;
                 if (apiAccess) {
@@ -2102,6 +2634,60 @@ public class PlayerActivity extends Activity {
                 focusPlay = false;
                 exoPlayPause.requestFocus();
             }
+        }
+    }
+
+    // Shrink the built-in prev/next episode arrows (Media3 defaults render them as large as play/pause) and
+    // take over their click handling so we can gate them while a video is loading. Media3 keeps updating the
+    // buttons' enabled state on player events, so an OnClickListener guard — not setEnabled — is the reliable gate.
+    private void setupEpisodeNavButtons() {
+        final int size = Utils.dpToPx(40);
+        final int padding = Utils.dpToPx(8);
+        setupEpisodeNavButton(exoPrev, size, padding);
+        setupEpisodeNavButton(exoNext, size, padding);
+        if (exoPrev != null) {
+            exoPrev.setOnClickListener(v -> {
+                if (!episodeNavLoading && player != null) {
+                    player.seekToPrevious();
+                    resetHideCallbacks();
+                }
+            });
+        }
+        if (exoNext != null) {
+            exoNext.setOnClickListener(v -> {
+                if (!episodeNavLoading && player != null) {
+                    player.seekToNext();
+                    resetHideCallbacks();
+                }
+            });
+        }
+    }
+
+    private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding) {
+        if (button == null) {
+            return;
+        }
+        final ViewGroup.LayoutParams lp = button.getLayoutParams();
+        lp.width = size;
+        lp.height = size;
+        button.setLayoutParams(lp);
+        button.setPadding(padding, padding, padding, padding);
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    }
+
+    // Grey out and disable the prev/next episode arrows while a video is loading, using the same disabled
+    // styling (enabled state + opacity) as the other control buttons via Utils.setButtonEnabled.
+    private void setEpisodeNavLoading(final boolean loading) {
+        episodeNavLoading = loading;
+        applyEpisodeNavEnabled(!loading);
+    }
+
+    private void applyEpisodeNavEnabled(final boolean enabled) {
+        if (exoPrev != null) {
+            Utils.setButtonEnabled(this, exoPrev, enabled);
+        }
+        if (exoNext != null) {
+            Utils.setButtonEnabled(this, exoNext, enabled);
         }
     }
 

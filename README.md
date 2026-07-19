@@ -1,14 +1,7 @@
 # Just (Video) Player 
 
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/moneytoo/Player.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/moneytoo/Player/releases/latest)
-[![Google Play](https://img.shields.io/endpoint?color=green&logo=google-play&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Dcom.brouken.player%26l%3DGoogle%2520Play%26m%3Dv%24version)](https://play.google.com/store/apps/details?id=com.brouken.player)
-[![F-Droid](https://img.shields.io/f-droid/v/com.brouken.player.svg?logo=f-droid&label=F-Droid&cacheSeconds=3600)](https://f-droid.org/packages/com.brouken.player/)
-[![GitHub all releases](https://img.shields.io/github/downloads/moneytoo/Player/total?logo=github&cacheSeconds=3600)](https://github.com/moneytoo/Player/releases/latest)
-[![Google Play](https://img.shields.io/endpoint?color=green&logo=google-play&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Dcom.brouken.player%26l%3Ddownloads%26m%3D%24totalinstalls)](https://play.google.com/store/apps/details?id=com.brouken.player)
-[![Google Play](https://img.shields.io/endpoint?color=green&logo=google-play&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Dcom.brouken.player%26l%3Drating%26m%3D%25E2%2598%2585%2520%24rating)](https://play.google.com/store/apps/details?id=com.brouken.player)
 [![Media3](https://img.shields.io/badge/Media3-1.10.1-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.10.1)
 [![Weblate project translated](https://img.shields.io/weblate/progress/just-player?logo=weblate&logoColor=white&cacheSeconds=36000)](https://hosted.weblate.org/engage/just-player/)
-[![Subreddit subscribers](https://img.shields.io/reddit/subreddit-subscribers/JustPlayer?label=r%2FJustPlayer&logo=reddit&logoColor=white&cacheSeconds=3600)](https://www.reddit.com/r/JustPlayer/)
 
 Android video player based on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)), compatible with Android 6+ and Android TV.
 
@@ -30,6 +23,14 @@ AC-4 audio is supported on devices providing such system decoder (e.g. Samsung G
 
 ## Screenshots
 
+**Playlist** — play a queue of videos with poster thumbnails and jump between items from the playlist panel.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/playlist_player.jpg" width="400"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/playlist.jpg" width="400">
+
+**Skip segments** — skip intros, credits and ad segments with a one-tap Skip button or automatically.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/skip.jpg" width="400">
+
 <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="806"> <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="400"> <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="400">
 
 ## Features
@@ -49,6 +50,8 @@ AC-4 audio is supported on devices providing such system decoder (e.g. Samsung G
  * 3rd party equalizer / audio processing support (e.g. [Wavelet](https://github.com/Pittvandewitt/Wavelet))
  * Media Session and Audio Focus support
  * Pause playback when disconnecting headphones
+ * Playlist with poster thumbnails and quick navigation between videos
+ * Skip segments — skip intros, credits and ad segments with a Skip button or automatically
  * No ads, tracking or excessive permissions
 
 Some advanced features can be enabled or configured in settings. To access it, long press the ⚙️ gear icon. (Alternatively, you can also enter this settings from App info screen.)
@@ -65,24 +68,7 @@ Some advanced features can be enabled or configured in settings. To access it, l
 
 **`WRITE_SETTINGS` ("Modify system settings") permission**: When the system file chooser is opened, it will always use current system orientation, even if the Player app sets its own. Granting this permission via adb (`adb shell pm grant com.brouken.player android.permission.WRITE_SETTINGS`) or App info screen will allow this app to temporarily enable Auto-rotate to at least partially mitigate [this imperfection](https://issuetracker.google.com/issues/141968218).
 
-Donate: [PayPal](https://paypal.me/MarcelDopita) | [Bitcoin](https://live.blockcypher.com/btc/address/bc1q9u2ezgsnug995fv0m4vaxa90ujjwlucp78w4n0) | [Litecoin](https://live.blockcypher.com/ltc/address/LLZ3fULGwxbs6W9Vf7gtu1EjZvviCka7zP)
-
 Translate: [Weblate](https://hosted.weblate.org/engage/just-player/)
-
-## Download
-
-[<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="75">](https://play.google.com/store/apps/details?id=com.brouken.player)
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="75">](https://f-droid.org/packages/com.brouken.player/)
-[<img src="https://accrescent.app/badges/get-it-on.png" alt="Get it on Accrescent" height="75">](https://accrescent.app/app/com.brouken.player)
-[<img src="https://brouken.com/img/get-it-on-obtainium.png" alt="Get it on Obtainium" height="75">](http://apps.obtainium.imranr.dev/redirect.html?r=obtainium://add/https://github.com/moneytoo/Player)
-[<img src="https://raw.githubusercontent.com/andOTP/andOTP/master/assets/badges/get-it-on-github.png" alt="Get it on GitHub" height="75">](https://github.com/moneytoo/Player/releases/latest)
-[<img src="https://brouken.com/img/galaxy-store.png" alt="Available on Galaxy Store" height="75">](https://galaxystore.samsung.com/detail/com.brouken.player)
-[<img src="https://brouken.com/img/huawei-appgallery.png" alt="Explore it on AppGallery" height="75">](https://appgallery.cloud.huawei.com/ag/n/app/C104147921)
-[<img src="https://brouken.com/img/get-it-on-mi_app_mall.png" alt="Get it on Mi App Mall" height="75">](https://global.app.mi.com/details?id=com.brouken.player)
-[<img src="https://brouken.com/img/get-it-on-aptoide.png" alt="Get it on Aptoide" height="75">](https://just-player-marcel-dopita.en.aptoide.com/app)
-[<img src="https://brouken.com/img/get-it-on-amazon.png" alt="available at amazon" height="75">](https://www.amazon.com/gp/product/B091N8TTJH)
-
-Other links/channels: application thread on [XDA Developers](https://forum.xda-developers.com/t/app-5-0-just-video-player-no-bluetooth-lag-exoplayer-ffmpeg-audio-codecs.4189183/), subreddit on [reddit](https://www.reddit.com/r/JustPlayer/), entry on [AlternativeTo](https://alternativeto.net/software/just-video-player/about/), git mirror on [GitLab](https://gitlab.com/moneytoo/Player)
 
 ## ❓FAQ
 
@@ -161,6 +147,7 @@ Here's a comparison table presenting all available and significant open source v
 |-------------------------------------------------------------------| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Fermata Media Player](https://github.com/AndreyPavlenko/Fermata) | [MediaPlayer](https://developer.android.com/guide/topics/media/mediaplayer), [ExoPlayer](https://exoplayer.dev/) and [libVLC](https://www.videolan.org/vlc/libvlc.html) |
 | [Just (Video) Player](https://github.com/moneytoo/Player)         | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
+| [Just+ Player](https://github.com/just-plus-player/just-plus-player) | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                  |
 | [Just Player+](https://github.com/wasky/just-player)              | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
 | [Kodi](https://github.com/xbmc/xbmc)                              | ?                                                                                                                                                                       |
 | [mpv](https://github.com/mpv-android/mpv-android)                 | [libmpv](https://github.com/mpv-player/mpv)                                                                                                                             |
@@ -170,4 +157,4 @@ Here's a comparison table presenting all available and significant open source v
 | [Only Player](https://github.com/Kindness-Kismet/only_player)     | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
 | [VLC](https://code.videolan.org/videolan/vlc-android)             | [libVLC](https://www.videolan.org/vlc/libvlc.html)                                                                                                                      |
 
-To find other video players (including non-FOSS), check out [a list on IzzyOnDroid](https://android.izzysoft.de/applists/category/named/multimedia_video_player) or my list of [awesome F-Droid apps](https://github.com/moneytoo/awesome-fdroid).
+To find other video players (including non-FOSS), check out [a list on IzzyOnDroid](https://android.izzysoft.de/applists/category/named/multimedia_video_player).

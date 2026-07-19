@@ -3005,6 +3005,20 @@ public class PlayerActivity extends Activity {
                     }
                 });
             }
+
+            // A gapless playlist auto-advance can move to the next item while staying STATE_READY, so
+            // onPlaybackStateChanged never re-fires and rebuildSkip() is never called for the new item.
+            // onMediaItemTransition has already reset skipBuilt via setupSkipSource(); once the new item's
+            // duration is known, build its highlights exactly once. The skipBuilt guard shares the work with
+            // the STATE_READY path so there is no double build.
+            if (!skipBuilt && player.getPlaybackState() == Player.STATE_READY) {
+                final long duration = player.getDuration();
+                if (duration != C.TIME_UNSET && duration > 0) {
+                    rebuildSkip();
+                    skipBuilt = true;
+                    maybeFetchSegmentsOnline();
+                }
+            }
         }
 
         @Override
@@ -3808,8 +3822,9 @@ public class PlayerActivity extends Activity {
     }
 
     void setEndControlsVisible(boolean visible) {
+        final boolean hasPlaylist = player != null && player.getMediaItemCount() > 1;
         final int deleteVisible = (visible && haveMedia && Utils.isDeletable(this, mPrefs.mediaUri)) ? View.VISIBLE : View.INVISIBLE;
-        final int nextVisible = (visible && haveMedia && (nextUri != null || (mPrefs.askScope && !isTvBox))) ? View.VISIBLE : View.INVISIBLE;
+        final int nextVisible = (visible && haveMedia && !hasPlaylist && (nextUri != null || (mPrefs.askScope && !isTvBox))) ? View.VISIBLE : View.INVISIBLE;
         findViewById(R.id.delete).setVisibility(deleteVisible);
         findViewById(R.id.next).setVisibility(nextVisible);
     }

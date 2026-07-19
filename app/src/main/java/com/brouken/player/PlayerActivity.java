@@ -200,6 +200,7 @@ public class PlayerActivity extends Activity {
     boolean apiAccess;
     boolean apiAccessPartial;
     String apiTitle;
+    // Episode metadata received via the launch Intent (from LAMPA, com.justplus.player branch). Stored for
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
@@ -662,7 +663,7 @@ public class PlayerActivity extends Activity {
                     if (mPrefs.firstRun) {
                         TapTargetView.showFor(PlayerActivity.this,
                                 TapTarget.forView(buttonOpen, getString(R.string.onboarding_open_title), getString(R.string.onboarding_open_description))
-                                        .outerCircleColor(R.color.green)
+                                        .outerCircleColor(R.color.brand)
                                         .targetCircleColor(R.color.white)
                                         .titleTextSize(22)
                                         .titleTextColor(R.color.white)

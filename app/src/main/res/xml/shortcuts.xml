@@ -6,7 +6,7 @@
         android:shortcutShortLabel="@string/shortcut_videos">
         <intent
             android:action="com.brouken.player.action.SHORTCUT_VIDEOS"
-            android:targetPackage="com.brouken.player"
+            android:targetPackage="com.justplus.player"
             android:targetClass="com.brouken.player.PlayerActivity" />
     </shortcut>
 </shortcuts>

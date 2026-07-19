@@ -36,6 +36,9 @@
     <string name="pref_skip_mode">Skip mode</string>
     <string name="pref_skip_mode_button">Show Skip button</string>
     <string name="pref_skip_mode_auto">Skip automatically</string>
+    <string name="pref_skip_fetch">Find segments online</string>
+    <string name="pref_skip_fetch_on">Look up intro/credits segments from online databases when the source provides none</string>
+    <string name="pref_skip_fetch_off">Only use segments provided by the launching app</string>
     <string name="button_skip">Skip</string>
     <string name="notification_skipped">Segment skipped</string>
     <string name="pref_show_clock">Show clock</string>

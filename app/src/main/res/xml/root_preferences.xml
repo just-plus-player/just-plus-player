@@ -69,8 +69,18 @@
             app:entryValues="@array/skip_mode_values"
             app:key="skipMode"
             app:title="@string/pref_skip_mode"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            app:key="skipFetchOnline"
             app:defaultValue="true"
             app:dependency="skipEnabled"
+            app:summaryOn="@string/pref_skip_fetch_on"
+            app:summaryOff="@string/pref_skip_fetch_off"
+            app:title="@string/pref_skip_fetch" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/pref_subtitle_header">
 
         <SwitchPreferenceCompat

@@ -35,6 +35,9 @@
     <string name="pref_skip_mode">Режим пропуску</string>
     <string name="pref_skip_mode_button">Показувати кнопку «Пропустити»</string>
     <string name="pref_skip_mode_auto">Пропускати автоматично</string>
+    <string name="pref_skip_fetch">Шукати сегменти онлайн</string>
+    <string name="pref_skip_fetch_on">Шукати сегменти заставок і титрів в онлайн-базах, якщо джерело їх не надало</string>
+    <string name="pref_skip_fetch_off">Використовувати лише сегменти від застосунку</string>
     <string name="button_skip">Пропустити</string>
     <string name="notification_skipped">Сегмент пропущено</string>
     <string name="pref_show_clock">Показувати годинник</string>

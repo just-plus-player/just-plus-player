@@ -49,6 +49,7 @@ class Prefs {
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
     private static final String PREF_KEY_SKIP_ENABLED = "skipEnabled";
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
+    private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
 
     public static final String SKIP_MODE_BUTTON = "button";
@@ -89,6 +90,7 @@ class Prefs {
     public boolean subtitleStyleBold = false;
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BUTTON;
+    public boolean skipFetchOnline = true;
     public boolean showClock = false;
 
     private LinkedHashMap positions;
@@ -141,6 +143,7 @@ class Prefs {
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
+        skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
     }
 

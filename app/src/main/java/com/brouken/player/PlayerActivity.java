@@ -112,6 +112,8 @@ import androidx.media3.ui.TimeBar;
 import com.brouken.player.dtpv.DoubleTapPlayerView;
 import com.brouken.player.dtpv.youtube.YouTubeOverlay;
 import com.brouken.player.skip.IntentSegmentsSource;
+import com.brouken.player.skip.NetworkSegmentsSource;
+import com.brouken.player.skip.SegmentFinder;
 import com.brouken.player.skip.SkipManager;
 import com.brouken.player.skip.SkipSegment;
 import com.bumptech.glide.Glide;
@@ -237,6 +239,7 @@ public class PlayerActivity extends Activity {
     private static boolean isTvBox;
     public static boolean locked = false;
     private Thread nextUriThread;
+    private Thread segmentFinderThread;
     public Thread frameRateSwitchThread;
 
     public static boolean restoreControllerTimeout = false;
@@ -280,6 +283,10 @@ public class PlayerActivity extends Activity {
     // now; not consumed yet. apiSeason/apiEpisode are -1 when absent; the per-item lists hold null.
     int apiSeason = -1;
     int apiEpisode = -1;
+    String apiImdbId;
+    final List<Integer> apiPlaylistSeasons = new ArrayList<>();
+    final List<Integer> apiPlaylistEpisodes = new ArrayList<>();
+    final List<String> apiPlaylistImdbIds = new ArrayList<>();
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
@@ -403,6 +410,7 @@ public class PlayerActivity extends Activity {
                     apiHeaders = bundle.getStringArray(API_HEADERS);
                     apiSeason = bundle.getInt(API_SEASON, -1);
                     apiEpisode = bundle.getInt(API_EPISODE, -1);
+                    apiImdbId = bundle.getString(API_IMDB_ID);
                     if (bundle.containsKey(API_VIDEO_LIST)) {
                         parseApiPlaylist(bundle, uri);
                     }
@@ -1501,10 +1509,17 @@ public class PlayerActivity extends Activity {
         apiPlaylistStartIndex = 0;
         apiSeason = -1;
         apiEpisode = -1;
+        apiImdbId = null;
+        apiPlaylistSeasons.clear();
+        apiPlaylistEpisodes.clear();
+        apiPlaylistImdbIds.clear();
         apiSubs.clear();
         mPrefs.setPersistent(true);
         if (skipManager != null) {
             skipManager.clear();
+        }
+        skipBuilt = false;
+        cancelSegmentFinder();
         hideSkipButton();
         if (timeBar != null) {
             timeBar.clearSkipHighlights();
@@ -1557,18 +1572,71 @@ public class PlayerActivity extends Activity {
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
     // fetch them by imdb/season/episode and feed the result through the same SkipManager path.
+
+    private void maybeFetchSegmentsOnline() {
         if (player == null || skipManager == null) {
+            return;
+        }
+        if (!mPrefs.skipEnabled || !mPrefs.skipFetchOnline || skipManager.hasSegments()) {
+            return;
+        }
+        final String imdbId = currentImdbId();
+        if (imdbId == null || imdbId.isEmpty()) {
+            return;
+        }
+        final long durationMs = player.getDuration();
+        final double durationSec = (durationMs != C.TIME_UNSET && durationMs > 0) ? durationMs / 1000.0 : 0;
+        final int targetIndex = player.getCurrentMediaItemIndex();
+
+        cancelSegmentFinder();
+        segmentFinderThread = SegmentFinder.find(imdbId, currentSeason(), currentEpisode(), durationSec,
+                segments -> runOnUiThread(() -> onSegmentsFetched(targetIndex, segments)));
+    }
+
+    private void onSegmentsFetched(int targetIndex, java.util.List<SkipSegment> segments) {
         if (player == null || skipManager == null || segments == null || segments.isEmpty()) {
             return;
         }
         // Ignore if the media item changed since the fetch started, or intent segments have appeared.
         if (player.getCurrentMediaItemIndex() != targetIndex || skipManager.hasSegments()) {
+            return;
+        }
+        skipManager.setSource(new NetworkSegmentsSource(segments));
         rebuildSkip();
+    }
+
+    private void cancelSegmentFinder() {
+        if (segmentFinderThread != null) {
+            segmentFinderThread.interrupt();
+            segmentFinderThread = null;
+        }
+    }
+
+    private String currentImdbId() {
+        if (player != null && !apiPlaylistImdbIds.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            return index >= 0 && index < apiPlaylistImdbIds.size() ? apiPlaylistImdbIds.get(index) : null;
+        }
+        return apiImdbId;
+    }
+
+    private int currentSeason() {
+        if (player != null && !apiPlaylistSeasons.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            if (index >= 0 && index < apiPlaylistSeasons.size()) {
+                final Integer season = apiPlaylistSeasons.get(index);
                 return season != null ? season : -1;
             }
             return -1;
         }
         return apiSeason;
+    }
+
+    private int currentEpisode() {
+        if (player != null && !apiPlaylistEpisodes.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            if (index >= 0 && index < apiPlaylistEpisodes.size()) {
+                final Integer episode = apiPlaylistEpisodes.get(index);
                 return episode != null ? episode : -1;
             }
             return -1;
@@ -1723,6 +1791,9 @@ public class PlayerActivity extends Activity {
 
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
+        apiPlaylistSeasons.clear();
+        apiPlaylistEpisodes.clear();
+        apiPlaylistImdbIds.clear();
         apiPlaylistStartIndex = 0;
 
         for (int i = 0; i < size; i++) {
@@ -1768,6 +1839,9 @@ public class PlayerActivity extends Activity {
             // Keep segments aligned by index with apiMediaItems (null when absent)
             apiPlaylistSegments.add(segments != null && i < segments.length ? segments[i] : null);
             // Episode metadata, aligned by index (null when absent). Stored, not yet used.
+            apiPlaylistSeasons.add(parseIntOrNull(seasons, i));
+            apiPlaylistEpisodes.add(parseIntOrNull(episodes, i));
+            apiPlaylistImdbIds.add(imdbIds != null && i < imdbIds.length
                     && imdbIds[i] != null && !imdbIds[i].isEmpty() ? imdbIds[i] : null);
         }
     }
@@ -2831,6 +2905,7 @@ public class PlayerActivity extends Activity {
             player = null;
         }
         stopSkipPolling();
+        cancelSegmentFinder();
         hideSkipButton();
         hideSkipNotification();
         skipBuilt = false;
@@ -2873,6 +2948,7 @@ public class PlayerActivity extends Activity {
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
             updateTopInfo();
             hideSkipButton();
+            cancelSegmentFinder();
             setupSkipSource();
         }
 
@@ -2957,6 +3033,8 @@ public class PlayerActivity extends Activity {
 
                 if (!skipBuilt) {
                     rebuildSkip();
+                    skipBuilt = true;
+                    maybeFetchSegmentsOnline();
                 }
 
                 updateMediaInfo();

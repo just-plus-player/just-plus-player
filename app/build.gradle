@@ -23,6 +23,15 @@ if (versionMatcher.find()) {
     tagVersionCode = versionMatcher.group(1).toInteger() * 1000000 + versionMatcher.group(2).toInteger() * 1000 + versionMatcher.group(3).toInteger()
 }
 
+// local.properties is not exposed as Gradle project properties (AGP only reads sdk.dir from it),
+// so load it explicitly to allow keeping the Sentry DSN out of version control.
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def sentryDsn = localProps.getProperty('SENTRY_DSN') ?: project.findProperty('SENTRY_DSN') ?: System.getenv('SENTRY_DSN') ?: ''
+
 android {
     namespace 'com.brouken.player'
     compileSdk = 36
@@ -35,6 +44,10 @@ android {
         targetSdkVersion 36
         versionCode tagVersionCode
         versionName tagVersionName
+        // Sentry DSN is a public client key (shipped in every APK). Supply it via a SENTRY_DSN entry
+        // in local.properties/gradle.properties, -PSENTRY_DSN=, or the SENTRY_DSN env var (see above).
+        // When empty, Sentry initialization is skipped (no-op) and the build still works.
+        buildConfigField "String", "SENTRY_DSN", "\"${sentryDsn}\""
         if (abiFilter) {
             def abiCodeMap = ["x86": 1, "x86_64": 2, "armeabi-v7a": 3, "arm64-v8a": 4]
             versionCode = versionCode * 10 + abiCodeMap[abiFilter]
@@ -141,6 +154,8 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:5.3.2'
     implementation 'com.sigpwned:chardet4j:78.1.0'
     implementation 'com.github.bumptech.glide:glide:4.16.0'
+    def sentry_version = '8.16.0'
+    implementation "io.sentry:sentry-android:$sentry_version"
     implementation project(path: ':doubletapplayerview')
     implementation project(path: ':android-file-chooser')
     implementation fileTree(dir: "libs", include: ["lib-*.aar"])

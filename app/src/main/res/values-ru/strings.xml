@@ -42,6 +42,10 @@
     <string name="pref_show_clock">Показывать часы</string>
     <string name="pref_show_clock_on">Часы всегда в правом верхнем углу поверх видео</string>
     <string name="pref_show_clock_off">Часы показываются только с элементами управления</string>
+    <string name="pref_privacy_header">Конфиденциальность</string>
+    <string name="pref_crash_reporting">Отправлять отчёты о сбоях</string>
+    <string name="pref_crash_reporting_on">Автоматически отправлять отчёты о сбоях и ошибках воспроизведения, чтобы помочь их исправить</string>
+    <string name="pref_crash_reporting_off">Данные о сбоях и ошибках не покидают устройство</string>
     <string name="time_ends_at">Закончится в %s</string>
     <string name="playlist">Плейлист</string>
     <string name="shortcut_videos">Видео</string>

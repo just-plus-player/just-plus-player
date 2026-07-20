@@ -133,6 +133,17 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/pref_privacy_header">
+
+        <SwitchPreferenceCompat
+            app:key="crashReporting"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_crash_reporting_on"
+            app:summaryOff="@string/pref_crash_reporting_off"
+            app:title="@string/pref_crash_reporting" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory
         app:key="updateCategory"
         app:title="@string/pref_update_header">

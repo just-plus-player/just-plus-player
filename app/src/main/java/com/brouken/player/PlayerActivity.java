@@ -186,6 +186,11 @@ public class PlayerActivity extends Activity {
     public BrightnessControl mBrightnessControl;
     public static boolean haveMedia;
     private boolean videoLoading;
+    // Watchdog for a silent load failure: if the player never reaches STATE_READY within this window
+    // (stuck buffering, a broken next-episode URL, etc.) the load is reported to Sentry. Such stalls
+    // often produce no PlaybackException, so onPlayerError alone would never catch them.
+    private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
+    private final Runnable loadTimeoutRunnable = this::reportVideoLoadTimeout;
     public static boolean controllerVisible;
     public static boolean controllerVisibleFully;
     public static Snackbar snackbar;
@@ -2968,11 +2973,38 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    private void cancelLoadWatchdog() {
+        if (playerView != null) {
+            playerView.removeCallbacks(loadTimeoutRunnable);
+        }
+    }
+
+    private void reportVideoLoadTimeout() {
+        if (player == null) {
+            return;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        final Uri uri = item != null && item.localConfiguration != null
+                ? item.localConfiguration.uri : mPrefs.mediaUri;
+        final long position = player.getCurrentPosition();
+        // Per-capture ScopeCallback overload so the level/tags/extra apply to exactly this message.
+        io.sentry.Sentry.captureMessage("Video load timeout", scope -> {
+            scope.setLevel(io.sentry.SentryLevel.WARNING);
+            scope.setTag("player.load_timeout_ms", String.valueOf(VIDEO_LOAD_TIMEOUT_MS));
+            scope.setTag("player.playlist", String.valueOf(player.getMediaItemCount() > 1));
+            scope.setExtra("player.position_ms", String.valueOf(position));
+            if (Utils.isSupportedNetworkUri(uri)) {
+                scope.setExtra("media_uri", Utils.uriToReportString(uri));
+            }
+        });
+    }
+
     public void releasePlayer() {
         releasePlayer(true);
     }
 
     public void releasePlayer(boolean save) {
+        cancelLoadWatchdog();
         if (save) {
             savePlayer();
         }
@@ -3128,6 +3160,7 @@ public class PlayerActivity extends Activity {
 
             if (state == Player.STATE_READY) {
                 frameRendered = true;
+                cancelLoadWatchdog();
 
                 // Ready — hide the spinner and re-enable the episode arrows. Done unconditionally (not only on
                 // the initial open) so episode switches, which don't set videoLoading, are also cleared.
@@ -3230,7 +3263,11 @@ public class PlayerActivity extends Activity {
                 // Buffering (e.g. switching episodes) — show the spinner in place of play and disable the arrows.
                 updateLoading(true);
                 setEpisodeNavLoading(true);
+                // (Re)arm the watchdog: if this buffering never resolves to STATE_READY, it is a stuck load.
+                playerView.removeCallbacks(loadTimeoutRunnable);
+                playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
             } else if (state == Player.STATE_ENDED) {
+                cancelLoadWatchdog();
                 playbackFinished = true;
                 if (apiAccess) {
                     finish();
@@ -3241,6 +3278,7 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPlayerError(PlaybackException error) {
             updateLoading(false);
+            cancelLoadWatchdog();
             // An extensionless streaming URL (e.g. a resolver that returns HLS) gets guessed as a
             // progressive source and then fails to parse. Re-prepare it as the manifest type the
             // real response revealed before treating the source error as fatal.
@@ -3248,9 +3286,16 @@ public class PlayerActivity extends Activity {
                     && recoverFromContainerError()) {
                 return;
             }
-            io.sentry.Sentry.withScope(scope -> {
+            // Enrich via the per-capture ScopeCallback overload (not withScope) so the tag/extra land
+            // on exactly this event.
+            io.sentry.Sentry.captureException(error, scope -> {
                 scope.setTag("player.error_code", error.getErrorCodeName());
-                io.sentry.Sentry.captureException(error);
+                final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
+                final Uri uri = item != null && item.localConfiguration != null
+                        ? item.localConfiguration.uri : mPrefs.mediaUri;
+                if (Utils.isSupportedNetworkUri(uri)) {
+                    scope.setExtra("media_uri", Utils.uriToReportString(uri));
+                }
             });
             if (error instanceof ExoPlaybackException) {
                 final ExoPlaybackException exoPlaybackException = (ExoPlaybackException) error;

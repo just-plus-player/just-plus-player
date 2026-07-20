@@ -152,6 +152,10 @@ public class PlayerActivity extends Activity {
     // Format.id -> name map that the track list and header read from once tracks are known.
     private final java.util.List<TrackMetadata> containerTracks = new java.util.ArrayList<>();
     private final java.util.Map<String, String> resolvedTrackNames = new java.util.HashMap<>();
+    // Streaming manifest type (HLS/DASH/SS) discovered from the real HTTP response of a media item
+    // whose request URL had no telling extension. Keyed by the requested URI (== MediaItem URI).
+    // Written from a load thread, read on the player thread — hence concurrent.
+    private final java.util.Map<String, String> resolvedMediaTypes = new java.util.concurrent.ConcurrentHashMap<>();
     private final TrackNameParsingDataSource.Listener trackNameListener = new TrackNameParsingDataSource.Listener() {
         @Override
         public void onMetadataParsed(java.util.List<TrackMetadata> tracks) {
@@ -162,6 +166,13 @@ public class PlayerActivity extends Activity {
         @Override
         public boolean isMetadataParsed() {
             return !containerTracks.isEmpty();
+        }
+
+        @Override
+        public void onMediaTypeResolved(Uri originalUri, String mimeType) {
+            if (originalUri != null && mimeType != null) {
+                resolvedMediaTypes.put(originalUri.toString(), mimeType);
+            }
         }
     };
 
@@ -1555,6 +1566,7 @@ public class PlayerActivity extends Activity {
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
         apiPlaylistStartIndex = 0;
+        resolvedMediaTypes.clear();
         apiSeason = -1;
         apiEpisode = -1;
         apiImdbId = null;
@@ -3229,6 +3241,13 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPlayerError(PlaybackException error) {
             updateLoading(false);
+            // An extensionless streaming URL (e.g. a resolver that returns HLS) gets guessed as a
+            // progressive source and then fails to parse. Re-prepare it as the manifest type the
+            // real response revealed before treating the source error as fatal.
+            if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
+                    && recoverFromContainerError()) {
+                return;
+            }
             if (error instanceof ExoPlaybackException) {
                 final ExoPlaybackException exoPlaybackException = (ExoPlaybackException) error;
                 if (exoPlaybackException.type == ExoPlaybackException.TYPE_SOURCE) {
@@ -3242,6 +3261,49 @@ public class PlayerActivity extends Activity {
                 }
             }
         }
+    }
+
+    // Re-prepare the current network item as the streaming manifest type discovered from its HTTP
+    // response (or HLS as the common fallback), so an extensionless resolver URL that actually
+    // serves HLS/DASH plays instead of dying on a progressive-parse error. Rebuilding the whole
+    // timeline forces DefaultMediaSourceFactory to re-instantiate the source with the new type
+    // (buildUpon()/replace won't, since the URI is unchanged). Guarded so a genuinely unsupported
+    // stream fails once rather than looping.
+    private boolean recoverFromContainerError() {
+        if (player == null) {
+            return false;
+        }
+        final int index = player.getCurrentMediaItemIndex();
+        final int count = player.getMediaItemCount();
+        if (index < 0 || index >= count) {
+            return false;
+        }
+        final MediaItem currentItem = player.getMediaItemAt(index);
+        if (currentItem.localConfiguration == null) {
+            return false;
+        }
+        final Uri uri = currentItem.localConfiguration.uri;
+        if (!Utils.isSupportedNetworkUri(uri)) {
+            return false;
+        }
+        String targetMime = resolvedMediaTypes.get(uri.toString());
+        if (targetMime == null) {
+            targetMime = MimeTypes.APPLICATION_M3U8;
+        }
+        if (targetMime.equals(currentItem.localConfiguration.mimeType)) {
+            return false;
+        }
+
+        final long position = player.getCurrentPosition();
+        final List<MediaItem> items = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final MediaItem item = player.getMediaItemAt(i);
+            items.add(i == index ? item.buildUpon().setMimeType(targetMime).build() : item);
+        }
+        player.setMediaItems(items, index, position);
+        player.prepare();
+        player.play();
+        return true;
     }
 
     private void enableRotation() {

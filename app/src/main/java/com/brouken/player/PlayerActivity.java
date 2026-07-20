@@ -268,9 +268,11 @@ public class PlayerActivity extends Activity {
     static final String API_VIDEO_LIST_SEASON = "video_list.season";
     static final String API_VIDEO_LIST_EPISODE = "video_list.episode";
     static final String API_VIDEO_LIST_IMDB_ID = "video_list.imdb_id";
+    static final String API_VIDEO_LIST_ID = "video_list.id";
     static final String API_SEASON = "season";
     static final String API_EPISODE = "episode";
     static final String API_IMDB_ID = "imdb_id";
+    static final String API_ID = "id";
     static final String API_END_BY = "end_by";
     boolean apiAccess;
     boolean apiAccessPartial;
@@ -286,9 +288,13 @@ public class PlayerActivity extends Activity {
     int apiSeason = -1;
     int apiEpisode = -1;
     String apiImdbId;
+    // TMDB id (LAMPA's "id" extra). Used as a fallback for online skip-segment lookup when no imdb id
+    // is supplied; series vs movie is decided by whether season/episode are present.
+    String apiTmdbId;
     final List<Integer> apiPlaylistSeasons = new ArrayList<>();
     final List<Integer> apiPlaylistEpisodes = new ArrayList<>();
     final List<String> apiPlaylistImdbIds = new ArrayList<>();
+    final List<String> apiPlaylistTmdbIds = new ArrayList<>();
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
@@ -413,6 +419,7 @@ public class PlayerActivity extends Activity {
                     apiSeason = bundle.getInt(API_SEASON, -1);
                     apiEpisode = bundle.getInt(API_EPISODE, -1);
                     apiImdbId = bundle.getString(API_IMDB_ID);
+                    apiTmdbId = getStringOrIntExtra(bundle, API_ID);
                     if (bundle.containsKey(API_VIDEO_LIST)) {
                         parseApiPlaylist(bundle, uri);
                     }
@@ -1551,9 +1558,11 @@ public class PlayerActivity extends Activity {
         apiSeason = -1;
         apiEpisode = -1;
         apiImdbId = null;
+        apiTmdbId = null;
         apiPlaylistSeasons.clear();
         apiPlaylistEpisodes.clear();
         apiPlaylistImdbIds.clear();
+        apiPlaylistTmdbIds.clear();
         apiSubs.clear();
         mPrefs.setPersistent(true);
         if (skipManager != null) {
@@ -1622,7 +1631,8 @@ public class PlayerActivity extends Activity {
             return;
         }
         final String imdbId = currentImdbId();
-        if (imdbId == null || imdbId.isEmpty()) {
+        final String tmdbId = currentTmdbId();
+        if ((imdbId == null || imdbId.isEmpty()) && (tmdbId == null || tmdbId.isEmpty())) {
             return;
         }
         final long durationMs = player.getDuration();
@@ -1630,7 +1640,7 @@ public class PlayerActivity extends Activity {
         final int targetIndex = player.getCurrentMediaItemIndex();
 
         cancelSegmentFinder();
-        segmentFinderThread = SegmentFinder.find(imdbId, currentSeason(), currentEpisode(), durationSec,
+        segmentFinderThread = SegmentFinder.find(imdbId, tmdbId, currentSeason(), currentEpisode(), durationSec,
                 segments -> runOnUiThread(() -> onSegmentsFetched(targetIndex, segments)));
     }
 
@@ -1659,6 +1669,14 @@ public class PlayerActivity extends Activity {
             return index >= 0 && index < apiPlaylistImdbIds.size() ? apiPlaylistImdbIds.get(index) : null;
         }
         return apiImdbId;
+    }
+
+    private String currentTmdbId() {
+        if (player != null && !apiPlaylistTmdbIds.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            return index >= 0 && index < apiPlaylistTmdbIds.size() ? apiPlaylistTmdbIds.get(index) : null;
+        }
+        return apiTmdbId;
     }
 
     private int currentSeason() {
@@ -1829,12 +1847,14 @@ public class PlayerActivity extends Activity {
         final String[] seasons = getSmartStringArray(bundle, API_VIDEO_LIST_SEASON);
         final String[] episodes = getSmartStringArray(bundle, API_VIDEO_LIST_EPISODE);
         final String[] imdbIds = getSmartStringArray(bundle, API_VIDEO_LIST_IMDB_ID);
+        final String[] tmdbIds = getSmartStringArray(bundle, API_VIDEO_LIST_ID);
 
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
         apiPlaylistSeasons.clear();
         apiPlaylistEpisodes.clear();
         apiPlaylistImdbIds.clear();
+        apiPlaylistTmdbIds.clear();
         apiPlaylistStartIndex = 0;
 
         for (int i = 0; i < size; i++) {
@@ -1884,7 +1904,23 @@ public class PlayerActivity extends Activity {
             apiPlaylistEpisodes.add(parseIntOrNull(episodes, i));
             apiPlaylistImdbIds.add(imdbIds != null && i < imdbIds.length
                     && imdbIds[i] != null && !imdbIds[i].isEmpty() ? imdbIds[i] : null);
+            apiPlaylistTmdbIds.add(tmdbIds != null && i < tmdbIds.length
+                    && tmdbIds[i] != null && !tmdbIds[i].isEmpty() ? tmdbIds[i] : null);
         }
+    }
+
+    // Reads an extra that senders may pass as either a String or a numeric (e.g. TMDB "id"), returning
+    // its string form, or null when absent/empty.
+    private static String getStringOrIntExtra(Bundle bundle, String key) {
+        if (bundle == null || !bundle.containsKey(key)) {
+            return null;
+        }
+        final Object value = bundle.get(key);
+        if (value == null) {
+            return null;
+        }
+        final String s = String.valueOf(value).trim();
+        return s.isEmpty() ? null : s;
     }
 
     private static Integer parseIntOrNull(String[] array, int i) {

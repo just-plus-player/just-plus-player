@@ -50,9 +50,10 @@ public final class SegmentFinder {
      * Starts an async lookup. Returns the worker {@link Thread} so the caller can {@code interrupt()}
      * it when the media item changes. The callback is not invoked if the thread was interrupted.
      */
-    public static Thread find(String imdbId, int season, int episode, double durationSec, Callback callback) {
+    public static Thread find(String imdbId, String tmdbId, int season, int episode, double durationSec,
+                              Callback callback) {
         final Thread thread = new Thread(() -> {
-            final List<SkipSegment> result = lookup(imdbId, season, episode, durationSec);
+            final List<SkipSegment> result = lookup(imdbId, tmdbId, season, episode, durationSec);
             if (!Thread.currentThread().isInterrupted()) {
                 callback.onSegments(result);
             }
@@ -62,34 +63,63 @@ public final class SegmentFinder {
         return thread;
     }
 
-    private static List<SkipSegment> lookup(String imdbId, int season, int episode, double durationSec) {
-        if (imdbId == null || imdbId.isEmpty()) {
+    private static List<SkipSegment> lookup(String imdbIdIn, String tmdbIdIn, int season, int episode,
+                                            double durationSec) {
+        final String imdbInput = isBlank(imdbIdIn) ? null : imdbIdIn;
+        final String tmdbInput = isBlank(tmdbIdIn) ? null : tmdbIdIn;
+        if (imdbInput == null && tmdbInput == null) {
             return new ArrayList<>();
         }
+        // Season/episode presence is what distinguishes a series episode from a movie (per the intent).
         final boolean isMovie = season < 1 || episode < 1;
-        final String key = imdbId + "|" + (isMovie ? -1 : season) + "|" + (isMovie ? -1 : episode);
+        final int keySeason = isMovie ? -1 : season;
+        final int keyEpisode = isMovie ? -1 : episode;
+        final String key = (imdbInput != null ? imdbInput : "") + "|"
+                + (tmdbInput != null ? tmdbInput : "") + "|" + keySeason + "|" + keyEpisode;
         final List<SkipSegment> cached = CACHE.get(key);
         if (cached != null) {
             return cached;
         }
 
+        // A tmdb id from the intent is numeric and needs no network to use.
+        long tmdbNumeric = -1;
+        if (tmdbInput != null) {
+            try {
+                tmdbNumeric = Long.parseLong(tmdbInput.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        // No imdb id but we have a tmdb id → reverse-resolve imdb (TMDB external_ids) so the broad
+        // imdb-keyed sources (SkipDB, IntroDB.app, Aniskip) can still be used. If that fails we fall
+        // back to TheIntroDB, which is queried by tmdb id directly.
+        String imdbId = imdbInput;
+        if (imdbId == null && tmdbNumeric >= 0) {
+            imdbId = tmdbExternalImdb(tmdbNumeric, isMovie);
+        }
+
+        final String imdb = imdbId;      // effectively final for the step lambdas
+        final long tmdb = tmdbNumeric;
         List<SkipSegment> result;
         if (isMovie) {
             result = firstNonEmpty(
-                    () -> skipDb(imdbId, -1, -1, durationSec),
-                    () -> theIntroDb(imdbId, -1, -1, true));
+                    () -> imdb != null ? skipDb(imdb, -1, -1, durationSec) : null,
+                    () -> theIntroDb(imdb, tmdb, -1, -1, true));
         } else {
             result = firstNonEmpty(
-                    () -> skipDb(imdbId, season, episode, durationSec),
-                    () -> introDbApp(imdbId, season, episode),
-                    () -> aniskip(imdbId, season, episode),
-                    () -> theIntroDb(imdbId, season, episode, false));
+                    () -> imdb != null ? skipDb(imdb, season, episode, durationSec) : null,
+                    () -> imdb != null ? introDbApp(imdb, season, episode) : null,
+                    () -> imdb != null ? aniskip(imdb, season, episode) : null,
+                    () -> theIntroDb(imdb, tmdb, season, episode, false));
         }
         if (result == null) {
             result = new ArrayList<>();
         }
         CACHE.put(key, result);
         return result;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     private interface Step {
@@ -217,9 +247,13 @@ public final class SegmentFinder {
         return out;
     }
 
-    /** TheIntroDB (tmdb-keyed): resolve tmdbId lazily via TMDB find, then fetch intro/recap/credits arrays. */
-    private static List<SkipSegment> theIntroDb(String imdbId, int season, int episode, boolean isMovie) {
-        final long tmdbId = tmdbFind(imdbId, isMovie);
+    /**
+     * TheIntroDB (tmdb-keyed): fetch intro/recap/credits arrays. Uses {@code knownTmdbId} when the
+     * caller already has it (from the intent); otherwise resolves it lazily via TMDB find from the imdb id.
+     */
+    private static List<SkipSegment> theIntroDb(String imdbId, long knownTmdbId, int season, int episode,
+                                                boolean isMovie) {
+        final long tmdbId = knownTmdbId >= 0 ? knownTmdbId : tmdbFind(imdbId, isMovie);
         final List<SkipSegment> out = new ArrayList<>();
         if (tmdbId < 0) {
             return out;
@@ -257,6 +291,22 @@ public final class SegmentFinder {
         }
         final JSONObject first = results.optJSONObject(0);
         return first != null ? first.optLong("id", -1) : -1;
+    }
+
+    /** tmdb → imdb id via TMDB external_ids (movie or tv). Returns null when unavailable. */
+    private static String tmdbExternalImdb(long tmdbId, boolean isMovie) {
+        final HttpUrl url = HttpUrl.parse(SegmentEndpoints.TMDB_BASE).newBuilder()
+                .addPathSegment(isMovie ? "movie" : "tv")
+                .addPathSegment(String.valueOf(tmdbId))
+                .addPathSegment("external_ids")
+                .addQueryParameter("api_key", SegmentEndpoints.TMDB_KEY)
+                .build();
+        final JSONObject root = getJson(url);
+        if (root == null) {
+            return null;
+        }
+        final String imdbId = root.optString("imdb_id", null);
+        return (imdbId != null && !imdbId.isEmpty()) ? imdbId : null;
     }
 
     // ---- Normalization -----------------------------------------------------------------------

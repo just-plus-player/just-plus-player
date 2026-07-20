@@ -21,5 +21,7 @@ final class SegmentEndpoints {
     static final String THEINTRODB = "https://api.theintrodb.org/v3/media";
     /** imdb → tmdb id. Called lazily, only inside the TheIntroDB step. */
     static final String TMDB_FIND = "https://api.themoviedb.org/3/find/";
+    /** TMDB v3 base; used to resolve tmdb → imdb via {movie,tv}/{id}/external_ids. */
+    static final String TMDB_BASE = "https://api.themoviedb.org/3";
     static final String TMDB_KEY = "875965c1ae50e299f1c13c8c00c54af8";
 }

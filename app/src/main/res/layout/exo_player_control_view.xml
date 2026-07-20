@@ -6,6 +6,7 @@
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_gravity="center"
+      android:background="@color/controls_scrim"
       android:layoutDirection="ltr">
   </FrameLayout>
 
@@ -131,15 +132,23 @@
 
     <include layout="@layout/exo_player_control_rewind_button" />
 
-    <ImageButton android:id="@+id/exo_play_pause"
-        style="@style/ExoStyledControls.Button.Center.PlayPause"/>
-
-    <ProgressBar android:id="@+id/loading"
-        style="?android:attr/progressBarStyle"
+    <FrameLayout
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:indeterminateTint="@color/brand"
-        android:visibility="gone"/>
+        android:layout_height="wrap_content">
+
+      <ImageButton android:id="@+id/exo_play_pause"
+          style="@style/ExoStyledControls.Button.Center.PlayPause"
+          android:layout_gravity="center"/>
+
+      <ProgressBar android:id="@+id/loading"
+          android:layout_width="60dp"
+          android:layout_height="60dp"
+          android:layout_gravity="center"
+          android:indeterminate="true"
+          android:indeterminateDrawable="@drawable/spinner_ring_anim"
+          android:visibility="gone"/>
+
+    </FrameLayout>
 
     <include layout="@layout/exo_player_control_ffwd_button" />
 

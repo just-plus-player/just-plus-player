@@ -3738,7 +3738,8 @@ public class PlayerActivity extends Activity {
 
     private void updateLoading(final boolean enableLoading) {
         if (enableLoading) {
-            exoPlayPause.setVisibility(View.GONE);
+            // INVISIBLE (not GONE): keep the 90dp slot so the row doesn't resize while the spinner shows over it.
+            exoPlayPause.setVisibility(View.INVISIBLE);
             loadingProgressBar.setVisibility(View.VISIBLE);
         } else {
             loadingProgressBar.setVisibility(View.GONE);

@@ -556,6 +556,38 @@ class Utils {
         return scheme.startsWith("http") || scheme.equals("rtsp");
     }
 
+    // Matches the query/fragment of an http(s)/rtsp URL inside free text so it can be dropped.
+    private static final java.util.regex.Pattern URL_QUERY =
+            java.util.regex.Pattern.compile("((?:https?|rtsps?)://[^\\s?#]+)[?#][^\\s,)}\\]\"']*");
+
+    // Removes the query string (and fragment) from any http(s)/rtsp URL found in the text, since query
+    // strings are where tokens/session ids live. Keeps scheme, host, port and path; leaves the rest intact.
+    public static String stripUrlQuery(final String text) {
+        if (text == null)
+            return null;
+        return URL_QUERY.matcher(text).replaceAll("$1");
+    }
+
+    // Privacy-safe rendering of a media URI for crash/error reports: keeps scheme, host, port and path
+    // (the route) only. Query string, userinfo and fragment are dropped, since query values carry
+    // tokens/session ids; request headers are never attached anywhere.
+    public static String uriToReportString(final Uri uri) {
+        if (uri == null)
+            return null;
+        final String host = uri.getHost();
+        if (host == null)
+            return uri.getScheme();
+        final StringBuilder sb = new StringBuilder();
+        if (uri.getScheme() != null)
+            sb.append(uri.getScheme()).append("://");
+        sb.append(host);
+        if (uri.getPort() != -1)
+            sb.append(':').append(uri.getPort());
+        if (uri.getEncodedPath() != null)
+            sb.append(uri.getEncodedPath());
+        return sb.toString();
+    }
+
     public static boolean isTvBox(Context context) {
         final PackageManager pm = context.getPackageManager();
 

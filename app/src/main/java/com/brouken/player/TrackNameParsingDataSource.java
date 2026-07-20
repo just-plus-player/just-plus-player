@@ -3,6 +3,7 @@ package com.brouken.player;
 import android.net.Uri;
 
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.ParserException;
 import androidx.media3.datasource.DataSink;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DataSpec;
@@ -40,6 +41,16 @@ final class TrackNameParsingDataSource implements DataSource {
          * advertise. {@code originalUri} is the URI the player asked for (matches the MediaItem URI).
          */
         void onMediaTypeResolved(Uri originalUri, String mimeType);
+
+        /**
+         * Called (on a load thread) when a media request came back as a Lampac stream-resolver control
+         * response ({@code Content-Type: application/json}, e.g. the {@code {"rch":…}} handshake)
+         * instead of real media. Lampac resolves the real stream URL by running client-side code over
+         * its WebSocket; this player does not speak that protocol, so the resolver stays not-ready and
+         * answers with the control JSON. Reported from the response headers (see {@link #open}) so the
+         * load can fail immediately instead of blocking on the long-polled body.
+         */
+        void onResolverNotReady(Uri originalUri);
     }
 
     // 64 KB in-RAM pipe — a standard IO chunk; keeps memory bounded and provides backpressure.
@@ -75,8 +86,46 @@ final class TrackNameParsingDataSource implements DataSource {
         // extensionless resolver that returns HLS), report it so the player can re-prepare as HLS.
         if (dataSpec.position == 0 && dataSpec.uri != null) {
             reportResolvedMediaType(dataSpec.uri);
+            // A media request answered with a JSON body is a stream-resolver control response (the
+            // Lampac "not ready" handshake), never playable media. The resolver sends these headers
+            // immediately but then long-polls the body until a read timeout — so fail now, from the
+            // headers, instead of blocking ~8s on a body we already know is not media.
+            if (isJsonResponse(upstream.getResponseHeaders())) {
+                try {
+                    listener.onResolverNotReady(dataSpec.uri);
+                } catch (Exception ignored) {
+                    // Never let detection disturb the load path.
+                }
+                closeQuietly();
+                throw ParserException.createForMalformedManifest(
+                        "Stream resolver returned a non-media JSON response", /* cause= */ null);
+            }
         }
         return length;
+    }
+
+    /** Whether the response {@code Content-Type} is JSON (a resolver control response, not media). */
+    private static boolean isJsonResponse(Map<String, List<String>> responseHeaders) {
+        if (responseHeaders == null) {
+            return false;
+        }
+        for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
+            if (entry.getKey() == null || !"Content-Type".equalsIgnoreCase(entry.getKey())) {
+                continue;
+            }
+            final List<String> values = entry.getValue();
+            return values != null && !values.isEmpty() && values.get(0) != null
+                    && values.get(0).toLowerCase(Locale.US).contains("json");
+        }
+        return false;
+    }
+
+    private void closeQuietly() {
+        try {
+            close();
+        } catch (IOException ignored) {
+            // Best-effort close before rethrowing the detected not-ready error.
+        }
     }
 
     private void reportResolvedMediaType(Uri originalUri) {

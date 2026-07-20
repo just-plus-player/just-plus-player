@@ -174,7 +174,18 @@ public class PlayerActivity extends Activity {
                 resolvedMediaTypes.put(originalUri.toString(), mimeType);
             }
         }
+
+        @Override
+        public void onResolverNotReady(Uri originalUri) {
+            if (originalUri != null) {
+                resolverNotReadyUri = originalUri.toString();
+            }
+        }
     };
+
+    // Set (on a load thread) to the URI whose response was a Lampac resolver handshake instead of
+    // media; read in onPlayerError to show a friendly message rather than retrying/reporting.
+    private volatile String resolverNotReadyUri;
 
     public CustomPlayerView playerView;
     public static ExoPlayer player;
@@ -2983,20 +2994,11 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
-        final MediaItem item = player.getCurrentMediaItem();
-        final Uri uri = item != null && item.localConfiguration != null
-                ? item.localConfiguration.uri : mPrefs.mediaUri;
-        final long position = player.getCurrentPosition();
-        // Per-capture ScopeCallback overload so the level/tags/extra apply to exactly this message.
-        io.sentry.Sentry.captureMessage("Video load timeout", scope -> {
-            scope.setLevel(io.sentry.SentryLevel.WARNING);
-            scope.setTag("player.load_timeout_ms", String.valueOf(VIDEO_LOAD_TIMEOUT_MS));
-            scope.setTag("player.playlist", String.valueOf(player.getMediaItemCount() > 1));
-            scope.setExtra("player.position_ms", String.valueOf(position));
-            if (Utils.isSupportedNetworkUri(uri)) {
-                scope.setExtra("media_uri", Utils.uriToReportString(uri));
-            }
-        });
+        // A silent stall (buffering never reached READY). Not sent to Sentry — it is usually an
+        // upstream/network condition, not an app bug — just surface a friendly message with its code.
+        updateLoading(false);
+        showSnack(getString(R.string.error_playback_timeout)
+                + " (" + PlayerErrorCode.LOAD_TIMEOUT + ")", null);
     }
 
     public void releasePlayer() {
@@ -3161,6 +3163,8 @@ public class PlayerActivity extends Activity {
             if (state == Player.STATE_READY) {
                 frameRendered = true;
                 cancelLoadWatchdog();
+                // Loaded successfully — clear any pending resolver-handshake flag from a prior attempt.
+                resolverNotReadyUri = null;
 
                 // Ready — hide the spinner and re-enable the episode arrows. Done unconditionally (not only on
                 // the initial open) so episode switches, which don't set videoLoading, are also cleared.
@@ -3279,6 +3283,17 @@ public class PlayerActivity extends Activity {
         public void onPlayerError(PlaybackException error) {
             updateLoading(false);
             cancelLoadWatchdog();
+            // The Lampac stream resolver returned its handshake ({"rch":…}) instead of media: it
+            // resolves the real stream by running client-side code over a WebSocket, which this player
+            // does not implement, so the link can never be obtained here. Show a friendly message and
+            // stop — this is an unsupported upstream flow, not an app bug, so it is not reported to Sentry.
+            if (isResolverNotReadyForCurrentItem()) {
+                resolverNotReadyUri = null;
+                showSnack(getString(R.string.error_stream_not_ready)
+                        + " (" + PlayerErrorCode.RESOLVER_NOT_READY + ")", null);
+                releasePlayer(false);
+                return;
+            }
             // An extensionless streaming URL (e.g. a resolver that returns HLS) gets guessed as a
             // progressive source and then fails to parse. Re-prepare it as the manifest type the
             // real response revealed before treating the source error as fatal.
@@ -3353,6 +3368,16 @@ public class PlayerActivity extends Activity {
         player.prepare();
         player.play();
         return true;
+    }
+
+    // True when the just-failed load was a Lampac resolver handshake for the item that is playing now.
+    private boolean isResolverNotReadyForCurrentItem() {
+        if (resolverNotReadyUri == null || player == null) {
+            return false;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        return item != null && item.localConfiguration != null
+                && resolverNotReadyUri.equals(item.localConfiguration.uri.toString());
     }
 
     private void enableRotation() {
@@ -3653,24 +3678,29 @@ public class PlayerActivity extends Activity {
     void showError(ExoPlaybackException error) {
         final String errorGeneral = error.getLocalizedMessage();
         String errorDetailed;
+        final PlayerErrorCode code;
 
         switch (error.type) {
             case ExoPlaybackException.TYPE_SOURCE:
                 errorDetailed = error.getSourceException().getLocalizedMessage();
+                code = PlayerErrorCode.SOURCE_ERROR;
                 break;
             case ExoPlaybackException.TYPE_RENDERER:
                 errorDetailed = error.getRendererException().getLocalizedMessage();
+                code = PlayerErrorCode.RENDERER_ERROR;
                 break;
             case ExoPlaybackException.TYPE_UNEXPECTED:
                 errorDetailed = error.getUnexpectedException().getLocalizedMessage();
+                code = PlayerErrorCode.UNEXPECTED_ERROR;
                 break;
             case ExoPlaybackException.TYPE_REMOTE:
             default:
                 errorDetailed = errorGeneral;
+                code = PlayerErrorCode.UNEXPECTED_ERROR;
                 break;
         }
 
-        showSnack(errorGeneral, errorDetailed);
+        showSnack(errorGeneral + " (" + code + ")", errorDetailed);
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {

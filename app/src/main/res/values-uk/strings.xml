@@ -10,6 +10,8 @@
     <string name="open_subtitles">Завантажити субтитри</string>
     <string name="error_details">Детально</string>
     <string name="error_files_missing">Додаток \"Файли\" вимкнено або відсутній</string>
+    <string name="error_stream_not_ready">Не вдалося отримати посилання на відео. Спробуйте перезапустити відтворення.</string>
+    <string name="error_playback_timeout">Відтворення надто довго не починається. Спробуйте ще раз.</string>
     <string name="request_scope">Щоб автоматично завантажити субтитри, або увімкнути перехід до наступного файлу в теці, надайте %s доступ до головної теки з вашими відеофайлами (наприклад \"Відео\").</string>
     <string name="delete_query">Видалити файл\?</string>
     <string name="delete_confirmation">Видалити</string>

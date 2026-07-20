@@ -43,6 +43,10 @@
     <string name="pref_show_clock">Показувати годинник</string>
     <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
     <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>
+    <string name="pref_privacy_header">Приватність</string>
+    <string name="pref_crash_reporting">Надсилати звіти про збої</string>
+    <string name="pref_crash_reporting_on">Автоматично надсилати звіти про збої та помилки відтворення, щоб допомогти їх виправити</string>
+    <string name="pref_crash_reporting_off">Дані про збої та помилки не залишають пристрій</string>
     <string name="time_ends_at">Закінчиться о %s</string>
     <string name="playlist">Список відтворення</string>
     <string name="pref_map_dv7">Резервний варіант Dolby Vision profile 7</string>

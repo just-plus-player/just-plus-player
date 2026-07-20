@@ -3248,6 +3248,10 @@ public class PlayerActivity extends Activity {
                     && recoverFromContainerError()) {
                 return;
             }
+            io.sentry.Sentry.withScope(scope -> {
+                scope.setTag("player.error_code", error.getErrorCodeName());
+                io.sentry.Sentry.captureException(error);
+            });
             if (error instanceof ExoPlaybackException) {
                 final ExoPlaybackException exoPlaybackException = (ExoPlaybackException) error;
                 if (exoPlaybackException.type == ExoPlaybackException.TYPE_SOURCE) {

@@ -44,6 +44,10 @@
     <string name="pref_show_clock">Show clock</string>
     <string name="pref_show_clock_on">Clock stays in the top-right corner over the video</string>
     <string name="pref_show_clock_off">Clock shows only with the player controls</string>
+    <string name="pref_privacy_header">Privacy</string>
+    <string name="pref_crash_reporting">Send crash reports</string>
+    <string name="pref_crash_reporting_on">Automatically report crashes and playback errors to help fix them</string>
+    <string name="pref_crash_reporting_off">No crash or error data leaves the device</string>
     <string name="pref_update_header">Updates</string>
     <string name="pref_current_version">Current version</string>
     <string name="pref_auto_update">Automatic updates</string>

@@ -29,6 +29,7 @@
     </queries>
 
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:appCategory="video"
         android:banner="@mipmap/banner"
@@ -43,6 +44,12 @@
         android:theme="@style/Theme.Player"
         tools:replace="android:allowBackup"
         tools:targetApi="n">
+
+        <!-- Sentry is initialized manually in App.onCreate(); disable the SDK's manifest auto-init. -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
+
         <activity
             android:name=".PlayerActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|touchscreen"

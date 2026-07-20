@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spins the ring continuously; AnimatedVectorDrawable (native API 21+), started by the ProgressBar. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:drawable="@drawable/spinner_ring">
+  <target android:name="ring">
+    <aapt:attr name="android:animation">
+      <objectAnimator
+          android:propertyName="rotation"
+          android:valueFrom="0"
+          android:valueTo="360"
+          android:duration="900"
+          android:repeatCount="-1"
+          android:interpolator="@android:anim/linear_interpolator"/>
+    </aapt:attr>
+  </target>
+</animated-vector>

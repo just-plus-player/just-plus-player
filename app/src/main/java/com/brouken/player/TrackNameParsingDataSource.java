@@ -2,6 +2,7 @@ package com.brouken.player;
 
 import android.net.Uri;
 
+import androidx.media3.common.MimeTypes;
 import androidx.media3.datasource.DataSink;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DataSpec;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -31,6 +33,13 @@ final class TrackNameParsingDataSource implements DataSource {
     interface Listener {
         void onMetadataParsed(List<TrackMetadata> tracks);
         boolean isMetadataParsed();
+
+        /**
+         * Called (on a load thread) when the real HTTP response for a media item reveals a streaming
+         * manifest type — HLS/DASH/SmoothStreaming — that the extensionless request URL did not
+         * advertise. {@code originalUri} is the URI the player asked for (matches the MediaItem URI).
+         */
+        void onMediaTypeResolved(Uri originalUri, String mimeType);
     }
 
     // 64 KB in-RAM pipe — a standard IO chunk; keeps memory bounded and provides backpressure.
@@ -53,12 +62,90 @@ final class TrackNameParsingDataSource implements DataSource {
 
     @Override
     public long open(DataSpec dataSpec) throws IOException {
+        final long length;
         if (dataSpec.position == 0 && !listener.isMetadataParsed()) {
             teeDataSource = new TeeDataSource(upstream, pipeSink);
-            return teeDataSource.open(dataSpec);
+            length = teeDataSource.open(dataSpec);
+        } else {
+            teeDataSource = null;
+            length = upstream.open(dataSpec);
         }
-        teeDataSource = null;
-        return upstream.open(dataSpec);
+        // Once the connection is open the response headers and the final (post-redirect) URL are
+        // known: if they reveal a streaming manifest that the request URL didn't advertise (e.g. an
+        // extensionless resolver that returns HLS), report it so the player can re-prepare as HLS.
+        if (dataSpec.position == 0 && dataSpec.uri != null) {
+            reportResolvedMediaType(dataSpec.uri);
+        }
+        return length;
+    }
+
+    private void reportResolvedMediaType(Uri originalUri) {
+        try {
+            final String mimeType = resolveStreamingMimeType(upstream.getResponseHeaders(), upstream.getUri());
+            if (mimeType != null) {
+                listener.onMediaTypeResolved(originalUri, mimeType);
+            }
+        } catch (Exception ignored) {
+            // Never let media-type sniffing disturb the read path.
+        }
+    }
+
+    /**
+     * Maps an HTTP response to an ExoPlayer streaming-manifest MIME type, preferring the
+     * {@code Content-Type} header and falling back to the extension of the final redirected URL.
+     * Returns {@code null} for progressive/unknown content (the caller then keeps the default guess).
+     */
+    static String resolveStreamingMimeType(Map<String, List<String>> responseHeaders, Uri finalUri) {
+        if (responseHeaders != null) {
+            for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
+                if (entry.getKey() == null || !"Content-Type".equalsIgnoreCase(entry.getKey())) {
+                    continue;
+                }
+                final List<String> values = entry.getValue();
+                if (values != null && !values.isEmpty() && values.get(0) != null) {
+                    String contentType = values.get(0);
+                    final int semicolon = contentType.indexOf(';');
+                    if (semicolon >= 0) {
+                        contentType = contentType.substring(0, semicolon);
+                    }
+                    final String mime = mimeFromContentType(contentType.trim().toLowerCase(Locale.US));
+                    if (mime != null) {
+                        return mime;
+                    }
+                }
+                break;
+            }
+        }
+        if (finalUri != null) {
+            final String path = finalUri.getPath();
+            if (path != null) {
+                final int dot = path.lastIndexOf('.');
+                if (dot >= 0 && dot < path.length() - 1) {
+                    switch (path.substring(dot + 1).toLowerCase(Locale.US)) {
+                        case "m3u8": return MimeTypes.APPLICATION_M3U8;
+                        case "mpd": return MimeTypes.APPLICATION_MPD;
+                        case "ism": case "isml": return MimeTypes.APPLICATION_SS;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String mimeFromContentType(String contentType) {
+        switch (contentType) {
+            case "application/x-mpegurl":
+            case "application/vnd.apple.mpegurl":
+            case "audio/x-mpegurl":
+            case "audio/mpegurl":
+                return MimeTypes.APPLICATION_M3U8;
+            case "application/dash+xml":
+                return MimeTypes.APPLICATION_MPD;
+            case "application/vnd.ms-sstr+xml":
+                return MimeTypes.APPLICATION_SS;
+            default:
+                return null;
+        }
     }
 
     @Override

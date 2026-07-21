@@ -49,6 +49,7 @@ class Prefs {
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
     private static final String PREF_KEY_SKIP_ENABLED = "skipEnabled";
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
+    private static final String PREF_KEY_SKIP_MODE_CREDITS = "skipModeCredits";
     private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
@@ -94,6 +95,7 @@ class Prefs {
     public boolean subtitleStyleBold = false;
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BUTTON;
+    public String skipModeCredits = SKIP_MODE_AUTO;
     public boolean skipFetchOnline = true;
     public boolean showClock = false;
     public boolean crashReporting = true;
@@ -153,6 +155,7 @@ class Prefs {
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
+        skipModeCredits = mSharedPreferences.getString(PREF_KEY_SKIP_MODE_CREDITS, skipModeCredits);
         skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);

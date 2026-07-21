@@ -132,9 +132,11 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -240,6 +242,8 @@ public class PlayerActivity extends Activity {
     private OutlineTextClock headerClock;
     private ImageButton buttonOpen;
     private ImageButton buttonPlaylist;
+    private ImageButton buttonQuality;
+    private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
@@ -301,6 +305,12 @@ public class PlayerActivity extends Activity {
     static final String API_IMDB_ID = "imdb_id";
     static final String API_ID = "id";
     static final String API_END_BY = "end_by";
+    // Manual video-quality contract (LAMPA -> player): parallel label/url arrays for the current item,
+    // and per-episode variants keyed "<prefix>.$index" (mirrors the video_list.* pattern).
+    static final String API_QUALITY_LEVELS = "quality_levels";
+    static final String API_QUALITY_URLS = "quality_urls";
+    static final String API_VIDEO_LIST_QUALITY_LEVELS = "video_list.quality_levels";
+    static final String API_VIDEO_LIST_QUALITY_URLS = "video_list.quality_urls";
     boolean apiAccess;
     boolean apiAccessPartial;
     String apiTitle;
@@ -322,6 +332,20 @@ public class PlayerActivity extends Activity {
     final List<Integer> apiPlaylistEpisodes = new ArrayList<>();
     final List<String> apiPlaylistImdbIds = new ArrayList<>();
     final List<String> apiPlaylistTmdbIds = new ArrayList<>();
+    // Manual quality selection (LAMPA quality-switching port). Per-episode label->url maps aligned by
+    // index with apiMediaItems; apiSingleQuality holds the top-level map for a single (non-playlist) video.
+    // Maps are empty when the sender supplied no quality variants.
+    final List<LinkedHashMap<String, String>> apiPlaylistQuality = new ArrayList<>();
+    LinkedHashMap<String, String> apiSingleQuality = new LinkedHashMap<>();
+    // Current manual choice — in-session only, never persisted.
+    int selectedVideoQualityMode = VideoQualityChoice.MODE_AUTO;
+    TrackGroup selectedVideoTrackGroup;
+    int selectedVideoTrackIndex = -1;
+    // Sticky quality across auto-next: number of lines of the last chosen SOURCE label (0 = none).
+    int stickyQualityLines;
+    // Set before a SOURCE-switch reinitialisation so the player keeps a paused state (initializePlayer
+    // otherwise force-plays under apiAccess). Consumed once inside initializePlayer.
+    boolean sourceSwitchKeepPaused;
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
@@ -430,7 +454,7 @@ public class PlayerActivity extends Activity {
                 if (bundle != null) {
                     apiAccess = bundle.containsKey(API_POSITION) || bundle.containsKey(API_RETURN_RESULT)
                             || bundle.containsKey(API_SUBS) || bundle.containsKey(API_SUBS_ENABLE)
-                            || bundle.containsKey(API_VIDEO_LIST);
+                            || bundle.containsKey(API_VIDEO_LIST) || bundle.containsKey(API_QUALITY_LEVELS);
                     if (apiAccess) {
                         mPrefs.setPersistent(false);
                     } else if (bundle.containsKey(API_TITLE)) {
@@ -447,6 +471,8 @@ public class PlayerActivity extends Activity {
                     apiEpisode = bundle.getInt(API_EPISODE, -1);
                     apiImdbId = bundle.getString(API_IMDB_ID);
                     apiTmdbId = getStringOrIntExtra(bundle, API_ID);
+                    // Quality variants for a single (non-playlist) video; playlists carry per-episode maps.
+                    apiSingleQuality = readQualityMap(bundle, API_QUALITY_LEVELS, API_QUALITY_URLS);
                     if (bundle.containsKey(API_VIDEO_LIST)) {
                         parseApiPlaylist(bundle, uri);
                     }
@@ -572,6 +598,13 @@ public class PlayerActivity extends Activity {
         buttonPlaylist.setContentDescription("Playlist");
         buttonPlaylist.setVisibility(View.GONE);
         buttonPlaylist.setOnClickListener(view -> showPlaylistDialog());
+
+        buttonQuality = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonQuality.setImageResource(R.drawable.ic_high_quality_24dp);
+        buttonQuality.setId(View.generateViewId());
+        buttonQuality.setContentDescription(getString(R.string.button_quality));
+        buttonQuality.setVisibility(View.GONE);
+        buttonQuality.setOnClickListener(view -> showQualityDialog());
 
         if (Utils.isPiPSupported(this)) {
             // TODO: Android 12 improvements:
@@ -1071,6 +1104,7 @@ public class PlayerActivity extends Activity {
 
         controls.addView(buttonOpen);
         controls.addView(buttonPlaylist);
+        controls.addView(buttonQuality);
         controls.addView(exoSubtitle);
         controls.addView(buttonAspectRatio);
         if (Utils.isPiPSupported(this) && buttonPiP != null) {
@@ -1591,6 +1625,12 @@ public class PlayerActivity extends Activity {
         apiPlaylistEpisodes.clear();
         apiPlaylistImdbIds.clear();
         apiPlaylistTmdbIds.clear();
+        apiPlaylistQuality.clear();
+        apiSingleQuality = new LinkedHashMap<>();
+        selectedVideoQualityMode = VideoQualityChoice.MODE_AUTO;
+        selectedVideoTrackGroup = null;
+        selectedVideoTrackIndex = -1;
+        stickyQualityLines = 0;
         apiSubs.clear();
         mPrefs.setPersistent(true);
         if (skipManager != null) {
@@ -1883,6 +1923,7 @@ public class PlayerActivity extends Activity {
         apiPlaylistEpisodes.clear();
         apiPlaylistImdbIds.clear();
         apiPlaylistTmdbIds.clear();
+        apiPlaylistQuality.clear();
         apiPlaylistStartIndex = 0;
 
         for (int i = 0; i < size; i++) {
@@ -1934,7 +1975,54 @@ public class PlayerActivity extends Activity {
                     && imdbIds[i] != null && !imdbIds[i].isEmpty() ? imdbIds[i] : null);
             apiPlaylistTmdbIds.add(tmdbIds != null && i < tmdbIds.length
                     && tmdbIds[i] != null && !tmdbIds[i].isEmpty() ? tmdbIds[i] : null);
+            // Per-episode quality variants, aligned by index (empty map when absent).
+            apiPlaylistQuality.add(readQualityMap(bundle,
+                    API_VIDEO_LIST_QUALITY_LEVELS + "." + i, API_VIDEO_LIST_QUALITY_URLS + "." + i));
         }
+    }
+
+    // Reads two parallel extras (labels + urls) into an insertion-ordered label->url map, sorted from
+    // highest resolution to lowest and truncated to the shorter of the two arrays. Returns an empty map
+    // when either side is missing, so callers never deal with null.
+    private static LinkedHashMap<String, String> readQualityMap(Bundle bundle, String levelsKey, String urlsKey) {
+        final LinkedHashMap<String, String> map = new LinkedHashMap<>();
+        final String[] levels = getSmartStringArray(bundle, levelsKey);
+        final String[] urls = getSmartQualityUrls(bundle, urlsKey);
+        if (levels == null || urls == null) {
+            return map;
+        }
+        final int count = Math.min(levels.length, urls.length);
+        final ArrayList<Integer> order = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            order.add(i);
+        }
+        order.sort((a, b) -> Integer.compare(qualityNumber(levels[b]), qualityNumber(levels[a])));
+        for (int i : order) {
+            final String label = levels[i];
+            final String url = urls[i];
+            if (label != null && !label.trim().isEmpty() && url != null && !url.trim().isEmpty()) {
+                map.put(label, url);
+            }
+        }
+        return map;
+    }
+
+    // Quality URLs may arrive as a String[]/ArrayList<String> or, per the LAMPA contract, as a Uri[]
+    // (Parcelable[]). Normalise all of these to a String[].
+    private static String[] getSmartQualityUrls(Bundle bundle, String key) {
+        final String[] strings = getSmartStringArray(bundle, key);
+        if (strings != null) {
+            return strings;
+        }
+        final Parcelable[] parcelables = bundle.getParcelableArray(key);
+        if (parcelables != null) {
+            final String[] result = new String[parcelables.length];
+            for (int i = 0; i < parcelables.length; i++) {
+                result[i] = parcelables[i] == null ? null : parcelables[i].toString();
+            }
+            return result;
+        }
+        return null;
     }
 
     // Reads an extra that senders may pass as either a String or a numeric (e.g. TMDB "id"), returning
@@ -2002,6 +2090,7 @@ public class PlayerActivity extends Activity {
         if (buttonPlaylist != null) {
             buttonPlaylist.setVisibility(hasPlaylist ? View.VISIBLE : View.GONE);
         }
+        updateQualityButton();
         // Show prev/next episode arrows (Media3 built-in, flanking play/pause) only for playlists
         playerView.setShowNextButton(hasPlaylist);
         playerView.setShowPreviousButton(hasPlaylist);
@@ -2618,6 +2707,460 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    // ---- Manual video quality (LAMPA quality-switching port) --------------------------------------
+
+    // Quality map for the item currently playing: per-episode for a playlist, or the single-video map.
+    private LinkedHashMap<String, String> currentQualityMap() {
+        if (player != null && !apiPlaylistQuality.isEmpty()) {
+            final int index = player.getCurrentMediaItemIndex();
+            if (index >= 0 && index < apiPlaylistQuality.size()) {
+                return apiPlaylistQuality.get(index);
+            }
+        }
+        return apiSingleQuality;
+    }
+
+    // URI of the item currently loaded in the player (or the persisted media URI as a fallback).
+    private Uri currentPlayingUri() {
+        if (player != null) {
+            final MediaItem item = player.getCurrentMediaItem();
+            if (item != null && item.localConfiguration != null) {
+                return item.localConfiguration.uri;
+            }
+        }
+        return mPrefs.mediaUri;
+    }
+
+    // Builds the list shown in the quality menu. Auto/Maximum and per-rendition entries are added ONLY
+    // when the stream offers a real in-stream choice (>= 2 selectable video renditions); a single
+    // progressive track degrades to a plain list of SOURCE (separate-URL) variants.
+    private ArrayList<VideoQualityChoice> buildQualityChoices() {
+        final ArrayList<VideoQualityChoice> choices = new ArrayList<>();
+        if (player == null) {
+            return choices;
+        }
+
+        final HashMap<Integer, VideoQualityChoice> renditions = new HashMap<>();
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int index = 0; index < group.length; index++) {
+                if (!group.isTrackSupported(index)) continue;
+                Format format = group.getTrackFormat(index);
+                int longSide = Math.max(format.width, format.height);
+                int shortSide = Math.min(format.width, format.height);
+                if (longSide <= 0) continue;
+                VideoQualityChoice previous = renditions.get(longSide);
+                if (previous == null || format.bitrate > previous.bitrate) {
+                    String codec = shortCodec(format.sampleMimeType);
+                    String dimensions = shortSide > 0
+                            ? longSide + " × " + shortSide : String.valueOf(longSide);
+                    String details = codec == null ? dimensions : dimensions + "  •  " + codec;
+                    String bitrate = format.bitrate > 0
+                            ? getString(R.string.quality_bitrate, format.bitrate / 1_000_000f) : "";
+                    renditions.put(longSide, VideoQualityChoice.track(
+                            longSide + "p", details, bitrate,
+                            group.getMediaTrackGroup(), index, format.bitrate));
+                }
+            }
+        }
+        if (renditions.size() >= 2) {
+            choices.add(VideoQualityChoice.auto());
+            choices.add(VideoQualityChoice.maximum());
+            ArrayList<Integer> longSides = new ArrayList<>(renditions.keySet());
+            longSides.sort(Collections.reverseOrder());
+            for (Integer longSide : longSides) choices.add(renditions.get(longSide));
+        }
+
+        final LinkedHashMap<String, String> quality = currentQualityMap();
+        if (quality != null) {
+            for (Map.Entry<String, String> entry : quality.entrySet()) {
+                if (entry.getValue() != null && !entry.getValue().trim().isEmpty()) {
+                    choices.add(VideoQualityChoice.source(entry.getKey(), entry.getValue()));
+                }
+            }
+        }
+        return choices;
+    }
+
+    // Shows the quality button whenever there is more than one thing to choose between.
+    private void updateQualityButton() {
+        if (buttonQuality == null) {
+            return;
+        }
+        final boolean show = player != null && buildQualityChoices().size() >= 2;
+        buttonQuality.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    private String qualityChoiceTitle(VideoQualityChoice choice) {
+        switch (choice.mode) {
+            case VideoQualityChoice.MODE_AUTO:
+                return getString(R.string.quality_auto);
+            case VideoQualityChoice.MODE_MAXIMUM:
+                return getString(R.string.quality_maximum);
+            default:
+                return choice.label;
+        }
+    }
+
+    private String qualityChoiceSubtitle(VideoQualityChoice choice) {
+        switch (choice.mode) {
+            case VideoQualityChoice.MODE_AUTO:
+                return getString(R.string.quality_auto_description);
+            case VideoQualityChoice.MODE_MAXIMUM:
+                return getString(R.string.quality_maximum_badge);
+            default:
+                return choice.details;
+        }
+    }
+
+    // Quality menu in JAPP's native style (modelled on showPlaylistDialog): a full-height translucent
+    // panel docked to the end edge, with the current choice ticked and reachable by remote.
+    private void showQualityDialog() {
+        if (player == null) {
+            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final ArrayList<VideoQualityChoice> choices = buildQualityChoices();
+        if (choices.size() < 2) {
+            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final int selected = selectedQualityIndex(choices);
+        final View[] currentRow = new View[1];
+
+        final LinearLayout listLayout = new LinearLayout(this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+        final int listPad = Utils.dpToPx(10);
+        listLayout.setPadding(listPad, listPad, listPad, listPad);
+
+        final TextView header = new TextView(this);
+        header.setText(getString(R.string.quality_title));
+        header.setTextColor(Color.WHITE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+        listLayout.addView(header);
+
+        final View divider = new View(this);
+        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        dividerLp.bottomMargin = Utils.dpToPx(4);
+        divider.setLayoutParams(dividerLp);
+        divider.setBackgroundColor(0x1AFFFFFF);
+        listLayout.addView(divider);
+
+        for (int i = 0; i < choices.size(); i++) {
+            final VideoQualityChoice choice = choices.get(i);
+            final boolean isCurrent = i == selected;
+
+            final LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+            row.setClickable(true);
+            row.setFocusable(true);
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? 0x24FFFFFF : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            if (isCurrent) {
+                currentRow[0] = row;
+            }
+
+            final LinearLayout textBlock = new LinearLayout(this);
+            textBlock.setOrientation(LinearLayout.VERTICAL);
+            final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            blockLp.gravity = Gravity.CENTER_VERTICAL;
+            textBlock.setLayoutParams(blockLp);
+
+            final TextView title = new TextView(this);
+            title.setText(qualityChoiceTitle(choice));
+            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            title.setSingleLine(true);
+            if (isCurrent) {
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            textBlock.addView(title);
+
+            final String subtitle = qualityChoiceSubtitle(choice);
+            if (subtitle != null && !subtitle.isEmpty()) {
+                final TextView details = new TextView(this);
+                details.setText(subtitle);
+                details.setTextColor(0x99FFFFFF);
+                details.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                details.setSingleLine(true);
+                textBlock.addView(details);
+            }
+            row.addView(textBlock);
+
+            if (choice.bitrateText != null && !choice.bitrateText.isEmpty()) {
+                final TextView bitrate = new TextView(this);
+                bitrate.setText(choice.bitrateText);
+                bitrate.setTextColor(0x99FFFFFF);
+                bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                bitrate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+                bitrate.setSingleLine(true);
+                final LinearLayout.LayoutParams bitrateLp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                bitrateLp.setMarginEnd(Utils.dpToPx(10));
+                bitrateLp.gravity = Gravity.CENTER_VERTICAL;
+                bitrate.setLayoutParams(bitrateLp);
+                row.addView(bitrate);
+            }
+
+            final TextView check = new TextView(this);
+            check.setText("✓");
+            check.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            check.setTextColor(0xFFFFFFFF);
+            check.setGravity(Gravity.CENTER);
+            check.setVisibility(isCurrent ? View.VISIBLE : View.INVISIBLE);
+            final LinearLayout.LayoutParams checkLp = new LinearLayout.LayoutParams(
+                    Utils.dpToPx(28), ViewGroup.LayoutParams.MATCH_PARENT);
+            checkLp.gravity = Gravity.CENTER_VERTICAL;
+            check.setLayoutParams(checkLp);
+            row.addView(check);
+
+            row.setOnClickListener(v -> {
+                applyVideoQuality(choice);
+                if (qualityDialog != null) {
+                    qualityDialog.dismiss();
+                }
+            });
+            listLayout.addView(row);
+        }
+
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.addView(listLayout);
+        int padTop = 0;
+        int padBottom = 0;
+        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
+        if (rootInsets != null) {
+            padTop = rootInsets.getSystemWindowInsetTop();
+            padBottom = rootInsets.getSystemWindowInsetBottom();
+        }
+        scrollView.setPadding(0, padTop, 0, padBottom);
+
+        if (qualityDialog != null) {
+            qualityDialog.dismiss();
+        }
+        qualityDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        qualityDialog.setContentView(scrollView);
+        qualityDialog.setCanceledOnTouchOutside(true);
+        final Window window = qualityDialog.getWindow();
+        if (window != null) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
+            if (Build.VERSION.SDK_INT >= 30) {
+                window.setDecorFitsSystemWindows(false);
+            } else {
+                window.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            }
+            window.setLayout(Utils.dpToPx(360), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
+        playerView.hideController();
+        qualityDialog.show();
+        if (currentRow[0] != null) {
+            currentRow[0].post(() -> currentRow[0].requestFocus());
+        }
+    }
+
+    private void applyVideoQuality(VideoQualityChoice choice) {
+        if (player == null || choice == null) {
+            return;
+        }
+        if (choice.mode == VideoQualityChoice.MODE_SOURCE) {
+            if (choice.sourceUrl == null || choice.sourceUrl.trim().isEmpty()) {
+                return;
+            }
+            final Uri target = Uri.parse(choice.sourceUrl);
+            if (target.equals(currentPlayingUri())) {
+                return; // re-selecting the current URL is a no-op
+            }
+            selectedVideoQualityMode = VideoQualityChoice.MODE_SOURCE;
+            selectedVideoTrackGroup = null;
+            selectedVideoTrackIndex = -1;
+            stickyQualityLines = qualityNumber(choice.label);
+            switchSource(target, Math.max(0, player.getCurrentPosition()), player.getPlayWhenReady());
+            return;
+        }
+
+        selectedVideoQualityMode = choice.mode;
+        selectedVideoTrackGroup = choice.group;
+        selectedVideoTrackIndex = choice.trackIndex;
+        // A manual in-stream choice clears any sticky SOURCE preference for following episodes.
+        stickyQualityLines = 0;
+        TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                .setForceHighestSupportedBitrate(choice.mode == VideoQualityChoice.MODE_MAXIMUM);
+        if (choice.mode == VideoQualityChoice.MODE_TRACK && choice.group != null) {
+            builder.setOverrideForType(new TrackSelectionOverride(
+                    choice.group, Collections.singletonList(choice.trackIndex)));
+        }
+        player.setTrackSelectionParameters(builder.build());
+    }
+
+    // Replaces the current item's URL with a separate-URL quality variant and reinitialises the player,
+    // preserving the playback position in-session. Under apiAccess Prefs is non-persistent, so the
+    // position is held in memory (not keyed by URI) and never written to disk.
+    private void switchSource(Uri target, long positionMs, boolean resume) {
+        if (player == null || target == null) {
+            return;
+        }
+        final int index = player.getCurrentMediaItemIndex();
+        if (!apiMediaItems.isEmpty() && index >= 0 && index < apiMediaItems.size()) {
+            final MediaItem old = apiMediaItems.get(index);
+            apiMediaItems.set(index, old.buildUpon().setUri(target).build());
+            apiPlaylistStartIndex = index;
+        } else {
+            mPrefs.mediaUri = target;
+        }
+        mPrefs.updatePosition(positionMs);
+        sourceSwitchKeepPaused = !resume;
+        restorePlayState = resume;
+        initializePlayer();
+    }
+
+    // Re-applies a remembered SOURCE quality (by number of lines) to the item now playing — used after
+    // an auto-next so a chosen quality carries across episodes. Falls back to the base URL when the new
+    // episode has no matching label.
+    private void applyStickyQuality() {
+        if (player == null || stickyQualityLines <= 0) {
+            return;
+        }
+        final LinkedHashMap<String, String> quality = currentQualityMap();
+        if (quality == null || quality.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : quality.entrySet()) {
+            if (qualityNumber(entry.getKey()) != stickyQualityLines) {
+                continue;
+            }
+            final String url = entry.getValue();
+            if (url == null || url.trim().isEmpty()) {
+                return;
+            }
+            final Uri target = Uri.parse(url);
+            if (target.equals(currentPlayingUri())) {
+                return; // already playing the sticky quality
+            }
+            selectedVideoQualityMode = VideoQualityChoice.MODE_SOURCE;
+            switchSource(target, 0, player.getPlayWhenReady());
+            return;
+        }
+    }
+
+    private int selectedQualityIndex(List<VideoQualityChoice> choices) {
+        if (selectedVideoQualityMode != VideoQualityChoice.MODE_SOURCE) {
+            for (int i = 0; i < choices.size(); i++) {
+                final VideoQualityChoice choice = choices.get(i);
+                if (choice.mode == VideoQualityChoice.MODE_TRACK
+                        && selectedVideoQualityMode == VideoQualityChoice.MODE_TRACK
+                        && choice.group == selectedVideoTrackGroup
+                        && choice.trackIndex == selectedVideoTrackIndex) {
+                    return i;
+                }
+                if ((choice.mode == VideoQualityChoice.MODE_AUTO
+                        || choice.mode == VideoQualityChoice.MODE_MAXIMUM)
+                        && choice.mode == selectedVideoQualityMode) {
+                    return i;
+                }
+            }
+        }
+        final Uri current = currentPlayingUri();
+        if (current != null) {
+            for (int i = 0; i < choices.size(); i++) {
+                final VideoQualityChoice choice = choices.get(i);
+                if (choice.mode == VideoQualityChoice.MODE_SOURCE && choice.sourceUrl != null
+                        && choice.sourceUrl.equals(current.toString())) {
+                    return i;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Number of scan lines a quality label denotes ("1080p" -> 1080, "4K"/"UHD" -> 2160, else 0).
+    private static int qualityNumber(String label) {
+        if (label == null) {
+            return 0;
+        }
+        String normalized = label.toLowerCase(Locale.US);
+        if (normalized.contains("4k") || normalized.contains("uhd")) {
+            return 2160;
+        }
+        String digits = label.replaceAll("[^0-9]", "");
+        try {
+            return digits.isEmpty() ? 0 : Integer.parseInt(digits);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private static String shortCodec(String mimeType) {
+        if (mimeType == null) return null;
+        if (mimeType.contains("avc")) return "H.264";
+        if (mimeType.contains("hevc")) return "H.265";
+        if (mimeType.contains("av01")) return "AV1";
+        if (mimeType.contains("vp9")) return "VP9";
+        if (mimeType.contains("eac3")) return "E-AC3";
+        if (mimeType.contains("ac3")) return "AC3";
+        if (mimeType.contains("aac") || mimeType.contains("mp4a")) return "AAC";
+        return mimeType.substring(mimeType.lastIndexOf('/') + 1).toUpperCase(Locale.US);
+    }
+
+    private static final class VideoQualityChoice {
+        static final int MODE_AUTO = 0;
+        static final int MODE_MAXIMUM = 1;
+        static final int MODE_TRACK = 2;
+        static final int MODE_SOURCE = 3;
+        final String label;
+        final String details;
+        final String bitrateText;
+        final int mode;
+        final TrackGroup group;
+        final int trackIndex;
+        final int bitrate;
+        final String sourceUrl;
+
+        private VideoQualityChoice(String label, String details, String bitrateText,
+                                   int mode, TrackGroup group, int trackIndex,
+                                   int bitrate, String sourceUrl) {
+            this.label = label;
+            this.details = details;
+            this.bitrateText = bitrateText;
+            this.mode = mode;
+            this.group = group;
+            this.trackIndex = trackIndex;
+            this.bitrate = bitrate;
+            this.sourceUrl = sourceUrl;
+        }
+
+        static VideoQualityChoice auto() {
+            return new VideoQualityChoice("", "", "", MODE_AUTO, null, -1, -1, null);
+        }
+
+        static VideoQualityChoice maximum() {
+            return new VideoQualityChoice("", "", "", MODE_MAXIMUM, null, -1, -1, null);
+        }
+
+        static VideoQualityChoice track(String label, String details, String bitrateText,
+                                        TrackGroup group, int index, int bitrate) {
+            return new VideoQualityChoice(label, details, bitrateText,
+                    MODE_TRACK, group, index, bitrate, null);
+        }
+
+        static VideoQualityChoice source(String label, String url) {
+            return new VideoQualityChoice(label, "", "", MODE_SOURCE, null, -1, -1, url);
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         try {
@@ -2922,7 +3465,11 @@ public class PlayerActivity extends Activity {
 
             updateLoading(true);
 
-            if (mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial) {
+            // A SOURCE quality-switch that was paused must stay paused after reinitialisation; otherwise
+            // apiAccess would force auto-play. Consume the one-shot flag here.
+            final boolean keepPaused = sourceSwitchKeepPaused;
+            sourceSwitchKeepPaused = false;
+            if ((mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial) && !keepPaused) {
                 play = true;
             }
 
@@ -3047,8 +3594,15 @@ public class PlayerActivity extends Activity {
             playlistDialog.dismiss();
             playlistDialog = null;
         }
+        if (qualityDialog != null) {
+            qualityDialog.dismiss();
+            qualityDialog = null;
+        }
         if (buttonPlaylist != null) {
             buttonPlaylist.setVisibility(View.GONE);
+        }
+        if (buttonQuality != null) {
+            buttonQuality.setVisibility(View.GONE);
         }
         updateButtons(false);
     }
@@ -3108,6 +3662,13 @@ public class PlayerActivity extends Activity {
             // Tracks are now known — (re)map any container names onto them, then refresh the header.
             resolveTrackNames();
             updateMediaInfo();
+            // In-stream renditions are known only now, so the quality button's visibility can change.
+            updateQualityButton();
+            // Apply a sticky quality choice to a freshly auto-advanced episode once its variants are known.
+            // Posted so the reinitialisation never runs while listeners are being dispatched.
+            if (playerView != null) {
+                playerView.post(PlayerActivity.this::applyStickyQuality);
+            }
         }
 
         @Override

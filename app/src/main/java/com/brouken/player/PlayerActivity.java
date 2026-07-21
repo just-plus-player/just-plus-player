@@ -821,10 +821,10 @@ public class PlayerActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         buttonSkip.setOnClickListener(v -> {
             if (pendingSkip != null && player != null) {
-                pendingSkip.skipped = true;
-                final long endMs = pendingSkip.endMs();
+                final SkipSegment segment = pendingSkip;
+                segment.skipped = true;
                 hideSkipButton();
-                skipSeekTo(endMs);
+                skipSeekTo(segment);
             }
         });
 
@@ -1805,13 +1805,20 @@ public class PlayerActivity extends Activity {
             hideSkipButton();
             return;
         }
-        // Ad segments are always skipped silently; skip segments follow the button/auto preference.
-        final boolean auto = segment.type == SkipSegment.Type.AD
-                || Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipMode);
+        // Ad segments are always skipped silently. Skip segments follow a per-position preference:
+        // end credits use skipModeCredits, everything else (intro/recap) uses skipMode.
+        final boolean auto;
+        if (segment.type == SkipSegment.Type.AD) {
+            auto = true;
+        } else if (segment.credits) {
+            auto = Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipModeCredits);
+        } else {
+            auto = Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipMode);
+        }
         if (auto) {
             segment.skipped = true;
             hideSkipButton();
-            skipSeekTo(segment.endMs());
+            skipSeekTo(segment);
             showSkipNotification();
         } else {
             updateSkipButtonProgress(segment);
@@ -1833,12 +1840,21 @@ public class PlayerActivity extends Activity {
         skipButtonProgress.setLevel((int) Math.round(fraction * 10000));
     }
 
-    private void skipSeekTo(long positionMs) {
+    private void skipSeekTo(SkipSegment segment) {
         if (player == null)
             return;
+        // A segment reaching the file end maps its end to the duration, so skipping it lands on the
+        // very last frame. seekTo(duration) parks there — playback stalls, paused, without advancing —
+        // so it must move to the next episode like a natural end-of-media instead. Credits that stop
+        // short of the end (a post-credits scene/teaser follows) and the last item, with no next
+        // episode, fall through to an exact seek so that trailing content still plays.
+        if (segment.reachesEnd && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem();
+            return;
+        }
         // Exact seek so playback resumes precisely at the segment end, not at an earlier keyframe.
         player.setSeekParameters(SeekParameters.EXACT);
-        player.seekTo(positionMs);
+        player.seekTo(segment.endMs());
     }
 
     private void showSkipButton(SkipSegment segment) {

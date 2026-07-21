@@ -36,9 +36,10 @@
     <string name="pref_skip_enabled">Enabled</string>
     <string name="pref_skip_enabled_on">Skip intros and ad segments provided by the launching app</string>
     <string name="pref_skip_enabled_off">Play content as is</string>
-    <string name="pref_skip_mode">Skip mode</string>
+    <string name="pref_skip_mode">Intro</string>
     <string name="pref_skip_mode_button">Show Skip button</string>
     <string name="pref_skip_mode_auto">Skip automatically</string>
+    <string name="pref_skip_mode_credits">End credits</string>
     <string name="pref_skip_fetch">Find segments online</string>
     <string name="pref_skip_fetch_on">Look up intro/credits segments from online databases when the source provides none</string>
     <string name="pref_skip_fetch_off">Only use segments provided by the launching app</string>

@@ -13,6 +13,22 @@ import java.util.List;
  */
 public class SkipManager {
 
+    /**
+     * A SKIP segment whose end lands past this fraction of the file is treated as the end credits.
+     * Keyed on the end (not the start) so it survives an intro that is shifted deep into the episode
+     * after a long cold open: such an intro still ends far from the finish because the bulk of the
+     * episode follows it, whereas credits end in the closing stretch even when a post-credits scene
+     * or teaser follows.
+     */
+    private static final double CREDITS_END_FRACTION = 0.75;
+
+    /**
+     * A segment ending within this many seconds of the file end counts as reaching the end. The tail
+     * segment is remapped to exactly the duration, but online sources return absolute times that may
+     * stop a touch earlier, so a small tolerance keeps them classified.
+     */
+    private static final double CREDITS_END_TOLERANCE_SEC = 1.5;
+
     private SkipSource source;
     private List<SkipSegment> segments = Collections.emptyList();
 
@@ -30,6 +46,24 @@ public class SkipManager {
     /** Recompute segments against the now-known duration. Safe to call repeatedly. */
     public void rebuild(double durationSec) {
         segments = source != null ? source.getSegments(durationSec) : Collections.<SkipSegment>emptyList();
+        classifyCredits(durationSec);
+    }
+
+    /**
+     * Classify each segment's end-of-file relationship. {@code credits} marks a SKIP segment in the
+     * closing stretch (drives the credits skip-mode); {@code reachesEnd} marks a segment ending at
+     * the file end (drives advancing to the next episode). Guarded on a known positive duration —
+     * otherwise a fraction/tolerance test against a non-positive duration would flag everything.
+     */
+    private void classifyCredits(double durationSec) {
+        final boolean durationKnown = durationSec > 0 && !Double.isNaN(durationSec);
+        for (SkipSegment seg : segments) {
+            seg.credits = durationKnown
+                    && seg.type == SkipSegment.Type.SKIP
+                    && seg.endSec >= durationSec * CREDITS_END_FRACTION;
+            seg.reachesEnd = durationKnown
+                    && seg.endSec >= durationSec - CREDITS_END_TOLERANCE_SEC;
+        }
     }
 
     public boolean hasSegments() {

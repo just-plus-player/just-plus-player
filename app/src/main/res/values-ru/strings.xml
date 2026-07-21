@@ -34,9 +34,10 @@
     <string name="pref_skip_enabled">Включено</string>
     <string name="pref_skip_enabled_on">Пропускать заставки и рекламные сегменты от запускающего приложения</string>
     <string name="pref_skip_enabled_off">Воспроизводить как есть</string>
-    <string name="pref_skip_mode">Режим пропуска</string>
+    <string name="pref_skip_mode">Заставка</string>
     <string name="pref_skip_mode_button">Показывать кнопку «Пропустить»</string>
     <string name="pref_skip_mode_auto">Пропускать автоматически</string>
+    <string name="pref_skip_mode_credits">Финальные титры</string>
     <string name="pref_skip_fetch">Искать сегменты онлайн</string>
     <string name="pref_skip_fetch_on">Искать сегменты заставок и титров в онлайн-базах, если источник их не предоставил</string>
     <string name="pref_skip_fetch_off">Использовать только сегменты от запускающего приложения</string>

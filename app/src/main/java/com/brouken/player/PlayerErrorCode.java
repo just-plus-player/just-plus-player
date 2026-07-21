@@ -21,7 +21,11 @@ enum PlayerErrorCode {
     /** ExoPlayer {@code TYPE_UNEXPECTED}: an internal player error. */
     UNEXPECTED_ERROR("JPP-1004"),
     /** Playback never reached a ready state within the load watchdog window. */
-    LOAD_TIMEOUT("JPP-1005");
+    LOAD_TIMEOUT("JPP-1005"),
+    /** Media3 {@code StuckPlayerDetector} reported no playback progress ({@code ERROR_CODE_TIMEOUT}) —
+     *  a mid-playback stall (typically the device decoder wedging on a stream), distinct from the
+     *  pre-ready {@link #LOAD_TIMEOUT}. */
+    STUCK_TIMEOUT("JPP-1006");
 
     final String code;
 

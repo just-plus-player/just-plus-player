@@ -1996,7 +1996,7 @@ public class PlayerActivity extends Activity {
         for (int i = 0; i < count; i++) {
             order.add(i);
         }
-        order.sort((a, b) -> Integer.compare(qualityNumber(levels[b]), qualityNumber(levels[a])));
+        Collections.sort(order, (a, b) -> Integer.compare(qualityNumber(levels[b]), qualityNumber(levels[a])));
         for (int i : order) {
             final String label = levels[i];
             final String url = urls[i];
@@ -2767,7 +2767,7 @@ public class PlayerActivity extends Activity {
             choices.add(VideoQualityChoice.auto());
             choices.add(VideoQualityChoice.maximum());
             ArrayList<Integer> longSides = new ArrayList<>(renditions.keySet());
-            longSides.sort(Collections.reverseOrder());
+            Collections.sort(longSides, Collections.reverseOrder());
             for (Integer longSide : longSides) choices.add(renditions.get(longSide));
         }
 

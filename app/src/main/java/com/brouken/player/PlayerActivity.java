@@ -3315,6 +3315,9 @@ public class PlayerActivity extends Activity {
             if (error instanceof ExoPlaybackException) {
                 final ExoPlaybackException exoPlaybackException = (ExoPlaybackException) error;
                 if (exoPlaybackException.type == ExoPlaybackException.TYPE_SOURCE) {
+                    // A source error is fatal — surface it (message + code) before releasing, since
+                    // after teardown the deferred controller-visible path can no longer fire.
+                    showError(exoPlaybackException);
                     releasePlayer(false);
                     return;
                 }
@@ -3323,6 +3326,11 @@ public class PlayerActivity extends Activity {
                 } else {
                     errorToShow = exoPlaybackException;
                 }
+            } else {
+                // Any other playback error — surface a general message + code instead of failing
+                // silently (it was already reported to Sentry above).
+                showSnack(getString(R.string.error_playback_general)
+                        + " (" + PlayerErrorCode.GENERAL_ERROR + ")", error.getLocalizedMessage());
             }
         }
     }
@@ -3676,7 +3684,6 @@ public class PlayerActivity extends Activity {
     }
 
     void showError(ExoPlaybackException error) {
-        final String errorGeneral = error.getLocalizedMessage();
         String errorDetailed;
         final PlayerErrorCode code;
 
@@ -3695,12 +3702,13 @@ public class PlayerActivity extends Activity {
                 break;
             case ExoPlaybackException.TYPE_REMOTE:
             default:
-                errorDetailed = errorGeneral;
+                errorDetailed = error.getLocalizedMessage();
                 code = PlayerErrorCode.UNEXPECTED_ERROR;
                 break;
         }
 
-        showSnack(errorGeneral + " (" + code + ")", errorDetailed);
+        // Friendly primary message + stable code; the raw player message stays available behind "Details".
+        showSnack(getString(R.string.error_playback_general) + " (" + code + ")", errorDetailed);
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {

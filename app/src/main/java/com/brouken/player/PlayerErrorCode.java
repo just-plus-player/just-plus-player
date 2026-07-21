@@ -8,6 +8,8 @@ package com.brouken.player;
  * add new ones for new cases, never renumber or reuse an existing one.
  */
 enum PlayerErrorCode {
+    /** General fallback: a playback error that matched no more specific category below. */
+    GENERAL_ERROR("JPP-1000"),
     /** Lampac stream resolver returned its {@code {"rch":…}} WebSocket handshake instead of media —
      *  the real stream URL is resolved by client-side code over that socket, which this player does
      *  not implement, so the link can never be obtained here. */

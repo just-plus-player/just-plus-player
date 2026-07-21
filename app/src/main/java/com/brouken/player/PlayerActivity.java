@@ -385,6 +385,8 @@ public class PlayerActivity extends Activity {
         }
     };
     SkipSegment pendingSkip;
+    // Confirm key whose ACTION_UP must be swallowed after triggering a Skip on its ACTION_DOWN (TV).
+    private int skipKeyUpToConsume = 0;
     final Runnable skipRunnable = new Runnable() {
         @Override
         public void run() {
@@ -1531,6 +1533,28 @@ public class PlayerActivity extends Activity {
             return true;
         }
 
+        // TV: while the floating Skip button is showing (controller hidden), OK/Enter must trigger the
+        // skip. Keys are handled here (see below) rather than through view-focus dispatch, and the
+        // button does not reliably hold focus when it appears, so key off its visibility rather than
+        // focus. Route the confirm key straight to the button on ACTION_DOWN and swallow the paired
+        // ACTION_UP — otherwise, once the skip hides the button and the controller appears, that
+        // trailing key-up lands on the newly focused play/pause button and pauses playback.
+        if (isTvBox && isSkipConfirmKey(event.getKeyCode())) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && !controllerVisibleFully
+                    && skipButtonContainer != null
+                    && skipButtonContainer.getVisibility() == View.VISIBLE) {
+                buttonSkip.performClick();
+                skipKeyUpToConsume = event.getKeyCode();
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP
+                    && skipKeyUpToConsume == event.getKeyCode()) {
+                skipKeyUpToConsume = 0;
+                return true;
+            }
+        }
+
         if (isTvBox && !controllerVisibleFully) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 onKeyDown(event.getKeyCode(), event);
@@ -1866,6 +1890,20 @@ public class PlayerActivity extends Activity {
         player.seekTo(segment.endMs());
     }
 
+    // OK/Enter-style keys that activate the focused Skip button on a TV remote / gamepad.
+    private static boolean isSkipConfirmKey(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_BUTTON_START:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private void showSkipButton(SkipSegment segment) {
         pendingSkip = segment;
         if (skipButtonContainer != null && skipButtonContainer.getVisibility() != View.VISIBLE) {
@@ -1879,6 +1917,9 @@ public class PlayerActivity extends Activity {
     private void hideSkipButton() {
         pendingSkip = null;
         if (skipButtonContainer != null) {
+            if (isTvBox && buttonSkip.hasFocus() && playerView != null) {
+                playerView.requestFocus();
+            }
             skipButtonContainer.setVisibility(View.GONE);
         }
     }
@@ -4375,18 +4416,31 @@ public class PlayerActivity extends Activity {
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {
+        // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
+        // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
+        if (isTvBox) {
+            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setMessage(textPrimary);
+            builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
+            if (textSecondary != null) {
+                builder.setNeutralButton(R.string.error_details, (dialogInterface, i) -> showErrorDetails(textSecondary));
+            }
+            builder.show();
+            return;
+        }
         snackbar = Snackbar.make(coordinatorLayout, textPrimary, Snackbar.LENGTH_LONG);
         if (textSecondary != null) {
-            snackbar.setAction(R.string.error_details, v -> {
-                final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
-                builder.setMessage(textSecondary);
-                builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
-                final AlertDialog dialog = builder.create();
-                dialog.show();
-            });
+            snackbar.setAction(R.string.error_details, v -> showErrorDetails(textSecondary));
         }
         snackbar.setAnchorView(R.id.exo_bottom_bar);
         snackbar.show();
+    }
+
+    private void showErrorDetails(final String textSecondary) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setMessage(textSecondary);
+        builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
+        builder.create().show();
     }
 
     void reportScrubbing(long position) {

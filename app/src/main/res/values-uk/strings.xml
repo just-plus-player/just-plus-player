@@ -60,6 +60,15 @@
     <string name="button_crop">Змінити розмір</string>
     <string name="button_rotate">Повернути</string>
     <string name="button_pip">Картинка в картинці</string>
+    <string name="button_quality">Якість відео</string>
+    <string name="quality_title">Якість відео</string>
+    <string name="quality_auto">Авто</string>
+    <string name="quality_auto_description">Оптимальна якість</string>
+    <string name="quality_maximum">Максимальна</string>
+    <string name="quality_maximum_badge">Найвища</string>
+    <string name="quality_source">Джерело</string>
+    <string name="quality_bitrate">%1$.1f Мбіт/с</string>
+    <string name="quality_unavailable">Параметри якості поки недоступні</string>
     <string name="pref_file_access">Доступ до файлів</string>
     <string name="pref_file_access_auto">Автоматично</string>
     <string name="mediastore_empty">Відеофайли не знайдено</string>

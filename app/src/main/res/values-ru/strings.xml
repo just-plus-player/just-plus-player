@@ -56,6 +56,15 @@
     <string name="button_crop">Изменить размер</string>
     <string name="button_rotate">Повернуть</string>
     <string name="button_pip">Картинка в картинке</string>
+    <string name="button_quality">Качество видео</string>
+    <string name="quality_title">Качество видео</string>
+    <string name="quality_auto">Авто</string>
+    <string name="quality_auto_description">Оптимальное качество</string>
+    <string name="quality_maximum">Максимальное</string>
+    <string name="quality_maximum_badge">Наивысшее</string>
+    <string name="quality_source">Источник</string>
+    <string name="quality_bitrate">%1$.1f Мбит/с</string>
+    <string name="quality_unavailable">Параметры качества пока недоступны</string>
     <string name="pref_file_access_auto">Авто</string>
     <string name="pref_file_access">Доступ к файлам</string>
     <string name="pref_captioning_preferences">Настройки субтитров</string>

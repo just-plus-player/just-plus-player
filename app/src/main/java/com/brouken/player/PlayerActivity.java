@@ -95,6 +95,7 @@ import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.SeekParameters;
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -200,10 +201,18 @@ public class PlayerActivity extends Activity {
     public static boolean haveMedia;
     private boolean videoLoading;
     // Watchdog for a silent load failure: if the player never reaches STATE_READY within this window
-    // (stuck buffering, a broken next-episode URL, etc.) the load is reported to Sentry. Such stalls
-    // often produce no PlaybackException, so onPlayerError alone would never catch them.
+    // (stuck buffering, a broken next-episode URL, etc.) a friendly LOAD_TIMEOUT message is shown.
+    // Such stalls often produce no PlaybackException, so onPlayerError alone would never catch them.
     private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
     private final Runnable loadTimeoutRunnable = this::reportVideoLoadTimeout;
+    // One-shot recovery for a mid-playback stall (Media3 StuckPlayerDetector → ERROR_CODE_TIMEOUT),
+    // typically the device's Dolby Vision decoder wedging on a stream: re-decode the DV track as plain
+    // HEVC (HDR10). forceHevcForDolbyVision drives the codec selector at the next player build;
+    // pendingStuckRecovery marks that rebuild so the reset in initializePlayer keeps the flag;
+    // stuckRecoveryAttemptedUri guards against retrying the same URI in a loop.
+    private boolean forceHevcForDolbyVision;
+    private boolean pendingStuckRecovery;
+    private String stuckRecoveryAttemptedUri;
     public static boolean controllerVisible;
     public static boolean controllerVisibleFully;
     public static Snackbar snackbar;
@@ -3286,6 +3295,16 @@ public class PlayerActivity extends Activity {
         boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null;
 
+        // Unless this is the stuck-playback recovery rebuild (which must keep forceHevcForDolbyVision),
+        // clear the one-shot Dolby Vision recovery state so a normal open plays DV through its regular
+        // path and a future stall on any item can recover again.
+        if (pendingStuckRecovery) {
+            pendingStuckRecovery = false;
+        } else {
+            forceHevcForDolbyVision = false;
+            stuckRecoveryAttemptedUri = null;
+        }
+
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
         resolvedTrackNames.clear();
@@ -3334,9 +3353,17 @@ public class PlayerActivity extends Activity {
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
                 .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE);
-        @SuppressLint("WrongConstant") RenderersFactory renderersFactory = new DefaultRenderersFactory(this)
+        @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
                 .setExtensionRendererMode(mPrefs.decoderPriority)
                 .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
+        if (forceHevcForDolbyVision) {
+            // Stuck-playback recovery: route a Dolby Vision track to the plain HEVC decoder (its
+            // base layer is HEVC), bypassing a device DV decoder that wedged. Picture stays HDR10.
+            renderersFactory.setMediaCodecSelector((mimeType, requiresSecureDecoder, requiresTunnelingDecoder) ->
+                    MediaCodecSelector.DEFAULT.getDecoderInfos(
+                            MimeTypes.VIDEO_DOLBY_VISION.equals(mimeType) ? MimeTypes.VIDEO_H265 : mimeType,
+                            requiresSecureDecoder, requiresTunnelingDecoder));
+        }
 
         ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this, renderersFactory)
                 .setTrackSelector(trackSelector);
@@ -3878,6 +3905,30 @@ public class PlayerActivity extends Activity {
                     && recoverFromContainerError()) {
                 return;
             }
+            // A mid-playback stall: Media3's StuckPlayerDetector reports "no progress" as a
+            // TYPE_UNEXPECTED error with ERROR_CODE_TIMEOUT. Not an app bug — the device decoder wedged
+            // (commonly a Dolby Vision stream its DV decoder can't handle). Try a one-shot recovery that
+            // re-decodes DV as plain HEVC; if not applicable / already tried, show a friendly message.
+            if (error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT) {
+                if (recoverFromStuckPlayback()) {
+                    return;
+                }
+                showSnack(getString(R.string.error_playback_stalled)
+                        + " (" + PlayerErrorCode.STUCK_TIMEOUT + ")", error.getLocalizedMessage());
+                // Report as device/firmware telemetry (tagged), not an app bug.
+                io.sentry.Sentry.captureException(error, scope -> {
+                    scope.setTag("player.error_code", error.getErrorCodeName());
+                    scope.setTag("player.stall_class", "device_decoder");
+                    final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
+                    final Uri uri = item != null && item.localConfiguration != null
+                            ? item.localConfiguration.uri : mPrefs.mediaUri;
+                    if (Utils.isSupportedNetworkUri(uri)) {
+                        scope.setExtra("media_uri", Utils.uriToReportString(uri));
+                    }
+                });
+                releasePlayer(false);
+                return;
+            }
             // Enrich via the per-capture ScopeCallback overload (not withScope) so the tag/extra land
             // on exactly this event.
             io.sentry.Sentry.captureException(error, scope -> {
@@ -3952,6 +4003,41 @@ public class PlayerActivity extends Activity {
         player.setMediaItems(items, index, position);
         player.prepare();
         player.play();
+        return true;
+    }
+
+    // One-shot recovery from a mid-playback stall (ERROR_CODE_TIMEOUT) on a Dolby Vision track: rebuild
+    // the player forcing the DV track through the plain HEVC decoder (bypassing a device DV decoder that
+    // wedged). The renderers factory / codec selector can only be set at construction, so a full rebuild
+    // is required; position is preserved via savePlayer() and restorePlayState resumes playback. Guarded
+    // per URI so a stream that stalls again after the switch fails once instead of looping. Returns true
+    // when a recovery rebuild was scheduled.
+    private boolean recoverFromStuckPlayback() {
+        if (player == null) {
+            return false;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item == null || item.localConfiguration == null) {
+            return false;
+        }
+        final Format videoFormat = player.getVideoFormat();
+        if (videoFormat == null || !MimeTypes.VIDEO_DOLBY_VISION.equals(videoFormat.sampleMimeType)) {
+            return false;
+        }
+        final String uri = item.localConfiguration.uri.toString();
+        if (uri.equals(stuckRecoveryAttemptedUri)) {
+            return false;
+        }
+        stuckRecoveryAttemptedUri = uri;
+        forceHevcForDolbyVision = true;
+        pendingStuckRecovery = true;
+        restorePlayState = true;
+        // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
+        // released while its own listener is executing.
+        playerView.post(() -> {
+            releasePlayer();
+            initializePlayer();
+        });
         return true;
     }
 

@@ -4,6 +4,7 @@
     <string name="error_stream_not_ready">Не удалось получить ссылку на видео. Попробуйте перезапустить воспроизведение.</string>
     <string name="error_playback_general">Не удалось воспроизвести это видео.</string>
     <string name="error_playback_timeout">Воспроизведение слишком долго не начинается. Попробуйте ещё раз.</string>
+    <string name="error_playback_stalled">Воспроизведение остановилось — это устройство, возможно, не может декодировать этот файл.</string>
     <string name="error_details">Подробности</string>
     <string name="open_subtitles">Загрузить субтитры</string>
     <string name="onboarding_open_description">Нажмите, чтобы открыть видеофайл. Нажмите и удерживайте для загрузки внешних субтитров.</string>

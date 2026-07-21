@@ -4330,18 +4330,31 @@ public class PlayerActivity extends Activity {
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {
+        // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
+        // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
+        if (isTvBox) {
+            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setMessage(textPrimary);
+            builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
+            if (textSecondary != null) {
+                builder.setNeutralButton(R.string.error_details, (dialogInterface, i) -> showErrorDetails(textSecondary));
+            }
+            builder.show();
+            return;
+        }
         snackbar = Snackbar.make(coordinatorLayout, textPrimary, Snackbar.LENGTH_LONG);
         if (textSecondary != null) {
-            snackbar.setAction(R.string.error_details, v -> {
-                final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
-                builder.setMessage(textSecondary);
-                builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
-                final AlertDialog dialog = builder.create();
-                dialog.show();
-            });
+            snackbar.setAction(R.string.error_details, v -> showErrorDetails(textSecondary));
         }
         snackbar.setAnchorView(R.id.exo_bottom_bar);
         snackbar.show();
+    }
+
+    private void showErrorDetails(final String textSecondary) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setMessage(textSecondary);
+        builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
+        builder.create().show();
     }
 
     void reportScrubbing(long position) {

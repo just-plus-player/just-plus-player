@@ -44,6 +44,9 @@
     <string name="pref_skip_fetch">Find segments online</string>
     <string name="pref_skip_fetch_on">Look up intro/credits segments from online databases when the source provides none</string>
     <string name="pref_skip_fetch_off">Only use segments provided by the launching app</string>
+    <string name="skip_offset_title">Skip offset</string>
+    <string name="skip_offset_reset">Reset</string>
+    <string name="button_skip_offset">Skip offset</string>
     <string name="button_skip">Skip</string>
     <string name="notification_skipped">Segment skipped</string>
     <string name="pref_show_clock">Show clock</string>

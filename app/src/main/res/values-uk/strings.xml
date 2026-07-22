@@ -43,6 +43,9 @@
     <string name="pref_skip_fetch">Шукати сегменти онлайн</string>
     <string name="pref_skip_fetch_on">Шукати сегменти заставок і титрів в онлайн-базах, якщо джерело їх не надало</string>
     <string name="pref_skip_fetch_off">Використовувати лише сегменти від застосунку</string>
+    <string name="skip_offset_title">Зсув пропуску</string>
+    <string name="skip_offset_reset">Скинути</string>
+    <string name="button_skip_offset">Зсув пропуску</string>
     <string name="button_skip">Пропустити</string>
     <string name="notification_skipped">Сегмент пропущено</string>
     <string name="pref_show_clock">Показувати годинник</string>

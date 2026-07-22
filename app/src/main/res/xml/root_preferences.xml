@@ -79,7 +79,7 @@
             app:useSimpleSummaryProvider="true" />
 
         <ListPreference
-            app:defaultValue="auto"
+            app:defaultValue="button"
             app:dependency="skipEnabled"
             app:entries="@array/skip_mode_entries"
             app:entryValues="@array/skip_mode_values"

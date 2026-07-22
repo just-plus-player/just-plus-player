@@ -97,7 +97,7 @@ class Prefs {
     public boolean subtitleStyleBold = false;
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BUTTON;
-    public String skipModeCredits = SKIP_MODE_AUTO;
+    public String skipModeCredits = SKIP_MODE_BUTTON;
     public boolean skipFetchOnline = true;
     public boolean showClock = false;
     public boolean crashReporting = true;

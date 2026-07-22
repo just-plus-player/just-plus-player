@@ -38,6 +38,7 @@ import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Parcelable;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
@@ -93,8 +94,11 @@ import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.SeekParameters;
+import androidx.media3.exoplayer.audio.AudioRendererEventListener;
+import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -3571,6 +3575,20 @@ public class PlayerActivity extends Activity {
         mPrefs.updateSubtitle(uri);
     }
 
+    // Whether the current media is a Matroska container, detected from the resolved MIME type or the
+    // URI extension. Extensionless streams that never reveal a matroska type are not matched.
+    private boolean isMatroskaMedia() {
+        if (MimeTypes.VIDEO_MATROSKA.equals(mPrefs.mediaType)) {
+            return true;
+        }
+        if (mPrefs.mediaUri == null) {
+            return false;
+        }
+        final String path = mPrefs.mediaUri.getPath();
+        // Case-insensitive ".mkv" suffix test without allocating a lower-cased copy of the path.
+        return path != null && path.regionMatches(true, path.length() - 4, ".mkv", 0, 4);
+    }
+
     public void initializePlayer() {
         boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null;
@@ -3633,7 +3651,29 @@ public class PlayerActivity extends Activity {
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
                 .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE);
-        @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
+        // On TV boxes, decode MKV audio in software (ffmpeg) instead of routing it to the platform
+        // audio decoder / HDMI passthrough. Some TV decoders and passthrough paths wedge on init for
+        // the heavy codecs common in MKV remuxes (DTS/EAC3/TrueHD) — the load then never reaches a
+        // ready state (JPP-1005). Preferring the ffmpeg audio renderer sidesteps that path entirely.
+        // Only audio is affected (video keeps the user's decoder priority), and only for MKV on a TV;
+        // phones already fall back to ffmpeg for these codecs, and non-MKV keeps passthrough intact.
+        final boolean preferFfmpegAudio = isTvBox && isMatroskaMedia();
+        DefaultRenderersFactory baseRenderersFactory = preferFfmpegAudio
+                ? new DefaultRenderersFactory(this) {
+                    @Override
+                    protected void buildAudioRenderers(Context context, int extensionRendererMode,
+                                                       MediaCodecSelector mediaCodecSelector,
+                                                       boolean enableDecoderFallback, AudioSink audioSink,
+                                                       Handler eventHandler,
+                                                       AudioRendererEventListener eventListener,
+                                                       ArrayList<Renderer> out) {
+                        super.buildAudioRenderers(context, EXTENSION_RENDERER_MODE_PREFER,
+                                mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler,
+                                eventListener, out);
+                    }
+                }
+                : new DefaultRenderersFactory(this);
+        @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = baseRenderersFactory
                 .setExtensionRendererMode(mPrefs.decoderPriority)
                 .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
         if (forceHevcForDolbyVision) {

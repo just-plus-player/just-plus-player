@@ -41,7 +41,6 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
 import androidx.documentfile.provider.DocumentFile;
@@ -642,9 +641,6 @@ class Utils {
         activity.runOnUiThread(() -> {
             boolean switchingModes = false;
 
-            if (BuildConfig.DEBUG)
-                Toast.makeText(activity, "Video frameRate: " + frameRate, Toast.LENGTH_LONG).show();
-
             if (frameRate > 0) {
                 Display display = activity.getWindow().getDecorView().getDisplay();
                 if (display == null) {
@@ -676,10 +672,8 @@ class Utils {
 
                     if (modesResolutionCount > 1) {
                         Display.Mode modeBest = null;
-                        String modes = "Available refreshRates:";
 
                         for (Display.Mode mode : modesHigh) {
-                            modes += " " + mode.getRefreshRate();
                             if (normRate(mode.getRefreshRate()) % normRate(frameRate) <= 0.0001f) {
                                 if (modeBest == null || normRate(mode.getRefreshRate()) > normRate(modeBest.getRefreshRate())) {
                                     modeBest = mode;
@@ -698,10 +692,6 @@ class Utils {
                             layoutParams.preferredDisplayModeId = modeBest.getModeId();
                             window.setAttributes(layoutParams);
                         }
-                        if (BuildConfig.DEBUG)
-                            Toast.makeText(activity, modes + "\n" +
-                                    "Video frameRate: " + frameRate + "\n" +
-                                    "Current display refreshRate: " + modeBest.getRefreshRate(), Toast.LENGTH_LONG).show();
                     }
                 }
             }

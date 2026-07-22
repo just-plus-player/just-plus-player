@@ -27,6 +27,9 @@
     <string name="pref_framerate_matching_off">Не изменять частоту обновления экрана</string>
     <string name="pref_framerate_matching_on">Переключать частоту обновления экрана в соответствии с частотой кадров видеосигнала</string>
     <string name="pref_framerate_matching">Автоматическое согласование частоты кадров</string>
+    <string name="pref_allow_system_framerate">Разрешить системе подстраивать частоту обновления</string>
+    <string name="pref_allow_system_framerate_on">Плеер может менять частоту обновления экрана под видео (на некоторых телевизорах возможно мигание)</string>
+    <string name="pref_allow_system_framerate_off">Не менять частоту обновления экрана во время воспроизведения</string>
     <string name="pref_general_header">Общие</string>
     <string name="pref_title">Настройки</string>
     <string name="pref_repeat_toggle">Переключение повтора</string>

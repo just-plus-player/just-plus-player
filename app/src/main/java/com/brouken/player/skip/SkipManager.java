@@ -1,5 +1,6 @@
 package com.brouken.player.skip;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -32,6 +33,14 @@ public class SkipManager {
     private SkipSource source;
     private List<SkipSegment> segments = Collections.emptyList();
 
+    /** User-configured global shift applied to every segment (seconds); 0 = off. */
+    private double offsetSec = 0;
+
+    /** Set the manual skip offset (session-scoped, set from the player). Applied on the next {@link #rebuild}. */
+    public void setOffsetSec(double offsetSec) {
+        this.offsetSec = offsetSec;
+    }
+
     /** Set the source for the current media (e.g. a new {@link IntentSegmentsSource}); clears segments. */
     public void setSource(SkipSource source) {
         this.source = source;
@@ -45,8 +54,33 @@ public class SkipManager {
 
     /** Recompute segments against the now-known duration. Safe to call repeatedly. */
     public void rebuild(double durationSec) {
-        segments = source != null ? source.getSegments(durationSec) : Collections.<SkipSegment>emptyList();
+        final List<SkipSegment> base = source != null
+                ? source.getSegments(durationSec) : Collections.<SkipSegment>emptyList();
+        segments = offsetSec != 0 ? applyOffset(base, durationSec) : base;
         classifyCredits(durationSec);
+    }
+
+    /** Shift every segment by {@link #offsetSec}, clamped to the media bounds; drop any pushed out. */
+    private List<SkipSegment> applyOffset(List<SkipSegment> in, double durationSec) {
+        final boolean durationKnown = durationSec > 0 && !Double.isNaN(durationSec);
+        final List<SkipSegment> out = new ArrayList<>(in.size());
+        for (SkipSegment s : in) {
+            double start = s.startSec + offsetSec;
+            double end = s.endSec + offsetSec;
+            if (start < 0) {
+                start = 0;
+            }
+            if (durationKnown && end > durationSec) {
+                end = durationSec;
+            }
+            if (end <= start) {
+                continue; // shifted out of range
+            }
+            final SkipSegment shifted = new SkipSegment(start, end, s.type, s.category, s.coordBase, s.timeTrust);
+            shifted.confirmed = s.confirmed;
+            out.add(shifted);
+        }
+        return out;
     }
 
     /**

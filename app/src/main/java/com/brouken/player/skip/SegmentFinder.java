@@ -5,10 +5,15 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
@@ -19,20 +24,27 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 /**
- * Fetches intro/recap/outro skip segments for one movie or one series episode, keyed only by stable
+ * Fetches intro/recap/credits skip segments for one movie or one series episode, keyed only by stable
  * ids (imdb, tmdb, and season/episode for series) — no title search.
  *
- * <p>Sources are queried in trust order and their results are <b>quality-scored</b>
- * ({@code score = trust × signal}); the best-scoring result wins rather than simply the first
- * non-empty one, so a weak early source (a single-submission guess) cannot shadow a precise later
- * one. Cost is bounded by two stop rules: a strong hit ({@code score ≥ ACCEPT}) returns immediately,
- * and empty responses never stop the search while at most {@link #NONEMPTY_BUDGET} non-empty results
- * are weighed before settling (see {@code SKIPME_SOURCE_PLAN.md}).
+ * <p>All sources in the applicable profile are probed <b>in parallel</b>, then the results are merged
+ * by <b>cross-source voting</b> rather than a single winner-take-all pick:
+ * <ul>
+ *   <li>Segments are grouped by {@link SkipSegment.Category} (a source's intro can only agree with
+ *       another source's intro), then clustered by start time within {@link #AGREE_TOLERANCE_SEC}.</li>
+ *   <li>A cluster backed by at least {@link #MIN_VOTES} distinct sources is {@code confirmed} — this
+ *       is what kills phantom segments a single bad source would otherwise inject.</li>
+ *   <li>The kept segment's <b>timing comes from the most file-accurate agreeing source</b> (highest
+ *       {@link SkipSegment#timeTrust}); timings from different coordinate systems are never averaged.</li>
+ * </ul>
+ * Coverage is prioritized for single-source categories: a category seen by only one source is still
+ * offered (as {@code confirmed=false}) rather than dropped.
  *
  * <p>Runs on a background thread; the callback fires on that same worker thread (the caller marshals
- * to the UI thread). Results (including "nothing found") are cached in memory for the process
- * lifetime, keyed by {@code imdb|tmdb|season|episode}. On any error or timeout a source yields
- * nothing — playback is never affected.
+ * to the UI thread). Results are cached in memory keyed by {@code imdb|tmdb|season|episode|duration};
+ * negative (empty) results expire after {@link #NEG_CACHE_TTL_MS} so a transient network error does
+ * not silence a title for the whole process. On any error or timeout a source yields nothing —
+ * playback is never affected.
  */
 public final class SegmentFinder {
 
@@ -46,15 +58,22 @@ public final class SegmentFinder {
     private static final int TIMEOUT_SEC = 5;
     private static final double OPEN_ENDED_SEC = 99999; // TheIntroDB null end → open-ended
 
-    /** A result with {@code score ≥ ACCEPT} is accepted immediately, ending the probe loop. */
-    private static final double ACCEPT = 0.60;
-    /**
-     * Max <b>non-empty</b> results to weigh before settling on the best. Empty responses never count
-     * and never stop the search — they are the cheap negatives fallbacks exist for, so the ladder is
-     * walked until a source has data (up to the whole list). This cap only bounds how many weak
-     * (below-{@link #ACCEPT}) candidates we gather before picking the highest-scoring one.
-     */
-    private static final int NONEMPTY_BUDGET = 3;
+    // ---- Voting / probe tuning (all thresholds centralized here) -----------------------------
+
+    /** Two segments of the same category whose starts fall within this window are treated as agreeing. */
+    private static final double AGREE_TOLERANCE_SEC = 30;
+    /** Distinct sources needed to mark a segment {@code confirmed}. */
+    private static final int MIN_VOTES = 2;
+    /** Overall wall-clock ceiling for the parallel probe (sources run concurrently, not summed). */
+    private static final int PROBE_DEADLINE_SEC = TIMEOUT_SEC + 3;
+    /** How long an empty ("nothing found") result stays cached before it is re-probed. */
+    private static final long NEG_CACHE_TTL_MS = 10 * 60 * 1000L;
+
+    // Time-source priority per source (higher wins when agreeing segments disagree on timing).
+    private static final int TT_SKIPDB = SkipSegment.TIME_TRUST_DURATION_AWARE;       // 200
+    private static final int TT_SKIPME = SkipSegment.TIME_TRUST_DURATION_AWARE - 10;  // 190 (erratic shift)
+    private static final int TT_ANIME = SkipSegment.TIME_TRUST_DURATION_AWARE + 50;   // 250 (Aniskip primary)
+    private static final int TT_ABS = SkipSegment.TIME_TRUST_ABSOLUTE;                // 100
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
@@ -64,8 +83,18 @@ public final class SegmentFinder {
             .callTimeout(TIMEOUT_SEC + 1, TimeUnit.SECONDS)
             .build();
 
-    // Process-lifetime cache; empty results are cached too, to avoid re-hitting dead titles.
-    private static final Map<String, List<SkipSegment>> CACHE = new ConcurrentHashMap<>();
+    // Process-lifetime cache; empty results are cached with an expiry (see NEG_CACHE_TTL_MS).
+    private static final Map<String, CacheEntry> CACHE = new ConcurrentHashMap<>();
+
+    private static final class CacheEntry {
+        final List<SkipSegment> segments;
+        final long expiresAt; // 0 = never expires (non-empty result)
+
+        CacheEntry(List<SkipSegment> segments, long expiresAt) {
+            this.segments = segments;
+            this.expiresAt = expiresAt;
+        }
+    }
 
     /**
      * Starts an async lookup. Returns the worker {@link Thread} so the caller can {@code interrupt()}
@@ -91,13 +120,18 @@ public final class SegmentFinder {
         if (imdbInput == null && tmdbInput == null) {
             return new ArrayList<>();
         }
-        // Season/episode presence is what distinguishes a series episode from a movie (per the intent).
-        final boolean isMovie = season < 1 || episode < 1;
+        // A season implies a series episode even if the episode number is missing/0 — don't blindly
+        // treat it as a movie (that would query the wrong, movie-only sources).
+        final boolean isMovie = season < 1;
         final int keySeason = isMovie ? -1 : season;
-        final int keyEpisode = isMovie ? -1 : episode;
+        final int keyEpisode = isMovie ? -1 : Math.max(episode, -1);
+        // Cache key includes the duration bucket: duration-aware sources adapt to the stream length,
+        // so a replay of a differently-cut rip must not reuse stale timings.
+        final long durationBucket = durationSec > 0 ? Math.round(durationSec) : -1;
         final String key = (imdbInput != null ? imdbInput : "") + "|"
-                + (tmdbInput != null ? tmdbInput : "") + "|" + keySeason + "|" + keyEpisode;
-        final List<SkipSegment> cached = CACHE.get(key);
+                + (tmdbInput != null ? tmdbInput : "") + "|" + keySeason + "|" + keyEpisode
+                + "|" + durationBucket;
+        final List<SkipSegment> cached = getCached(key);
         if (cached != null) {
             return cached;
         }
@@ -120,40 +154,44 @@ public final class SegmentFinder {
 
         final String imdb = imdbId;      // effectively final for the step lambdas
         final long tmdb = tmdbNumeric;
-        final List<Candidate> candidates = new ArrayList<>();
+        final int ep = Math.max(episode, -1);
+        final List<Step> steps = new ArrayList<>();
         if (isMovie) {
+            // Duration-aware first, absolute community sources last.
             if (imdb != null) {
-                candidates.add(new Candidate(1.0, () -> skipDb(imdb, -1, -1, durationSec)));
+                steps.add(() -> skipDb(imdb, -1, -1, durationSec));
             }
             if (imdb != null || tmdb >= 0) {
-                candidates.add(new Candidate(0.8, () -> theIntroDb(imdb, tmdb, -1, -1, true)));
-                // SkipMe.db is demoted to the tail: its server-side duration shift is erratic and can
-                // return times offset from the actual encode. Kept only as a broad last resort.
-                candidates.add(new Candidate(0.5, () -> skipMe(imdb, tmdb, -1, -1, durationSec)));
+                steps.add(() -> skipMe(imdb, tmdb, -1, -1, durationSec));
+                steps.add(() -> theIntroDb(imdb, tmdb, -1, -1, true));
             }
             if (imdb != null) {
-                candidates.add(new Candidate(0.4, () -> introHater(imdb, -1, -1)));
+                steps.add(() -> introHater(imdb, -1, -1));
             }
         } else {
             if (imdb != null) {
-                // Anime first: Aniskip is the anime-specialist (crowd-voted OP/ED, per-MAL episode). It
-                // returns empty fast for non-anime (arm finds no MAL), so the ladder falls through.
-                candidates.add(new Candidate(0.9, () -> aniskip(imdb, season, episode)));
-                candidates.add(new Candidate(1.0, () -> skipDb(imdb, season, episode, durationSec)));
-                candidates.add(new Candidate(0.7, () -> introDbApp(imdb, season, episode)));
+                // Aniskip is the anime specialist (crowd-voted OP/ED with real ends); for anime files
+                // — usually the broadcast cut — its absolute timings match, so it is the primary time
+                // source (TT_ANIME). It returns empty fast for non-anime, so it simply drops out then.
+                steps.add(() -> aniskip(imdb, season, ep));
+                steps.add(() -> skipDb(imdb, season, ep, durationSec));
+                steps.add(() -> skipMe(imdb, tmdb, season, ep, durationSec));
+                steps.add(() -> introDbApp(imdb, season, ep));
             }
             if (imdb != null || tmdb >= 0) {
-                candidates.add(new Candidate(0.8, () -> theIntroDb(imdb, tmdb, season, episode, false)));
-                // SkipMe.db demoted to the tail (erratic duration shift → offset times).
-                candidates.add(new Candidate(0.5, () -> skipMe(imdb, tmdb, season, episode, durationSec)));
+                steps.add(() -> theIntroDb(imdb, tmdb, season, ep, false));
             }
             if (imdb != null) {
-                candidates.add(new Candidate(0.4, () -> introHater(imdb, season, episode)));
+                steps.add(() -> introHater(imdb, season, ep));
             }
         }
 
-        final List<SkipSegment> result = bestScored(candidates);
-        CACHE.put(key, result);
+        final List<Scored> results = probeAll(steps);
+        if (Thread.currentThread().isInterrupted()) {
+            return new ArrayList<>(); // media changed mid-probe — don't deliver or cache
+        }
+        final List<SkipSegment> result = voteSegments(results);
+        putCached(key, result);
         return result;
     }
 
@@ -161,7 +199,30 @@ public final class SegmentFinder {
         return s == null || s.trim().isEmpty();
     }
 
-    // ---- Quality-aware selection -------------------------------------------------------------
+    // ---- Cache -------------------------------------------------------------------------------
+
+    private static List<SkipSegment> getCached(String key) {
+        final CacheEntry entry = CACHE.get(key);
+        if (entry == null) {
+            return null;
+        }
+        if (entry.expiresAt != 0 && System.currentTimeMillis() >= entry.expiresAt) {
+            CACHE.remove(key); // stale negative — re-probe
+            return null;
+        }
+        return entry.segments;
+    }
+
+    private static void putCached(String key, List<SkipSegment> result) {
+        final long expiresAt = result.isEmpty() ? System.currentTimeMillis() + NEG_CACHE_TTL_MS : 0;
+        CACHE.put(key, new CacheEntry(result, expiresAt));
+    }
+
+    // ---- Parallel probe ----------------------------------------------------------------------
+
+    private interface Step {
+        Scored run();
+    }
 
     /** A source result carrying its quality {@link #signal} (0..1); the segment list may be empty. */
     private static final class Scored {
@@ -178,52 +239,152 @@ public final class SegmentFinder {
         }
     }
 
-    private interface Step {
-        Scored run();
+    /**
+     * Runs every step concurrently and collects their results, bounded by {@link #PROBE_DEADLINE_SEC}.
+     * Slots for steps that time out remain null. Each source's own call timeouts keep this well under
+     * the deadline in practice.
+     */
+    private static List<Scored> probeAll(List<Step> steps) {
+        final int n = steps.size();
+        final AtomicReferenceArray<Scored> slots = new AtomicReferenceArray<>(n);
+        final CountDownLatch latch = new CountDownLatch(n);
+        final Thread[] workers = new Thread[n];
+        for (int i = 0; i < n; i++) {
+            final int idx = i;
+            final Step step = steps.get(i);
+            final Thread worker = new Thread(() -> {
+                try {
+                    slots.set(idx, step.run());
+                } catch (Throwable ignored) {
+                    // A misbehaving source must never break the probe.
+                } finally {
+                    latch.countDown();
+                }
+            }, "SegmentSource-" + i);
+            worker.setDaemon(true);
+            workers[i] = worker;
+            worker.start();
+        }
+        try {
+            latch.await(PROBE_DEADLINE_SEC, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            for (Thread worker : workers) {
+                worker.interrupt();
+            }
+        }
+        final List<Scored> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(slots.get(i));
+        }
+        return out;
     }
 
-    /** A queryable source: its base {@code trust} weight paired with the {@link Step} that runs it. */
-    private static final class Candidate {
-        final double trust;
-        final Step step;
+    // ---- Voting ------------------------------------------------------------------------------
 
-        Candidate(double trust, Step step) {
-            this.trust = trust;
-            this.step = step;
+    /** One source's take on a segment, kept with its source index (for vote counting) and signal. */
+    private static final class Vote {
+        final SkipSegment seg;
+        final double signal;
+        final int sourceId;
+
+        Vote(SkipSegment seg, double signal, int sourceId) {
+            this.seg = seg;
+            this.signal = signal;
+            this.sourceId = sourceId;
         }
     }
 
     /**
-     * Queries candidates in order, returning the segments of the highest-scoring result
-     * ({@code trust × signal}). Stops early on a strong hit ({@code score ≥ ACCEPT}); empty responses
-     * never stop the search, and at most {@link #NONEMPTY_BUDGET} non-empty results are weighed before
-     * settling. Candidates lacking the required id are omitted upstream.
+     * Merges per-source results into a final list: for each category, the best agreeing cluster wins,
+     * its timing taken from the highest-{@code timeTrust} member. At most one segment per category is
+     * emitted, which also removes duplicate/conflicting picks.
      */
-    private static List<SkipSegment> bestScored(List<Candidate> candidates) {
-        Scored best = null;
-        double bestScore = -1;
-        int hits = 0;
-        for (Candidate candidate : candidates) {
-            if (Thread.currentThread().isInterrupted()) {
-                break;
+    private static List<SkipSegment> voteSegments(List<Scored> results) {
+        // Collect every source's segments into per-category vote buckets.
+        final Map<SkipSegment.Category, List<Vote>> byCategory = new LinkedHashMap<>();
+        for (int sourceId = 0; sourceId < results.size(); sourceId++) {
+            final Scored r = results.get(sourceId);
+            if (r == null || r.isEmpty()) {
+                continue;
             }
-            final Scored result = candidate.step.run();
-            if (result == null || result.isEmpty()) {
-                continue; // empty doesn't consume the budget — keep looking down the ladder
-            }
-            final double score = candidate.trust * result.signal;
-            if (score > bestScore) {
-                bestScore = score;
-                best = result;
-            }
-            if (score >= ACCEPT) {
-                break; // strong hit — good enough
-            }
-            if (++hits >= NONEMPTY_BUDGET) {
-                break; // gathered enough weak candidates; settle on the best so far
+            for (SkipSegment seg : r.segments) {
+                List<Vote> bucket = byCategory.get(seg.category);
+                if (bucket == null) {
+                    bucket = new ArrayList<>();
+                    byCategory.put(seg.category, bucket);
+                }
+                bucket.add(new Vote(seg, r.signal, sourceId));
             }
         }
-        return best != null ? best.segments : new ArrayList<>();
+
+        final List<SkipSegment> out = new ArrayList<>();
+        for (Map.Entry<SkipSegment.Category, List<Vote>> entry : byCategory.entrySet()) {
+            final SkipSegment best = bestCluster(entry.getValue());
+            if (best != null) {
+                out.add(best);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Clusters same-category votes by start time and returns the winning cluster's representative
+     * segment (a fresh copy with {@code confirmed} set), or null if there are no votes. Winner =
+     * most distinct sources, then highest {@code timeTrust}, then highest signal, then earliest.
+     */
+    private static SkipSegment bestCluster(List<Vote> votes) {
+        if (votes.isEmpty()) {
+            return null;
+        }
+        Collections.sort(votes, (a, b) -> Double.compare(a.seg.startSec, b.seg.startSec));
+
+        SkipSegment bestSeg = null;
+        int bestSources = -1;
+        int bestTrust = -1;
+        double bestSignal = -1;
+
+        int i = 0;
+        while (i < votes.size()) {
+            final double anchor = votes.get(i).seg.startSec;
+            int j = i;
+            // Grow the cluster while starts stay within the agreement window of the anchor.
+            final List<Vote> cluster = new ArrayList<>();
+            while (j < votes.size() && votes.get(j).seg.startSec - anchor <= AGREE_TOLERANCE_SEC) {
+                cluster.add(votes.get(j));
+                j++;
+            }
+            i = j;
+
+            // Representative: most file-accurate timing (highest timeTrust), then signal, then earliest.
+            Vote rep = cluster.get(0);
+            final java.util.Set<Integer> sources = new java.util.HashSet<>();
+            for (Vote v : cluster) {
+                sources.add(v.sourceId);
+                if (v.seg.timeTrust > rep.seg.timeTrust
+                        || (v.seg.timeTrust == rep.seg.timeTrust && v.signal > rep.signal)) {
+                    rep = v;
+                }
+            }
+            final int distinctSources = sources.size();
+
+            final boolean better = distinctSources > bestSources
+                    || (distinctSources == bestSources && rep.seg.timeTrust > bestTrust)
+                    || (distinctSources == bestSources && rep.seg.timeTrust == bestTrust
+                        && rep.signal > bestSignal);
+            if (better) {
+                bestSources = distinctSources;
+                bestTrust = rep.seg.timeTrust;
+                bestSignal = rep.signal;
+                final SkipSegment src = rep.seg;
+                final SkipSegment kept = new SkipSegment(src.startSec, src.endSec, src.type,
+                        src.category, src.coordBase, src.timeTrust);
+                kept.confirmed = distinctSources >= MIN_VOTES;
+                bestSeg = kept;
+            }
+        }
+        return bestSeg;
     }
 
     // ---- Sources -----------------------------------------------------------------------------
@@ -251,9 +412,9 @@ public final class SegmentFinder {
         final JSONObject intro = segs.optJSONObject("intro");
         final JSONObject recap = segs.optJSONObject("recap");
         final JSONObject outro = segs.optJSONObject("outro");
-        addMs(out, intro);
-        addMs(out, recap);
-        addMs(out, outro);
+        addMs(out, intro, SkipSegment.Category.INTRO, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPDB);
+        addMs(out, recap, SkipSegment.Category.RECAP, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPDB);
+        addMs(out, outro, SkipSegment.Category.CREDITS, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPDB);
         // Signal: average confidence (0..1) over the present segment objects.
         double sum = 0;
         int n = 0;
@@ -281,9 +442,9 @@ public final class SegmentFinder {
         final JSONObject intro = root.optJSONObject("intro");
         final JSONObject recap = root.optJSONObject("recap");
         final JSONObject outro = root.optJSONObject("outro");
-        addSecObject(out, intro);
-        addSecObject(out, recap);
-        addSecObject(out, outro);
+        addSecObject(out, intro, SkipSegment.Category.INTRO, TT_ABS);
+        addSecObject(out, recap, SkipSegment.Category.RECAP, TT_ABS);
+        addSecObject(out, outro, SkipSegment.Category.CREDITS, TT_ABS);
         // Signal: best of confidence × min(1, submission_count/3) — a single submission scores low.
         double best = 0;
         for (JSONObject o : new JSONObject[]{intro, recap, outro}) {
@@ -333,9 +494,9 @@ public final class SegmentFinder {
         final JSONArray intro = media.optJSONArray("intro");
         final JSONArray recap = media.optJSONArray("recap");
         final JSONArray credits = media.optJSONArray("credits");
-        addMsArray(out, intro);
-        addMsArray(out, recap);
-        addMsArray(out, credits);
+        addMsArray(out, intro, SkipSegment.Category.INTRO, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPME);
+        addMsArray(out, recap, SkipSegment.Category.RECAP, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPME);
+        addMsArray(out, credits, SkipSegment.Category.CREDITS, SkipSegment.CoordBase.DURATION_AWARE, TT_SKIPME);
         // Signal: min(1, maxSubmissions/5) — 5+ submissions is treated as fully trusted.
         final int maxSub = Math.max(maxSubmissions(intro),
                 Math.max(maxSubmissions(recap), maxSubmissions(credits)));
@@ -345,6 +506,9 @@ public final class SegmentFinder {
     /** Anime gate: arm (imdb→MAL for the season), then Aniskip (MAL-relative episode). */
     private static Scored aniskip(String imdbId, int season, int episode) {
         final List<SkipSegment> out = new ArrayList<>();
+        if (episode < 1) {
+            return new Scored(out, 0); // Aniskip is per-episode; nothing to ask without one
+        }
         // arm — note: never pass ?include= (it drops the -season fields).
         final HttpUrl armUrl = HttpUrl.parse(SegmentEndpoints.ARM).newBuilder()
                 .addQueryParameter("id", imdbId)
@@ -366,12 +530,12 @@ public final class SegmentFinder {
                 entrySeason = entry.optInt("thetvdb-season", -1);
             }
             if (entrySeason == season) {
-                malId = entry.optLong("myanimelist", -1); // cand[0] — first match for the season
+                malId = entry.optLong("myanimelist", -1); // first MAL match for the season
                 break;
             }
         }
         if (malId < 0) {
-            return new Scored(out, 0); // not anime (or no MAL for this season) → fall through
+            return new Scored(out, 0); // not anime (or no MAL for this season) → drop out
         }
         final HttpUrl skipUrl = HttpUrl.parse(SegmentEndpoints.ANISKIP).newBuilder()
                 .addPathSegment(String.valueOf(malId))
@@ -398,10 +562,28 @@ public final class SegmentFinder {
             if (interval == null) {
                 continue;
             }
-            addSeg(out, interval.optDouble("startTime", Double.NaN), interval.optDouble("endTime", Double.NaN));
+            final SkipSegment.Category cat = aniskipCategory(r.optString("skipType", ""));
+            // Anime files are usually the broadcast cut, so Aniskip's absolute times are the primary
+            // time source for anime (TT_ANIME, above duration-aware).
+            addSeg(out, interval.optDouble("startTime", Double.NaN),
+                    interval.optDouble("endTime", Double.NaN), cat, SkipSegment.CoordBase.ABSOLUTE, TT_ANIME);
         }
         // Crowd-voted with real op/ed ends — a high, fixed signal for anime.
         return new Scored(out, 0.9);
+    }
+
+    private static SkipSegment.Category aniskipCategory(String skipType) {
+        final String t = skipType.toLowerCase(Locale.US);
+        if (t.contains("recap")) {
+            return SkipSegment.Category.RECAP;
+        }
+        if (t.contains("op")) {
+            return SkipSegment.Category.INTRO;
+        }
+        if (t.contains("ed")) {
+            return SkipSegment.Category.CREDITS;
+        }
+        return SkipSegment.Category.UNKNOWN;
     }
 
     /**
@@ -425,9 +607,9 @@ public final class SegmentFinder {
         if (root == null) {
             return new Scored(out, 0);
         }
-        addMsArray(out, root.optJSONArray("intro"));
-        addMsArray(out, root.optJSONArray("recap"));
-        addMsArray(out, root.optJSONArray("credits"));
+        addMsArray(out, root.optJSONArray("intro"), SkipSegment.Category.INTRO, SkipSegment.CoordBase.ABSOLUTE, TT_ABS);
+        addMsArray(out, root.optJSONArray("recap"), SkipSegment.Category.RECAP, SkipSegment.CoordBase.ABSOLUTE, TT_ABS);
+        addMsArray(out, root.optJSONArray("credits"), SkipSegment.Category.CREDITS, SkipSegment.CoordBase.ABSOLUTE, TT_ABS);
         // No per-result confidence field; a fixed medium-high signal (matches SkipDB on tested titles).
         return new Scored(out, 0.8);
     }
@@ -465,12 +647,31 @@ public final class SegmentFinder {
             if (o == null) {
                 continue;
             }
-            addSeg(out, o.optDouble("start", Double.NaN), o.optDouble("end", Double.NaN));
+            final SkipSegment.Category cat = introHaterCategory(o.optString("label", ""));
+            addSeg(out, o.optDouble("start", Double.NaN), o.optDouble("end", Double.NaN),
+                    cat, SkipSegment.CoordBase.ABSOLUTE, TT_ABS);
             final double s = (o.optBoolean("verified", false) ? 0.5 : 0.3)
                     + Math.min(0.3, o.optInt("votes", 0) * 0.1);
             signal = Math.max(signal, s);
         }
         return new Scored(out, signal);
+    }
+
+    private static SkipSegment.Category introHaterCategory(String label) {
+        final String l = label.toLowerCase(Locale.US);
+        if (l.contains("recap")) {
+            return SkipSegment.Category.RECAP;
+        }
+        if (l.contains("credit") || l.contains("outro") || l.contains("ending")) {
+            return SkipSegment.Category.CREDITS;
+        }
+        if (l.contains("preview") || l.contains("next")) {
+            return SkipSegment.Category.PREVIEW;
+        }
+        if (l.contains("intro") || l.contains("opening")) {
+            return SkipSegment.Category.INTRO;
+        }
+        return SkipSegment.Category.UNKNOWN;
     }
 
     /** imdb → tmdb id via TMDB find (lazy; only reached from the TheIntroDB step). */
@@ -511,15 +712,18 @@ public final class SegmentFinder {
     // ---- Normalization -----------------------------------------------------------------------
 
     /** Add a segment from an object carrying {start_ms,end_ms}. */
-    private static void addMs(List<SkipSegment> out, JSONObject o) {
+    private static void addMs(List<SkipSegment> out, JSONObject o, SkipSegment.Category category,
+                              SkipSegment.CoordBase coordBase, int timeTrust) {
         if (o == null) {
             return;
         }
-        addSeg(out, o.optDouble("start_ms", Double.NaN) / 1000.0, o.optDouble("end_ms", Double.NaN) / 1000.0);
+        addSeg(out, o.optDouble("start_ms", Double.NaN) / 1000.0,
+                o.optDouble("end_ms", Double.NaN) / 1000.0, category, coordBase, timeTrust);
     }
 
     /** Add a segment from an object carrying {start_sec,end_sec} (falling back to *_ms). */
-    private static void addSecObject(List<SkipSegment> out, JSONObject o) {
+    private static void addSecObject(List<SkipSegment> out, JSONObject o, SkipSegment.Category category,
+                                     int timeTrust) {
         if (o == null) {
             return;
         }
@@ -531,11 +735,16 @@ public final class SegmentFinder {
         if (Double.isNaN(end)) {
             end = o.optDouble("end_ms", Double.NaN) / 1000.0;
         }
-        addSeg(out, start, end);
+        addSeg(out, start, end, category, SkipSegment.CoordBase.ABSOLUTE, timeTrust);
     }
 
-    /** Add segments from an array of {start_ms,end_ms} (null end_ms → open-ended). */
-    private static void addMsArray(List<SkipSegment> out, JSONArray array) {
+    /**
+     * Add segments from an array of {start_ms,end_ms}. A null {@code end_ms} means open-ended; that is
+     * only meaningful for end credits (which run to the file end), so an open-ended non-credits segment
+     * is dropped rather than left spanning most of the file.
+     */
+    private static void addMsArray(List<SkipSegment> out, JSONArray array, SkipSegment.Category category,
+                                   SkipSegment.CoordBase coordBase, int timeTrust) {
         if (array == null) {
             return;
         }
@@ -546,8 +755,12 @@ public final class SegmentFinder {
             }
             final double start = o.optDouble("start_ms", Double.NaN) / 1000.0;
             final double endMs = o.optDouble("end_ms", Double.NaN);
-            final double end = Double.isNaN(endMs) ? OPEN_ENDED_SEC : endMs / 1000.0;
-            addSeg(out, start, end);
+            final boolean openEnded = Double.isNaN(endMs);
+            if (openEnded && category != SkipSegment.Category.CREDITS) {
+                continue; // open-ended only makes sense for credits
+            }
+            final double end = openEnded ? OPEN_ENDED_SEC : endMs / 1000.0;
+            addSeg(out, start, end, category, coordBase, timeTrust);
         }
     }
 
@@ -566,7 +779,8 @@ public final class SegmentFinder {
         return max;
     }
 
-    private static void addSeg(List<SkipSegment> out, double startSec, double endSec) {
+    private static void addSeg(List<SkipSegment> out, double startSec, double endSec,
+                               SkipSegment.Category category, SkipSegment.CoordBase coordBase, int timeTrust) {
         if (Double.isNaN(startSec) || Double.isNaN(endSec) || endSec <= startSec) {
             return;
         }
@@ -574,7 +788,7 @@ public final class SegmentFinder {
         if (startSec < 1) {
             startSec = 1;
         }
-        out.add(new SkipSegment(startSec, endSec, SkipSegment.Type.SKIP));
+        out.add(new SkipSegment(startSec, endSec, SkipSegment.Type.SKIP, category, coordBase, timeTrust));
     }
 
     // ---- HTTP --------------------------------------------------------------------------------

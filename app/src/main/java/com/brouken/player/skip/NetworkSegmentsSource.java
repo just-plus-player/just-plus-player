@@ -28,9 +28,14 @@ public class NetworkSegmentsSource implements SkipSource {
     @Override
     public List<SkipSegment> getSegments(double durationSec) {
         // Fresh instances each rebuild so the once-only `skipped` flags never leak across rebuilds.
+        // The voting metadata (category/coordinate/time-trust) and the `confirmed` verdict are
+        // preserved — only the runtime flags reset.
         final List<SkipSegment> out = new ArrayList<>(segments.size());
         for (SkipSegment seg : segments) {
-            out.add(new SkipSegment(seg.startSec, seg.endSec, seg.type));
+            final SkipSegment copy = new SkipSegment(seg.startSec, seg.endSec, seg.type,
+                    seg.category, seg.coordBase, seg.timeTrust);
+            copy.confirmed = seg.confirmed;
+            out.add(copy);
         }
         return out;
     }

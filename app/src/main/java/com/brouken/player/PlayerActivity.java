@@ -3698,6 +3698,12 @@ public class PlayerActivity extends Activity {
 
         player = playerBuilder.build();
 
+        if (!mPrefs.allowSystemFrameRate) {
+            // Stop ExoPlayer from voting Surface.setFrameRate() on start/pause/seek. On many TV
+            // panels a refresh-rate switch (even a "seamless" one) re-syncs the panel and flickers.
+            player.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF);
+        }
+
         AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)

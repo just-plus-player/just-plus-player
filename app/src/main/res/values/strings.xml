@@ -23,6 +23,9 @@
     <string name="pref_framerate_matching">Auto frame rate matching</string>
     <string name="pref_framerate_matching_on">Switch display refresh rate to match video frame rate</string>
     <string name="pref_framerate_matching_off">Do not change display refresh rate</string>
+    <string name="pref_allow_system_framerate">Allow system to adjust refresh rate</string>
+    <string name="pref_allow_system_framerate_on">The player may switch the display refresh rate to match the video (can cause flicker on some TVs)</string>
+    <string name="pref_allow_system_framerate_off">Keep the display refresh rate unchanged during playback</string>
     <string name="pref_tunneling">Tunneled playback</string>
     <string name="pref_tunneling_summary">Tunneling provides better support for 4K/HDR content, but may not work on all devices</string>
     <string name="pref_auto_pip">Auto picture-in-picture</string>

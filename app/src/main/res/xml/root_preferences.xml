@@ -25,6 +25,13 @@
             app:title="@string/pref_framerate_matching" />
 
         <SwitchPreferenceCompat
+            app:key="allowSystemFrameRate"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_allow_system_framerate_on"
+            app:summaryOff="@string/pref_allow_system_framerate_off"
+            app:title="@string/pref_allow_system_framerate" />
+
+        <SwitchPreferenceCompat
             app:key="autoPiP"
             app:defaultValue="false"
             app:summaryOn="@string/pref_auto_pip_on"

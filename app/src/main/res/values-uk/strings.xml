@@ -22,6 +22,9 @@
     <string name="pref_framerate_matching">Автоматичне узгодження частоти кадрів</string>
     <string name="pref_framerate_matching_on">Переключати частоту оновлення екрану відповідно до частоти кадрів відеосигналу</string>
     <string name="pref_framerate_matching_off">Не змінювати частоту оновлення екрану</string>
+    <string name="pref_allow_system_framerate">Дозволити системі підлаштовувати частоту оновлення</string>
+    <string name="pref_allow_system_framerate_on">Плеєр може змінювати частоту оновлення екрана під частоту відео (на деяких телевізорах можливе мигання)</string>
+    <string name="pref_allow_system_framerate_off">Не змінювати частоту оновлення екрана під час відтворення</string>
     <string name="pref_tunneling">Тунельне відтворення</string>
     <string name="pref_tunneling_summary">Тунелювання забезпечує кращу підтримку вмісту 4K/HDR, але може працювати не на всіх пристроях</string>
     <string name="pref_auto_pip">Автоматичний режим PiP</string>

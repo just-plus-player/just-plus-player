@@ -3,8 +3,6 @@
     <string name="error_files_missing">Files aplikacija je deaktivirana ili nedostaje</string>
     <string name="error_details">Pojedinosti</string>
     <string name="open_subtitles">Učitaj titlove</string>
-    <string name="onboarding_open_description">Dodirni za otvaranje video datoteke. Dodirni dugo za učitavanje vanjskih titlova.</string>
-    <string name="onboarding_open_title">Odaberi video</string>
     <string name="video_orientation_sensor">Automatsko okretanje</string>
     <string name="video_orientation_video">Položaj videa</string>
     <string name="video_resize_crop">Obreži</string>

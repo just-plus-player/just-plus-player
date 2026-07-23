@@ -6,8 +6,6 @@
     <string name="error_files_missing">Aplicação \'Ficheiros\' inativa ou em falta</string>
     <string name="error_details">Detalhes</string>
     <string name="open_subtitles">Carregar legendas</string>
-    <string name="onboarding_open_description">Toque para abrir um vídeo. Toque longo para carregar legendas.</string>
-    <string name="onboarding_open_title">Escolha o vídeo a reproduzir</string>
     <string name="video_orientation_sensor">Rotação automática</string>
     <string name="video_orientation_video">Orientação do vídeo</string>
     <string name="video_resize_crop">Recortar</string>

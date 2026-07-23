@@ -4,8 +4,6 @@
     <string name="video_resize_crop">Cắt bỏ</string>
     <string name="video_orientation_video">Hướng video</string>
     <string name="video_orientation_sensor">Tự động xoay</string>
-    <string name="onboarding_open_title">Chọn một video để phát</string>
-    <string name="onboarding_open_description">Nhấn để mở tệp video. Nhấn và giữ để tải phụ đề bên ngoài.</string>
     <string name="open_subtitles">Tải phụ đề</string>
     <string name="error_details">Thông tin chi tiết</string>
     <string name="error_files_missing">Ứng dụng tập tin bị tắt hoặc bị thiếu</string>

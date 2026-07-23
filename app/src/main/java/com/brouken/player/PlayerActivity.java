@@ -351,6 +351,10 @@ public class PlayerActivity extends Activity {
     final List<MediaItem> apiMediaItems = new ArrayList<>();
     final List<String> apiPlaylistSegments = new ArrayList<>();
     int apiPlaylistStartIndex;
+    // Per-episode resume positions for non-persistent playlist sessions (in-session only). One slot per
+    // playlist item aligned by index; null when there is no playlist. Kept off the player so it survives
+    // an onStop/release rebuild. See onPositionDiscontinuity()/savePlayer().
+    long[] apiPlaylistPositions;
     // Episode metadata received via the launch Intent (from LAMPA, com.justplus.player branch). Stored for
     // now; not consumed yet. apiSeason/apiEpisode are -1 when absent; the per-item lists hold null.
     int apiSeason = -1;
@@ -1815,6 +1819,7 @@ public class PlayerActivity extends Activity {
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
         apiPlaylistStartIndex = 0;
+        apiPlaylistPositions = null;
         resolvedMediaTypes.clear();
         apiSeason = -1;
         apiEpisode = -1;
@@ -2529,6 +2534,12 @@ public class PlayerActivity extends Activity {
             // Per-episode quality variants, aligned by index (empty map when absent).
             apiPlaylistQuality.add(readQualityMap(bundle,
                     API_VIDEO_LIST_QUALITY_LEVELS + "." + i, API_VIDEO_LIST_QUALITY_URLS + "." + i));
+        }
+
+        // One resume slot per episode, unset until the episode has actually been played.
+        apiPlaylistPositions = new long[apiMediaItems.size()];
+        for (int i = 0; i < apiPlaylistPositions.length; i++) {
+            apiPlaylistPositions[i] = C.TIME_UNSET;
         }
     }
 
@@ -4468,6 +4479,7 @@ public class PlayerActivity extends Activity {
                 // Prevent overwriting temporarily inaccessible media position
                 if (player.isCurrentMediaItemSeekable()) {
                     mPrefs.updatePosition(player.getCurrentPosition());
+                    rememberEpisodePosition(player.getCurrentMediaItemIndex(), player.getCurrentPosition());
                 }
                 mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
                         getSelectedTrack(C.TRACK_TYPE_TEXT),
@@ -4475,6 +4487,12 @@ public class PlayerActivity extends Activity {
                         playerView.getVideoSurfaceView().getScaleX(),
                         player.getPlaybackParameters().speed);
             }
+        }
+    }
+
+    private void rememberEpisodePosition(final int index, final long position) {
+        if (apiPlaylistPositions != null && index >= 0 && index < apiPlaylistPositions.length) {
+            apiPlaylistPositions[index] = position;
         }
     }
 
@@ -4702,7 +4720,45 @@ public class PlayerActivity extends Activity {
         }
 
         @Override
+        public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
+                                            Player.PositionInfo newPosition, int reason) {
+            if (apiPlaylistPositions == null || player == null) {
+                return;
+            }
+            final int oldIndex = oldPosition.mediaItemIndex;
+            final int newIndex = newPosition.mediaItemIndex;
+            // Leaving an episode (auto-advance or manual jump): remember where we left it.
+            if (oldIndex != newIndex) {
+                rememberEpisodePosition(oldIndex, oldPosition.positionMs);
+            }
+            // Manually jumping back to an already-watched episode: resume where we left it. Auto-advance
+            // (gapless) keeps starting the next episode from the beginning, as it should. The follow-up
+            // seek lands with oldIndex == newIndex, so it neither loops nor overwrites the saved slot.
+            if (reason == Player.DISCONTINUITY_REASON_SEEK && oldIndex != newIndex
+                    && newIndex >= 0 && newIndex < apiPlaylistPositions.length) {
+                final long saved = apiPlaylistPositions[newIndex];
+                if (saved != C.TIME_UNSET && saved > 0 && newPosition.positionMs < 1000) {
+                    player.seekTo(newIndex, saved);
+                }
+            }
+        }
+
+        @Override
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+            // Keep the playlist start index (and mediaUri) tracking the item that is actually
+            // playing. They would otherwise stay frozen at the session's initial episode, so a
+            // rebuild after onStop (setMediaItems uses apiPlaylistStartIndex) would restart the
+            // first episode while applying the current episode's saved position.
+            if (!apiMediaItems.isEmpty() && player != null) {
+                final int idx = player.getCurrentMediaItemIndex();
+                if (idx >= 0 && idx < apiMediaItems.size()) {
+                    apiPlaylistStartIndex = idx;
+                    final MediaItem current = apiMediaItems.get(idx);
+                    if (current.localConfiguration != null) {
+                        mPrefs.mediaUri = current.localConfiguration.uri;
+                    }
+                }
+            }
             updateTopInfo();
             hideSkipButton();
             cancelSegmentFinder();

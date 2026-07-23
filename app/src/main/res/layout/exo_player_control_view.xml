@@ -15,7 +15,7 @@
       android:layout_height="@dimen/exo_styled_bottom_bar_height"
       android:layout_marginTop="@dimen/exo_styled_bottom_bar_margin_top"
       android:layout_gravity="bottom"
-      android:background="@color/exo_bottom_bar_background"
+      android:background="@drawable/scrim_bottom"
       android:layoutDirection="ltr">
 
     <LinearLayout android:id="@+id/exo_time"

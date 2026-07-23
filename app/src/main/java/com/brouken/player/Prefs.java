@@ -52,6 +52,7 @@ class Prefs {
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
     private static final String PREF_KEY_SKIP_MODE_CREDITS = "skipModeCredits";
     private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
+    private static final String PREF_KEY_SKIP_HIDE_LOCKED = "skipHideWhenLocked";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
@@ -98,6 +99,7 @@ class Prefs {
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BUTTON;
     public String skipModeCredits = SKIP_MODE_BUTTON;
+    public boolean skipHideWhenLocked = false;
     public boolean skipFetchOnline = true;
     public boolean showClock = false;
     public boolean crashReporting = true;
@@ -160,6 +162,7 @@ class Prefs {
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
         skipModeCredits = mSharedPreferences.getString(PREF_KEY_SKIP_MODE_CREDITS, skipModeCredits);
         skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
+        skipHideWhenLocked = mSharedPreferences.getBoolean(PREF_KEY_SKIP_HIDE_LOCKED, skipHideWhenLocked);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);
         autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);

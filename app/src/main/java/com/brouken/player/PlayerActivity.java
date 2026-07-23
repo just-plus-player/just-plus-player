@@ -4,6 +4,9 @@ import static android.content.pm.PackageManager.FEATURE_EXPANDED_PICTURE_IN_PICT
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
+import android.animation.PropertyValuesHolder;
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
@@ -28,6 +31,7 @@ import android.content.res.ColorStateList;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.Icon;
@@ -59,6 +63,8 @@ import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.PathInterpolator;
 import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -128,8 +134,6 @@ import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
-import com.getkeepsafe.taptargetview.TapTarget;
-import com.getkeepsafe.taptargetview.TapTargetView;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.io.File;
@@ -243,6 +247,7 @@ public class PlayerActivity extends Activity {
 
     private CoordinatorLayout coordinatorLayout;
     private LinearLayout topInfoPanel;
+    private LinearLayout headerButtons;
     private FrameLayout posterSlot;
     private ImageView posterView;
     private TextView posterPlaceholderView;
@@ -256,14 +261,25 @@ public class PlayerActivity extends Activity {
     private ImageButton buttonOpen;
     private ImageButton buttonPlaylist;
     private ImageButton buttonQuality;
+    private ImageButton buttonAudio;
+    private ImageButton buttonMore;
     private ImageButton buttonSkipOffset;
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
+    private android.app.Dialog menuDialog;
+    // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
+    // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
+    private boolean pickerDialogOpen;
+    // Adaptive sizing source of truth (phone/tablet/TV). Computed in onCreate, recomputed on config change.
+    private UiMetrics ui;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
     private ImageButton buttonRotation;
+    private ImageButton buttonLock;
+    private ObjectAnimator emptyStatePulse;
     private ImageButton exoSettings;
+    private ImageButton exoSubtitle;
     private ImageButton exoPlayPause;
     private ImageButton exoPrev;
     private ImageButton exoNext;
@@ -384,13 +400,19 @@ public class PlayerActivity extends Activity {
     };
 
     static final long SKIP_POLL_INTERVAL_MS = 250;
-    static final int SKIP_HIGHLIGHT_COLOR = 0x99fe6f61; // translucent coral — skip segments
-    static final int AD_HIGHLIGHT_COLOR = 0x99FFA000;   // translucent amber — ad segments
+    // Segment highlights (see CustomDefaultTimeBar): a near-opaque *_FILL band across the segment plus a
+    // crisp boundary hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral =
+    // playback, cool steel = skip (complementary to the warm coral so it never merges over the played
+    // track, and still legible over the dark unplayed track), amber = ad. High alpha keeps each band
+    // reading the same over both the coral and the dark portions of the bar.
+    static final int SKIP_HIGHLIGHT_COLOR = 0xFFEAF6FF;
+    static final int SKIP_FILL_COLOR = 0xC77FB8D4;
+    static final int AD_HIGHLIGHT_COLOR = 0xFFFFD27A;
+    static final int AD_FILL_COLOR = 0xC7FFA000;
     SkipManager skipManager;
     boolean skipBuilt;
     Button buttonSkip;
     ClipDrawable skipButtonProgress;
-    LinearLayout skipButtonContainer;
     TextView notificationSkip;
     final Runnable skipNotificationHider = new Runnable() {
         @Override
@@ -449,6 +471,7 @@ public class PlayerActivity extends Activity {
         }
 
         isTvBox = Utils.isTvBox(this);
+        ui = UiMetrics.of(this, isTvBox);
 
         if (isTvBox) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
@@ -545,7 +568,37 @@ public class PlayerActivity extends Activity {
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         playerView = findViewById(R.id.video_view);
         exoPlayPause = findViewById(R.id.exo_play_pause);
+        // Coral hero: the central Play/Pause sits on a brand disc (inset from the large tap target) with a
+        // white glyph. Doubles as a contrast anchor on bright frames, where a bare white glyph washes out.
+        // Coral hero: the central Play/Pause sits on a brand disc (inset from the large tap target) with a
+        // white glyph. Doubles as a contrast anchor on bright frames, where a bare white glyph washes out.
+        final GradientDrawable playDisc = new GradientDrawable();
+        playDisc.setShape(GradientDrawable.OVAL);
+        playDisc.setColor(brandColor());
+        exoPlayPause.setBackground(new InsetDrawable((Drawable) playDisc, ui.heroInset()));
+        // Hero size scales per device class (phone = 90dp, unchanged; larger on tablet/TV). Overrides the
+        // Media3 style's exo_icon_size so the transport isn't tiny on a 10-foot screen.
+        final ViewGroup.LayoutParams heroLp = exoPlayPause.getLayoutParams();
+        heroLp.width = ui.heroBox();
+        heroLp.height = ui.heroBox();
+        exoPlayPause.setLayoutParams(heroLp);
+        // Clip to the oval disc outline so the borderless press/focus ripple is round, not the default square
+        // (view-bounds) shape — matching the episode buttons.
+        exoPlayPause.setClipToOutline(true);
+        exoPlayPause.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        // Replacing the button background drops the D-pad focus / touch-press highlight, so re-add it as a
+        // foreground ripple on top of the disc — critical for TV navigation, harmless on touch.
+        final TypedValue playHighlight = new TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, playHighlight, true)
+                && playHighlight.resourceId != 0) {
+            exoPlayPause.setForeground(ContextCompat.getDrawable(this, playHighlight.resourceId));
+        }
         loadingProgressBar = findViewById(R.id.loading);
+        // Keep the loading ring proportional to the hero it overlays.
+        final ViewGroup.LayoutParams spinnerLp = loadingProgressBar.getLayoutParams();
+        spinnerLp.width = ui.spinnerSize();
+        spinnerLp.height = ui.spinnerSize();
+        loadingProgressBar.setLayoutParams(spinnerLp);
         exoPrev = findViewById(R.id.exo_prev);
         exoNext = findViewById(R.id.exo_next);
         setupEpisodeNavButtons();
@@ -626,10 +679,29 @@ public class PlayerActivity extends Activity {
 
         buttonQuality = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonQuality.setImageResource(R.drawable.ic_high_quality_24dp);
+        buttonQuality.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
         buttonQuality.setId(View.generateViewId());
         buttonQuality.setContentDescription(getString(R.string.button_quality));
         buttonQuality.setVisibility(View.GONE);
         buttonQuality.setOnClickListener(view -> showQualityDialog());
+
+        buttonAudio = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonAudio.setImageResource(R.drawable.ic_audiotrack_24dp);
+        buttonAudio.setId(View.generateViewId());
+        buttonAudio.setContentDescription(getString(R.string.button_audio_track));
+        buttonAudio.setVisibility(View.GONE);
+        buttonAudio.setOnClickListener(view -> showAudioDialog());
+
+        buttonMore = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonMore.setImageResource(R.drawable.ic_settings_24dp);
+        buttonMore.setId(View.generateViewId());
+        buttonMore.setContentDescription(getString(R.string.button_more));
+        buttonMore.setOnClickListener(view -> showMoreMenu());
+        buttonMore.setOnLongClickListener(view -> {
+            Intent intent = new Intent(this, SettingsActivity.class);
+            startActivityForResult(intent, REQUEST_SETTINGS);
+            return true;
+        });
 
         buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonSkipOffset.setImageResource(R.drawable.ic_skip_offset_24dp);
@@ -680,31 +752,35 @@ public class PlayerActivity extends Activity {
         buttonRotation = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonRotation.setContentDescription(getString(R.string.button_rotate));
         updateButtonRotation();
-        buttonRotation.setOnClickListener(view -> {
-            mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
-            Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
-            updateButtonRotation();
-            Utils.showText(playerView, getString(mPrefs.orientation.description), 2500);
-            resetHideCallbacks();
-        });
+        buttonRotation.setOnClickListener(view -> cycleOrientation());
 
-        final int titleViewPaddingHorizontal = Utils.dpToPx(14);
+        buttonLock = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonLock.setImageResource(R.drawable.ic_lock_24dp);
+        buttonLock.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
+        buttonLock.setId(View.generateViewId());
+        buttonLock.setContentDescription(getString(R.string.button_lock));
+        buttonLock.setOnClickListener(view -> playerView.toggleLock());
+
+        final int titleViewPaddingHorizontal = ui.gridH();
         final int titleViewPaddingVertical = getResources().getDimensionPixelOffset(R.dimen.exo_styled_bottom_bar_time_padding);
         FrameLayout centerView = playerView.findViewById(R.id.exo_controls_background);
 
         topInfoPanel = new LinearLayout(this);
         topInfoPanel.setOrientation(LinearLayout.HORIZONTAL);
-        topInfoPanel.setGravity(Gravity.CENTER_VERTICAL);
-        topInfoPanel.setBackgroundResource(R.color.ui_controls_background);
+        topInfoPanel.setGravity(Gravity.TOP);
+        // Soft top scrim (dark → transparent) instead of a flat opaque band, so the video breathes under the header.
+        topInfoPanel.setBackgroundResource(R.drawable.scrim_top);
         topInfoPanel.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         topInfoPanel.setPadding(titleViewPaddingHorizontal, titleViewPaddingVertical, titleViewPaddingHorizontal, titleViewPaddingVertical);
         topInfoPanel.setVisibility(View.GONE);
 
         posterSlot = new FrameLayout(this);
+        // Poster anchors the left column and is sized to roughly match the right column's two rows (time +
+        // icons) so neither side leaves a void. Bumped on TV for 10-foot legibility.
         final LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(54));
-        slotParams.setMarginEnd(Utils.dpToPx(16));
-        slotParams.gravity = Gravity.CENTER_VERTICAL;
+                LinearLayout.LayoutParams.WRAP_CONTENT, ui.posterHeight());
+        slotParams.setMarginEnd(ui.dpS(16));
+        slotParams.gravity = Gravity.TOP;
         posterSlot.setLayoutParams(slotParams);
         posterSlot.setBackgroundColor(0xFF333333); // bg_placeholder_card
         final int posterCornerRadius = Utils.dpToPx(4);
@@ -730,7 +806,7 @@ public class PlayerActivity extends Activity {
         posterPlaceholderView.setMinWidth(Utils.dpToPx(54));
         posterPlaceholderView.setGravity(Gravity.CENTER);
         posterPlaceholderView.setTextColor(0x80FFFFFF); // text_tertiary
-        posterPlaceholderView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        posterPlaceholderView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textPlaceholder());
         posterPlaceholderView.setTypeface(Typeface.DEFAULT_BOLD);
         posterPlaceholderView.setVisibility(View.GONE);
         posterSlot.addView(posterPlaceholderView);
@@ -740,12 +816,12 @@ public class PlayerActivity extends Activity {
 
         topInfoPanel.addView(posterSlot);
 
-        // Info column (title + media info lines); a small gap separates it from the clock column at the end.
+        // Left column of the header grid: title (row 1) over a single combined metadata line (row 2).
         final LinearLayout infoColumn = new LinearLayout(this);
         infoColumn.setOrientation(LinearLayout.VERTICAL);
         final LinearLayout.LayoutParams infoColumnParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        infoColumnParams.gravity = Gravity.CENTER_VERTICAL;
+        infoColumnParams.gravity = Gravity.TOP;
         infoColumnParams.setMarginEnd(Utils.dpToPx(16));
         infoColumn.setLayoutParams(infoColumnParams);
 
@@ -754,12 +830,13 @@ public class PlayerActivity extends Activity {
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
         titleView.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         titleView.setMaxLines(1);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         titleView.setTextDirection(View.TEXT_DIRECTION_LOCALE);
         infoColumn.addView(titleView);
 
+        // Two meta lines: video (resolution · codec · HDR) and the audio track (label / codec / language).
         videoInfoView = createInfoLine(Utils.dpToPx(2));
         infoColumn.addView(videoInfoView);
         audioInfoView = createInfoLine(0);
@@ -767,37 +844,58 @@ public class PlayerActivity extends Activity {
 
         topInfoPanel.addView(infoColumn);
 
-        // Right part of the header: clock over the "ends at" estimate, vertically centered so it lines up
-        // with the poster/title. A separate floating clock (below) covers the controls-hidden state.
+        // Right block of the header, mirroring the left (poster + text column): a one-line time row on top, with
+        // the display-icon pill right-aligned directly beneath it — so the pill's right edge lands on the same
+        // grid line as the clock and the bottom-bar pill.
         final LinearLayout headerClockColumn = new LinearLayout(this);
         headerClockColumn.setOrientation(LinearLayout.VERTICAL);
         headerClockColumn.setGravity(Gravity.END);
         final LinearLayout.LayoutParams headerClockColumnParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        headerClockColumnParams.gravity = Gravity.CENTER_VERTICAL;
+        headerClockColumnParams.gravity = Gravity.TOP;
         headerClockColumn.setLayoutParams(headerClockColumnParams);
+
+        // Time row (row 1): "until … ·" then the clock on one line. The clock is the bold, right-pinned anchor,
+        // so it never jumps sideways when the dynamically-computed end time appears/updates while loading.
+        final LinearLayout timeRow = new LinearLayout(this);
+        timeRow.setOrientation(LinearLayout.HORIZONTAL);
+        timeRow.setGravity(Gravity.CENTER_VERTICAL);
+        final LinearLayout.LayoutParams timeRowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        timeRowLp.gravity = Gravity.END;
+        timeRow.setLayoutParams(timeRowLp);
+
+        endsAtView = new TextView(this);
+        endsAtView.setTextColor(0xB3FFFFFF);
+        endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
+        endsAtView.setVisibility(View.GONE);
+        timeRow.addView(endsAtView);
 
         headerClock = new OutlineTextClock(this);
         headerClock.setFormat12Hour("h:mm a");
         headerClock.setFormat24Hour("HH:mm");
         headerClock.setTextColor(Color.WHITE);
         headerClock.setTypeface(Typeface.DEFAULT_BOLD);
-        headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 20 : 18);
+        headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        headerClockLp.gravity = Gravity.END;
+        headerClockLp.setMarginStart(Utils.dpToPx(6));
         headerClock.setLayoutParams(headerClockLp);
-        headerClockColumn.addView(headerClock);
+        timeRow.addView(headerClock);
 
-        endsAtView = new TextView(this);
-        endsAtView.setTextColor(0xB3FFFFFF);
-        endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 13 : 11);
-        final LinearLayout.LayoutParams endsAtLp = new LinearLayout.LayoutParams(
+        headerClockColumn.addView(timeRow);
+
+        // Display-icon pill (row 2): aspect / PiP / rotation, right-aligned directly under the clock. No negative
+        // margin — the pill right-aligns to the column edge, which matches the clock and the bottom-bar pill.
+        // Populated in the controls assembly; empty on TV (those controls live in the bottom bar there).
+        headerButtons = new LinearLayout(this);
+        headerButtons.setOrientation(LinearLayout.HORIZONTAL);
+        final LinearLayout.LayoutParams headerButtonsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        endsAtLp.gravity = Gravity.END;
-        endsAtView.setLayoutParams(endsAtLp);
-        endsAtView.setVisibility(View.GONE);
-        headerClockColumn.addView(endsAtView);
+        headerButtonsParams.gravity = Gravity.END;
+        headerButtonsParams.topMargin = Utils.dpToPx(4);
+        headerButtons.setLayoutParams(headerButtonsParams);
+        headerClockColumn.addView(headerButtons);
 
         // Long-press the clock to copy the full launch intent to the clipboard, for diagnostics.
         headerClockColumn.setOnLongClickListener(view -> {
@@ -809,19 +907,21 @@ public class PlayerActivity extends Activity {
 
         centerView.addView(topInfoPanel);
 
-        // Skip button — floats over the video (bottom-end), independent of the controller.
-        // Styled to match the app's control buttons: chrome-coloured pill, icon + label, and the
-        // same selectableItemBackground focus/press highlight (white on TV via colorControlHighlight).
-        final int skipCornerRadius = Utils.dpToPx(6);
+        // Skip button — a solid dark pill floating over the video (bottom-end), independent of the
+        // controller. Modern TV focus: a coral ring + slight scale-up on focus (replacing the dated flat
+        // grey selectableItemBackground wash), with the remaining-time countdown drawn as a neutral white
+        // underline integrated into the pill rather than a detached bar below it.
+        final int skipCornerRadius = Utils.dpToPx(8);
         buttonSkip = new Button(this);
         buttonSkip.setText(R.string.button_skip);
         buttonSkip.setAllCaps(false);
         buttonSkip.setTextColor(Color.WHITE);
-        buttonSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 15 : 13);
+        buttonSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
         buttonSkip.setTypeface(Typeface.DEFAULT_BOLD);
         buttonSkip.setMinHeight(0);
         buttonSkip.setMinimumHeight(0);
-        buttonSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(6), Utils.dpToPx(16), Utils.dpToPx(6));
+        // Extra bottom padding leaves room for the integrated countdown underline below the label.
+        buttonSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(7), Utils.dpToPx(16), Utils.dpToPx(10));
 
         final Drawable skipIcon = ContextCompat.getDrawable(this, R.drawable.exo_styled_controls_next);
         if (skipIcon != null) {
@@ -832,26 +932,40 @@ public class PlayerActivity extends Activity {
             buttonSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
         }
 
-        final GradientDrawable skipButtonBackground = new GradientDrawable();
-        skipButtonBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
-        skipButtonBackground.setCornerRadius(skipCornerRadius);
-        buttonSkip.setBackground(skipButtonBackground);
-        // Round the corners and clip the focus/press ripple to them, like the other controls.
-        buttonSkip.setClipToOutline(true);
-        buttonSkip.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), skipCornerRadius);
-            }
-        });
-        final TypedValue skipHighlight = new TypedValue();
-        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackground, skipHighlight, true)
-                && skipHighlight.resourceId != 0) {
-            buttonSkip.setForeground(ContextCompat.getDrawable(this, skipHighlight.resourceId));
+        // Solid dark pill with the neutral white countdown underline baked into its background as inset layers.
+        // (A separate MATCH_PARENT underline View resolves to the full screen width inside a wrap-content
+        // FrameLayout, which stretched the whole floating unit across the screen — hence layers instead.)
+        final int skipRingWidth = Utils.dpToPx(2);
+        final int skipBarHeight = Utils.dpToPx(3);
+        final int skipBarCorner = Utils.dpToPx(2);
+        final GradientDrawable skipPillFill = new GradientDrawable();
+        skipPillFill.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        skipPillFill.setCornerRadius(skipCornerRadius);
+        final GradientDrawable skipBarTrack = new GradientDrawable();
+        skipBarTrack.setColor(0x33FFFFFF); // faint white groove under the countdown fill
+        skipBarTrack.setCornerRadius(skipBarCorner);
+        final GradientDrawable skipBarFill = new GradientDrawable();
+        skipBarFill.setColor(Color.WHITE); // neutral countdown, matches the pill's white label + icon
+        skipBarFill.setCornerRadius(skipBarCorner);
+        skipButtonProgress = new ClipDrawable(skipBarFill, Gravity.START, ClipDrawable.HORIZONTAL);
+        skipButtonProgress.setLevel(0);
+        final LayerDrawable skipPillBackground = new LayerDrawable(
+                new Drawable[]{skipPillFill, skipBarTrack, skipButtonProgress});
+        // Pin the underline (track + draining fill) to the pill's bottom edge, inset from the corners.
+        for (int layer = 1; layer <= 2; layer++) {
+            skipPillBackground.setLayerGravity(layer, Gravity.BOTTOM);
+            skipPillBackground.setLayerHeight(layer, skipBarHeight);
+            skipPillBackground.setLayerInsetBottom(layer, Utils.dpToPx(5));
+            skipPillBackground.setLayerInsetLeft(layer, skipCornerRadius);
+            skipPillBackground.setLayerInsetRight(layer, skipCornerRadius);
         }
-        buttonSkip.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        buttonSkip.setBackground(skipPillBackground);
         buttonSkip.setOnClickListener(v -> {
+            // While the screen is locked the Skip button must never act, whether tapped or
+            // activated via a TV remote's confirm key (which routes through performClick()).
+            if (PlayerActivity.locked) {
+                return;
+            }
             if (pendingSkip != null && player != null) {
                 final SkipSegment segment = pendingSkip;
                 segment.skipped = true;
@@ -860,49 +974,37 @@ public class PlayerActivity extends Activity {
             }
         });
 
-        // Thin progress bar under the button (player-timebar style) showing how long the button stays
-        // available — i.e. the remaining skip-section duration. The coral fill drains as it plays out.
-        final int skipBarCorner = Utils.dpToPx(2);
-        final GradientDrawable skipBarTrack = new GradientDrawable();
-        skipBarTrack.setColor(Color.parseColor("#40fe6f61"));
-        skipBarTrack.setCornerRadius(skipBarCorner);
-        final GradientDrawable skipBarFill = new GradientDrawable();
-        skipBarFill.setColor(Color.parseColor("#fe6f61"));
-        skipBarFill.setCornerRadius(skipBarCorner);
-        skipButtonProgress = new ClipDrawable(skipBarFill, Gravity.START, ClipDrawable.HORIZONTAL);
-        skipButtonProgress.setLevel(0);
-        final View skipProgressBar = new View(this);
-        skipProgressBar.setBackground(new LayerDrawable(new Drawable[]{skipBarTrack, skipButtonProgress}));
-        final LinearLayout.LayoutParams skipBarParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(3));
-        skipBarParams.topMargin = Utils.dpToPx(3);
-        skipProgressBar.setLayoutParams(skipBarParams);
-
-        // Button + progress bar travel together as one bottom-end floating unit.
-        skipButtonContainer = new LinearLayout(this);
-        skipButtonContainer.setOrientation(LinearLayout.VERTICAL);
-        skipButtonContainer.addView(buttonSkip);
-        skipButtonContainer.addView(skipProgressBar);
+        // Add the pill straight to the coordinator, floating bottom-end. No wrapper view: the countdown
+        // underline is baked into the button's own background, so the previous wrapping FrameLayout — which
+        // stretched to full width inside the CoordinatorLayout and pinned the pill to the left edge — is gone.
+        // Modern TV focus: a coral ring on the pill (state-driven stroke) plus a slight scale-up, replacing
+        // the dated flat grey selectableItemBackground wash.
+        buttonSkip.setOnFocusChangeListener((v, hasFocus) -> {
+            skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, brandColor());
+            final float scale = hasFocus ? 1.06f : 1f;
+            buttonSkip.animate().scaleX(scale).scaleY(scale).setDuration(150).start();
+        });
         final CoordinatorLayout.LayoutParams skipButtonParams = new CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         skipButtonParams.gravity = Gravity.BOTTOM | Gravity.END;
         skipButtonParams.setMargins(0, 0, Utils.dpToPx(24), Utils.dpToPx(96));
-        skipButtonContainer.setLayoutParams(skipButtonParams);
-        skipButtonContainer.setVisibility(View.GONE);
-        coordinatorLayout.addView(skipButtonContainer);
+        buttonSkip.setLayoutParams(skipButtonParams);
+        buttonSkip.setVisibility(View.GONE);
+        coordinatorLayout.addView(buttonSkip);
 
-        // Toast-style notification shown after an automatic skip: same pill as the Skip button (icon + label,
-        // no progress bar), floating top-centre. Auto-hides after 5s or on any interaction (see onUserInteraction).
+        // Toast-style notification shown after an automatic skip: the same solid dark pill as the Skip
+        // button (bell icon + label, no progress underline), floating top-centre. Auto-hides after 5s or
+        // on any interaction (see onUserInteraction).
         notificationSkip = new TextView(this);
         notificationSkip.setText(R.string.notification_skipped);
         notificationSkip.setAllCaps(false);
         notificationSkip.setTextColor(Color.WHITE);
-        notificationSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 15 : 13);
+        notificationSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
         notificationSkip.setTypeface(Typeface.DEFAULT_BOLD);
         notificationSkip.setGravity(Gravity.CENTER_VERTICAL);
-        notificationSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(6), Utils.dpToPx(16), Utils.dpToPx(6));
+        notificationSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(9), Utils.dpToPx(16), Utils.dpToPx(9));
 
-        final Drawable skipDoneIcon = ContextCompat.getDrawable(this, R.drawable.exo_styled_controls_next);
+        final Drawable skipDoneIcon = ContextCompat.getDrawable(this, R.drawable.ic_notifications_24dp);
         if (skipDoneIcon != null) {
             final int skipDoneIconSize = Utils.dpToPx(18);
             skipDoneIcon.setBounds(0, 0, skipDoneIconSize, skipDoneIconSize);
@@ -912,16 +1014,9 @@ public class PlayerActivity extends Activity {
         }
 
         final GradientDrawable notificationBackground = new GradientDrawable();
-        notificationBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        notificationBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
         notificationBackground.setCornerRadius(skipCornerRadius);
         notificationSkip.setBackground(notificationBackground);
-        notificationSkip.setClipToOutline(true);
-        notificationSkip.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), skipCornerRadius);
-            }
-        });
 
         final CoordinatorLayout.LayoutParams notificationParams = new CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -941,7 +1036,8 @@ public class PlayerActivity extends Activity {
         overlayClock.setFormat24Hour("HH:mm");
         overlayClock.setTextColor(Color.WHITE);
         overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
-        overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 20 : 18);
+        // Must match the header clock size (see below) so the two line up exactly when controls toggle.
+        overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final CoordinatorLayout.LayoutParams overlayClockLp = new CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         overlayClockLp.gravity = Gravity.TOP | Gravity.START;
@@ -990,22 +1086,19 @@ public class PlayerActivity extends Activity {
                 int insetLeft = windowInsets.getSystemWindowInsetLeft();
                 int insetRight = windowInsets.getSystemWindowInsetRight();
 
-                int paddingLeft = 0;
-                int marginLeft = insetLeft;
-
-                int paddingRight = 0;
-                int marginRight = insetRight;
-
-                if (Build.VERSION.SDK_INT >= 28 && windowInsets.getDisplayCutout() != null) {
-                    if (windowInsets.getDisplayCutout().getSafeInsetLeft() == insetLeft) {
-                        paddingLeft = insetLeft;
-                        marginLeft = 0;
-                    }
-                    if (windowInsets.getDisplayCutout().getSafeInsetRight() == insetRight) {
-                        paddingRight = insetRight;
-                        marginRight = 0;
-                    }
-                }
+                // Balance the horizontal insets: offset BOTH sides by the larger of the two so the header and
+                // bottom-bar content stay symmetric even when only one side carries the status bar or a display
+                // cutout (in landscape that side would otherwise get a much bigger margin — the lopsided look).
+                // Applied as padding with no margin, so the scrim backgrounds still span the full width.
+                // On TV all system insets are 0, so synthesize overscan-safe insets here — every edge-anchored
+                // element (header, bottom bar, seek bar, Skip pill) keys off these, so the whole content grid
+                // moves inward as a unit and stays aligned. overscanH/V are 0 on phone/tablet (no visual change).
+                final int overscanV = ui.overscanV();
+                final int insetH = Math.max(Math.max(insetLeft, insetRight), ui.overscanH());
+                int paddingLeft = insetH;
+                int marginLeft = 0;
+                int paddingRight = insetH;
+                int marginRight = 0;
 
                 int bottomBarPaddingBottom = 0;
                 int progressBarMarginBottom = 0;
@@ -1022,44 +1115,47 @@ public class PlayerActivity extends Activity {
 
                     final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
                     ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
-                    params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + windowInsets.getSystemWindowInsetBottom();
+                    params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + windowInsets.getSystemWindowInsetBottom() + overscanV;
                     exoBottomBar.setLayoutParams(params);
 
                     findViewById(R.id.exo_left).getLayoutParams().width = left;
                     findViewById(R.id.exo_right).getLayoutParams().width = right;
 
-                    bottomBarPaddingBottom = windowInsets.getSystemWindowInsetBottom();
-                    progressBarMarginBottom = windowInsets.getSystemWindowInsetBottom();
+                    bottomBarPaddingBottom = windowInsets.getSystemWindowInsetBottom() + overscanV;
+                    progressBarMarginBottom = windowInsets.getSystemWindowInsetBottom() + overscanV;
                 } else {
                     // No top padding: the header panel's background (below) covers the status-bar area instead.
-                    view.setPadding(0, 0, 0, windowInsets.getSystemWindowInsetBottom());
+                    view.setPadding(0, 0, 0, windowInsets.getSystemWindowInsetBottom() + overscanV);
                 }
 
                 // Extend the header's background up over the status-bar area (top margin -> 0, top inset moved into
                 // the top padding). The content position is unchanged (padding pushes it down by the same amount the
                 // margin used to), but the panel now paints the status-bar strip, in perfect sync with the header.
-                Utils.setViewParams(topInfoPanel, paddingLeft + titleViewPaddingHorizontal, windowInsets.getSystemWindowInsetTop() + titleViewPaddingVertical, paddingRight + titleViewPaddingHorizontal, titleViewPaddingVertical,
+                Utils.setViewParams(topInfoPanel, paddingLeft + titleViewPaddingHorizontal, windowInsets.getSystemWindowInsetTop() + overscanV + Utils.dpToPx(4), paddingRight + titleViewPaddingHorizontal, titleViewPaddingVertical,
                         marginLeft, 0, marginRight, 0);
 
 
                 Utils.setViewParams(findViewById(R.id.exo_bottom_bar), paddingLeft, 0, paddingRight, bottomBarPaddingBottom,
                         marginLeft, 0, marginRight, 0);
 
-                Utils.setViewParams(findViewById(R.id.exo_progress), windowInsets.getSystemWindowInsetLeft(), 0, windowInsets.getSystemWindowInsetRight(), 0,
+                Utils.setViewParams(findViewById(R.id.exo_progress), insetH, 0, insetH, 0,
                         0, 0, 0, getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom) + progressBarMarginBottom);
 
                 // Keep the Skip pill above the seek bar and clear of the nav-bar inset. It floats on the
                 // full-screen coordinator (not the controller), so a fixed bottom offset overlapped the
                 // progress bar on tablets — derive it from the seek bar's own geometry (its top sits at
                 // insetBottom + progress margin + progress layout height above the screen bottom).
-                if (skipButtonContainer != null) {
-                    final CoordinatorLayout.LayoutParams skipLp = (CoordinatorLayout.LayoutParams) skipButtonContainer.getLayoutParams();
-                    skipLp.bottomMargin = windowInsets.getSystemWindowInsetBottom()
+                if (buttonSkip != null) {
+                    final CoordinatorLayout.LayoutParams skipLp = (CoordinatorLayout.LayoutParams) buttonSkip.getLayoutParams();
+                    // Float a small, deliberate gap above the bottom control bar (progress + time/pills) — not
+                    // flush against it, and not the huge gap the full progress touch-target height produced.
+                    skipLp.bottomMargin = windowInsets.getSystemWindowInsetBottom() + overscanV
                             + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
-                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_layout_height)
-                            + Utils.dpToPx(10);
-                    skipLp.rightMargin = Utils.dpToPx(24) + insetRight;
-                    skipButtonContainer.setLayoutParams(skipLp);
+                            + ui.dpS(24);
+                    // Align the floating Skip button's right edge to the shared content grid (same as the pills
+                    // and the progress bar), instead of a fixed 24dp + insetRight that overshoots in landscape.
+                    skipLp.rightMargin = insetH + ui.gridH();
+                    buttonSkip.setLayoutParams(skipLp);
                 }
 
                 Utils.setViewMargins(findViewById(R.id.exo_error_message), 0, windowInsets.getSystemWindowInsetTop() / 2, 0, getResources().getDimensionPixelSize(R.dimen.exo_error_message_margin_bottom) + windowInsets.getSystemWindowInsetBottom() / 2);
@@ -1070,6 +1166,9 @@ public class PlayerActivity extends Activity {
         });
         timeBar.setAdMarkerColor(Color.argb(0x00, 0xFF, 0xFF, 0xFF));
         timeBar.setPlayedAdMarkerColor(Color.argb(0x98, 0xFF, 0xFF, 0xFF));
+        // Brand the timeline: coral played portion + coral scrubber (the surfaces the user actually touches).
+        timeBar.setPlayedColor(brandColor());
+        timeBar.setScrubberColor(brandColor());
 
         try {
             trackNameProvider = new CustomDefaultTrackNameProvider(getResources());
@@ -1107,8 +1206,12 @@ public class PlayerActivity extends Activity {
         playerView.setBrightnessControl(mBrightnessControl);
 
         final LinearLayout exoBasicControls = playerView.findViewById(R.id.exo_basic_controls);
-        final ImageButton exoSubtitle = exoBasicControls.findViewById(R.id.exo_subtitle);
+        exoSubtitle = exoBasicControls.findViewById(R.id.exo_subtitle);
         exoBasicControls.removeView(exoSubtitle);
+        // Managed like the audio/quality buttons: hidden until the media actually has subtitle tracks,
+        // so it never shows greyed-out while loading. Re-asserted after Media3's own updates (see onEvents).
+        exoSubtitle.setVisibility(View.GONE);
+        exoSubtitle.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
 
         exoSettings = exoBasicControls.findViewById(R.id.exo_settings);
         exoBasicControls.removeView(exoSettings);
@@ -1116,12 +1219,8 @@ public class PlayerActivity extends Activity {
         exoBasicControls.removeView(exoRepeat);
         //exoBasicControls.setVisibility(View.GONE);
 
-        exoSettings.setOnLongClickListener(view -> {
-            //askForScope(false, false);
-            Intent intent = new Intent(this, SettingsActivity.class);
-            startActivityForResult(intent, REQUEST_SETTINGS);
-            return true;
-        });
+        // Open our native subtitle panel instead of Media3's built-in track popup.
+        exoSubtitle.setOnClickListener(v -> showSubtitleDialog());
 
         exoSubtitle.setOnLongClickListener(v -> {
             enableRotation();
@@ -1134,24 +1233,78 @@ public class PlayerActivity extends Activity {
         final HorizontalScrollView horizontalScrollView = (HorizontalScrollView) getLayoutInflater().inflate(R.layout.controls, null);
         final LinearLayout controls = horizontalScrollView.findViewById(R.id.controls);
 
-        controls.addView(buttonOpen);
-        controls.addView(buttonPlaylist);
-        controls.addView(buttonQuality);
+        // Multimedia pickers (subtitle / audio / quality / playlist), each shown when relevant, live in the
+        // bottom bar on every device.
         controls.addView(exoSubtitle);
-        controls.addView(buttonAspectRatio);
-        if (Utils.isPiPSupported(this) && buttonPiP != null) {
-            controls.addView(buttonPiP);
-        }
+        controls.addView(buttonAudio);
+        controls.addView(buttonQuality);
+        controls.addView(buttonPlaylist);
         if (mPrefs.repeatToggle) {
             controls.addView(exoRepeat);
         }
-        if (!isTvBox) {
-            controls.addView(buttonRotation);
-        }
-        controls.addView(buttonSkipOffset);
-        controls.addView(exoSettings);
 
-        exoBasicControls.addView(horizontalScrollView);
+        // Display / screen controls: beside the header clock on touch; in the bottom bar on TV so the remote
+        // keeps a single left/right focus zone.
+        final LinearLayout displayParent = isTvBox ? controls : headerButtons;
+        displayParent.addView(buttonAspectRatio);
+        if (Utils.isPiPSupported(this) && buttonPiP != null) {
+            displayParent.addView(buttonPiP);
+        }
+        if (!isTvBox) {
+            displayParent.addView(buttonRotation);
+        }
+        // "More" (overflow) always lives at the end of the bottom bar.
+        controls.addView(buttonMore);
+
+        // One uniform button box across both clusters so the header pill and the bottom pill match in height,
+        // size and inter-button gap.
+        styleClusterButton(exoSubtitle);
+        styleClusterButton(buttonAudio);
+        styleClusterButton(buttonQuality);
+        styleClusterButton(buttonPlaylist);
+        if (mPrefs.repeatToggle) {
+            styleClusterButton(exoRepeat);
+        }
+        styleClusterButton(buttonMore);
+        styleClusterButton(buttonAspectRatio);
+        if (buttonPiP != null) {
+            styleClusterButton(buttonPiP);
+        }
+        if (!isTvBox) {
+            styleClusterButton(buttonRotation);
+            // Group the header display icons into a chrome pill so they read as one designed control, not loose glyphs.
+            applyControlPill(headerButtons);
+        }
+        // Group the bottom-right pickers (subtitle / audio / HD / playlist / settings) into a matching pill.
+        applyControlPill(controls);
+
+        // Inset the bottom pill to the shared 14dp content grid so its right edge lines up with the header
+        // pill / clock and stays inside the progress bar, instead of running to the screen edge.
+        final LinearLayout.LayoutParams horizontalScrollViewLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        horizontalScrollViewLp.gravity = Gravity.CENTER_VERTICAL;
+        horizontalScrollViewLp.setMarginEnd(ui.gridH());
+        exoBasicControls.addView(horizontalScrollView, horizontalScrollViewLp);
+
+        // Lock sits isolated at the far-left of the bottom bar — prepended into the time row, away from the
+        // display cluster (MX-style) so it is no longer adjacent to the rotation button. Touch only.
+        if (!isTvBox) {
+            final View exoTime = findViewById(R.id.exo_time);
+            if (exoTime instanceof LinearLayout) {
+                // Match the right-hand controls: same 40dp box + chrome pill, so the lock reads as part of the
+                // same control language instead of a lone heavy glyph. The time text stays bare, to its right.
+                styleClusterButton(buttonLock);
+                final GradientDrawable lockPill = new GradientDrawable();
+                lockPill.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+                lockPill.setCornerRadius(ui.pillCorner());
+                buttonLock.setBackground(lockPill);
+                buttonLock.setClipToOutline(true);
+                final LinearLayout.LayoutParams lockLp = (LinearLayout.LayoutParams) buttonLock.getLayoutParams();
+                lockLp.setMarginEnd(ui.lockMarginEnd());
+                buttonLock.setLayoutParams(lockLp);
+                ((LinearLayout) exoTime).addView(buttonLock, 0);
+            }
+        }
 
         if (Build.VERSION.SDK_INT > 23) {
             horizontalScrollView.setOnScrollChangeListener((view, i, i1, i2, i3) -> resetHideCallbacks());
@@ -1166,6 +1319,7 @@ public class PlayerActivity extends Activity {
                 if (controllerVisible) {
                     updateMediaInfo();
                     startEndsAtUpdates();
+                    playerView.post(PlayerActivity.this::updateSubtitleButton);
                 } else {
                     stopEndsAtUpdates();
                 }
@@ -1181,33 +1335,19 @@ public class PlayerActivity extends Activity {
                 }
 
                 // https://developer.android.com/training/system-ui/immersive
-                Utils.toggleSystemUi(PlayerActivity.this, playerView, visibility == View.VISIBLE);
-                if (visibility == View.VISIBLE) {
+                // While a picker panel is open keep the nav/gesture bar visible (avoids OxygenOS's two-swipe
+                // back-gesture guard) but keep the status bar hidden for a clean top — see applyPickerBars.
+                if (pickerDialogOpen) {
+                    applyPickerBars();
+                } else {
+                    Utils.toggleSystemUi(PlayerActivity.this, playerView, visibility == View.VISIBLE);
+                }
+                if (visibility == View.VISIBLE && !isEmptyStateVisible()) {
                     // Because when using dpad controls, focus resets to first item in bottom controls bar
                     findViewById(R.id.exo_play_pause).requestFocus();
                 }
 
                 if (controllerVisible && playerView.isControllerFullyVisible()) {
-                    if (mPrefs.firstRun) {
-                        TapTargetView.showFor(PlayerActivity.this,
-                                TapTarget.forView(buttonOpen, getString(R.string.onboarding_open_title), getString(R.string.onboarding_open_description))
-                                        .outerCircleColor(R.color.brand)
-                                        .targetCircleColor(R.color.white)
-                                        .titleTextSize(22)
-                                        .titleTextColor(R.color.white)
-                                        .descriptionTextSize(14)
-                                        .cancelable(true),
-                                new TapTargetView.Listener() {
-                                    @Override
-                                    public void onTargetClick(TapTargetView view) {
-                                        super.onTargetClick(view);
-                                        buttonOpen.performClick();
-                                    }
-                                });
-                        // TODO: Explain gestures?
-                        //  "Use vertical and horizontal gestures to change brightness, volume and seek in video"
-                        mPrefs.markFirstRun();
-                    }
                     if (errorToShow != null) {
                         showError(errorToShow);
                         errorToShow = null;
@@ -1319,6 +1459,9 @@ public class PlayerActivity extends Activity {
     public void onStop() {
         super.onStop();
         alive = false;
+        // Stop the empty-state pulse while backgrounded (it's an infinite animator); showEmptyState restarts
+        // it cleanly on return. Avoids ticking the Choreographer with no media loaded and the activity stopped.
+        stopEmptyStatePulse();
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
         }
@@ -1563,9 +1706,10 @@ public class PlayerActivity extends Activity {
         // trailing key-up lands on the newly focused play/pause button and pauses playback.
         if (isTvBox && isSkipConfirmKey(event.getKeyCode())) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && !locked
                     && !controllerVisibleFully
-                    && skipButtonContainer != null
-                    && skipButtonContainer.getVisibility() == View.VISIBLE) {
+                    && buttonSkip != null
+                    && buttonSkip.getVisibility() == View.VISIBLE) {
                 buttonSkip.performClick();
                 skipKeyUpToConsume = event.getKeyCode();
                 return true;
@@ -1796,7 +1940,7 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
-        final int accent = 0xFFFE6F61;      // coral, matches the skip timeline highlight
+        final int accent = brandColor();    // coral, matches the skip timeline highlight
         final int trackBg = 0x33FFFFFF;
         final int progressMax = (int) Math.round(2 * SKIP_OFFSET_MAX_SEC / SKIP_OFFSET_STEP_SEC);
         final int mid = progressMax / 2;
@@ -1807,7 +1951,7 @@ public class PlayerActivity extends Activity {
         final TextView header = new TextView(this);
         header.setText(getString(R.string.skip_offset_title));
         header.setTextColor(Color.WHITE);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(0, 0, 0, Utils.dpToPx(14));
         root.addView(header);
@@ -1822,7 +1966,7 @@ public class PlayerActivity extends Activity {
         root.addView(makeVerticalSpacer());
 
         final TextView value = new TextView(this);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textValue());
         value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         value.setGravity(Gravity.CENTER);
         value.setPadding(0, 0, 0, Utils.dpToPx(20));
@@ -1863,7 +2007,7 @@ public class PlayerActivity extends Activity {
         final TextView reset = new TextView(this);
         reset.setText(getString(R.string.skip_offset_reset));
         reset.setTextColor(Color.WHITE);
-        reset.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        reset.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
         reset.setGravity(Gravity.CENTER);
         reset.setClickable(true);
         reset.setFocusable(true);
@@ -1927,10 +2071,22 @@ public class PlayerActivity extends Activity {
         int padBottom = 0;
         final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
         if (rootInsets != null) {
-            padTop = rootInsets.getSystemWindowInsetTop();
-            padBottom = rootInsets.getSystemWindowInsetBottom();
+            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
+            // inset can include the camera cutout), where that same height looks oversized — use a compact
+            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            final int landscapeTop = ui.pickerTopPadLand();
+            if (Build.VERSION.SDK_INT >= 30) {
+                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
+                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
+                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
+            }
         }
-        final int hPad = Utils.dpToPx(24);
+        final int hPad = Utils.dpToPx(24) + ui.overscanH();
         root.setPadding(hPad, padTop + Utils.dpToPx(20), hPad, padBottom + Utils.dpToPx(24));
 
         if (skipOffsetDialog != null) {
@@ -1941,19 +2097,13 @@ public class PlayerActivity extends Activity {
         skipOffsetDialog.setCanceledOnTouchOutside(true);
         final Window window = skipOffsetDialog.getWindow();
         if (window != null) {
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-            if (Build.VERSION.SDK_INT >= 30) {
-                window.setDecorFitsSystemWindows(false);
-            } else {
-                window.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-            }
-            window.setLayout(Utils.dpToPx(360), ViewGroup.LayoutParams.MATCH_PARENT);
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
         }
-        playerView.hideController();
-        skipOffsetDialog.show();
+        showPickerDialog(skipOffsetDialog);
         seekBar.post(seekBar::requestFocus);
     }
 
@@ -2047,6 +2197,72 @@ public class PlayerActivity extends Activity {
         return apiEpisode;
     }
 
+    /** Brand accent color from {@code @color/brand}; pass an alpha (0x00..0xFF) for a translucent variant. */
+    private int brandColor() {
+        return ContextCompat.getColor(this, R.color.brand);
+    }
+
+    private int brandColor(int alpha) {
+        return (alpha << 24) | (brandColor() & 0x00FFFFFF);
+    }
+
+    /** Brand accent at reduced brightness (same hue/saturation) for large selected-row fills, where full
+     *  brand is too intense on the eyes. Scaling RGB proportionally lowers only the value, unlike alpha
+     *  blending which desaturates the color against the dark panel. */
+    private int brandColorDim() {
+        final int c = brandColor();
+        final float f = 0.72f; // tweakable: lower = darker
+        return Color.rgb(Math.round(Color.red(c) * f),
+                Math.round(Color.green(c) * f),
+                Math.round(Color.blue(c) * f));
+    }
+
+    // Show a picker panel (audio/subtitle/playlist/quality/skip). OxygenOS/ColorOS applies a fullscreen
+    // back-gesture guard (the "swipe again to go back" toast → two swipes) while the app is immersive, i.e.
+    // system bars hidden. Our pickers call hideController(), which hides the bars, so keep the bars visible
+    // while a panel is open and restore immersive on dismiss — this lets the back gesture close the panel in
+    // one swipe (the reference lampaua build never goes immersive for its pickers).
+    private void showPickerDialog(final android.app.Dialog dialog) {
+        // Hide the controls for a clean panel. Keep the navigation/gesture bar visible (so OxygenOS doesn't
+        // apply its fullscreen back-gesture guard) but hide the status bar (clean top, no strip over the
+        // panel). Restore immersive when the panel dismisses.
+        pickerDialogOpen = true;
+        playerView.hideController();
+        applyPickerBars();
+        dialog.setOnDismissListener(d -> {
+            pickerDialogOpen = false;
+            Utils.toggleSystemUi(PlayerActivity.this, playerView, controllerVisibleFully);
+        });
+        dialog.show();
+    }
+
+    // Bar state while a picker panel is open: navigation/gesture bar shown (avoids OxygenOS's fullscreen
+    // back-gesture guard, which keys on hidden nav gestures), status bar hidden (clean top edge).
+    private void applyPickerBars() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            final WindowInsetsController c = getWindow() != null ? getWindow().getInsetsController() : null;
+            if (c != null) {
+                c.hide(WindowInsets.Type.statusBars());
+                c.show(WindowInsets.Type.navigationBars());
+            }
+        } else {
+            playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        }
+    }
+
+    /** Group a control cluster into a rounded, semi-transparent chrome pill (matches the Skip button chrome). */
+    private void applyControlPill(ViewGroup cluster) {
+        final GradientDrawable pill = new GradientDrawable();
+        pill.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        pill.setCornerRadius(ui.pillCorner());
+        cluster.setBackground(pill);
+        cluster.setClipToOutline(true);
+        final int padH = ui.pillPadH();
+        cluster.setPadding(padH, cluster.getPaddingTop(), padH, cluster.getPaddingBottom());
+    }
+
     private void updateSkipHighlights() {
         if (timeBar == null) {
             return;
@@ -2061,13 +2277,16 @@ public class PlayerActivity extends Activity {
         final long[] starts = new long[count];
         final long[] ends = new long[count];
         final int[] colors = new int[count];
+        final int[] fillColors = new int[count];
         for (int i = 0; i < count; i++) {
             final SkipSegment segment = segments.get(i);
+            final boolean ad = segment.type == SkipSegment.Type.AD;
             starts[i] = segment.startMs();
             ends[i] = segment.endMs();
-            colors[i] = segment.type == SkipSegment.Type.AD ? AD_HIGHLIGHT_COLOR : SKIP_HIGHLIGHT_COLOR;
+            colors[i] = ad ? AD_HIGHLIGHT_COLOR : SKIP_HIGHLIGHT_COLOR;
+            fillColors[i] = ad ? AD_FILL_COLOR : SKIP_FILL_COLOR;
         }
-        timeBar.setSkipHighlights(starts, ends, colors, durationMs);
+        timeBar.setSkipHighlights(starts, ends, colors, fillColors, durationMs);
     }
 
     private void skipTick() {
@@ -2147,10 +2366,29 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    // Called from CustomPlayerView.toggleLock() whenever the touch lock changes. When "hide skip
+    // controls while locked" is on, drop the Skip button and auto-skip notification immediately;
+    // showSkipButton/showSkipNotification keep them suppressed until unlock, after which the next
+    // skip poll restores the button if a segment is still active.
+    void onLockChanged() {
+        if (buttonLock != null) {
+            buttonLock.setSelected(locked);
+        }
+        if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
+            hideSkipButton();
+            hideSkipNotification();
+        }
+    }
+
     private void showSkipButton(SkipSegment segment) {
+        // When configured, keep the Skip button hidden while the screen is locked.
+        if (locked && mPrefs.skipHideWhenLocked) {
+            hideSkipButton();
+            return;
+        }
         pendingSkip = segment;
-        if (skipButtonContainer != null && skipButtonContainer.getVisibility() != View.VISIBLE) {
-            skipButtonContainer.setVisibility(View.VISIBLE);
+        if (buttonSkip != null && buttonSkip.getVisibility() != View.VISIBLE) {
+            buttonSkip.setVisibility(View.VISIBLE);
             if (isTvBox) {
                 buttonSkip.requestFocus();
             }
@@ -2159,16 +2397,20 @@ public class PlayerActivity extends Activity {
 
     private void hideSkipButton() {
         pendingSkip = null;
-        if (skipButtonContainer != null) {
+        if (buttonSkip != null) {
             if (isTvBox && buttonSkip.hasFocus() && playerView != null) {
                 playerView.requestFocus();
             }
-            skipButtonContainer.setVisibility(View.GONE);
+            buttonSkip.setVisibility(View.GONE);
         }
     }
 
     private void showSkipNotification() {
         if (notificationSkip == null) {
+            return;
+        }
+        // When configured, suppress the auto-skip notification while the screen is locked.
+        if (locked && mPrefs.skipHideWhenLocked) {
             return;
         }
         notificationSkip.setVisibility(View.VISIBLE);
@@ -2400,6 +2642,7 @@ public class PlayerActivity extends Activity {
             buttonPlaylist.setVisibility(hasPlaylist ? View.VISIBLE : View.GONE);
         }
         updateQualityButton();
+        updateAudioButton();
         // Show prev/next episode arrows (Media3 built-in, flanking play/pause) only for playlists
         playerView.setShowNextButton(hasPlaylist);
         playerView.setShowPreviousButton(hasPlaylist);
@@ -2412,7 +2655,7 @@ public class PlayerActivity extends Activity {
     private TextView createInfoLine(int topMargin) {
         final TextView view = new TextView(this);
         view.setTextColor(0x99FFFFFF); // text_secondary
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, isTvBox ? 14 : 12);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         view.setMaxLines(1);
         view.setEllipsize(TextUtils.TruncateAt.END);
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -2428,11 +2671,7 @@ public class PlayerActivity extends Activity {
             return;
         }
         final Format video = player.getVideoFormat();
-        String container = video != null ? containerFromMime(video.containerMimeType) : null;
-        if (container == null) {
-            container = containerFromCurrentUri();
-        }
-        setInfoLine(videoInfoView, buildVideoInfo(video, container));
+        setInfoLine(videoInfoView, buildVideoInfo(video));
         setInfoLine(audioInfoView, buildAudioInfo(getSelectedAudioFormat()));
     }
 
@@ -2448,84 +2687,30 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    private static String buildVideoInfo(Format video, String container) {
+    private static String buildVideoInfo(Format video) {
         if (video == null) {
             return null;
         }
         final StringBuilder b = new StringBuilder();
-        appendField(b, container);
-        if (video.width > 0 && video.height > 0) {
-            appendField(b, video.width + "×" + video.height);
-        }
+        appendField(b, resolutionClass(video.width, video.height));
         appendField(b, codecName(video));
-        appendField(b, formatFrameRate(video.frameRate));
         appendField(b, hdrName(video.colorInfo));
-        appendField(b, Utils.formatBitrate(bestBitrate(video)));
         return b.toString();
     }
 
-    private static String formatFrameRate(float fps) {
-        if (fps <= 0) {
+    // Coarse resolution label (4K / 1080p / …) instead of raw pixel dimensions, to keep the header tidy.
+    private static String resolutionClass(int width, int height) {
+        if (width <= 0 || height <= 0) {
             return null;
         }
-        return Math.round(fps) + " fps";
-    }
-
-    private static String containerFromMime(String mime) {
-        if (mime == null) {
-            return null;
-        }
-        switch (mime) {
-            case "video/mp4":
-            case "application/mp4": return "MP4";
-            case "video/x-matroska": return "MKV";
-            case "video/webm": return "WebM";
-            case "video/avi":
-            case "video/x-msvideo": return "AVI";
-            case "video/mp2t": return "MPEG-TS";
-            case "video/quicktime": return "MOV";
-            case "video/mpeg": return "MPEG";
-            case "video/3gpp": return "3GP";
-            case "application/x-mpegURL":
-            case "application/vnd.apple.mpegurl": return "HLS";
-            default: return null;
-        }
-    }
-
-    private String containerFromCurrentUri() {
-        Uri uri = null;
-        final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
-        if (item != null && item.localConfiguration != null) {
-            uri = item.localConfiguration.uri;
-        }
-        if (uri == null) {
-            uri = mPrefs.mediaUri;
-        }
-        if (uri == null) {
-            return null;
-        }
-        final String path = uri.getLastPathSegment();
-        if (path == null) {
-            return null;
-        }
-        final int dot = path.lastIndexOf('.');
-        if (dot < 0 || dot >= path.length() - 1) {
-            return null;
-        }
-        switch (path.substring(dot + 1).toLowerCase(Locale.US)) {
-            case "mp4": case "m4v": return "MP4";
-            case "mkv": return "MKV";
-            case "webm": return "WebM";
-            case "avi": return "AVI";
-            case "ts": case "m2ts": return "MPEG-TS";
-            case "mov": return "MOV";
-            case "m3u8": return "HLS";
-            case "flv": return "FLV";
-            case "wmv": return "WMV";
-            case "mpg": case "mpeg": return "MPEG";
-            case "3gp": return "3GP";
-            default: return null;
-        }
+        final int longSide = Math.max(width, height);
+        final int shortSide = Math.min(width, height);
+        if (longSide >= 3840 || shortSide >= 2160) return "4K";
+        if (longSide >= 2560 || shortSide >= 1440) return "1440p";
+        if (longSide >= 1920 || shortSide >= 1080) return "1080p";
+        if (longSide >= 1280 || shortSide >= 720) return "720p";
+        if (longSide >= 640 || shortSide >= 480) return "480p";
+        return shortSide + "p";
     }
 
     private String buildAudioInfo(Format audio) {
@@ -2636,10 +2821,6 @@ public class PlayerActivity extends Activity {
         return codec != null ? codec : CustomDefaultTrackNameProvider.formatNameFromMime(format.codecs);
     }
 
-    private static int bestBitrate(Format format) {
-        return format.averageBitrate != Format.NO_VALUE ? format.averageBitrate : format.peakBitrate;
-    }
-
     private static void appendField(StringBuilder builder, String field) {
         if (field != null && !field.isEmpty()) {
             if (builder.length() > 0) builder.append(" · ");
@@ -2708,17 +2889,21 @@ public class PlayerActivity extends Activity {
         }
         final long endMs = System.currentTimeMillis() + (long) (remaining / speed);
         final String time = DateFormat.getTimeFormat(this).format(new Date(endMs));
-        endsAtView.setText(getString(R.string.time_ends_at, time));
+        endsAtView.setText(getString(R.string.time_ends_at_inline, time));
         endsAtView.setVisibility(View.VISIBLE);
     }
 
-    // When the controls are visible the in-header clock is shown; this floating clock only covers the
-    // controls-hidden state, and then only when the "show clock" preference is on.
+    // With "show clock" on, a single floating clock stays lit at all times, positioned over the header's
+    // clock slot (which is kept laid-out but invisible via alpha). Toggling the controls therefore no longer
+    // swaps between two clocks and makes it blink. With the preference off, only the in-header clock is used.
     void updateOverlayClock() {
         if (overlayClock == null) {
             return;
         }
-        final boolean show = !controllerVisible && mPrefs.showClock;
+        final boolean show = mPrefs.showClock;
+        if (headerClock != null) {
+            headerClock.setAlpha(show ? 0f : 1f);
+        }
         if (show) {
             syncOverlayClockPosition();
         }
@@ -2791,7 +2976,7 @@ public class PlayerActivity extends Activity {
         badge.setMinWidth(Utils.dpToPx(18));
         badge.setPadding(Utils.dpToPx(5), 0, Utils.dpToPx(5), Utils.dpToPx(1));
         badge.setTextColor(Color.WHITE);
-        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBadge());
         badge.setTypeface(Typeface.DEFAULT_BOLD);
         badge.setVisibility(View.GONE);
         return badge;
@@ -2856,7 +3041,7 @@ public class PlayerActivity extends Activity {
         final TextView header = new TextView(this);
         header.setText(getString(R.string.playlist));
         header.setTextColor(Color.WHITE);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
@@ -2886,10 +3071,11 @@ public class PlayerActivity extends Activity {
             row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
             row.setClickable(true);
             row.setFocusable(true);
+            row.setMinimumHeight(ui.rowMinHeight());
             // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? 0x24FFFFFF : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -2937,7 +3123,7 @@ public class PlayerActivity extends Activity {
                 number.setGravity(Gravity.CENTER);
                 number.setMinWidth(Utils.dpToPx(40));
                 number.setTextColor(0x99FFFFFF);
-                number.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+                number.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textListNumber());
                 box.addView(number);
             }
             row.addView(box);
@@ -2945,7 +3131,7 @@ public class PlayerActivity extends Activity {
             final TextView titleText = new TextView(this);
             titleText.setText(title);
             titleText.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
-            titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
             titleText.setMaxLines(2);
             titleText.setEllipsize(TextUtils.TruncateAt.END);
             if (isCurrent) {
@@ -2980,10 +3166,22 @@ public class PlayerActivity extends Activity {
         int padBottom = 0;
         final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
         if (rootInsets != null) {
-            padTop = rootInsets.getSystemWindowInsetTop();
-            padBottom = rootInsets.getSystemWindowInsetBottom();
+            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
+            // inset can include the camera cutout), where that same height looks oversized — use a compact
+            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            final int landscapeTop = ui.pickerTopPadLand();
+            if (Build.VERSION.SDK_INT >= 30) {
+                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
+                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
+                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
+            }
         }
-        scrollView.setPadding(0, padTop, 0, padBottom);
+        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
 
         if (playlistDialog != null) {
             playlistDialog.dismiss();
@@ -2993,24 +3191,14 @@ public class PlayerActivity extends Activity {
         playlistDialog.setCanceledOnTouchOutside(true);
         final Window window = playlistDialog.getWindow();
         if (window != null) {
-            // Draw the dialog full-screen and edge-to-edge (content under the system bars) so its size and
-            // content position never change while it is open — the fixed padding above is then the ONLY inset.
-            // Without this the decor adds its own status-bar inset on top of that padding, then settles to one,
-            // making the list visibly slide up ("jump"). The status bar itself stays visible.
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-            if (Build.VERSION.SDK_INT >= 30) {
-                window.setDecorFitsSystemWindows(false);
-            } else {
-                window.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-            }
-            window.setLayout(Utils.dpToPx(360), ViewGroup.LayoutParams.MATCH_PARENT);
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
         }
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
-        playerView.hideController();
-        playlistDialog.show();
+        showPickerDialog(playlistDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
         }
@@ -3098,6 +3286,8 @@ public class PlayerActivity extends Activity {
         }
         final boolean show = player != null && buildQualityChoices().size() >= 2;
         buttonQuality.setVisibility(show ? View.VISIBLE : View.GONE);
+        // Light the HD icon coral when a specific quality is pinned (anything other than Auto).
+        buttonQuality.setSelected(selectedVideoQualityMode != VideoQualityChoice.MODE_AUTO);
     }
 
     private String qualityChoiceTitle(VideoQualityChoice choice) {
@@ -3145,7 +3335,7 @@ public class PlayerActivity extends Activity {
         final TextView header = new TextView(this);
         header.setText(getString(R.string.quality_title));
         header.setTextColor(Color.WHITE);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
@@ -3168,9 +3358,10 @@ public class PlayerActivity extends Activity {
             row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
             row.setClickable(true);
             row.setFocusable(true);
+            row.setMinimumHeight(ui.rowMinHeight());
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? 0x24FFFFFF : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -3189,7 +3380,7 @@ public class PlayerActivity extends Activity {
             final TextView title = new TextView(this);
             title.setText(qualityChoiceTitle(choice));
             title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             title.setSingleLine(true);
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3201,7 +3392,7 @@ public class PlayerActivity extends Activity {
                 final TextView details = new TextView(this);
                 details.setText(subtitle);
                 details.setTextColor(0x99FFFFFF);
-                details.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 details.setSingleLine(true);
                 textBlock.addView(details);
             }
@@ -3211,7 +3402,7 @@ public class PlayerActivity extends Activity {
                 final TextView bitrate = new TextView(this);
                 bitrate.setText(choice.bitrateText);
                 bitrate.setTextColor(0x99FFFFFF);
-                bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 bitrate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
                 bitrate.setSingleLine(true);
                 final LinearLayout.LayoutParams bitrateLp = new LinearLayout.LayoutParams(
@@ -3221,18 +3412,6 @@ public class PlayerActivity extends Activity {
                 bitrate.setLayoutParams(bitrateLp);
                 row.addView(bitrate);
             }
-
-            final TextView check = new TextView(this);
-            check.setText("✓");
-            check.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-            check.setTextColor(0xFFFFFFFF);
-            check.setGravity(Gravity.CENTER);
-            check.setVisibility(isCurrent ? View.VISIBLE : View.INVISIBLE);
-            final LinearLayout.LayoutParams checkLp = new LinearLayout.LayoutParams(
-                    Utils.dpToPx(28), ViewGroup.LayoutParams.MATCH_PARENT);
-            checkLp.gravity = Gravity.CENTER_VERTICAL;
-            check.setLayoutParams(checkLp);
-            row.addView(check);
 
             row.setOnClickListener(v -> {
                 applyVideoQuality(choice);
@@ -3249,10 +3428,22 @@ public class PlayerActivity extends Activity {
         int padBottom = 0;
         final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
         if (rootInsets != null) {
-            padTop = rootInsets.getSystemWindowInsetTop();
-            padBottom = rootInsets.getSystemWindowInsetBottom();
+            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
+            // inset can include the camera cutout), where that same height looks oversized — use a compact
+            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            final int landscapeTop = ui.pickerTopPadLand();
+            if (Build.VERSION.SDK_INT >= 30) {
+                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
+                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
+                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
+            }
         }
-        scrollView.setPadding(0, padTop, 0, padBottom);
+        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
 
         if (qualityDialog != null) {
             qualityDialog.dismiss();
@@ -3262,19 +3453,13 @@ public class PlayerActivity extends Activity {
         qualityDialog.setCanceledOnTouchOutside(true);
         final Window window = qualityDialog.getWindow();
         if (window != null) {
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-            if (Build.VERSION.SDK_INT >= 30) {
-                window.setDecorFitsSystemWindows(false);
-            } else {
-                window.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-            }
-            window.setLayout(Utils.dpToPx(360), ViewGroup.LayoutParams.MATCH_PARENT);
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
         }
-        playerView.hideController();
-        qualityDialog.show();
+        showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
         }
@@ -3313,6 +3498,397 @@ public class PlayerActivity extends Activity {
                     choice.group, Collections.singletonList(choice.trackIndex)));
         }
         player.setTrackSelectionParameters(builder.build());
+    }
+
+    // A row in the native side-panel menus (audio / speed / more).
+    private static class MenuItem {
+        final CharSequence title;
+        final CharSequence subtitle;
+        final boolean checked;
+        final Runnable action;
+
+        MenuItem(CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this.title = title;
+            this.subtitle = subtitle;
+            this.checked = checked;
+            this.action = action;
+        }
+    }
+
+    // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        final View[] currentRow = new View[1];
+
+        final LinearLayout listLayout = new LinearLayout(this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+        final int listPad = Utils.dpToPx(10);
+        listLayout.setPadding(listPad, listPad, listPad, listPad);
+
+        final TextView header = new TextView(this);
+        header.setText(menuTitle);
+        header.setTextColor(Color.WHITE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+        listLayout.addView(header);
+
+        final View divider = new View(this);
+        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        dividerLp.bottomMargin = Utils.dpToPx(4);
+        divider.setLayoutParams(dividerLp);
+        divider.setBackgroundColor(0x1AFFFFFF);
+        listLayout.addView(divider);
+
+        for (final MenuItem item : items) {
+            final boolean isCurrent = item.checked;
+
+            final LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+            row.setClickable(true);
+            row.setFocusable(true);
+            row.setMinimumHeight(ui.rowMinHeight());
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            if (isCurrent) {
+                currentRow[0] = row;
+            }
+
+            final LinearLayout textBlock = new LinearLayout(this);
+            textBlock.setOrientation(LinearLayout.VERTICAL);
+            final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            blockLp.gravity = Gravity.CENTER_VERTICAL;
+            textBlock.setLayoutParams(blockLp);
+
+            final TextView title = new TextView(this);
+            title.setText(item.title);
+            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+            title.setSingleLine(true);
+            if (isCurrent) {
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            textBlock.addView(title);
+
+            if (item.subtitle != null && item.subtitle.length() > 0) {
+                final TextView details = new TextView(this);
+                details.setText(item.subtitle);
+                details.setTextColor(0x99FFFFFF);
+                details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+                details.setSingleLine(true);
+                textBlock.addView(details);
+            }
+            row.addView(textBlock);
+
+            row.setOnClickListener(v -> {
+                if (menuDialog != null) {
+                    menuDialog.dismiss();
+                }
+                if (item.action != null) {
+                    item.action.run();
+                }
+            });
+            listLayout.addView(row);
+        }
+
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.addView(listLayout);
+        int padTop = 0;
+        int padBottom = 0;
+        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
+        if (rootInsets != null) {
+            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
+            // inset can include the camera cutout), where that same height looks oversized — use a compact
+            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            final int landscapeTop = ui.pickerTopPadLand();
+            if (Build.VERSION.SDK_INT >= 30) {
+                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
+                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
+                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
+            }
+        }
+        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
+
+        if (menuDialog != null) {
+            menuDialog.dismiss();
+        }
+        menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        menuDialog.setContentView(scrollView);
+        menuDialog.setCanceledOnTouchOutside(true);
+        final Window window = menuDialog.getWindow();
+        if (window != null) {
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
+        showPickerDialog(menuDialog);
+        if (currentRow[0] != null) {
+            currentRow[0].post(() -> currentRow[0].requestFocus());
+        }
+    }
+
+    private static class AudioChoice {
+        final String label;
+        final TrackGroup group;
+        final int trackIndex;
+        final boolean selected;
+
+        AudioChoice(String label, TrackGroup group, int trackIndex, boolean selected) {
+            this.label = label;
+            this.group = group;
+            this.trackIndex = trackIndex;
+            this.selected = selected;
+        }
+    }
+
+    private ArrayList<AudioChoice> buildAudioChoices() {
+        final ArrayList<AudioChoice> choices = new ArrayList<>();
+        if (player == null) {
+            return choices;
+        }
+        int number = 0;
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_AUDIO) {
+                continue;
+            }
+            final TrackGroup trackGroup = group.getMediaTrackGroup();
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) {
+                    continue;
+                }
+                final Format format = trackGroup.getFormat(i);
+                number++;
+                // Same descriptor as the header meta line, so the picker matches what is shown up top.
+                String label = buildAudioInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
+                choices.add(new AudioChoice(label, trackGroup, i, group.isTrackSelected(i)));
+            }
+        }
+        return choices;
+    }
+
+    // Shows the audio button only when there is more than one audio track to pick from.
+    private void updateAudioButton() {
+        if (buttonAudio == null) {
+            return;
+        }
+        final boolean show = player != null && buildAudioChoices().size() >= 2;
+        buttonAudio.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    // Media3 keeps the subtitle button visible-but-disabled while loading; we instead hide it entirely
+    // until the media actually exposes subtitle tracks, matching the audio/quality buttons.
+    private void updateSubtitleButton() {
+        if (exoSubtitle == null) {
+            return;
+        }
+        boolean hasSubtitles = false;
+        boolean textSelected = false;
+        if (player != null) {
+            for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+                if (group.getType() == C.TRACK_TYPE_TEXT) {
+                    hasSubtitles = true;
+                    if (group.isSelected()) {
+                        textSelected = true;
+                        break;
+                    }
+                }
+            }
+        }
+        exoSubtitle.setVisibility(hasSubtitles ? View.VISIBLE : View.GONE);
+        // Light the CC icon coral while a subtitle track is actually showing.
+        exoSubtitle.setSelected(textSelected);
+    }
+
+    private void applyAudio(AudioChoice choice) {
+        if (player == null || choice == null || choice.group == null) {
+            return;
+        }
+        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                .setOverrideForType(new TrackSelectionOverride(
+                        choice.group, Collections.singletonList(choice.trackIndex)))
+                .build());
+    }
+
+    private void showAudioDialog() {
+        final ArrayList<AudioChoice> choices = buildAudioChoices();
+        if (choices.size() < 2) {
+            return;
+        }
+        final List<MenuItem> items = new ArrayList<>();
+        for (final AudioChoice choice : choices) {
+            items.add(new MenuItem(choice.label, null, choice.selected,
+                    () -> applyAudio(choice)));
+        }
+        showSideMenu(getString(R.string.audio_title), items);
+    }
+
+    private String buildSubtitleInfo(Format text) {
+        final String language = languageDisplayName(text.language);
+        String name = text.label;
+        if ((name == null || name.isEmpty()) && text.id != null) {
+            name = resolvedTrackNames.get(text.id);
+        }
+        final StringBuilder b = new StringBuilder();
+        final String title = (name != null && !name.isEmpty()) ? name : language;
+        if (title != null && !title.isEmpty()) {
+            b.append(title);
+        }
+        // If we led with a rich name, still surface the language after it.
+        if (name != null && !name.isEmpty() && language != null) {
+            b.append(' ').append('(').append(language).append(')');
+        }
+        return b.toString();
+    }
+
+    // Subtitle picker in the same native side panel as audio/quality (replaces the Media3 built-in popup).
+    private void showSubtitleDialog() {
+        if (player == null) {
+            return;
+        }
+        final boolean textEnabled = player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT);
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled, this::disableSubtitles));
+        int number = 0;
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            final TrackGroup trackGroup = group.getMediaTrackGroup();
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) {
+                    continue;
+                }
+                final Format format = trackGroup.getFormat(i);
+                number++;
+                String label = buildSubtitleInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
+                final int index = i;
+                items.add(new MenuItem(label, null, textEnabled && group.isTrackSelected(i),
+                        () -> applySubtitle(trackGroup, index)));
+            }
+        }
+        showSideMenu(getString(R.string.subtitle_title), items);
+    }
+
+    private void disableSubtitles() {
+        if (player == null) {
+            return;
+        }
+        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build());
+    }
+
+    private void applySubtitle(TrackGroup group, int index) {
+        if (player == null || group == null) {
+            return;
+        }
+        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(new TrackSelectionOverride(group, Collections.singletonList(index)))
+                .build());
+    }
+
+    private static final float[] SPEED_PRESETS =
+            {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
+
+    private String formatSpeed(float speed) {
+        if (Math.abs(speed - 1f) < 0.001f) {
+            return getString(R.string.speed_normal);
+        }
+        final String number = speed == Math.rint(speed)
+                ? String.valueOf((int) speed)
+                : String.valueOf(speed);
+        return number + "×";
+    }
+
+    private void showSpeedDialog() {
+        if (player == null) {
+            return;
+        }
+        final float current = player.getPlaybackParameters().speed;
+        final List<MenuItem> items = new ArrayList<>();
+        for (final float speed : SPEED_PRESETS) {
+            items.add(new MenuItem(formatSpeed(speed), null,
+                    Math.abs(current - speed) < 0.001f, () -> applySpeed(speed)));
+        }
+        showSideMenu(getString(R.string.speed_title), items);
+    }
+
+    private void applySpeed(float speed) {
+        if (player == null) {
+            return;
+        }
+        player.setPlaybackSpeed(speed);
+        mPrefs.speed = speed;
+        updateEndsAt();
+    }
+
+    private void cycleOrientation() {
+        mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
+        Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
+        updateButtonRotation();
+        Utils.showText(playerView, getString(mPrefs.orientation.description), 2500);
+        resetHideCallbacks();
+    }
+
+    // Uniform box for every button that lives inside a control pill (header display cluster + bottom pickers),
+    // so both pills share one height, one button size and one inter-button gap. 40dp box, 8dp padding keeps
+    // the glyph at the standard 24dp.
+    private void styleClusterButton(final ImageButton button) {
+        if (button == null) {
+            return;
+        }
+        final int pad = ui.clusterPad();
+        button.setPadding(pad, pad, pad, pad);
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ui.clusterBox(), ui.clusterBox());
+        params.gravity = Gravity.CENTER_VERTICAL;
+        button.setLayoutParams(params);
+    }
+
+    // Overflow menu: everything used rarely or once per session lives here so the main row stays calm.
+    private void showMoreMenu() {
+        final List<MenuItem> items = new ArrayList<>();
+        if (player != null) {
+            items.add(new MenuItem(getString(R.string.speed_title),
+                    formatSpeed(player.getPlaybackParameters().speed), false, this::showSpeedDialog));
+        }
+        if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
+            items.add(new MenuItem(getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
+        }
+        items.add(new MenuItem(getString(R.string.button_open), null, false, () -> openFile(mPrefs.mediaUri)));
+        // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
+        items.add(new MenuItem(getString(R.string.button_more), null, false, () ->
+                startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS)));
+        showSideMenu(getString(R.string.pref_title), items);
     }
 
     // Replaces the current item's URL with a separate-URL quality variant and reinitialises the player,
@@ -3774,6 +4350,7 @@ public class PlayerActivity extends Activity {
         locked = false;
 
         if (haveMedia) {
+            hideEmptyState();
             if (isNetworkUri) {
                 timeBar.setBufferedColor(DefaultTimeBar.DEFAULT_BUFFERED_COLOR);
             } else {
@@ -3868,6 +4445,7 @@ public class PlayerActivity extends Activity {
 //            mediaSession.setActive(true);
         } else {
             playerView.showController();
+            showEmptyState();
         }
 
         player.addListener(playerListener);
@@ -3897,6 +4475,131 @@ public class PlayerActivity extends Activity {
                         playerView.getVideoSurfaceView().getScaleX(),
                         player.getPlaybackParameters().speed);
             }
+        }
+    }
+
+    private boolean isEmptyStateVisible() {
+        final View overlay = findViewById(R.id.empty_state);
+        return overlay != null && overlay.getVisibility() == View.VISIBLE;
+    }
+
+    private boolean isReducedMotion() {
+        return Settings.Global.getFloat(getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+    }
+
+    // Branded empty state shown while there is no clip to play: an animated brand-mark reveal
+    // and a single "Open video" call to action (the only entry point to a file when nothing is loaded).
+    private void showEmptyState() {
+        final View overlay = findViewById(R.id.empty_state);
+        if (overlay == null) {
+            return;
+        }
+        final View mark = findViewById(R.id.empty_state_mark);
+        final TextView title = findViewById(R.id.empty_state_title);
+        final TextView subtitle = findViewById(R.id.empty_state_subtitle);
+        final View open = findViewById(R.id.empty_state_open);
+
+        open.setOnClickListener(v -> openFile(mPrefs.mediaUri));
+        stopEmptyStatePulse();
+
+        // TV is viewed from across the room; scale the phone-tuned sizes up, matching the
+        // isTvBox sizing used elsewhere (poster, clock, skip button).
+        if (isTvBox) {
+            setViewSize(mark, 140);
+            setViewSize(findViewById(R.id.empty_state_mark_icon), 68);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            setViewSize(findViewById(R.id.empty_state_open_icon), 28);
+            ((TextView) findViewById(R.id.empty_state_open_label))
+                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+            final int padV = Utils.dpToPx(18);
+            open.setPadding(Utils.dpToPx(30), padV, Utils.dpToPx(32), padV);
+            open.setMinimumHeight(Utils.dpToPx(64));
+        } else if (ui.deviceClass != UiMetrics.DeviceClass.PHONE) {
+            // Tablet: scale the phone XML defaults by the device-class factor (phone keeps the XML sizes).
+            setViewSize(mark, ui.dpS(96));
+            setViewSize(findViewById(R.id.empty_state_mark_icon), ui.dpS(46));
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(22));
+            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(14));
+            setViewSize(findViewById(R.id.empty_state_open_icon), ui.dpS(20));
+            ((TextView) findViewById(R.id.empty_state_open_label))
+                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(16));
+        }
+
+        overlay.setVisibility(View.VISIBLE);
+        overlay.bringToFront();
+
+        final View[] items = {mark, title, subtitle, open};
+
+        if (isReducedMotion()) {
+            for (View v : items) {
+                v.setAlpha(1f);
+                v.setScaleX(1f);
+                v.setScaleY(1f);
+                v.setTranslationY(0f);
+            }
+            open.requestFocus();
+            return;
+        }
+
+        final float density = getResources().getDisplayMetrics().density;
+        final PathInterpolator easeOutExpo = new PathInterpolator(0.16f, 1f, 0.3f, 1f);
+
+        mark.setAlpha(0f);
+        mark.setScaleX(0.85f);
+        mark.setScaleY(0.85f);
+        title.setAlpha(0f);
+        title.setTranslationY(12 * density);
+        subtitle.setAlpha(0f);
+        subtitle.setTranslationY(12 * density);
+        open.setAlpha(0f);
+        open.setTranslationY(16 * density);
+
+        mark.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                .setStartDelay(0).setDuration(450).setInterpolator(easeOutExpo).start();
+        title.animate().alpha(1f).translationY(0f)
+                .setStartDelay(120).setDuration(350).setInterpolator(easeOutExpo).start();
+        subtitle.animate().alpha(1f).translationY(0f)
+                .setStartDelay(200).setDuration(300).setInterpolator(easeOutExpo).start();
+        open.animate().alpha(1f).translationY(0f)
+                .setStartDelay(260).setDuration(350).setInterpolator(easeOutExpo)
+                .withEndAction(() -> {
+                    open.requestFocus();
+                    startEmptyStatePulse(open);
+                }).start();
+    }
+
+    private void setViewSize(View view, int dp) {
+        final ViewGroup.LayoutParams lp = view.getLayoutParams();
+        lp.width = Utils.dpToPx(dp);
+        lp.height = Utils.dpToPx(dp);
+        view.setLayoutParams(lp);
+    }
+
+    private void hideEmptyState() {
+        stopEmptyStatePulse();
+        final View overlay = findViewById(R.id.empty_state);
+        if (overlay != null && overlay.getVisibility() != View.GONE) {
+            overlay.setVisibility(View.GONE);
+        }
+    }
+
+    private void startEmptyStatePulse(View view) {
+        emptyStatePulse = ObjectAnimator.ofPropertyValuesHolder(view,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.04f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.04f));
+        emptyStatePulse.setDuration(1400);
+        emptyStatePulse.setRepeatCount(ValueAnimator.INFINITE);
+        emptyStatePulse.setRepeatMode(ValueAnimator.REVERSE);
+        emptyStatePulse.setInterpolator(new AccelerateDecelerateInterpolator());
+        emptyStatePulse.start();
+    }
+
+    private void stopEmptyStatePulse() {
+        if (emptyStatePulse != null) {
+            emptyStatePulse.cancel();
+            emptyStatePulse = null;
         }
     }
 
@@ -3971,6 +4674,10 @@ public class PlayerActivity extends Activity {
             skipOffsetDialog.dismiss();
             skipOffsetDialog = null;
         }
+        if (menuDialog != null) {
+            menuDialog.dismiss();
+            menuDialog = null;
+        }
         if (buttonPlaylist != null) {
             buttonPlaylist.setVisibility(View.GONE);
         }
@@ -4015,6 +4722,18 @@ public class PlayerActivity extends Activity {
                 });
             }
 
+            // Media3 re-shows the subtitle button (greyed, disabled) on its own control updates while
+            // loading. Re-assert our "hidden until subtitle tracks exist" rule afterwards (deferred so it wins),
+            // but only on events that can actually touch the controls — not on every frequent event dispatch.
+            if (playerView != null && events.containsAny(
+                    Player.EVENT_TRACKS_CHANGED,
+                    Player.EVENT_TIMELINE_CHANGED,
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_AVAILABLE_COMMANDS_CHANGED,
+                    Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                playerView.post(PlayerActivity.this::updateSubtitleButton);
+            }
+
             // A gapless playlist auto-advance can move to the next item while staying STATE_READY, so
             // onPlaybackStateChanged never re-fires and rebuildSkip() is never called for the new item.
             // onMediaItemTransition has already reset skipBuilt via setupSkipSource(); once the new item's
@@ -4037,6 +4756,10 @@ public class PlayerActivity extends Activity {
             updateMediaInfo();
             // In-stream renditions are known only now, so the quality button's visibility can change.
             updateQualityButton();
+            updateAudioButton();
+            if (playerView != null) {
+                playerView.post(PlayerActivity.this::updateSubtitleButton);
+            }
             // Apply a sticky quality choice to a freshly auto-advanced episode once its variants are known.
             // Posted so the reinitialisation never runs while listeners are being dispatched.
             if (playerView != null) {
@@ -4674,6 +5397,28 @@ public class PlayerActivity extends Activity {
         updateSubtitleViewMargin();
 
         updateButtonRotation();
+
+        // Recompute adaptive metrics on resize/fold/rotation (manifest opts out of recreate for these, so
+        // playback isn't interrupted). Re-run the inset pass (grid/overscan) and drop any open picker — it was
+        // sized for the old width/orientation and is rebuilt fresh on next open. Density/fontScale changes are
+        // NOT in configChanges, so those recreate the activity and re-apply everything via onCreate.
+        final UiMetrics next = UiMetrics.of(this, isTvBox);
+        if (!next.sameClassAndWidth(ui)) {
+            ui = next;
+            dismissOpenPickers();
+            if (controlView != null) {
+                controlView.requestApplyInsets();
+            }
+        }
+    }
+
+    private void dismissOpenPickers() {
+        final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog, menuDialog };
+        for (final android.app.Dialog d : pickers) {
+            if (d != null && d.isShowing()) {
+                d.dismiss();
+            }
+        }
     }
 
     void showError(ExoPlaybackException error) {
@@ -4910,10 +5655,21 @@ public class PlayerActivity extends Activity {
     // take over their click handling so we can gate them while a video is loading. Media3 keeps updating the
     // buttons' enabled state on player events, so an OnClickListener guard — not setEnabled — is the reliable gate.
     private void setupEpisodeNavButtons() {
-        final int size = Utils.dpToPx(40);
-        final int padding = Utils.dpToPx(8);
-        setupEpisodeNavButton(exoPrev, size, padding);
-        setupEpisodeNavButton(exoNext, size, padding);
+        // The prev/next episode arrows are a clear secondary tier below the coral Play/Pause hero: their 46dp
+        // disc is ~0.66 of the hero's 70dp, so Play reads as primary rather than a near-peer. Both use the same
+        // filled-white skip glyphs so they read as a symmetric pair (the default Media3 src drawables are
+        // mismatched — only the "next" one carries a gradient halo).
+        final int size = ui.episodeDisc();
+        final int padding = ui.episodeDiscPad();
+        final int margin = ui.episodeDiscMargin();
+        if (exoPrev != null) {
+            exoPrev.setImageResource(R.drawable.ic_skip_previous);
+        }
+        if (exoNext != null) {
+            exoNext.setImageResource(R.drawable.ic_skip_next);
+        }
+        setupEpisodeNavButton(exoPrev, size, padding, margin);
+        setupEpisodeNavButton(exoNext, size, padding, margin);
         if (exoPrev != null) {
             exoPrev.setOnClickListener(v -> {
                 if (!episodeNavLoading && player != null) {
@@ -4932,16 +5688,35 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding) {
+    private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding, final int margin) {
         if (button == null) {
             return;
         }
         final ViewGroup.LayoutParams lp = button.getLayoutParams();
         lp.width = size;
         lp.height = size;
+        if (lp instanceof ViewGroup.MarginLayoutParams) {
+            ((ViewGroup.MarginLayoutParams) lp).setMarginStart(margin);
+            ((ViewGroup.MarginLayoutParams) lp).setMarginEnd(margin);
+        }
         button.setLayoutParams(lp);
         button.setPadding(padding, padding, padding, padding);
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        // Neutral chrome disc echoing the coral Play/Pause hero: same pill fill (@color/ui_controls_background),
+        // circular to suit the round glyphs. The 12dp icon padding leaves a ring matching the hero's proportion.
+        final GradientDrawable disc = new GradientDrawable();
+        disc.setShape(GradientDrawable.OVAL);
+        disc.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        button.setBackground(disc);
+        button.setClipToOutline(true);
+        // Replacing the background drops the D-pad focus / touch-press highlight, so re-add it as a foreground
+        // ripple on top of the disc — critical for TV navigation, harmless on touch.
+        final TypedValue highlight = new TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, highlight, true)
+                && highlight.resourceId != 0) {
+            button.setForeground(ContextCompat.getDrawable(this, highlight.resourceId));
+        }
     }
 
     // Grey out and disable the prev/next episode arrows while a video is loading, using the same disabled
@@ -5031,6 +5806,7 @@ public class PlayerActivity extends Activity {
                 haveMedia = false;
                 setEndControlsVisible(false);
                 playerView.setControllerShowTimeoutMs(-1);
+                showEmptyState();
             } else {
                 skipToNext();
             }

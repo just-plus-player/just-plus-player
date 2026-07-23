@@ -14,4 +14,91 @@
         app:show_subtitle_button="true"
         app:dtpv_controller="@id/youtube_overlay" />
 
+    <!-- Branded empty state: shown while the player has no clip to play. -->
+    <LinearLayout
+        android:id="@+id/empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/black"
+        android:clickable="true"
+        android:focusable="false"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/empty_state_mark"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:background="@drawable/bg_brand_tile">
+
+            <ImageView
+                android:id="@+id/empty_state_mark_icon"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_gravity="center"
+                android:layout_marginStart="4dp"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/ic_play_triangle" />
+
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/empty_state_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/app_name"
+            android:textColor="@color/white"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/empty_state_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/empty_state_subtitle"
+            android:textColor="#B3FFFFFF"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:id="@+id/empty_state_open"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:background="@drawable/bg_cta_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minHeight="48dp"
+            android:orientation="horizontal"
+            android:paddingStart="22dp"
+            android:paddingTop="13dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="13dp">
+
+            <ImageView
+                android:id="@+id/empty_state_open_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_play_triangle"
+                android:tint="@color/black" />
+
+            <TextView
+                android:id="@+id/empty_state_open_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/empty_state_open"
+                android:textColor="@color/black"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

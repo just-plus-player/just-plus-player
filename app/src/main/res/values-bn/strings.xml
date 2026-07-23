@@ -5,6 +5,5 @@
     <string name="video_orientation_video">ভিডিও অরিয়েন্টেশন</string>
     <string name="video_orientation_sensor">অটো-রোটেট</string>
     <string name="video_orientation_system">ডিভাইস অরিয়েন্টেশন</string>
-    <string name="onboarding_open_title">চালানোর জন্য একটি ভিডিও বাছুন</string>
     <string name="delete_confirmation">মুছুন</string>
 </resources>

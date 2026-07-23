@@ -5,8 +5,6 @@
     <string name="video_orientation_video">影片方向</string>
     <string name="video_orientation_sensor">自動旋轉</string>
     <string name="video_orientation_system">裝置方向</string>
-    <string name="onboarding_open_title">選擇要播放的影片</string>
-    <string name="onboarding_open_description">輕觸即可開啟影片檔案，按住即可載入外掛字幕。</string>
     <string name="open_subtitles">載入字幕</string>
     <string name="error_details">資訊</string>
     <string name="error_files_missing">檔案應用程式已停用或遺失</string>

@@ -5,8 +5,6 @@
     <string name="video_orientation_video">Orientare video</string>
     <string name="video_orientation_sensor">Rotire automată</string>
     <string name="video_orientation_system">Orientarea dispozitivului</string>
-    <string name="onboarding_open_title">Alegeți un videoclip pentru a reda</string>
-    <string name="onboarding_open_description">Atingeți pentru a deschide un fișier video. Atingeți lung pentru a încărca subtitrări externe.</string>
     <string name="open_subtitles">Încărcați subtitrări</string>
     <string name="error_details">Detalii</string>
     <string name="error_files_missing">Aplicația Files este dezactivată sau lipsește</string>

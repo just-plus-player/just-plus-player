@@ -2,7 +2,6 @@
 <resources>
     <string name="delete_confirmation">ഇല്ലാതാക്കുക</string>
     <string name="video_resize_crop">വെട്ടുക</string>
-    <string name="onboarding_open_title">കളിക്കാനായി ഒരു വീഡിയോ തിരഞ്ഞെടുക്കുക</string>
     <string name="button_open">തുറക്കുക</string>
     <string name="button_crop">വലുപ്പം മാറ്റുക</string>
     <string name="button_rotate">തിരിക്കുക</string>

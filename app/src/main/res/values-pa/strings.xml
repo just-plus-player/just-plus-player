@@ -3,7 +3,6 @@
     <string name="video_resize_crop">ਕਰੌਪ ਕਰੋ</string>
     <string name="video_orientation_video">ਵੀਡੀਓ ਓਰੀਐਂਟੇਸ਼ਨ</string>
     <string name="video_orientation_sensor">ਆਪਣੇ-ਆਪ ਘੁਮਾਓ</string>
-    <string name="onboarding_open_title">ਚਲਾਉਣ ਲਈ ਇੱਕ ਵੀਡੀਓ ਚੁਣੋ</string>
     <string name="open_subtitles">ਉਪਸਿਰਲੇਖ ਲੋਡ ਕਰੋ</string>
     <string name="error_details">ਵੇਰਵੇ</string>
     <string name="error_files_missing">Files ਐਪ ਡਿਸ-ਏਬਲ ਜਾਂ ਗੈਰ-ਮੌਜੂਦ ਹੈ</string>
@@ -40,7 +39,6 @@
     <string name="pref_tunneling">ਟਨਲ ਕੀਤਾ ਪਲੇਬੈਕ</string>
     <string name="video_orientation_system">ਡਿਵਾਈਸ ਓਰੀਐਂਟੇਸ਼ਨ</string>
     <string name="request_scope">ਬਾਹਰੀ ਉਪਸਿਰਲੇਖਾਂ ਨੂੰ ਸਵੈਚਲਿਤ ਤੌਰ \'ਤੇ ਲੋਡ ਕਰਨ ਲਈ ਜਾਂ ਡਾਇਰੈਕਟਰੀ ਵਿੱਚ ਅਗਲੀ ਫਾਈਲ \'ਤੇ ਜਾਣ ਲਈ, %s ਨੂੰ ਤੁਹਾਡੇ ਵੀਡੀਓਜ਼ (ਉਦਾਹਰਨ ਲਈ ਮੂਵੀਜ਼) ਵਾਲੇ ਸਭ ਤੋਂ ਉੱਚੇ ਫੋਲਡਰ ਤੱਕ ਪਹੁੰਚ ਦਿਓ।</string>
-    <string name="onboarding_open_description">ਵੀਡੀਓ ਫਾਈਲ ਖੋਲ੍ਹਣ ਲਈ ਟੈਪ ਕਰੋ। ਬਾਹਰੀ ਉਪਸਿਰਲੇਖਾਂ ਨੂੰ ਲੋਡ ਕਰਨ ਲਈ ਲੰਬਾ ਟੈਪ ਕਰੋ।</string>
     <string name="pref_skip_silence">ਚੁੱਪ ਛੱਡੋ</string>
     <string name="pref_skip_silence_on">ਆਡੀਓ ਸਟ੍ਰੀਮ \'ਤੇ ਚੁੱਪ ਵਾਲੇ ਹਿੱਸਿਆਂ ਨੂੰ ਛੱਡੋ</string>
     <string name="pref_general_header">ਆਮ</string>

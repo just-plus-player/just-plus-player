@@ -6,8 +6,6 @@
     <string name="error_files_missing">ファイルアプリが無効化された、または見つからない</string>
     <string name="error_details">詳細</string>
     <string name="open_subtitles">字幕を読み込む</string>
-    <string name="onboarding_open_description">タップして動画ファイルを開く。長押して外部の字幕を読み込む。</string>
-    <string name="onboarding_open_title">再生する動画を選択</string>
     <string name="video_orientation_sensor">自動回転</string>
     <string name="video_orientation_video">映像の向き</string>
     <string name="video_resize_fit">丁度収める</string>

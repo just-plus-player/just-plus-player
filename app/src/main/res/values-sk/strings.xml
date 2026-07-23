@@ -5,8 +5,6 @@
     <string name="video_orientation_video">Orientácia videa</string>
     <string name="video_orientation_sensor">Automatické otáčanie</string>
     <string name="video_orientation_system">Orientácia zariadenia</string>
-    <string name="onboarding_open_title">Vyberte video, ktoré chcete prehrať</string>
-    <string name="onboarding_open_description">Ťuknutím na položku otvoríte súbor s videom. Dlhým podržaním načítate externé titulky.</string>
     <string name="open_subtitles">Načítať titulky</string>
     <string name="error_details">Podrobnosti</string>
     <string name="error_files_missing">Aplikácia Súbory je zakázaná alebo chýba</string>

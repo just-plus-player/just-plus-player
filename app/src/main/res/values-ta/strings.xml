@@ -2,7 +2,6 @@
 <resources>
     <string name="video_resize_fit">பொருத்தம்</string>
     <string name="video_orientation_sensor">தானாக சுழற்று</string>
-    <string name="onboarding_open_title">விளையாட ஒரு வீடியோவைத் தேர்ந்தெடுக்கவும்</string>
     <string name="error_details">விவரங்கள்</string>
     <string name="delete_query">இந்தக் கோப்பை நீக்கவா\?</string>
     <string name="delete_confirmation">அழி</string>
@@ -17,7 +16,6 @@
     <string name="button_crop">அளவை மாற்றவும்</string>
     <string name="button_rotate">சுழற்று</string>
     <string name="button_pip">படத்தில்-படம்</string>
-    <string name="onboarding_open_description">வீடியோ கோப்பைத் திறக்க தட்டவும். வெளிப்புற வசனங்களை ஏற்ற நீண்ட நேரம் தட்டவும்.</string>
     <string name="open_subtitles">வசன வரிகளை ஏற்றவும்</string>
     <string name="error_files_missing">கோப்புகள் பயன்பாடு முடக்கப்பட்டுள்ளது அல்லது காணவில்லை</string>
     <string name="request_scope">வெளிப்புற வசனங்களைத் தானாக ஏற்ற அல்லது கோப்பகத்தில் அடுத்த கோப்பிற்குச் செல்வதை இயக்க, உங்கள் வீடியோக்கள் (எ.கா. திரைப்படங்கள்) உள்ள மேல்மட்ட கோப்புறைக்கு %s அணுகலை வழங்கவும்.</string>

@@ -4,8 +4,6 @@
     <string name="video_resize_crop">Cortar</string>
     <string name="video_orientation_video">Seguir orientação do vídeo</string>
     <string name="video_orientation_sensor">Rotação automática</string>
-    <string name="onboarding_open_title">Escolha um vídeo para reproduzir</string>
-    <string name="onboarding_open_description">Toque para abrir um arquivo de vídeo. Toque longo para carregar legendas externas.</string>
     <string name="open_subtitles">Carregar legendas</string>
     <string name="error_files_missing">O aplicativo \"Arquivos\" está desativado ou ausente</string>
     <string name="error_details">Detalhes</string>

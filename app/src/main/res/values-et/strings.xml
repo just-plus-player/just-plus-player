@@ -5,8 +5,6 @@
     <string name="error_details">Üksikasjad</string>
     <string name="video_orientation_video">Video paigutus</string>
     <string name="video_orientation_sensor">Pööra automaatselt</string>
-    <string name="onboarding_open_title">Vali esitatav video</string>
-    <string name="onboarding_open_description">Videofaili avamiseks klõpsi. Väliste subtiitrite lisamiseks puuduta pikalt.</string>
     <string name="error_files_missing">Failide rakendus on väljalülitatud või puudu</string>
     <string name="shortcut_videos">Videod</string>
     <string name="button_open">Ava</string>

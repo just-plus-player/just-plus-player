@@ -95,6 +95,14 @@
             app:summaryOff="@string/pref_skip_fetch_off"
             app:title="@string/pref_skip_fetch" />
 
+        <SwitchPreferenceCompat
+            app:key="skipHideWhenLocked"
+            app:defaultValue="false"
+            app:dependency="skipEnabled"
+            app:summaryOn="@string/pref_skip_hide_locked_on"
+            app:summaryOff="@string/pref_skip_hide_locked_off"
+            app:title="@string/pref_skip_hide_locked" />
+
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_subtitle_header">

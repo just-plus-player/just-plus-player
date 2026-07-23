@@ -5,8 +5,8 @@
     <string name="video_orientation_video">Орієнтація відео</string>
     <string name="video_orientation_sensor">Автоповорот</string>
     <string name="video_orientation_system">Орієнтація пристрою</string>
-    <string name="onboarding_open_title">Оберіть відео для відтворення</string>
-    <string name="onboarding_open_description">Натисніть, щоб відкрити відеофайл. Натисніть та утримуйте, щоб завантажити зовнішні субтитри.</string>
+    <string name="empty_state_subtitle">Немає відкритого відео</string>
+    <string name="empty_state_open">Відкрити відео</string>
     <string name="open_subtitles">Завантажити субтитри</string>
     <string name="error_details">Детально</string>
     <string name="error_files_missing">Додаток \"Файли\" вимкнено або відсутній</string>
@@ -46,6 +46,9 @@
     <string name="pref_skip_fetch">Шукати сегменти онлайн</string>
     <string name="pref_skip_fetch_on">Шукати сегменти заставок і титрів в онлайн-базах, якщо джерело їх не надало</string>
     <string name="pref_skip_fetch_off">Використовувати лише сегменти від застосунку</string>
+    <string name="pref_skip_hide_locked">Ховати кнопки пропуску під час блокування</string>
+    <string name="pref_skip_hide_locked_on">Кнопка «Пропустити» та сповіщення про автопропуск приховані, поки екран заблоковано</string>
+    <string name="pref_skip_hide_locked_off">Кнопка «Пропустити» та сповіщення про автопропуск лишаються видимими, поки екран заблоковано</string>
     <string name="skip_offset_title">Зміщення пропуску</string>
     <string name="skip_offset_reset">Скинути</string>
     <string name="button_skip_offset">Зміщення пропуску</string>
@@ -59,6 +62,7 @@
     <string name="pref_crash_reporting_on">Автоматично надсилати звіти про збої та помилки відтворення, щоб допомогти їх виправити</string>
     <string name="pref_crash_reporting_off">Дані про збої та помилки не залишають пристрій</string>
     <string name="time_ends_at">Закінчиться о %s</string>
+    <string name="time_ends_at_inline">до %1$s ·</string>
     <string name="playlist">Список відтворення</string>
     <string name="pref_map_dv7">Резервний варіант Dolby Vision profile 7</string>
     <string name="pref_map_dv7_on">Відтворення контенту Dolby Vision profile 7 на дисплеях HDR</string>
@@ -68,7 +72,16 @@
     <string name="button_crop">Змінити розмір</string>
     <string name="button_rotate">Повернути</string>
     <string name="button_pip">Картинка в картинці</string>
+    <string name="button_lock">Блокування</string>
     <string name="button_quality">Якість відео</string>
+    <string name="button_audio_track">Аудіо</string>
+    <string name="button_more">Ще</string>
+    <string name="audio_title">Аудіодоріжка</string>
+    <string name="subtitle_title">Субтитри</string>
+    <string name="subtitle_off">Вимкнено</string>
+    <string name="speed_title">Швидкість відтворення</string>
+    <string name="speed_normal">Звичайна</string>
+    <string name="audio_track_number">Доріжка %1$d</string>
     <string name="quality_title">Якість відео</string>
     <string name="quality_auto">Авто</string>
     <string name="quality_auto_description">Оптимальна якість</string>

@@ -293,14 +293,22 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     @Override
     public void onLongPress(MotionEvent motionEvent) {
         if (PlayerActivity.locked || (getPlayer() != null && getPlayer().isPlaying())) {
-            PlayerActivity.locked = !PlayerActivity.locked;
-            isHandledLongPress = true;
-            Utils.showText(this, "", MESSAGE_TIMEOUT_LONG);
-            setIconLock(PlayerActivity.locked);
+            toggleLock();
+        }
+    }
 
-            if (PlayerActivity.locked && PlayerActivity.controllerVisible) {
-                hideController();
-            }
+    // Toggles the touch lock (also reachable from the lock button in the header). While locked the
+    // controller stays hidden and gestures are ignored; a tap shows the lock icon, tapping which unlocks.
+    public void toggleLock() {
+        PlayerActivity.locked = !PlayerActivity.locked;
+        isHandledLongPress = true;
+        Utils.showText(this, "", MESSAGE_TIMEOUT_LONG);
+        setIconLock(PlayerActivity.locked);
+        if (PlayerActivity.locked && PlayerActivity.controllerVisible) {
+            hideController();
+        }
+        if (getContext() instanceof PlayerActivity) {
+            ((PlayerActivity) getContext()).onLockChanged();
         }
     }
 

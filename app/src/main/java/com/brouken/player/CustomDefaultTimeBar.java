@@ -25,6 +25,7 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
     private long[] skipStartsMs;
     private long[] skipEndsMs;
     private int[] skipColors;
+    private int[] skipFillColors;
     private long skipDurationMs;
 
     public CustomDefaultTimeBar(Context context) {
@@ -59,12 +60,14 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
 
     /**
      * Highlight skip/ad segment ranges on the progress bar so the user sees them in advance.
-     * Arrays are parallel; {@code colors} carries per-segment (translucent) ARGB.
+     * Arrays are parallel: {@code edgeColors} paints the crisp boundary hairlines, {@code fillColors}
+     * the soft band across the whole segment. Both carry per-segment (translucent) ARGB.
      */
-    void setSkipHighlights(long[] startsMs, long[] endsMs, int[] colors, long durationMs) {
+    void setSkipHighlights(long[] startsMs, long[] endsMs, int[] edgeColors, int[] fillColors, long durationMs) {
         this.skipStartsMs = startsMs;
         this.skipEndsMs = endsMs;
-        this.skipColors = colors;
+        this.skipColors = edgeColors;
+        this.skipFillColors = fillColors;
         this.skipDurationMs = durationMs;
         invalidate();
     }
@@ -73,6 +76,7 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
         this.skipStartsMs = null;
         this.skipEndsMs = null;
         this.skipColors = null;
+        this.skipFillColors = null;
         this.skipDurationMs = 0;
         invalidate();
     }
@@ -89,16 +93,28 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
         if (barWidth <= 0) {
             return;
         }
+        // Each segment gets a soft fill band across its whole width, plus ~1.5dp crisp hairlines on the
+        // boundaries (chapter-divider style). The band demarcates the region while the edges frame it,
+        // both staying lighter in weight than the coral scrubber.
+        final int hairWidth = Math.max(2, Utils.dpToPx(3) / 2);
         for (int i = 0; i < skipStartsMs.length; i++) {
             float startFraction = clamp((float) skipStartsMs[i] / skipDurationMs);
             float endFraction = clamp((float) skipEndsMs[i] / skipDurationMs);
             int left = barLeft + Math.round(barWidth * startFraction);
             int right = barLeft + Math.round(barWidth * endFraction);
-            if (right <= left) {
-                right = left + Utils.dpToPx(2);
+            if (right < left) {
+                right = left;
+            }
+            if (skipFillColors != null && right > left) {
+                skipPaint.setColor(skipFillColors[i]);
+                canvas.drawRect(left, progressBar.top, right, progressBar.bottom, skipPaint);
             }
             skipPaint.setColor(skipColors[i]);
-            canvas.drawRect(left, progressBar.top, right, progressBar.bottom, skipPaint);
+            canvas.drawRect(left, progressBar.top, left + hairWidth, progressBar.bottom, skipPaint);
+            // Second hairline at the segment end, only when there's room for it to read as a separate edge.
+            if (right - left > hairWidth * 2) {
+                canvas.drawRect(right - hairWidth, progressBar.top, right, progressBar.bottom, skipPaint);
+            }
         }
     }
 

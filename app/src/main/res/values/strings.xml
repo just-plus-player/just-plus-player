@@ -6,8 +6,8 @@
     <string name="video_orientation_video">Video orientation</string>
     <string name="video_orientation_sensor">Auto-rotate</string>
     <string name="video_orientation_system">Device orientation</string>
-    <string name="onboarding_open_title">Choose a video to play</string>
-    <string name="onboarding_open_description">Tap to open a video file. Long tap to load external subtitles.</string>
+    <string name="empty_state_subtitle">No video open</string>
+    <string name="empty_state_open">Open video</string>
     <string name="open_subtitles">Load subtitles</string>
     <string name="error_details">Details</string>
     <string name="error_files_missing">Files app is disabled or missing</string>
@@ -47,6 +47,9 @@
     <string name="pref_skip_fetch">Find segments online</string>
     <string name="pref_skip_fetch_on">Look up intro/credits segments from online databases when the source provides none</string>
     <string name="pref_skip_fetch_off">Only use segments provided by the launching app</string>
+    <string name="pref_skip_hide_locked">Hide skip controls when locked</string>
+    <string name="pref_skip_hide_locked_on">The Skip button and auto-skip notification stay hidden while the screen is locked</string>
+    <string name="pref_skip_hide_locked_off">The Skip button and auto-skip notification remain visible while the screen is locked</string>
     <string name="skip_offset_title">Skip offset</string>
     <string name="skip_offset_reset">Reset</string>
     <string name="button_skip_offset">Skip offset</string>
@@ -75,6 +78,7 @@
     <string name="update_later">Later</string>
     <string name="update_skip">Skip this version</string>
     <string name="time_ends_at">Ends at %s</string>
+    <string name="time_ends_at_inline">until %1$s ·</string>
     <string name="playlist">Playlist</string>
     <string name="intent_copied">Launch intent copied to clipboard</string>
     <string name="pref_map_dv7">Dolby Vision profile 7 fallback</string>
@@ -85,7 +89,16 @@
     <string name="button_crop">Resize</string>
     <string name="button_rotate">Rotate</string>
     <string name="button_pip">Picture-in-picture</string>
+    <string name="button_lock">Lock</string>
     <string name="button_quality">Video quality</string>
+    <string name="button_audio_track">Audio</string>
+    <string name="button_more">More</string>
+    <string name="audio_title">Audio track</string>
+    <string name="subtitle_title">Subtitles</string>
+    <string name="subtitle_off">Off</string>
+    <string name="speed_title">Playback speed</string>
+    <string name="speed_normal">Normal</string>
+    <string name="audio_track_number">Track %1$d</string>
     <string name="quality_title">Video quality</string>
     <string name="quality_auto">Auto</string>
     <string name="quality_auto_description">Optimal quality</string>

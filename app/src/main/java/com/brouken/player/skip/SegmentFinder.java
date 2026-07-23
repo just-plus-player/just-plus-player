@@ -781,6 +781,13 @@ public final class SegmentFinder {
 
     private static void addSeg(List<SkipSegment> out, double startSec, double endSec,
                                SkipSegment.Category category, SkipSegment.CoordBase coordBase, int timeTrust) {
+        // A missing start (start_ms: null) means "from the beginning of the file" — common for intro/recap.
+        // Symmetric with the open-ended-end handling; excluded for credits, where a file-start segment
+        // would span nearly the whole file.
+        if (Double.isNaN(startSec) && !Double.isNaN(endSec)
+                && category != SkipSegment.Category.CREDITS) {
+            startSec = 0;
+        }
         if (Double.isNaN(startSec) || Double.isNaN(endSec) || endSec <= startSec) {
             return;
         }

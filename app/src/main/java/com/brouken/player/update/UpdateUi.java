@@ -2,6 +2,11 @@ package com.brouken.player.update;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
+import android.text.style.StyleSpan;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -32,7 +37,14 @@ public final class UpdateUi {
         final TextView message = new TextView(activity);
         final String header = activity.getString(R.string.update_available, BuildConfig.VERSION_NAME, info.versionName);
         final String changelog = info.changelog != null ? info.changelog.trim() : "";
-        message.setText(changelog.isEmpty() ? header : header + "\n\n" + changelog);
+
+        final SpannableStringBuilder text = new SpannableStringBuilder(header);
+        text.setSpan(new StyleSpan(Typeface.BOLD), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (!changelog.isEmpty()) {
+            text.append("\n\n").append(MarkdownRenderer.render(changelog));
+        }
+        message.setText(text);
+        message.setMovementMethod(LinkMovementMethod.getInstance());
 
         final ScrollView scroll = new ScrollView(activity);
         scroll.setPadding(padH, dp(activity, 8), padH, 0);

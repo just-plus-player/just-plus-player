@@ -3683,12 +3683,18 @@ public class PlayerActivity extends Activity {
 
     // A row in the native side-panel menus (audio / speed / more).
     private static class MenuItem {
+        final int iconRes;
         final CharSequence title;
         final CharSequence subtitle;
         final boolean checked;
         final Runnable action;
 
         MenuItem(CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this(0, title, subtitle, checked, action);
+        }
+
+        MenuItem(int iconRes, CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this.iconRes = iconRes;
             this.title = title;
             this.subtitle = subtitle;
             this.checked = checked;
@@ -3743,6 +3749,17 @@ public class PlayerActivity extends Activity {
             row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
+            }
+
+            if (item.iconRes != 0) {
+                final ImageView icon = new ImageView(this);
+                icon.setImageResource(item.iconRes);
+                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                final int iconSize = Utils.dpToPx(22);
+                final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+                iconLp.setMarginEnd(Utils.dpToPx(16));
+                icon.setLayoutParams(iconLp);
+                row.addView(icon);
             }
 
             final LinearLayout textBlock = new LinearLayout(this);
@@ -4059,15 +4076,15 @@ public class PlayerActivity extends Activity {
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
         if (player != null) {
-            items.add(new MenuItem(getString(R.string.speed_title),
+            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_title),
                     formatSpeed(player.getPlaybackParameters().speed), false, this::showSpeedDialog));
         }
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
-            items.add(new MenuItem(getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
         }
-        items.add(new MenuItem(getString(R.string.button_open), null, false, () -> openFile(mPrefs.mediaUri)));
+        items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.button_open), null, false, () -> openFile(mPrefs.mediaUri)));
         // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
-        items.add(new MenuItem(getString(R.string.button_more), null, false, () ->
+        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, () ->
                 startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS)));
         showSideMenu(getString(R.string.pref_title), items);
     }

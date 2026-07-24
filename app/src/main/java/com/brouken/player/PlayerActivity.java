@@ -892,7 +892,9 @@ public class PlayerActivity extends Activity {
         headerClock = new OutlineTextClock(this);
         headerClock.setFormat12Hour("h:mm a");
         headerClock.setFormat24Hour("HH:mm");
-        headerClock.setTextColor(Color.WHITE);
+        // Dimmed white (matches the "until …" text); pure white read as too harsh. The black outline and
+        // bold weight keep it legible and as the anchor without the glare.
+        headerClock.setTextColor(0xB3FFFFFF);
         headerClock.setTypeface(Typeface.DEFAULT_BOLD);
         headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
@@ -1087,7 +1089,8 @@ public class PlayerActivity extends Activity {
         overlayClock = new OutlineTextClock(this);
         overlayClock.setFormat12Hour("h:mm a");
         overlayClock.setFormat24Hour("HH:mm");
-        overlayClock.setTextColor(Color.WHITE);
+        // Same dimmed white as the header clock — the black outline keeps it readable over bright frames.
+        overlayClock.setTextColor(0xB3FFFFFF);
         overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
         // Must match the header clock size (see below) so the two line up exactly when controls toggle.
         overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());

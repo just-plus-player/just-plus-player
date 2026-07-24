@@ -55,6 +55,12 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     private final ScaleGestureDetector mScaleDetector;
     private float mScaleFactor = 1.f;
     private float mScaleFactorFit;
+
+    // Hold-to-speed (YouTube-style): while the screen is long-pressed during playback, speed jumps to 2x
+    // and the previous speed is restored on release.
+    private static final float SPEED_BOOST = 2.f;
+    private boolean speedBoostActive = false;
+    private float speedBeforeBoost = 1.f;
     Rect systemGestureExclusionRect = new Rect();
 
     public final Runnable textClearRunnable = () -> {
@@ -116,6 +122,13 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                if (speedBoostActive) {
+                    speedBoostActive = false;
+                    if (PlayerActivity.player != null)
+                        PlayerActivity.player.setPlaybackSpeed(speedBeforeBoost);
+                    if (getContext() instanceof PlayerActivity)
+                        ((PlayerActivity) getContext()).setSpeedBoostIndicatorVisible(false);
+                }
                 if (handleTouch) {
                     if (gestureOrientation == Orientation.HORIZONTAL) {
                         setCustomErrorMessage(null);
@@ -284,6 +297,17 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     @Override
     public void onLongPress(MotionEvent motionEvent) {
+        if (PlayerActivity.locked || mScaleDetector.isInProgress() || gestureOrientation != Orientation.UNKNOWN)
+            return;
+        if (!PlayerActivity.haveMedia || PlayerActivity.player == null || !PlayerActivity.player.isPlaying())
+            return;
+        speedBeforeBoost = PlayerActivity.player.getPlaybackParameters().speed;
+        speedBoostActive = true;
+        isHandledLongPress = true;
+        PlayerActivity.player.setPlaybackSpeed(SPEED_BOOST);
+        hideController();
+        if (getContext() instanceof PlayerActivity)
+            ((PlayerActivity) getContext()).setSpeedBoostIndicatorVisible(true);
     }
 
     // Toggles the touch lock (triggered by the lock button). While locked the controller stays hidden

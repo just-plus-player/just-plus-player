@@ -434,6 +434,8 @@ public class PlayerActivity extends Activity {
     Button buttonSkip;
     ClipDrawable skipButtonProgress;
     TextView notificationSkip;
+    // Top-center pill shown while hold-to-speed (2x) is active. Non-clickable so it never intercepts the hold.
+    TextView speedBoostIndicator;
     final Runnable skipNotificationHider = new Runnable() {
         @Override
         public void run() {
@@ -1007,6 +1009,41 @@ public class PlayerActivity extends Activity {
         buttonSkip.setLayoutParams(skipButtonParams);
         buttonSkip.setVisibility(View.GONE);
         coordinatorLayout.addView(buttonSkip);
+
+        // Hold-to-speed (2x) indicator: the same rounded dark pill as the auto-skip notification
+        // (fast-forward icon + label), floating top-centre. Non-clickable so it never intercepts the hold.
+        speedBoostIndicator = new TextView(this);
+        speedBoostIndicator.setText("2×");
+        speedBoostIndicator.setAllCaps(false);
+        speedBoostIndicator.setTextColor(Color.WHITE);
+        speedBoostIndicator.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
+        speedBoostIndicator.setTypeface(Typeface.DEFAULT_BOLD);
+        speedBoostIndicator.setGravity(Gravity.CENTER_VERTICAL);
+        speedBoostIndicator.setPadding(Utils.dpToPx(14), Utils.dpToPx(9), Utils.dpToPx(16), Utils.dpToPx(9));
+        speedBoostIndicator.setClickable(false);
+        speedBoostIndicator.setFocusable(false);
+
+        final Drawable speedBoostIcon = ContextCompat.getDrawable(this, R.drawable.exo_icon_fastforward);
+        if (speedBoostIcon != null) {
+            final int speedBoostIconSize = Utils.dpToPx(18);
+            speedBoostIcon.setBounds(0, 0, speedBoostIconSize, speedBoostIconSize);
+            speedBoostIndicator.setCompoundDrawablesRelative(speedBoostIcon, null, null, null);
+            speedBoostIndicator.setCompoundDrawablePadding(Utils.dpToPx(6));
+            speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
+        }
+
+        final GradientDrawable speedBoostBackground = new GradientDrawable();
+        speedBoostBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        speedBoostBackground.setCornerRadius(skipCornerRadius);
+        speedBoostIndicator.setBackground(speedBoostBackground);
+
+        final CoordinatorLayout.LayoutParams speedBoostParams = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        speedBoostParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        speedBoostParams.setMargins(0, Utils.dpToPx(28), 0, 0);
+        speedBoostIndicator.setLayoutParams(speedBoostParams);
+        speedBoostIndicator.setVisibility(View.GONE);
+        coordinatorLayout.addView(speedBoostIndicator);
 
         // Toast-style notification shown after an automatic skip: the same solid dark pill as the Skip
         // button (bell icon + label, no progress underline), floating top-centre. Auto-hides after 5s or
@@ -6199,6 +6236,11 @@ public class PlayerActivity extends Activity {
         if (mode.ratio > 0)
             return Math.abs(mode.ratio - currentAspectRatio) < 0.001f;
         return currentAspectRatio == 0 && playerView.getResizeMode() == mode.resizeMode;
+    }
+
+    public void setSpeedBoostIndicatorVisible(boolean visible) {
+        if (speedBoostIndicator != null)
+            speedBoostIndicator.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     // Arms the pause auto-hide when the controller is fully visible and playback is paused (ready, not

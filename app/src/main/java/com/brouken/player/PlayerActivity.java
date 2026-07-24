@@ -1063,7 +1063,7 @@ public class PlayerActivity extends Activity {
             skipDoneIcon.setBounds(0, 0, skipDoneIconSize, skipDoneIconSize);
             notificationSkip.setCompoundDrawablesRelative(skipDoneIcon, null, null, null);
             notificationSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
-            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
+            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
         }
 
         final GradientDrawable notificationBackground = new GradientDrawable();
@@ -1968,7 +1968,10 @@ public class PlayerActivity extends Activity {
             skipManager = new SkipManager();
         }
         skipBuilt = false;
-        hideSkipNotification();
+        // Do not hide the auto-skip notification here: when a skip lands at the very end of an item, the
+        // next item auto-advances through onMediaItemTransition -> setupSkipSource almost immediately, and
+        // hiding here would cut the notification short. Its own 3s timer governs it, so it rides across the
+        // transition ("carry-through") and disappears on schedule.
         final String json = currentSegmentsJson();
         skipManager.setSource(json != null && !json.isEmpty() ? new IntentSegmentsSource(json) : null);
         // Source (re)set → the manager holds no segments until rebuildSkip() runs against the new
@@ -2555,7 +2558,7 @@ public class PlayerActivity extends Activity {
         }
         notificationSkip.setVisibility(View.VISIBLE);
         playerView.removeCallbacks(skipNotificationHider);
-        playerView.postDelayed(skipNotificationHider, 5000);
+        playerView.postDelayed(skipNotificationHider, 3000);
     }
 
     private void hideSkipNotification() {

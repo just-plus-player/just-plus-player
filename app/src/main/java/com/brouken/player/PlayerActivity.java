@@ -87,6 +87,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.VideoSize;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
@@ -271,12 +272,27 @@ public class PlayerActivity extends Activity {
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
     // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
     private boolean pickerDialogOpen;
+    // Media3 keeps the controller shown indefinitely while paused (it forces the auto-hide timeout to 0),
+    // so reuse the same CONTROLLER_TIMEOUT + hideController() to also clear the UI on pause. A tap re-shows
+    // and re-arms it, exactly like during playback (see scheduleHideControllerOnPause).
+    private final Runnable hideControllerAction = () -> {
+        if (player != null && !player.getPlayWhenReady() && controllerVisibleFully)
+            playerView.hideController();
+    };
     // Adaptive sizing source of truth (phone/tablet/TV). Computed in onCreate, recomputed on config change.
     private UiMetrics ui;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
+    // Forced display aspect ratio currently applied (0 = natural video AR). Persisted via Prefs.aspectRatio.
+    private float currentAspectRatio = 0f;
+    private List<AspectMode> aspectModes;
     private ImageButton buttonRotation;
     private ImageButton buttonLock;
+    // Swipe-to-unlock bar shown over the video while the screen is locked; the only affordance for leaving
+    // the locked state (drag on touch, hold a D-pad key on TV).
+    private SwipeToUnlockView swipeToUnlock;
+    // Back-button guard while locked: the first Back arms this, a second Back within the window exits.
+    private boolean lockBackPressedOnce;
     private ObjectAnimator emptyStatePulse;
     private ImageButton exoSettings;
     private ImageButton exoSubtitle;
@@ -418,6 +434,8 @@ public class PlayerActivity extends Activity {
     Button buttonSkip;
     ClipDrawable skipButtonProgress;
     TextView notificationSkip;
+    // Top-center pill shown while hold-to-speed (2x) is active. Non-clickable so it never intercepts the hold.
+    TextView speedBoostIndicator;
     final Runnable skipNotificationHider = new Runnable() {
         @Override
         public void run() {
@@ -734,22 +752,18 @@ public class PlayerActivity extends Activity {
         buttonAspectRatio.setContentDescription(getString(R.string.button_crop));
         updatebuttonAspectRatioIcon();
         buttonAspectRatio.setOnClickListener(view -> {
-            playerView.setScale(1.f);
-            if (playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
-                Utils.showText(playerView, getString(R.string.video_resize_crop));
-            } else {
-                // Default mode
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                Utils.showText(playerView, getString(R.string.video_resize_fit));
-            }
-            updatebuttonAspectRatioIcon();
+            cycleAspectMode();
             resetHideCallbacks();
         });
         if (isTvBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             buttonAspectRatio.setOnLongClickListener(v -> {
                 scaleStart();
                 updatebuttonAspectRatioIcon();
+                return true;
+            });
+        } else {
+            buttonAspectRatio.setOnLongClickListener(v -> {
+                showAspectModePicker();
                 return true;
             });
         }
@@ -878,7 +892,9 @@ public class PlayerActivity extends Activity {
         headerClock = new OutlineTextClock(this);
         headerClock.setFormat12Hour("h:mm a");
         headerClock.setFormat24Hour("HH:mm");
-        headerClock.setTextColor(Color.WHITE);
+        // Dimmed white (matches the "until …" text); pure white read as too harsh. The black outline and
+        // bold weight keep it legible and as the anchor without the glare.
+        headerClock.setTextColor(0xB3FFFFFF);
         headerClock.setTypeface(Typeface.DEFAULT_BOLD);
         headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
@@ -996,6 +1012,41 @@ public class PlayerActivity extends Activity {
         buttonSkip.setVisibility(View.GONE);
         coordinatorLayout.addView(buttonSkip);
 
+        // Hold-to-speed (2x) indicator: the same rounded dark pill as the auto-skip notification
+        // (fast-forward icon + label), floating top-centre. Non-clickable so it never intercepts the hold.
+        speedBoostIndicator = new TextView(this);
+        speedBoostIndicator.setText("2×");
+        speedBoostIndicator.setAllCaps(false);
+        speedBoostIndicator.setTextColor(Color.WHITE);
+        speedBoostIndicator.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
+        speedBoostIndicator.setTypeface(Typeface.DEFAULT_BOLD);
+        speedBoostIndicator.setGravity(Gravity.CENTER_VERTICAL);
+        speedBoostIndicator.setPadding(Utils.dpToPx(14), Utils.dpToPx(9), Utils.dpToPx(16), Utils.dpToPx(9));
+        speedBoostIndicator.setClickable(false);
+        speedBoostIndicator.setFocusable(false);
+
+        final Drawable speedBoostIcon = ContextCompat.getDrawable(this, R.drawable.exo_icon_fastforward);
+        if (speedBoostIcon != null) {
+            final int speedBoostIconSize = Utils.dpToPx(18);
+            speedBoostIcon.setBounds(0, 0, speedBoostIconSize, speedBoostIconSize);
+            speedBoostIndicator.setCompoundDrawablesRelative(speedBoostIcon, null, null, null);
+            speedBoostIndicator.setCompoundDrawablePadding(Utils.dpToPx(6));
+            speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
+        }
+
+        final GradientDrawable speedBoostBackground = new GradientDrawable();
+        speedBoostBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        speedBoostBackground.setCornerRadius(skipCornerRadius);
+        speedBoostIndicator.setBackground(speedBoostBackground);
+
+        final CoordinatorLayout.LayoutParams speedBoostParams = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        speedBoostParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        speedBoostParams.setMargins(0, Utils.dpToPx(28), 0, 0);
+        speedBoostIndicator.setLayoutParams(speedBoostParams);
+        speedBoostIndicator.setVisibility(View.GONE);
+        coordinatorLayout.addView(speedBoostIndicator);
+
         // Toast-style notification shown after an automatic skip: the same solid dark pill as the Skip
         // button (bell icon + label, no progress underline), floating top-centre. Auto-hides after 5s or
         // on any interaction (see onUserInteraction).
@@ -1014,7 +1065,7 @@ public class PlayerActivity extends Activity {
             skipDoneIcon.setBounds(0, 0, skipDoneIconSize, skipDoneIconSize);
             notificationSkip.setCompoundDrawablesRelative(skipDoneIcon, null, null, null);
             notificationSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
-            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
+            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
         }
 
         final GradientDrawable notificationBackground = new GradientDrawable();
@@ -1038,7 +1089,8 @@ public class PlayerActivity extends Activity {
         overlayClock = new OutlineTextClock(this);
         overlayClock.setFormat12Hour("h:mm a");
         overlayClock.setFormat24Hour("HH:mm");
-        overlayClock.setTextColor(Color.WHITE);
+        // Same dimmed white as the header clock — the black outline keeps it readable over bright frames.
+        overlayClock.setTextColor(0xB3FFFFFF);
         overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
         // Must match the header clock size (see below) so the two line up exactly when controls toggle.
         overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
@@ -1051,6 +1103,27 @@ public class PlayerActivity extends Activity {
 
         // Whenever the in-header clock is (re)laid out, mirror its position onto the floating clock.
         headerClock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> syncOverlayClockPosition());
+
+        // Swipe-to-unlock bar, shown while the screen is locked: the lock icon is dragged to the right edge
+        // to unlock. The only way out of the locked state, and touch only (the lock feature is not offered on
+        // TV). Centered near the bottom.
+        if (!isTvBox) {
+            swipeToUnlock = new SwipeToUnlockView(this);
+            swipeToUnlock.setVisibility(View.GONE);
+            final CoordinatorLayout.LayoutParams swipeLp = new CoordinatorLayout.LayoutParams(
+                    Utils.dpToPx(260), Utils.dpToPx(48));
+            swipeLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            swipeLp.bottomMargin = Utils.dpToPx(48);
+            swipeToUnlock.setLayoutParams(swipeLp);
+            swipeToUnlock.setOnUnlockListener(() -> playerView.toggleLock());
+            swipeToUnlock.setOnStartTouchingListener(() -> {
+                if (playerView != null) {
+                    playerView.removeCallbacks(swipeHider);
+                }
+            });
+            swipeToUnlock.setOnStopTouchingListener(this::rescheduleSwipeHide);
+            coordinatorLayout.addView(swipeToUnlock);
+        }
 
         topInfoPanel.setOnLongClickListener(view -> {
             // Prevent FileUriExposedException
@@ -1291,7 +1364,8 @@ public class PlayerActivity extends Activity {
         exoBasicControls.addView(horizontalScrollView, horizontalScrollViewLp);
 
         // Lock sits isolated at the far-left of the bottom bar — prepended into the time row, away from the
-        // display cluster (MX-style) so it is no longer adjacent to the rotation button. Touch only.
+        // display cluster (MX-style) so it is no longer adjacent to the rotation button. Touch only (the lock
+        // feature is not offered on TV).
         if (!isTvBox) {
             final View exoTime = findViewById(R.id.exo_time);
             if (exoTime instanceof LinearLayout) {
@@ -1307,6 +1381,13 @@ public class PlayerActivity extends Activity {
                 lockLp.setMarginEnd(ui.lockMarginEnd());
                 buttonLock.setLayoutParams(lockLp);
                 ((LinearLayout) exoTime).addView(buttonLock, 0);
+
+                // exo_basic_controls (the right-hand cluster, holding a full-width HorizontalScrollView) is
+                // laid out after exo_time, so it sits on top of it and its empty left area swallows taps on
+                // the lock (a scroll view consumes touches for its own drag detection). Bring exo_time to the
+                // front so the lock wins its taps. The cluster's buttons sit to the right, clear of exo_time
+                // (which is ~494px wide and non-clickable outside the lock), so they and scrolling still work.
+                exoTime.bringToFront();
             }
         }
 
@@ -1328,6 +1409,7 @@ public class PlayerActivity extends Activity {
                     stopEndsAtUpdates();
                 }
                 updateOverlayClock();
+                scheduleHideControllerOnPause();
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -1476,6 +1558,17 @@ public class PlayerActivity extends Activity {
     @SuppressLint("GestureBackNavigation")
     @Override
     public void onBackPressed() {
+        // While locked, swallow the first Back (re-showing the unlock bar with a hint) and only exit if Back
+        // is pressed again within the window — so a stray Back can't drop out of a locked video.
+        if (locked && !lockBackPressedOnce) {
+            lockBackPressedOnce = true;
+            showSwipeToUnlock();
+            Utils.showText(playerView, getString(R.string.press_back_again), 2000);
+            if (playerView != null) {
+                playerView.postDelayed(() -> lockBackPressedOnce = false, 2000);
+            }
+            return;
+        }
         restorePlayStateAllowed = false;
         super.onBackPressed();
     }
@@ -1675,6 +1768,17 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // While locked, swallow every key at the earliest point — before the view hierarchy,
+        // onKeyDown, and the window's default (MediaSession-backed) volume handling — so hardware
+        // volume/media/seek keys can't act. BACK is excluded so the normal lock-aware exit path
+        // still works. Re-show the unlock hint on the first press, mirroring the touch tap().
+        if (locked && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                showSwipeToUnlock();
+            }
+            return true;
+        }
+
         if (isScaling) {
             final int keyCode = event.getKeyCode();
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -1739,6 +1843,9 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
+        if (locked) {
+            return true;
+        }
         if (0 != (event.getSource() & InputDevice.SOURCE_CLASS_POINTER)) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_SCROLL:
@@ -1792,7 +1899,9 @@ public class PlayerActivity extends Activity {
             ContextCompat.registerReceiver(this, mReceiver, new IntentFilter(ACTION_MEDIA_CONTROL), ContextCompat.RECEIVER_EXPORTED);
         } else {
             setSubtitleTextSize();
-            if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            if (mPrefs.aspectRatio > 0) {
+                playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
+            } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 playerView.setScale(mPrefs.scale);
             }
             if (mReceiver != null) {
@@ -1862,7 +1971,10 @@ public class PlayerActivity extends Activity {
             skipManager = new SkipManager();
         }
         skipBuilt = false;
-        hideSkipNotification();
+        // Do not hide the auto-skip notification here: when a skip lands at the very end of an item, the
+        // next item auto-advances through onMediaItemTransition -> setupSkipSource almost immediately, and
+        // hiding here would cut the notification short. Its own 3s timer governs it, so it rides across the
+        // transition ("carry-through") and disappears on schedule.
         final String json = currentSegmentsJson();
         skipManager.setSource(json != null && !json.isEmpty() ? new IntentSegmentsSource(json) : null);
         // Source (re)set → the manager holds no segments until rebuildSkip() runs against the new
@@ -2376,12 +2488,41 @@ public class PlayerActivity extends Activity {
     // showSkipButton/showSkipNotification keep them suppressed until unlock, after which the next
     // skip poll restores the button if a segment is still active.
     void onLockChanged() {
-        if (buttonLock != null) {
-            buttonLock.setSelected(locked);
+        if (locked) {
+            lockScreen();
+        } else {
+            unlockScreen();
         }
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
             hideSkipButton();
             hideSkipNotification();
+        }
+    }
+
+    // Entering the lock: pin the current orientation (restored on unlock), arm the swipe bar and reset the
+    // Back guard. The controller is already hidden by CustomPlayerView.toggleLock().
+    private void lockScreen() {
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+        lockBackPressedOnce = false;
+        showSwipeToUnlock();
+    }
+
+    // Leaving the lock: hide the bar and restore the user's orientation preference.
+    private void unlockScreen() {
+        hideSwipeToUnlock();
+        lockBackPressedOnce = false;
+        if (mPrefs != null) {
+            Utils.setOrientation(this, mPrefs.orientation);
+        }
+    }
+
+    // Some paths flip `locked` directly (new media, playback stopped) without going through onLockChanged;
+    // the lock does not persist, so undo its UI (bar + orientation pin) here too.
+    private void clearLockUi() {
+        hideSwipeToUnlock();
+        lockBackPressedOnce = false;
+        if (mPrefs != null) {
+            Utils.setOrientation(this, mPrefs.orientation);
         }
     }
 
@@ -2420,7 +2561,7 @@ public class PlayerActivity extends Activity {
         }
         notificationSkip.setVisibility(View.VISIBLE);
         playerView.removeCallbacks(skipNotificationHider);
-        playerView.postDelayed(skipNotificationHider, 5000);
+        playerView.postDelayed(skipNotificationHider, 3000);
     }
 
     private void hideSkipNotification() {
@@ -2941,6 +3082,35 @@ public class PlayerActivity extends Activity {
             lp.topMargin = top;
             overlayClock.setLayoutParams(lp);
         }
+    }
+
+    private final Runnable swipeHider = this::hideSwipeToUnlock;
+
+    // Reveal the swipe-to-unlock bar and auto-hide it after the standard long-touch timeout. While the user
+    // is actively dragging (onStartTouching) the auto-hide is cancelled and rescheduled on release.
+    void showSwipeToUnlock() {
+        if (swipeToUnlock == null) {
+            return;
+        }
+        swipeToUnlock.setVisibility(View.VISIBLE);
+        rescheduleSwipeHide();
+    }
+
+    private void rescheduleSwipeHide() {
+        if (playerView != null) {
+            playerView.removeCallbacks(swipeHider);
+            playerView.postDelayed(swipeHider, CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+        }
+    }
+
+    void hideSwipeToUnlock() {
+        if (swipeToUnlock == null) {
+            return;
+        }
+        if (playerView != null) {
+            playerView.removeCallbacks(swipeHider);
+        }
+        swipeToUnlock.setVisibility(View.GONE);
     }
 
     private void copyLaunchIntentToClipboard() {
@@ -4359,6 +4529,7 @@ public class PlayerActivity extends Activity {
         playerView.setControllerShowTimeoutMs(-1);
 
         locked = false;
+        clearLockUi();
 
         if (haveMedia) {
             hideEmptyState();
@@ -4370,8 +4541,10 @@ public class PlayerActivity extends Activity {
             }
 
             playerView.setResizeMode(mPrefs.resizeMode);
-
-            if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            currentAspectRatio = mPrefs.aspectRatio;
+            if (mPrefs.aspectRatio > 0) {
+                playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
+            } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 playerView.setScale(mPrefs.scale);
             } else {
                 playerView.setScale(1.f);
@@ -4485,6 +4658,7 @@ public class PlayerActivity extends Activity {
                         getSelectedTrack(C.TRACK_TYPE_TEXT),
                         playerView.getResizeMode(),
                         playerView.getVideoSurfaceView().getScaleX(),
+                        currentAspectRatio,
                         player.getPlaybackParameters().speed);
             }
         }
@@ -4707,6 +4881,20 @@ public class PlayerActivity extends Activity {
 
     private class PlayerListener implements Player.Listener {
         @Override
+        public void onVideoSizeChanged(VideoSize videoSize) {
+            // Media3 resets the content-frame AR to the video's natural AR on every size change (e.g. a
+            // mid-stream video-track switch), silently dropping a forced ratio. Reassert it after that
+            // update (posted, so it wins).
+            // Skip while ZOOM is active: that means free pinch-zoom has taken over, and reasserting would
+            // fight it (adaptive streams fire this on every resolution switch).
+            if (currentAspectRatio > 0 && playerView != null
+                    && playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                playerView.post(() ->
+                        playerView.applyAspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, currentAspectRatio));
+            }
+        }
+
+        @Override
         public void onAudioSessionIdChanged(int audioSessionId) {
             try {
                 if (loudnessEnhancer != null) {
@@ -4767,17 +4955,6 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onEvents(Player player, Player.Events events) {
-            // Media3 re-enables/brightens the prev/next arrows on navigation events (timeline, position
-            // discontinuity, available commands) — exactly what fires while switching episodes. Re-assert
-            // the disabled look after that update (deferred, so it wins) while the video is loading.
-            if (episodeNavLoading && playerView != null) {
-                playerView.post(() -> {
-                    if (episodeNavLoading) {
-                        applyEpisodeNavEnabled(false);
-                    }
-                });
-            }
-
             // Media3 re-shows the subtitle button (greyed, disabled) on its own control updates while
             // loading. Re-assert our "hidden until subtitle tracks exist" rule afterwards (deferred so it wins),
             // but only on events that can actually touch the controls — not on every frequent event dispatch.
@@ -4849,8 +5026,9 @@ public class PlayerActivity extends Activity {
                 }
             }
 
-            if (!isPlaying) {
+            if (!isPlaying && PlayerActivity.locked) {
                 PlayerActivity.locked = false;
+                clearLockUi();
             }
 
             if (isPlaying) {
@@ -4858,6 +5036,10 @@ public class PlayerActivity extends Activity {
             } else {
                 stopSkipPolling();
             }
+
+            // Pausing while the controller is already visible doesn't change its visibility, so arm the
+            // pause auto-hide here too; resuming cancels it (guarded inside scheduleHideControllerOnPause).
+            scheduleHideControllerOnPause();
         }
 
         @SuppressLint("SourceLockedOrientationActivity")
@@ -5728,7 +5910,7 @@ public class PlayerActivity extends Activity {
         setupEpisodeNavButton(exoNext, size, padding, margin);
         if (exoPrev != null) {
             exoPrev.setOnClickListener(v -> {
-                if (!episodeNavLoading && player != null) {
+                if (!episodeNavLoading && player != null && player.hasPreviousMediaItem()) {
                     player.seekToPrevious();
                     resetHideCallbacks();
                 }
@@ -5736,10 +5918,21 @@ public class PlayerActivity extends Activity {
         }
         if (exoNext != null) {
             exoNext.setOnClickListener(v -> {
-                if (!episodeNavLoading && player != null) {
+                if (!episodeNavLoading && player != null && player.hasNextMediaItem()) {
                     player.seekToNext();
                     resetHideCallbacks();
                 }
+            });
+        }
+        // Media3's PlayerControlView re-enables these arrows in updateNavigation()/updateAll() — on player
+        // events AND every time the controller is shown — based on command availability, which keeps "prev"
+        // enabled on the first item and "next" on the last. Enforcing our state via a posted re-assert lands
+        // one frame late (visible enable→disable flicker on load). Correcting it in a pre-draw pass instead
+        // fixes it before the frame is drawn, so Media3's transient enable is never rendered.
+        if (playerView != null) {
+            playerView.getViewTreeObserver().addOnPreDrawListener(() -> {
+                updateEpisodeNavButtons();
+                return true;
             });
         }
     }
@@ -5779,15 +5972,20 @@ public class PlayerActivity extends Activity {
     // styling (enabled state + opacity) as the other control buttons via Utils.setButtonEnabled.
     private void setEpisodeNavLoading(final boolean loading) {
         episodeNavLoading = loading;
-        applyEpisodeNavEnabled(!loading);
+        updateEpisodeNavButtons();
     }
 
-    private void applyEpisodeNavEnabled(final boolean enabled) {
-        if (exoPrev != null) {
-            Utils.setButtonEnabled(this, exoPrev, enabled);
+    // Enable each episode arrow only when that direction exists in the playlist: "prev" is disabled on the
+    // first item, "next" on the last. Both are additionally disabled while a switch is loading. Idempotent
+    // (only writes on an actual change) so the per-draw enforcer below can call it every frame cheaply.
+    private void updateEpisodeNavButtons() {
+        final boolean canPrev = !episodeNavLoading && player != null && player.hasPreviousMediaItem();
+        final boolean canNext = !episodeNavLoading && player != null && player.hasNextMediaItem();
+        if (exoPrev != null && exoPrev.isEnabled() != canPrev) {
+            Utils.setButtonEnabled(this, exoPrev, canPrev);
         }
-        if (exoNext != null) {
-            Utils.setButtonEnabled(this, exoNext, enabled);
+        if (exoNext != null && exoNext.isEnabled() != canNext) {
+            Utils.setButtonEnabled(this, exoNext, canNext);
         }
     }
 
@@ -5971,6 +6169,102 @@ public class PlayerActivity extends Activity {
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
         }
         updatebuttonAspectRatioIcon();
+    }
+
+    // A scale mode = a Media3 resize mode plus an optional forced display aspect ratio (ratio 0 = natural).
+    // Indices 0..2 (Fit/Crop/Fill) are the tap cycle; the rest (forced ratios) are picker-only, like VLC.
+    private static final class AspectMode {
+        final int resizeMode;
+        final float ratio;
+        final String label;
+        AspectMode(int resizeMode, float ratio, String label) {
+            this.resizeMode = resizeMode;
+            this.ratio = ratio;
+            this.label = label;
+        }
+    }
+
+    private List<AspectMode> getAspectModes() {
+        if (aspectModes == null) {
+            aspectModes = new ArrayList<>();
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 0f, getString(R.string.video_resize_fit)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 0f, getString(R.string.video_resize_crop)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FILL, 0f, getString(R.string.video_resize_fill)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 9f, "16:9"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 4f / 3f, "4:3"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 10f, "16:10"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2f / 1f, "2:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2.35f, "2.35:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2.39f, "2.39:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 5f / 4f, "5:4"));
+        }
+        return aspectModes;
+    }
+
+    private void applyAspectMode(int index) {
+        final AspectMode mode = getAspectModes().get(index);
+        currentAspectRatio = mode.ratio;
+        playerView.applyAspectMode(mode.resizeMode, mode.ratio);
+        Utils.showText(playerView, mode.label);
+        updatebuttonAspectRatioIcon();
+    }
+
+    // Tap: cycle Fit → Crop → Fill → 16:9 → 4:3. From any other picker-only ratio, a tap returns to Fit.
+    private static final int ASPECT_CYCLE_COUNT = 5;
+
+    private void cycleAspectMode() {
+        final List<AspectMode> modes = getAspectModes();
+        int current = -1;
+        for (int i = 0; i < ASPECT_CYCLE_COUNT; i++) {
+            if (isCurrentAspectMode(modes.get(i))) {
+                current = i;
+                break;
+            }
+        }
+        applyAspectMode((current + 1) % ASPECT_CYCLE_COUNT);
+    }
+
+    private void showAspectModePicker() {
+        final List<AspectMode> modes = getAspectModes();
+        final String[] labels = new String[modes.size()];
+        int checked = -1;
+        for (int i = 0; i < modes.size(); i++) {
+            labels[i] = modes.get(i).label;
+            if (isCurrentAspectMode(modes.get(i)))
+                checked = i;
+        }
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.button_crop)
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    applyAspectMode(which);
+                    d.dismiss();
+                })
+                .create();
+        showPickerDialog(dialog);
+    }
+
+    private boolean isCurrentAspectMode(AspectMode mode) {
+        if (mode.ratio > 0)
+            return Math.abs(mode.ratio - currentAspectRatio) < 0.001f;
+        return currentAspectRatio == 0 && playerView.getResizeMode() == mode.resizeMode;
+    }
+
+    public void setSpeedBoostIndicatorVisible(boolean visible) {
+        if (speedBoostIndicator != null)
+            speedBoostIndicator.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    // Arms the pause auto-hide when the controller is fully visible and playback is paused (ready, not
+    // scrubbing/locked/in a picker). Called from the visibility listener and on play/pause transitions.
+    private void scheduleHideControllerOnPause() {
+        if (playerView == null)
+            return;
+        playerView.removeCallbacks(hideControllerAction);
+        if (controllerVisibleFully && haveMedia && player != null
+                && player.getPlaybackState() == Player.STATE_READY && !player.getPlayWhenReady()
+                && !locked && !pickerDialogOpen && !isScrubbing) {
+            playerView.postDelayed(hideControllerAction, CONTROLLER_TIMEOUT);
+        }
     }
 
     private void updatebuttonAspectRatioIcon() {

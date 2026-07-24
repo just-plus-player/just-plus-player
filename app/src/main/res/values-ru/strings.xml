@@ -13,6 +13,7 @@
     <string name="video_orientation_video">Ориентация видео</string>
     <string name="video_resize_crop">Обрезать</string>
     <string name="video_resize_fit">Подогнать</string>
+    <string name="video_resize_fill">Заполнить</string>
     <string name="delete_confirmation">Удалить</string>
     <string name="delete_query">Удалить этот файл\?</string>
     <string name="request_scope">Чтобы автоматически загружать внешние субтитры или переходить к следующему файлу в каталоге, предоставьте %s доступ к самой верхней папке, содержащей ваши видео (например, Movies).</string>
@@ -69,6 +70,8 @@
     <string name="button_rotate">Повернуть</string>
     <string name="button_pip">Картинка в картинке</string>
     <string name="button_lock">Блокировка</string>
+    <string name="swipe_unlock">Проведите</string>
+    <string name="press_back_again">Нажмите «Назад» ещё раз для выхода</string>
     <string name="button_quality">Качество видео</string>
     <string name="button_audio_track">Аудио</string>
     <string name="button_more">Ещё</string>

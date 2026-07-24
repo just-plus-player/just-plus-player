@@ -2,6 +2,7 @@
 <resources>
     <string name="video_resize_fit">Підігнати</string>
     <string name="video_resize_crop">Обрізати</string>
+    <string name="video_resize_fill">Заповнити</string>
     <string name="video_orientation_video">Орієнтація відео</string>
     <string name="video_orientation_sensor">Автоповорот</string>
     <string name="video_orientation_system">Орієнтація пристрою</string>
@@ -73,6 +74,8 @@
     <string name="button_rotate">Повернути</string>
     <string name="button_pip">Картинка в картинці</string>
     <string name="button_lock">Блокування</string>
+    <string name="swipe_unlock">Проведіть</string>
+    <string name="press_back_again">Натисніть «Назад» ще раз для виходу</string>
     <string name="button_quality">Якість відео</string>
     <string name="button_audio_track">Аудіо</string>
     <string name="button_more">Ще</string>

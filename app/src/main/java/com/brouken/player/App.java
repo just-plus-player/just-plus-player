@@ -15,6 +15,13 @@ public class App extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        initSentry();
+        // Installed after Sentry so it wraps (and chains to) Sentry's crash handler rather than
+        // replacing it: any uncaught crash lands on ErrorActivity, then Sentry still reports.
+        ErrorActivity.installCrashHandler(this);
+    }
+
+    private void initSentry() {
         final String dsn = BuildConfig.SENTRY_DSN;
         if (dsn == null || dsn.isEmpty())
             return;

@@ -4634,8 +4634,7 @@ public class PlayerActivity extends Activity {
         // A silent stall (buffering never reached READY). Not sent to Sentry — it is usually an
         // upstream/network condition, not an app bug — just surface a friendly message with its code.
         updateLoading(false);
-        showSnack(getString(R.string.error_playback_timeout)
-                + " (" + PlayerErrorCode.LOAD_TIMEOUT + ")", null);
+        showSnack(getString(R.string.error_playback_timeout), null);
     }
 
     public void releasePlayer() {
@@ -5002,8 +5001,7 @@ public class PlayerActivity extends Activity {
             // stop — this is an unsupported upstream flow, not an app bug, so it is not reported to Sentry.
             if (isResolverNotReadyForCurrentItem()) {
                 resolverNotReadyUri = null;
-                showSnack(getString(R.string.error_stream_not_ready)
-                        + " (" + PlayerErrorCode.RESOLVER_NOT_READY + ")", null);
+                showSnack(getString(R.string.error_stream_not_ready), null);
                 releasePlayer(false);
                 return;
             }
@@ -5022,8 +5020,7 @@ public class PlayerActivity extends Activity {
                 if (recoverFromStuckPlayback()) {
                     return;
                 }
-                showSnack(getString(R.string.error_playback_stalled)
-                        + " (" + PlayerErrorCode.STUCK_TIMEOUT + ")", error.getLocalizedMessage());
+                showErrorScreen(errorSummary(error), "Stall class: device_decoder\n\n" + errorReport(error));
                 // Report as device/firmware telemetry (tagged), not an app bug.
                 io.sentry.Sentry.captureException(error, scope -> {
                     scope.setTag("player.error_code", error.getErrorCodeName());
@@ -5066,8 +5063,7 @@ public class PlayerActivity extends Activity {
             } else {
                 // Any other playback error — surface a general message + code instead of failing
                 // silently (it was already reported to Sentry above).
-                showSnack(getString(R.string.error_playback_general)
-                        + " (" + PlayerErrorCode.GENERAL_ERROR + ")", error.getLocalizedMessage());
+                showErrorScreen(errorSummary(error), errorReport(error));
             }
         }
     }
@@ -5478,31 +5474,41 @@ public class PlayerActivity extends Activity {
     }
 
     void showError(ExoPlaybackException error) {
-        String errorDetailed;
-        final PlayerErrorCode code;
+        // A fatal playback error: go straight to the full error screen (friendly explanation + report),
+        // rather than a dismissible toast the user has to expand.
+        showErrorScreen(errorSummary(error), errorReport(error));
+    }
 
-        switch (error.type) {
-            case ExoPlaybackException.TYPE_SOURCE:
-                errorDetailed = error.getSourceException().getLocalizedMessage();
-                code = PlayerErrorCode.SOURCE_ERROR;
-                break;
-            case ExoPlaybackException.TYPE_RENDERER:
-                errorDetailed = error.getRendererException().getLocalizedMessage();
-                code = PlayerErrorCode.RENDERER_ERROR;
-                break;
-            case ExoPlaybackException.TYPE_UNEXPECTED:
-                errorDetailed = error.getUnexpectedException().getLocalizedMessage();
-                code = PlayerErrorCode.UNEXPECTED_ERROR;
-                break;
-            case ExoPlaybackException.TYPE_REMOTE:
-            default:
-                errorDetailed = error.getLocalizedMessage();
-                code = PlayerErrorCode.UNEXPECTED_ERROR;
-                break;
+    // Short, human-facing text for the error screen's panel: the stable ExoPlayer error-code name, the
+    // underlying error text, and the network URL that was being played (sanitised). No internal codes.
+    private String errorSummary(PlaybackException error) {
+        final StringBuilder sb = new StringBuilder(error.getErrorCodeName());
+        final String message = ErrorActivity.rootMessage(error);
+        if (message != null) {
+            sb.append('\n').append(message);
         }
+        final Uri uri = currentMediaUri();
+        if (Utils.isSupportedNetworkUri(uri)) {
+            sb.append("\n\n").append(Utils.uriToReportString(uri));
+        }
+        return sb.toString();
+    }
 
-        // Friendly primary message + stable code; the raw player message stays available behind "Details".
-        showSnack(getString(R.string.error_playback_general) + " (" + code + ")", errorDetailed);
+    // Full diagnostic report — the same detail sent to Sentry: error-code name, the sanitised media
+    // URI (for network media), and the complete stack trace with its "Caused by" chain.
+    private String errorReport(PlaybackException error) {
+        final StringBuilder sb = new StringBuilder("Error code: ").append(error.getErrorCodeName());
+        final Uri uri = currentMediaUri();
+        if (Utils.isSupportedNetworkUri(uri)) {
+            sb.append("\nMedia: ").append(Utils.uriToReportString(uri));
+        }
+        return sb.append("\n\n").append(ErrorActivity.stackTrace(error)).toString();
+    }
+
+    private Uri currentMediaUri() {
+        final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
+        return item != null && item.localConfiguration != null
+                ? item.localConfiguration.uri : mPrefs.mediaUri;
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {
@@ -5513,24 +5519,23 @@ public class PlayerActivity extends Activity {
             builder.setMessage(textPrimary);
             builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
             if (textSecondary != null) {
-                builder.setNeutralButton(R.string.error_details, (dialogInterface, i) -> showErrorDetails(textSecondary));
+                builder.setNeutralButton(R.string.error_details, (dialogInterface, i) -> showErrorScreen(textSecondary, textSecondary));
             }
             builder.show();
             return;
         }
         snackbar = Snackbar.make(coordinatorLayout, textPrimary, Snackbar.LENGTH_LONG);
         if (textSecondary != null) {
-            snackbar.setAction(R.string.error_details, v -> showErrorDetails(textSecondary));
+            snackbar.setAction(R.string.error_details, v -> showErrorScreen(textSecondary, textSecondary));
         }
         snackbar.setAnchorView(R.id.exo_bottom_bar);
         snackbar.show();
     }
 
-    private void showErrorDetails(final String textSecondary) {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setMessage(textSecondary);
-        builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
-        builder.create().show();
+    private void showErrorScreen(final String summary, final String report) {
+        startActivity(new Intent(this, ErrorActivity.class)
+                .putExtra(ErrorActivity.EXTRA_SUMMARY, summary)
+                .putExtra(ErrorActivity.EXTRA_REPORT, report));
     }
 
     void reportScrubbing(long position) {

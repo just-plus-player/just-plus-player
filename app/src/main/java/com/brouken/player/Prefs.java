@@ -33,6 +33,7 @@ class Prefs {
     private static final String PREF_KEY_RESIZE_MODE = "resizeMode";
     private static final String PREF_KEY_ORIENTATION = "orientation";
     private static final String PREF_KEY_SCALE = "scale";
+    private static final String PREF_KEY_ASPECT_RATIO = "aspectRatio";
     private static final String PREF_KEY_SCOPE_URI = "scopeUri";
     private static final String PREF_KEY_ASK_SCOPE = "askScope";
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
@@ -75,6 +76,7 @@ class Prefs {
     public int resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT;
     public Utils.Orientation orientation = Utils.Orientation.UNSPECIFIED;
     public float scale = 1.f;
+    public float aspectRatio = 0f; // 0 = natural video AR; >0 = forced display AR (16:9, 4:3, …)
     public float speed = 1.f;
 
     public String subtitleTrackId;
@@ -136,6 +138,7 @@ class Prefs {
             resizeMode = mSharedPreferences.getInt(PREF_KEY_RESIZE_MODE, resizeMode);
         orientation = Utils.Orientation.values()[mSharedPreferences.getInt(PREF_KEY_ORIENTATION, orientation.value)];
         scale = mSharedPreferences.getFloat(PREF_KEY_SCALE, scale);
+        aspectRatio = mSharedPreferences.getFloat(PREF_KEY_ASPECT_RATIO, aspectRatio);
         if (mSharedPreferences.contains(PREF_KEY_SCOPE_URI))
             scopeUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SCOPE_URI, null));
         askScope = mSharedPreferences.getBoolean(PREF_KEY_ASK_SCOPE, askScope);
@@ -172,7 +175,7 @@ class Prefs {
         mediaUri = uri;
         mediaType = type;
         updateSubtitle(null);
-        updateMeta(null, null, AspectRatioFrameLayout.RESIZE_MODE_FIT, 1.f, 1.f);
+        updateMeta(null, null, AspectRatioFrameLayout.RESIZE_MODE_FIT, 1.f, 0f, 1.f);
 
         if (mediaType != null && mediaType.endsWith("/*")) {
             mediaType = null;
@@ -326,11 +329,12 @@ class Prefs {
         sharedPreferencesEditor.apply();
     }
 
-    public void updateMeta(final String audioTrackId, final String subtitleTrackId, final int resizeMode, final float scale, final float speed) {
+    public void updateMeta(final String audioTrackId, final String subtitleTrackId, final int resizeMode, final float scale, final float aspectRatio, final float speed) {
         this.audioTrackId = audioTrackId;
         this.subtitleTrackId = subtitleTrackId;
         this.resizeMode = resizeMode;
         this.scale = scale;
+        this.aspectRatio = aspectRatio;
         this.speed = speed;
         if (persistentMode) {
             final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
@@ -344,6 +348,7 @@ class Prefs {
                 sharedPreferencesEditor.putString(PREF_KEY_SUBTITLE_TRACK_ID, subtitleTrackId);
             sharedPreferencesEditor.putInt(PREF_KEY_RESIZE_MODE, resizeMode);
             sharedPreferencesEditor.putFloat(PREF_KEY_SCALE, scale);
+            sharedPreferencesEditor.putFloat(PREF_KEY_ASPECT_RATIO, aspectRatio);
             sharedPreferencesEditor.putFloat(PREF_KEY_SPEED, speed);
             sharedPreferencesEditor.apply();
         }

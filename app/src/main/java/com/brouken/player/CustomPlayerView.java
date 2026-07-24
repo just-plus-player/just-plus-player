@@ -375,6 +375,28 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 (float)getWidth() / (float)getVideoSurfaceView().getWidth());
     }
 
+    // Applies a resize mode plus an optional forced display aspect ratio (>0). A forced ratio is set
+    // on the content frame directly; ratio 0 restores the video's natural AR (Media3 only recomputes
+    // that on the next video-size change, so we compute it here to switch out of a forced ratio at once).
+    public void applyAspectMode(int resizeMode, float forcedRatio) {
+        setScale(1.f);
+        setResizeMode(resizeMode);
+        final AspectRatioFrameLayout frame = findViewById(R.id.exo_content_frame);
+        final float ratio = forcedRatio > 0 ? forcedRatio : naturalVideoAspectRatio();
+        if (frame != null && ratio > 0)
+            frame.setAspectRatio(ratio);
+    }
+
+    private float naturalVideoAspectRatio() {
+        if (PlayerActivity.player == null)
+            return 0;
+        final androidx.media3.common.Format format = PlayerActivity.player.getVideoFormat();
+        if (format == null || format.width <= 0 || format.height <= 0)
+            return 0;
+        final float par = format.pixelWidthHeightRatio > 0 ? format.pixelWidthHeightRatio : 1f;
+        return format.width * par / format.height;
+    }
+
     private enum Orientation {
         HORIZONTAL, VERTICAL, UNKNOWN
     }

@@ -2,6 +2,7 @@
 <resources>
     <string name="video_resize_fit">Підігнати</string>
     <string name="video_resize_crop">Обрізати</string>
+    <string name="video_resize_fill">Заповнити</string>
     <string name="video_orientation_video">Орієнтація відео</string>
     <string name="video_orientation_sensor">Автоповорот</string>
     <string name="video_orientation_system">Орієнтація пристрою</string>

@@ -87,6 +87,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.VideoSize;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
@@ -275,6 +276,9 @@ public class PlayerActivity extends Activity {
     private UiMetrics ui;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
+    // Forced display aspect ratio currently applied (0 = natural video AR). Persisted via Prefs.aspectRatio.
+    private float currentAspectRatio = 0f;
+    private List<AspectMode> aspectModes;
     private ImageButton buttonRotation;
     private ImageButton buttonLock;
     // Swipe-to-unlock bar shown over the video while the screen is locked; the only affordance for leaving
@@ -739,22 +743,18 @@ public class PlayerActivity extends Activity {
         buttonAspectRatio.setContentDescription(getString(R.string.button_crop));
         updatebuttonAspectRatioIcon();
         buttonAspectRatio.setOnClickListener(view -> {
-            playerView.setScale(1.f);
-            if (playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
-                Utils.showText(playerView, getString(R.string.video_resize_crop));
-            } else {
-                // Default mode
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                Utils.showText(playerView, getString(R.string.video_resize_fit));
-            }
-            updatebuttonAspectRatioIcon();
+            cycleAspectMode();
             resetHideCallbacks();
         });
         if (isTvBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             buttonAspectRatio.setOnLongClickListener(v -> {
                 scaleStart();
                 updatebuttonAspectRatioIcon();
+                return true;
+            });
+        } else {
+            buttonAspectRatio.setOnLongClickListener(v -> {
+                showAspectModePicker();
                 return true;
             });
         }
@@ -1851,7 +1851,9 @@ public class PlayerActivity extends Activity {
             ContextCompat.registerReceiver(this, mReceiver, new IntentFilter(ACTION_MEDIA_CONTROL), ContextCompat.RECEIVER_EXPORTED);
         } else {
             setSubtitleTextSize();
-            if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            if (mPrefs.aspectRatio > 0) {
+                playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
+            } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 playerView.setScale(mPrefs.scale);
             }
             if (mReceiver != null) {
@@ -4488,8 +4490,10 @@ public class PlayerActivity extends Activity {
             }
 
             playerView.setResizeMode(mPrefs.resizeMode);
-
-            if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            currentAspectRatio = mPrefs.aspectRatio;
+            if (mPrefs.aspectRatio > 0) {
+                playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
+            } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 playerView.setScale(mPrefs.scale);
             } else {
                 playerView.setScale(1.f);
@@ -4603,6 +4607,7 @@ public class PlayerActivity extends Activity {
                         getSelectedTrack(C.TRACK_TYPE_TEXT),
                         playerView.getResizeMode(),
                         playerView.getVideoSurfaceView().getScaleX(),
+                        currentAspectRatio,
                         player.getPlaybackParameters().speed);
             }
         }
@@ -4824,6 +4829,20 @@ public class PlayerActivity extends Activity {
     }
 
     private class PlayerListener implements Player.Listener {
+        @Override
+        public void onVideoSizeChanged(VideoSize videoSize) {
+            // Media3 resets the content-frame AR to the video's natural AR on every size change (e.g. a
+            // mid-stream video-track switch), silently dropping a forced ratio. Reassert it after that
+            // update (posted, so it wins).
+            // Skip while ZOOM is active: that means free pinch-zoom has taken over, and reasserting would
+            // fight it (adaptive streams fire this on every resolution switch).
+            if (currentAspectRatio > 0 && playerView != null
+                    && playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                playerView.post(() ->
+                        playerView.applyAspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, currentAspectRatio));
+            }
+        }
+
         @Override
         public void onAudioSessionIdChanged(int audioSessionId) {
             try {
@@ -6090,6 +6109,84 @@ public class PlayerActivity extends Activity {
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
         }
         updatebuttonAspectRatioIcon();
+    }
+
+    // A scale mode = a Media3 resize mode plus an optional forced display aspect ratio (ratio 0 = natural).
+    // Indices 0..2 (Fit/Crop/Fill) are the tap cycle; the rest (forced ratios) are picker-only, like VLC.
+    private static final class AspectMode {
+        final int resizeMode;
+        final float ratio;
+        final String label;
+        AspectMode(int resizeMode, float ratio, String label) {
+            this.resizeMode = resizeMode;
+            this.ratio = ratio;
+            this.label = label;
+        }
+    }
+
+    private List<AspectMode> getAspectModes() {
+        if (aspectModes == null) {
+            aspectModes = new ArrayList<>();
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 0f, getString(R.string.video_resize_fit)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 0f, getString(R.string.video_resize_crop)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FILL, 0f, getString(R.string.video_resize_fill)));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 9f, "16:9"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 4f / 3f, "4:3"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 10f, "16:10"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2f / 1f, "2:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2.35f, "2.35:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 2.39f, "2.39:1"));
+            aspectModes.add(new AspectMode(AspectRatioFrameLayout.RESIZE_MODE_FIT, 5f / 4f, "5:4"));
+        }
+        return aspectModes;
+    }
+
+    private void applyAspectMode(int index) {
+        final AspectMode mode = getAspectModes().get(index);
+        currentAspectRatio = mode.ratio;
+        playerView.applyAspectMode(mode.resizeMode, mode.ratio);
+        Utils.showText(playerView, mode.label);
+        updatebuttonAspectRatioIcon();
+    }
+
+    // Tap: cycle Fit → Crop → Fill → 16:9 → 4:3. From any other picker-only ratio, a tap returns to Fit.
+    private static final int ASPECT_CYCLE_COUNT = 5;
+
+    private void cycleAspectMode() {
+        final List<AspectMode> modes = getAspectModes();
+        int current = -1;
+        for (int i = 0; i < ASPECT_CYCLE_COUNT; i++) {
+            if (isCurrentAspectMode(modes.get(i))) {
+                current = i;
+                break;
+            }
+        }
+        applyAspectMode((current + 1) % ASPECT_CYCLE_COUNT);
+    }
+
+    private void showAspectModePicker() {
+        final List<AspectMode> modes = getAspectModes();
+        final String[] labels = new String[modes.size()];
+        int checked = -1;
+        for (int i = 0; i < modes.size(); i++) {
+            labels[i] = modes.get(i).label;
+            if (isCurrentAspectMode(modes.get(i)))
+                checked = i;
+        }
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.button_crop)
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    applyAspectMode(which);
+                    d.dismiss();
+                })
+                .create();
+        showPickerDialog(dialog);
+    }
+
+    private boolean isCurrentAspectMode(AspectMode mode) {
+        if (mode.ratio > 0)
+            return Math.abs(mode.ratio - currentAspectRatio) < 0.001f;
+        return currentAspectRatio == 0 && playerView.getResizeMode() == mode.resizeMode;
     }
 
     private void updatebuttonAspectRatioIcon() {

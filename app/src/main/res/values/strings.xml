@@ -3,6 +3,7 @@
     <string name="app_name" translatable="false">Just+ Player</string>
     <string name="video_resize_fit">Fit</string>
     <string name="video_resize_crop">Crop</string>
+    <string name="video_resize_fill">Fill</string>
     <string name="video_orientation_video">Video orientation</string>
     <string name="video_orientation_sensor">Auto-rotate</string>
     <string name="video_orientation_system">Device orientation</string>

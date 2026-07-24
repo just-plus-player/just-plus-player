@@ -4955,17 +4955,6 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onEvents(Player player, Player.Events events) {
-            // Media3 re-enables/brightens the prev/next arrows on navigation events (timeline, position
-            // discontinuity, available commands) — exactly what fires while switching episodes. Re-assert
-            // the disabled look after that update (deferred, so it wins) while the video is loading.
-            if (episodeNavLoading && playerView != null) {
-                playerView.post(() -> {
-                    if (episodeNavLoading) {
-                        applyEpisodeNavEnabled(false);
-                    }
-                });
-            }
-
             // Media3 re-shows the subtitle button (greyed, disabled) on its own control updates while
             // loading. Re-assert our "hidden until subtitle tracks exist" rule afterwards (deferred so it wins),
             // but only on events that can actually touch the controls — not on every frequent event dispatch.
@@ -5921,7 +5910,7 @@ public class PlayerActivity extends Activity {
         setupEpisodeNavButton(exoNext, size, padding, margin);
         if (exoPrev != null) {
             exoPrev.setOnClickListener(v -> {
-                if (!episodeNavLoading && player != null) {
+                if (!episodeNavLoading && player != null && player.hasPreviousMediaItem()) {
                     player.seekToPrevious();
                     resetHideCallbacks();
                 }
@@ -5929,10 +5918,21 @@ public class PlayerActivity extends Activity {
         }
         if (exoNext != null) {
             exoNext.setOnClickListener(v -> {
-                if (!episodeNavLoading && player != null) {
+                if (!episodeNavLoading && player != null && player.hasNextMediaItem()) {
                     player.seekToNext();
                     resetHideCallbacks();
                 }
+            });
+        }
+        // Media3's PlayerControlView re-enables these arrows in updateNavigation()/updateAll() — on player
+        // events AND every time the controller is shown — based on command availability, which keeps "prev"
+        // enabled on the first item and "next" on the last. Enforcing our state via a posted re-assert lands
+        // one frame late (visible enable→disable flicker on load). Correcting it in a pre-draw pass instead
+        // fixes it before the frame is drawn, so Media3's transient enable is never rendered.
+        if (playerView != null) {
+            playerView.getViewTreeObserver().addOnPreDrawListener(() -> {
+                updateEpisodeNavButtons();
+                return true;
             });
         }
     }
@@ -5972,15 +5972,20 @@ public class PlayerActivity extends Activity {
     // styling (enabled state + opacity) as the other control buttons via Utils.setButtonEnabled.
     private void setEpisodeNavLoading(final boolean loading) {
         episodeNavLoading = loading;
-        applyEpisodeNavEnabled(!loading);
+        updateEpisodeNavButtons();
     }
 
-    private void applyEpisodeNavEnabled(final boolean enabled) {
-        if (exoPrev != null) {
-            Utils.setButtonEnabled(this, exoPrev, enabled);
+    // Enable each episode arrow only when that direction exists in the playlist: "prev" is disabled on the
+    // first item, "next" on the last. Both are additionally disabled while a switch is loading. Idempotent
+    // (only writes on an actual change) so the per-draw enforcer below can call it every frame cheaply.
+    private void updateEpisodeNavButtons() {
+        final boolean canPrev = !episodeNavLoading && player != null && player.hasPreviousMediaItem();
+        final boolean canNext = !episodeNavLoading && player != null && player.hasNextMediaItem();
+        if (exoPrev != null && exoPrev.isEnabled() != canPrev) {
+            Utils.setButtonEnabled(this, exoPrev, canPrev);
         }
-        if (exoNext != null) {
-            Utils.setButtonEnabled(this, exoNext, enabled);
+        if (exoNext != null && exoNext.isEnabled() != canNext) {
+            Utils.setButtonEnabled(this, exoNext, canNext);
         }
     }
 

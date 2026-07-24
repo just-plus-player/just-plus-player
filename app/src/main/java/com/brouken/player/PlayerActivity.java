@@ -272,6 +272,13 @@ public class PlayerActivity extends Activity {
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
     // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
     private boolean pickerDialogOpen;
+    // Media3 keeps the controller shown indefinitely while paused (it forces the auto-hide timeout to 0),
+    // so reuse the same CONTROLLER_TIMEOUT + hideController() to also clear the UI on pause. A tap re-shows
+    // and re-arms it, exactly like during playback (see scheduleHideControllerOnPause).
+    private final Runnable hideControllerAction = () -> {
+        if (player != null && !player.getPlayWhenReady() && controllerVisibleFully)
+            playerView.hideController();
+    };
     // Adaptive sizing source of truth (phone/tablet/TV). Computed in onCreate, recomputed on config change.
     private UiMetrics ui;
     private ImageButton buttonPiP;
@@ -1362,6 +1369,7 @@ public class PlayerActivity extends Activity {
                     stopEndsAtUpdates();
                 }
                 updateOverlayClock();
+                scheduleHideControllerOnPause();
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -4996,6 +5004,10 @@ public class PlayerActivity extends Activity {
             } else {
                 stopSkipPolling();
             }
+
+            // Pausing while the controller is already visible doesn't change its visibility, so arm the
+            // pause auto-hide here too; resuming cancels it (guarded inside scheduleHideControllerOnPause).
+            scheduleHideControllerOnPause();
         }
 
         @SuppressLint("SourceLockedOrientationActivity")
@@ -6187,6 +6199,19 @@ public class PlayerActivity extends Activity {
         if (mode.ratio > 0)
             return Math.abs(mode.ratio - currentAspectRatio) < 0.001f;
         return currentAspectRatio == 0 && playerView.getResizeMode() == mode.resizeMode;
+    }
+
+    // Arms the pause auto-hide when the controller is fully visible and playback is paused (ready, not
+    // scrubbing/locked/in a picker). Called from the visibility listener and on play/pause transitions.
+    private void scheduleHideControllerOnPause() {
+        if (playerView == null)
+            return;
+        playerView.removeCallbacks(hideControllerAction);
+        if (controllerVisibleFully && haveMedia && player != null
+                && player.getPlaybackState() == Player.STATE_READY && !player.getPlayWhenReady()
+                && !locked && !pickerDialogOpen && !isScrubbing) {
+            playerView.postDelayed(hideControllerAction, CONTROLLER_TIMEOUT);
+        }
     }
 
     private void updatebuttonAspectRatioIcon() {

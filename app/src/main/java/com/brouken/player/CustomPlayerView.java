@@ -179,7 +179,8 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         if (!PlayerActivity.controllerVisibleFully) {
             showController();
             return true;
-        } else if (PlayerActivity.haveMedia && PlayerActivity.player != null && PlayerActivity.player.isPlaying()) {
+        } else if (PlayerActivity.haveMedia && PlayerActivity.player != null) {
+            // Hide on tap even while paused, so the interface can be cleared for a clean screenshot.
             hideController();
             return true;
         }

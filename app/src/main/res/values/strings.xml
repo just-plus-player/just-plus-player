@@ -90,6 +90,8 @@
     <string name="button_rotate">Rotate</string>
     <string name="button_pip">Picture-in-picture</string>
     <string name="button_lock">Lock</string>
+    <string name="swipe_unlock">Swipe</string>
+    <string name="press_back_again">Press back again to exit</string>
     <string name="button_quality">Video quality</string>
     <string name="button_audio_track">Audio</string>
     <string name="button_more">More</string>

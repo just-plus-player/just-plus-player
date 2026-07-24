@@ -87,16 +87,6 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         exoProgress = findViewById(R.id.exo_progress);
 
         mScaleDetector = new ScaleGestureDetector(context, this);
-
-        if (!Utils.isTvBox(getContext())) {
-            exoErrorMessage.setOnClickListener(v -> {
-                if (PlayerActivity.locked) {
-                    PlayerActivity.locked = false;
-                    Utils.showText(CustomPlayerView.this, "", MESSAGE_TIMEOUT_LONG);
-                    setIconLock(false);
-                }
-            });
-        }
     }
 
     public void clearIcon() {
@@ -180,8 +170,9 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     public boolean tap() {
         if (PlayerActivity.locked) {
-            Utils.showText(this, "", MESSAGE_TIMEOUT_LONG);
-            setIconLock(true);
+            if (getContext() instanceof PlayerActivity) {
+                ((PlayerActivity) getContext()).showSwipeToUnlock();
+            }
             return true;
         }
 
@@ -292,21 +283,17 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     @Override
     public void onLongPress(MotionEvent motionEvent) {
-        if (PlayerActivity.locked || (getPlayer() != null && getPlayer().isPlaying())) {
-            toggleLock();
-        }
     }
 
-    // Toggles the touch lock (also reachable from the lock button in the header). While locked the
-    // controller stays hidden and gestures are ignored; a tap shows the lock icon, tapping which unlocks.
+    // Toggles the touch lock (triggered by the lock button). While locked the controller stays hidden
+    // and gestures are ignored; a tap re-shows the swipe-to-unlock bar, which unlocks when swiped.
     public void toggleLock() {
         PlayerActivity.locked = !PlayerActivity.locked;
         isHandledLongPress = true;
-        Utils.showText(this, "", MESSAGE_TIMEOUT_LONG);
-        setIconLock(PlayerActivity.locked);
         if (PlayerActivity.locked && PlayerActivity.controllerVisible) {
             hideController();
         }
+        // onLockChanged shows/hides the floating lock (at the button's spot) as visual feedback.
         if (getContext() instanceof PlayerActivity) {
             ((PlayerActivity) getContext()).onLockChanged();
         }
@@ -409,10 +396,6 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     public void setIconBrightnessAuto() {
         exoErrorMessage.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_brightness_auto_24dp, 0, 0, 0);
-    }
-
-    public void setIconLock(boolean locked) {
-        exoErrorMessage.setCompoundDrawablesWithIntrinsicBounds(locked ? R.drawable.ic_lock_24dp : R.drawable.ic_lock_open_24dp, 0, 0, 0);
     }
 
     public void setScale(final float scale) {

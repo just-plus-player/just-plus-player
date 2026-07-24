@@ -73,6 +73,8 @@
     <string name="button_rotate">Повернути</string>
     <string name="button_pip">Картинка в картинці</string>
     <string name="button_lock">Блокування</string>
+    <string name="swipe_unlock">Проведіть</string>
+    <string name="press_back_again">Натисніть «Назад» ще раз для виходу</string>
     <string name="button_quality">Якість відео</string>
     <string name="button_audio_track">Аудіо</string>
     <string name="button_more">Ще</string>

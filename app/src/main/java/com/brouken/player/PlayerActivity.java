@@ -277,6 +277,11 @@ public class PlayerActivity extends Activity {
     private ImageButton buttonAspectRatio;
     private ImageButton buttonRotation;
     private ImageButton buttonLock;
+    // Swipe-to-unlock bar shown over the video while the screen is locked; the only affordance for leaving
+    // the locked state (drag on touch, hold a D-pad key on TV).
+    private SwipeToUnlockView swipeToUnlock;
+    // Back-button guard while locked: the first Back arms this, a second Back within the window exits.
+    private boolean lockBackPressedOnce;
     private ObjectAnimator emptyStatePulse;
     private ImageButton exoSettings;
     private ImageButton exoSubtitle;
@@ -1052,6 +1057,27 @@ public class PlayerActivity extends Activity {
         // Whenever the in-header clock is (re)laid out, mirror its position onto the floating clock.
         headerClock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> syncOverlayClockPosition());
 
+        // Swipe-to-unlock bar, shown while the screen is locked: the lock icon is dragged to the right edge
+        // to unlock. The only way out of the locked state, and touch only (the lock feature is not offered on
+        // TV). Centered near the bottom.
+        if (!isTvBox) {
+            swipeToUnlock = new SwipeToUnlockView(this);
+            swipeToUnlock.setVisibility(View.GONE);
+            final CoordinatorLayout.LayoutParams swipeLp = new CoordinatorLayout.LayoutParams(
+                    Utils.dpToPx(260), Utils.dpToPx(48));
+            swipeLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            swipeLp.bottomMargin = Utils.dpToPx(48);
+            swipeToUnlock.setLayoutParams(swipeLp);
+            swipeToUnlock.setOnUnlockListener(() -> playerView.toggleLock());
+            swipeToUnlock.setOnStartTouchingListener(() -> {
+                if (playerView != null) {
+                    playerView.removeCallbacks(swipeHider);
+                }
+            });
+            swipeToUnlock.setOnStopTouchingListener(this::rescheduleSwipeHide);
+            coordinatorLayout.addView(swipeToUnlock);
+        }
+
         topInfoPanel.setOnLongClickListener(view -> {
             // Prevent FileUriExposedException
             if (mPrefs.mediaUri != null && ContentResolver.SCHEME_FILE.equals(mPrefs.mediaUri.getScheme())) {
@@ -1291,7 +1317,8 @@ public class PlayerActivity extends Activity {
         exoBasicControls.addView(horizontalScrollView, horizontalScrollViewLp);
 
         // Lock sits isolated at the far-left of the bottom bar — prepended into the time row, away from the
-        // display cluster (MX-style) so it is no longer adjacent to the rotation button. Touch only.
+        // display cluster (MX-style) so it is no longer adjacent to the rotation button. Touch only (the lock
+        // feature is not offered on TV).
         if (!isTvBox) {
             final View exoTime = findViewById(R.id.exo_time);
             if (exoTime instanceof LinearLayout) {
@@ -1307,6 +1334,13 @@ public class PlayerActivity extends Activity {
                 lockLp.setMarginEnd(ui.lockMarginEnd());
                 buttonLock.setLayoutParams(lockLp);
                 ((LinearLayout) exoTime).addView(buttonLock, 0);
+
+                // exo_basic_controls (the right-hand cluster, holding a full-width HorizontalScrollView) is
+                // laid out after exo_time, so it sits on top of it and its empty left area swallows taps on
+                // the lock (a scroll view consumes touches for its own drag detection). Bring exo_time to the
+                // front so the lock wins its taps. The cluster's buttons sit to the right, clear of exo_time
+                // (which is ~494px wide and non-clickable outside the lock), so they and scrolling still work.
+                exoTime.bringToFront();
             }
         }
 
@@ -1476,6 +1510,17 @@ public class PlayerActivity extends Activity {
     @SuppressLint("GestureBackNavigation")
     @Override
     public void onBackPressed() {
+        // While locked, swallow the first Back (re-showing the unlock bar with a hint) and only exit if Back
+        // is pressed again within the window — so a stray Back can't drop out of a locked video.
+        if (locked && !lockBackPressedOnce) {
+            lockBackPressedOnce = true;
+            showSwipeToUnlock();
+            Utils.showText(playerView, getString(R.string.press_back_again), 2000);
+            if (playerView != null) {
+                playerView.postDelayed(() -> lockBackPressedOnce = false, 2000);
+            }
+            return;
+        }
         restorePlayStateAllowed = false;
         super.onBackPressed();
     }
@@ -1675,6 +1720,17 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // While locked, swallow every key at the earliest point — before the view hierarchy,
+        // onKeyDown, and the window's default (MediaSession-backed) volume handling — so hardware
+        // volume/media/seek keys can't act. BACK is excluded so the normal lock-aware exit path
+        // still works. Re-show the unlock hint on the first press, mirroring the touch tap().
+        if (locked && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                showSwipeToUnlock();
+            }
+            return true;
+        }
+
         if (isScaling) {
             final int keyCode = event.getKeyCode();
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -1739,6 +1795,9 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
+        if (locked) {
+            return true;
+        }
         if (0 != (event.getSource() & InputDevice.SOURCE_CLASS_POINTER)) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_SCROLL:
@@ -2376,12 +2435,41 @@ public class PlayerActivity extends Activity {
     // showSkipButton/showSkipNotification keep them suppressed until unlock, after which the next
     // skip poll restores the button if a segment is still active.
     void onLockChanged() {
-        if (buttonLock != null) {
-            buttonLock.setSelected(locked);
+        if (locked) {
+            lockScreen();
+        } else {
+            unlockScreen();
         }
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
             hideSkipButton();
             hideSkipNotification();
+        }
+    }
+
+    // Entering the lock: pin the current orientation (restored on unlock), arm the swipe bar and reset the
+    // Back guard. The controller is already hidden by CustomPlayerView.toggleLock().
+    private void lockScreen() {
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+        lockBackPressedOnce = false;
+        showSwipeToUnlock();
+    }
+
+    // Leaving the lock: hide the bar and restore the user's orientation preference.
+    private void unlockScreen() {
+        hideSwipeToUnlock();
+        lockBackPressedOnce = false;
+        if (mPrefs != null) {
+            Utils.setOrientation(this, mPrefs.orientation);
+        }
+    }
+
+    // Some paths flip `locked` directly (new media, playback stopped) without going through onLockChanged;
+    // the lock does not persist, so undo its UI (bar + orientation pin) here too.
+    private void clearLockUi() {
+        hideSwipeToUnlock();
+        lockBackPressedOnce = false;
+        if (mPrefs != null) {
+            Utils.setOrientation(this, mPrefs.orientation);
         }
     }
 
@@ -2941,6 +3029,35 @@ public class PlayerActivity extends Activity {
             lp.topMargin = top;
             overlayClock.setLayoutParams(lp);
         }
+    }
+
+    private final Runnable swipeHider = this::hideSwipeToUnlock;
+
+    // Reveal the swipe-to-unlock bar and auto-hide it after the standard long-touch timeout. While the user
+    // is actively dragging (onStartTouching) the auto-hide is cancelled and rescheduled on release.
+    void showSwipeToUnlock() {
+        if (swipeToUnlock == null) {
+            return;
+        }
+        swipeToUnlock.setVisibility(View.VISIBLE);
+        rescheduleSwipeHide();
+    }
+
+    private void rescheduleSwipeHide() {
+        if (playerView != null) {
+            playerView.removeCallbacks(swipeHider);
+            playerView.postDelayed(swipeHider, CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+        }
+    }
+
+    void hideSwipeToUnlock() {
+        if (swipeToUnlock == null) {
+            return;
+        }
+        if (playerView != null) {
+            playerView.removeCallbacks(swipeHider);
+        }
+        swipeToUnlock.setVisibility(View.GONE);
     }
 
     private void copyLaunchIntentToClipboard() {
@@ -4359,6 +4476,7 @@ public class PlayerActivity extends Activity {
         playerView.setControllerShowTimeoutMs(-1);
 
         locked = false;
+        clearLockUi();
 
         if (haveMedia) {
             hideEmptyState();
@@ -4849,8 +4967,9 @@ public class PlayerActivity extends Activity {
                 }
             }
 
-            if (!isPlaying) {
+            if (!isPlaying && PlayerActivity.locked) {
                 PlayerActivity.locked = false;
+                clearLockUi();
             }
 
             if (isPlaying) {

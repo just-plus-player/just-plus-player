@@ -5,6 +5,13 @@
     <color name="brand">#fe6f61</color>
     <color name="shortcut_background">#F5F5F5</color>
 
+    <!-- Error screen (ErrorActivity): a calm dark surface, not an alarming full-red state. -->
+    <color name="error_bg">#FF101014</color>
+    <color name="error_surface">#FF1B1B21</color>
+    <color name="error_stroke">#26FFFFFF</color>
+    <color name="error_ink_muted">#FFC4C4CE</color>
+    <color name="brand_halo">#29FE6F61</color>
+
     <!-- Full-frame dim behind the controls; fades with the controller via @id/exo_controls_background. -->
     <color name="controls_scrim">#66000000</color>
 

@@ -16,6 +16,26 @@
     <style name="Theme.Player" parent="BaseTheme.Player">
     </style>
 
+    <!-- Player-style icon action button: transparent, borderless ripple, tinted glyph. -->
+    <style name="ErrorActionButton">
+        <item name="android:layout_width">54dp</item>
+        <item name="android:layout_height">54dp</item>
+        <item name="android:padding">14dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">@color/white</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Theme.Error" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/error_bg</item>
+        <item name="android:statusBarColor">@color/error_bg</item>
+        <item name="android:navigationBarColor">@color/error_bg</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="colorAccent">@color/brand</item>
+        <item name="android:colorControlActivated">@color/brand</item>
+    </style>
+
     <style name="Theme.Settings" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorAccent">@color/brand</item>
         <item name="colorControlActivated">@color/brand</item>

@@ -700,6 +700,10 @@
                 android:resource="@xml/shortcuts" />
         </activity>
         <activity
+            android:name=".ErrorActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Error" />
+        <activity
             android:name=".MediaStoreChooserActivity"
             android:configChanges="orientation"
             android:theme="@style/Transparent" />

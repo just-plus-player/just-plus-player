@@ -79,6 +79,9 @@
     <string name="pref_show_clock">Show clock</string>
     <string name="pref_show_clock_on">Clock stays in the top-right corner over the video</string>
     <string name="pref_show_clock_off">Clock shows only with the player controls</string>
+    <string name="pref_system_volume">System volume</string>
+    <string name="pref_system_volume_on">Volume gestures and buttons change the device media volume</string>
+    <string name="pref_system_volume_off">Volume gestures and buttons change only this player and leave the device volume alone</string>
     <string name="pref_privacy_header">Privacy</string>
     <string name="pref_crash_reporting">Send crash reports</string>
     <string name="pref_crash_reporting_on">Automatically report crashes and playback errors to help fix them</string>

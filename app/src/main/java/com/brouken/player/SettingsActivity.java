@@ -114,6 +114,12 @@ public class SettingsActivity extends AppCompatActivity {
                     preferenceAllowSystemFrameRate.setChecked(!Utils.isTvBox(getContext()));
                 }
             }
+            Preference preferenceSystemVolume = findPreference("systemVolume");
+            if (preferenceSystemVolume != null && Utils.isTvBox(getContext())) {
+                // TV remotes route volume to the panel or receiver over CEC, where only the system
+                // stream responds — an isolated player volume would look broken there.
+                preferenceSystemVolume.setVisible(false);
+            }
             ListPreference listPreferenceFileAccess = findPreference("fileAccess");
             if (listPreferenceFileAccess != null) {
                 List<String> entries = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.file_access_entries)));

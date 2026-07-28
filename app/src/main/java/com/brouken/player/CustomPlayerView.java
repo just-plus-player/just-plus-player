@@ -13,7 +13,6 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.core.view.GestureDetectorCompat;
 import androidx.media3.common.C;
@@ -37,7 +36,6 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     private long seekLastPosition;
     public boolean seekProgress;
     private boolean boostAllowed = false;
-    private boolean boostWarned = false;
     private boolean canSetAutoBrightness = false;
     // Volume in percent (0-200, above 100 = boost) tracked as a float so the absolute gesture keeps
     // sub-step precision between events.
@@ -174,7 +172,6 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         gestureScrollX = 0;
         gestureOrientation = Orientation.UNKNOWN;
         isHandledLongPress = false;
-        boostWarned = false;
 
         return false;
     }
@@ -310,11 +307,6 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 brightnessControl.changeBrightness(this, delta, canSetAutoBrightness);
             } else {
                 gestureVolume = Math.max(0f, Math.min(boostAllowed ? 200f : 100f, gestureVolume + delta));
-                // Warn once per gesture when reaching the loud zone, whether boost engages or is refused
-                if (gestureVolume >= 100f && delta > 0 && !boostWarned) {
-                    boostWarned = true;
-                    Toast.makeText(getContext(), R.string.volume_high_warning, Toast.LENGTH_SHORT).show();
-                }
                 Utils.setVolumePercent(getContext(), mAudioManager, this, gestureVolume);
             }
         }

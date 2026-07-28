@@ -78,6 +78,9 @@
     <string name="pref_show_clock">Показувати годинник</string>
     <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
     <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>
+    <string name="pref_system_volume">Системна гучність</string>
+    <string name="pref_system_volume_on">Жести та кнопки гучності змінюють гучність медіа на пристрої</string>
+    <string name="pref_system_volume_off">Жести та кнопки гучності змінюють лише цей плеєр і не торкаються гучності пристрою</string>
     <string name="pref_privacy_header">Приватність</string>
     <string name="pref_crash_reporting">Надсилати звіти про збої</string>
     <string name="pref_crash_reporting_on">Автоматично надсилати звіти про збої та помилки відтворення, щоб допомогти їх виправити</string>

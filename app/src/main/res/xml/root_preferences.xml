@@ -46,6 +46,13 @@
             app:title="@string/pref_show_clock" />
 
         <SwitchPreferenceCompat
+            app:key="systemVolume"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_system_volume_on"
+            app:summaryOff="@string/pref_system_volume_off"
+            app:title="@string/pref_system_volume" />
+
+        <SwitchPreferenceCompat
             app:key="skipSilence"
             app:defaultValue="false"
             app:summaryOn="@string/pref_skip_silence_on"

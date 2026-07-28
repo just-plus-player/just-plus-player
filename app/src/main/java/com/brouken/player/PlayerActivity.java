@@ -323,9 +323,19 @@ public class PlayerActivity extends Activity {
     public static Snackbar snackbar;
     private ExoPlaybackException errorToShow;
     public static int boostLevel = 0;
+    // Whether the hearing warning has already been shown this session, see Utils.warnAboutBoost
+    public static boolean boostWarned = false;
+    // Off = volume gestures and keys drive the player alone and never touch the device's stream. Mirrors
+    // Prefs.systemVolume, except on TV boxes where volume has to go through the system (CEC).
+    public static boolean systemVolume = true;
+    // The player's own level, 0-100, only meaningful while systemVolume is off. Anything above 100 lives
+    // in boostLevel, exactly as in the synced mode.
+    public static float playerVolume = 100f;
     private boolean isScaling = false;
     private boolean isScaleStarting = false;
     private float scaleFactor = 1.0f;
+    // Preference state as it was when the settings screen opened, see openSettings()
+    private Map<String, ?> settingsBefore;
 
     private static final int REQUEST_CHOOSER_VIDEO = 1;
     private static final int REQUEST_CHOOSER_SUBTITLE = 2;
@@ -617,6 +627,11 @@ public class PlayerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         // Rotate ASAP, before super/inflating to avoid glitches with activity launch animation
         mPrefs = new Prefs(this);
+        systemVolume = mPrefs.systemVolume;
+        playerVolume = mPrefs.volume;
+        // Boost is session state kept in statics, so a launch must not inherit it from the last one
+        boostLevel = 0;
+        boostWarned = false;
         Utils.setOrientation(this, mPrefs.orientation);
 
         super.onCreate(savedInstanceState);
@@ -809,8 +824,7 @@ public class PlayerActivity extends Activity {
         buttonMore.setContentDescription(getString(R.string.button_more));
         buttonMore.setOnClickListener(view -> showMoreMenu());
         buttonMore.setOnLongClickListener(view -> {
-            Intent intent = new Intent(this, SettingsActivity.class);
-            startActivityForResult(intent, REQUEST_SETTINGS);
+            openSettings();
             return true;
         });
 
@@ -4410,8 +4424,7 @@ public class PlayerActivity extends Activity {
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, this::askForLink));
         // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
-        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, () ->
-                startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS)));
+        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, this::openSettings));
         showSideMenu(getString(R.string.pref_title), items);
     }
 
@@ -4669,14 +4682,19 @@ public class PlayerActivity extends Activity {
                 }
             }
         } else if (requestCode == REQUEST_SETTINGS) {
-            final Map<String, ?> settingsBefore = mPrefs.snapshot();
+            final Map<String, ?> before = settingsBefore;
+            settingsBefore = null;
             mPrefs.loadUserPreferences();
+            systemVolume = mPrefs.systemVolume;
+            // Also switch the volume path over here, so it is right even when nothing below rebuilds
+            applyVolumeMode();
             updateSubtitleStyle(this);
             updateOverlayClock();
             // Coming back from the settings screen no longer rebuilds the player by itself (see onStop),
             // but options like the decoder priority or tunneling are baked into it at build time. So
             // rebuild when the screen actually changed something — going in for a look costs nothing.
-            if (player != null && !settingsBefore.equals(mPrefs.snapshot())) {
+            // A missing snapshot means the activity was recreated meanwhile, so rebuild to be safe.
+            if (player != null && (before == null || !before.equals(mPrefs.snapshot()))) {
                 sourceSwitchKeepPaused = true;
                 releasePlayer();
                 initializePlayer();
@@ -4987,6 +5005,7 @@ public class PlayerActivity extends Activity {
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                 .build();
         player.setAudioAttributes(audioAttributes, true);
+        applyVolumeMode();
 
         if (mPrefs.skipSilence) {
             player.setSkipSilenceEnabled(true);
@@ -5068,6 +5087,7 @@ public class PlayerActivity extends Activity {
                     loudnessEnhancer.release();
                 }
                 loudnessEnhancer = new LoudnessEnhancer(player.getAudioSessionId());
+                Utils.applyBoost();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -5124,7 +5144,30 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /**
+     * Opens the settings screen, recording the preference state first. The screen writes into the same
+     * SharedPreferences instance this activity reads, so the "did anything actually change" comparison
+     * has to be against a snapshot taken before it opens — taking one on the way back always compares
+     * the new state with itself.
+     */
+    private void openSettings() {
+        settingsBefore = mPrefs.snapshot();
+        startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS);
+    }
+
+    /**
+     * Restores the isolated level on a fresh player, and clears the attenuation whenever the system
+     * volume is in charge, so switching the setting back can never leave the player quietened.
+     */
+    private void applyVolumeMode() {
+        if (player != null) {
+            player.setVolume(systemVolume ? 1f : Math.min(playerVolume, 100f) / 100f);
+        }
+    }
+
     private void savePlayer() {
+        // Outside the player guard: the error screen keeps the volume gestures alive without a player.
+        mPrefs.updateVolume(Math.round(playerVolume));
         if (player != null) {
             mPrefs.updateBrightness(Math.round(mBrightnessControl.percent));
             mPrefs.updateOrientation();
@@ -5178,8 +5221,7 @@ public class PlayerActivity extends Activity {
 
         open.setOnClickListener(v -> openFile(mPrefs.mediaUri));
         link.setOnClickListener(v -> askForLink());
-        settings.setOnClickListener(v ->
-                startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS));
+        settings.setOnClickListener(v -> openSettings());
         stopEmptyStatePulse();
 
         // TV is viewed from across the room; scale the phone-tuned sizes up, matching the
@@ -5541,6 +5583,7 @@ public class PlayerActivity extends Activity {
                     loudnessEnhancer.release();
                 }
                 loudnessEnhancer = new LoudnessEnhancer(audioSessionId);
+                Utils.applyBoost();
             } catch (Exception e) {
                 e.printStackTrace();
             }

@@ -30,6 +30,7 @@ class Prefs {
     private static final String PREF_KEY_MEDIA_TYPE = "mediaType";
     private static final String PREF_KEY_BRIGHTNESS = "brightness"; // legacy 0-30 levels, migrated on load
     private static final String PREF_KEY_BRIGHTNESS_PERCENT = "brightnessPercent";
+    private static final String PREF_KEY_VOLUME_PERCENT = "volumePercent";
     private static final String PREF_KEY_FIRST_RUN = "firstRun";
     private static final String PREF_KEY_SUBTITLE_URI = "subtitleUri";
 
@@ -60,6 +61,7 @@ class Prefs {
     private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
     private static final String PREF_KEY_SKIP_HIDE_LOCKED = "skipHideWhenLocked";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
+    private static final String PREF_KEY_SYSTEM_VOLUME = "systemVolume";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
@@ -93,6 +95,8 @@ class Prefs {
     public String audioTrackId;
 
     public int brightness = -1;
+    // The player's own volume, only used while systemVolume is off (see Utils.applyPlayerVolume)
+    public int volume = 100;
     public boolean firstRun = true;
     public boolean askScope = true;
     public boolean autoPiP = false;
@@ -114,6 +118,7 @@ class Prefs {
     public boolean skipHideWhenLocked = false;
     public boolean skipFetchOnline = true;
     public boolean showClock = false;
+    public boolean systemVolume = true;
     public boolean crashReporting = true;
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
@@ -146,6 +151,7 @@ class Prefs {
             final int level = mSharedPreferences.getInt(PREF_KEY_BRIGHTNESS, -1);
             brightness = level < 0 ? -1 : level * 100 / 30;
         }
+        volume = mSharedPreferences.getInt(PREF_KEY_VOLUME_PERCENT, volume);
         firstRun = mSharedPreferences.getBoolean(PREF_KEY_FIRST_RUN, firstRun);
         if (mSharedPreferences.contains(PREF_KEY_SUBTITLE_URI))
             subtitleUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SUBTITLE_URI, null));
@@ -186,6 +192,9 @@ class Prefs {
         skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
         skipHideWhenLocked = mSharedPreferences.getBoolean(PREF_KEY_SKIP_HIDE_LOCKED, skipHideWhenLocked);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
+        // Forced on for TV boxes, where the remote routes volume to the panel or receiver over CEC and
+        // only the system stream responds — the setting is hidden there too.
+        systemVolume = Utils.isTvBox(mContext) || mSharedPreferences.getBoolean(PREF_KEY_SYSTEM_VOLUME, systemVolume);
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);
         autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);
         revokedAudioMimes = mSharedPreferences.getStringSet(PREF_KEY_REVOKED_AUDIO_MIMES, revokedAudioMimes);
@@ -259,6 +268,13 @@ class Prefs {
             sharedPreferencesEditor.putInt(PREF_KEY_BRIGHTNESS_PERCENT, brightness);
             sharedPreferencesEditor.apply();
         }
+    }
+
+    public void updateVolume(final int volume) {
+        this.volume = volume;
+        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
+        sharedPreferencesEditor.putInt(PREF_KEY_VOLUME_PERCENT, volume);
+        sharedPreferencesEditor.apply();
     }
 
     public void markFirstRun() {

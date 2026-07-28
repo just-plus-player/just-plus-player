@@ -40,6 +40,7 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
 import androidx.core.text.HtmlCompat;
@@ -202,6 +203,8 @@ class Utils {
     public static int getVolumePercent(final Context context, final AudioManager audioManager) {
         if (PlayerActivity.boostLevel > 0)
             return 100 + PlayerActivity.boostLevel * 10;
+        if (!PlayerActivity.systemVolume)
+            return Math.round(PlayerActivity.playerVolume);
         final int max = getVolume(context, true, audioManager);
         if (max <= 0)
             return 0;
@@ -217,7 +220,12 @@ class Utils {
         }
     }
 
-    private static void applyBoost() {
+    /**
+     * Pushes boostLevel into the effect. Also called right after a LoudnessEnhancer is created, because
+     * boostLevel outlives both the effect and the activity, so a fresh effect starts at zero gain while
+     * the level still says otherwise.
+     */
+    static void applyBoost() {
         if (PlayerActivity.loudnessEnhancer == null)
             return;
         try {
@@ -229,26 +237,52 @@ class Utils {
     }
 
     /**
-     * Absolute volume set from the vertical gesture: 0-100% maps onto the system range, 101-200% keeps
-     * the system volume maxed out and adds boost. Displayed value is read back, so it never overstates
-     * what was actually applied.
+     * Hearing warning for the boost zone, shown once per session however the volume was raised — gesture,
+     * hardware keys, mouse wheel or joystick all end up here.
+     */
+    private static void warnAboutBoost(final Context context) {
+        if (PlayerActivity.boostWarned || PlayerActivity.boostLevel <= 0)
+            return;
+        PlayerActivity.boostWarned = true;
+        Toast.makeText(context, R.string.volume_high_warning, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * The player's own attenuation, used instead of the system stream when systemVolume is off. It is a
+     * multiplier on top of the system volume, so 100% means "as loud as the device currently is".
+     */
+    static void applyPlayerVolume() {
+        if (PlayerActivity.player != null)
+            PlayerActivity.player.setVolume(PlayerActivity.playerVolume / 100f);
+    }
+
+    /**
+     * Absolute volume set from the vertical gesture: 0-100% maps onto the system range (or onto the
+     * player's own attenuation while systemVolume is off), 101-200% leaves that maxed out and adds boost.
+     * Displayed value is read back, so it never overstates what was actually applied.
      */
     public static void setVolumePercent(final Context context, final AudioManager audioManager, final CustomPlayerView playerView, final float percent) {
         playerView.removeCallbacks(playerView.textClearRunnable);
 
-        final int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-        final int index = Math.round(Math.min(percent, 100f) / 100f * max);
-        if (index != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
-            try {
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0);
-            } catch (RuntimeException e) {
-                // Setting the volume can be denied (Do Not Disturb, device policy)
-                e.printStackTrace();
+        if (PlayerActivity.systemVolume) {
+            final int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            final int index = Math.round(Math.min(percent, 100f) / 100f * max);
+            if (index != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                try {
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0);
+                } catch (RuntimeException e) {
+                    // Setting the volume can be denied (Do Not Disturb, device policy)
+                    e.printStackTrace();
+                }
             }
+        } else {
+            PlayerActivity.playerVolume = Math.min(percent, 100f);
+            applyPlayerVolume();
         }
 
         PlayerActivity.boostLevel = percent > 100f ? Math.min(10, Math.round((percent - 100f) / 10f)) : 0;
         applyBoost();
+        warnAboutBoost(context);
 
         playerView.showVolume(getVolumePercent(context, audioManager));
     }
@@ -256,30 +290,46 @@ class Utils {
     public static void adjustVolume(final Context context, final AudioManager audioManager, final CustomPlayerView playerView, final boolean raise, boolean canBoost, boolean clear) {
         playerView.removeCallbacks(playerView.textClearRunnable);
 
-        final int volume = getVolume(context,false, audioManager);
-        final int volumeMax = getVolume(context,true, audioManager);
-
-        // Handle volume changes outside the app (lose boost if volume is not maxed out)
-        if (volume != volumeMax) {
-            PlayerActivity.boostLevel = 0;
-        }
-
         if (!canBoostVolume()) {
             canBoost = false;
         }
 
-        if (volume != volumeMax || (PlayerActivity.boostLevel == 0 && !raise)) {
+        int volume = 0;
+        final boolean maxedOut;
+        if (PlayerActivity.systemVolume) {
+            volume = getVolume(context, false, audioManager);
+            maxedOut = volume == getVolume(context, true, audioManager);
+        } else {
+            // Slightly below 100 to absorb float slop from repeated steps, which would otherwise leave
+            // the level a hair under maximum and never let boost engage.
+            maxedOut = PlayerActivity.playerVolume >= 99.5f;
+        }
+
+        // Boost only exists on top of a maxed-out level, so drop it whenever the level is below that:
+        // a volume change outside the app, or a level carried over from the other volume mode.
+        if (!maxedOut) {
+            PlayerActivity.boostLevel = 0;
+        }
+
+        if (!maxedOut || (PlayerActivity.boostLevel == 0 && !raise)) {
             applyBoost();
-            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, raise ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
-            final int volumeNew = getVolume(context, false, audioManager);
-            // Custom volume step on Samsung devices (Sound Assistant)
-            if (raise && volume == volumeNew) {
-                playerView.volumeUpsInRow++;
+            if (PlayerActivity.systemVolume) {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, raise ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
+                final int volumeNew = getVolume(context, false, audioManager);
+                // Custom volume step on Samsung devices (Sound Assistant)
+                if (raise && volume == volumeNew) {
+                    playerView.volumeUpsInRow++;
+                } else {
+                    playerView.volumeUpsInRow = 0;
+                }
+                if (playerView.volumeUpsInRow > 4 && !isVolumeMin(audioManager)) {
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE | AudioManager.FLAG_SHOW_UI);
+                }
             } else {
-                playerView.volumeUpsInRow = 0;
-            }
-            if (playerView.volumeUpsInRow > 4 && !isVolumeMin(audioManager)) {
-                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE | AudioManager.FLAG_SHOW_UI);
+                // Same step as the system's, so the button feels the same whichever mode is on
+                final float step = 100f / Math.max(1, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+                PlayerActivity.playerVolume = Math.max(0f, Math.min(100f, PlayerActivity.playerVolume + (raise ? step : -step)));
+                applyPlayerVolume();
             }
         } else {
             if (canBoost && raise && PlayerActivity.boostLevel < 10)
@@ -290,6 +340,7 @@ class Utils {
             applyBoost();
         }
 
+        warnAboutBoost(context);
         playerView.showVolume(getVolumePercent(context, audioManager));
 
         if (clear) {

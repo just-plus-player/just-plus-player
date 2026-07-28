@@ -206,6 +206,10 @@ class Prefs {
         suppressResume = false;
         updateSubtitle(null);
         updateMeta(null, null, AspectRatioFrameLayout.RESIZE_MODE_FIT, 1.f, 0f, 1.f);
+        // Opening something else drops the in-memory position with the rest of the meta. It is not keyed by
+        // uri (see getPosition), so left behind it becomes the start position of the new media: a sender
+        // that supplies no "position" extra — most do not — would drop the user into the middle of it.
+        nonPersitentPosition = -1L;
 
         if (mediaType != null && mediaType.endsWith("/*")) {
             mediaType = null;

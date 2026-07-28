@@ -514,6 +514,10 @@ public class PlayerActivity extends Activity {
     static final String API_QUALITY_URLS = "quality_urls";
     static final String API_VIDEO_LIST_QUALITY_LEVELS = "video_list.quality_levels";
     static final String API_VIDEO_LIST_QUALITY_URLS = "video_list.quality_urls";
+    // Everything an api session keeps in RAM (Prefs is non-persistent under apiAccess), handed to the
+    // system as one nested Bundle so a kill while backgrounded does not come back to the launch intent's
+    // stale `position`. See onSaveInstanceState()/restoreApiSession().
+    private static final String STATE_API_SESSION = "apiSession";
     boolean apiAccess;
     boolean apiAccessPartial;
     String apiTitle;
@@ -683,6 +687,8 @@ public class PlayerActivity extends Activity {
             // whatever was last watched.
             mPrefs.suppressResume = true;
         }
+        // After the intent, so a session being restored wins over the launch extras it was started with.
+        restoreApiSession(savedInstanceState);
 
         coordinatorLayout = findViewById(R.id.coordinatorLayout);
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -1711,6 +1717,100 @@ public class PlayerActivity extends Activity {
         player.pause();
         playerView.removeCallbacks(resumeWatchdogRunnable);
         playerView.postDelayed(backgroundReleaseRunnable, BACKGROUND_RELEASE_MS);
+    }
+
+    /**
+     * An api session (a LAMPA launch) lives entirely in memory: apiAccess switches Prefs to
+     * non-persistent, so the position and the picked tracks are held on this instance and nothing is
+     * written to disk. Killed while backgrounded — a screensaver plus the low-memory pressure that
+     * follows it is enough — the recreated activity would replay the launch intent and resume where the
+     * *previous* viewing ended. Hand the session to the system instead: this bundle comes back in
+     * onCreate even when the process was killed.
+     */
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (!apiAccess || !haveMedia) {
+            return;
+        }
+        // Take the position off the player rather than trusting the last onPause: PiP pauses the activity
+        // once and playback carries on for the life of the window, so by the time it is stopped what
+        // onPause stored can be minutes behind.
+        if (player != null) {
+            savePlayer();
+        }
+        final Bundle state = new Bundle();
+        final int index = player == null ? apiPlaylistStartIndex : player.getCurrentMediaItemIndex();
+        final boolean inPlaylist = index >= 0 && index < apiMediaItems.size();
+        state.putInt("index", index);
+        // The uri belonging to that index — where switchSource writes a SOURCE quality swap. Not
+        // mPrefs.mediaUri: in a playlist the swap never reaches it, and the listener that re-keys it
+        // (onMediaItemTransition) is only registered after initializePlayer has set the media items, so
+        // it misses the item a rebuild starts on.
+        final MediaItem item = inPlaylist ? apiMediaItems.get(index) : null;
+        final Uri uri = item != null && item.localConfiguration != null
+                ? item.localConfiguration.uri : currentPlayingUri();
+        if (uri != null) {
+            state.putString("uri", uri.toString());
+        }
+        final long position = mPrefs.getPosition();
+        if (position >= 0) {
+            state.putLong("position", position);
+        }
+        state.putLongArray("episodePositions", apiPlaylistPositions);
+        state.putInt("stickyQuality", stickyQualityLines);
+        state.putString("audioTrack", mPrefs.audioTrackId);
+        state.putString("subtitleTrack", mPrefs.subtitleTrackId);
+        state.putInt("resizeMode", mPrefs.resizeMode);
+        state.putFloat("scale", mPrefs.scale);
+        state.putFloat("aspectRatio", mPrefs.aspectRatio);
+        state.putFloat("speed", mPrefs.speed);
+        outState.putBundle(STATE_API_SESSION, state);
+    }
+
+    /**
+     * Puts a saved api session back over what the launch intent just seeded (see onCreate) — the intent
+     * is the same one that started the session, so its `position` and base urls are stale by definition.
+     * A relaunch carrying genuinely new media arrives through onNewIntent, which runs after this: its
+     * updateMedia() drops the position restored here along with the rest of the meta.
+     */
+    private void restoreApiSession(final Bundle savedInstanceState) {
+        if (savedInstanceState == null || !apiAccess) {
+            return;
+        }
+        final Bundle state = savedInstanceState.getBundle(STATE_API_SESSION);
+        if (state == null) {
+            return;
+        }
+        final String uri = state.getString("uri");
+        final Uri target = uri == null ? null : Uri.parse(uri);
+        final int index = state.getInt("index");
+        if (index >= 0 && index < apiMediaItems.size()) {
+            apiPlaylistStartIndex = index;
+            if (target != null) {
+                apiMediaItems.set(index, apiMediaItems.get(index).buildUpon().setUri(target).build());
+            }
+        }
+        if (target != null) {
+            // Straight assignment, as switchSource does: updateMedia() would clear the meta restored
+            // below. Everything else keyed off mediaUri (request headers, the frame-rate switch, the title
+            // fallback) then names the episode being restored instead of the one the intent launched.
+            mPrefs.mediaUri = target;
+        }
+        final long[] episodePositions = state.getLongArray("episodePositions");
+        if (episodePositions != null && apiPlaylistPositions != null
+                && episodePositions.length == apiPlaylistPositions.length) {
+            apiPlaylistPositions = episodePositions;
+        }
+        stickyQualityLines = state.getInt("stickyQuality");
+        // Both are memory-only writes here; initializePlayer re-asserts the track ids on the fresh player
+        // and takes the position as the start position of its media item.
+        mPrefs.updateMeta(state.getString("audioTrack"), state.getString("subtitleTrack"),
+                state.getInt("resizeMode"), state.getFloat("scale"), state.getFloat("aspectRatio"),
+                state.getFloat("speed"));
+        if (state.containsKey("position")) {
+            mPrefs.updatePosition(state.getLong("position"));
+        }
     }
 
     @SuppressLint("GestureBackNavigation")

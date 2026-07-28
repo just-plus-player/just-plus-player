@@ -4781,8 +4781,12 @@ public class PlayerActivity extends Activity {
         // call and suppress the next file the user opens.
         final boolean keepPaused = sourceSwitchKeepPaused;
         sourceSwitchKeepPaused = false;
-        // A watchdog armed for the player being replaced must not judge the fresh one.
+        // A watchdog armed for the player being replaced must not judge the fresh one. The load watchdog
+        // needs saying too: the teardown below is inline rather than releasePlayer(), which is where it
+        // would otherwise be cancelled, and callers that replace a still-buffering player (onNewIntent,
+        // a playlist pick) would leave it armed to stop the new session 30 s in.
         resumeFrameRendered = true;
+        cancelLoadWatchdog();
 
         // Unless this is the stuck-playback recovery rebuild (which must keep forceHevcForDolbyVision),
         // clear the one-shot Dolby Vision recovery state so a normal open plays DV through its regular
@@ -5402,9 +5406,19 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
-        // A silent stall (buffering never reached READY). Not sent to Sentry — it is usually an
-        // upstream/network condition, not an app bug — just surface a friendly message with its code.
+        // A silent stall (buffering never reached READY). Stop the loaders: they keep pulling bytes for as
+        // long as the player sits in BUFFERING, and hiding the spinner below hides the rate readout with
+        // it, so the wait turns into an invisible download that shows nothing. Stopped, not released or
+        // rebuilt — that is what strands a codec on a wedged playback thread; stop() is only a message to
+        // it. STATE_IDLE keeps the timeline and the position, so the play button (dispatchPlayPause ->
+        // handlePlayButtonAction) re-prepares this very item, which is what the message asks for.
+        player.stop();
+        // Not sent to Sentry — it is usually an upstream/network condition, not an app bug.
         updateLoading(false);
+        // Entering the wait disabled the episode arrows (showLoadingRunnable) and only STATE_READY and the
+        // error paths ever re-enabled them, so a timeout left the one escape from a stuck episode dead.
+        // They work from here: stepEpisodeWhileIdle reloads out of an idle player.
+        setEpisodeNavLoading(false);
         showSnack(getString(R.string.error_playback_timeout), null);
     }
 

@@ -4396,7 +4396,8 @@ public class PlayerActivity extends Activity {
         boolean textSelected = false;
         if (player != null) {
             for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
-                if (group.getType() == C.TRACK_TYPE_TEXT) {
+                if (group.getType() == C.TRACK_TYPE_TEXT
+                        && !isPhantomClosedCaption(group.getMediaTrackGroup().getFormat(0))) {
                     hasSubtitles = true;
                     if (group.isSelected()) {
                         textSelected = true;
@@ -4433,6 +4434,20 @@ public class PlayerActivity extends Activity {
                     () -> applyAudio(choice)));
         }
         showSideMenu(getString(R.string.audio_title), items);
+    }
+
+    // ExoPlayer invents an empty CEA-608 track for every HLS stream whose playlist declares no closed
+    // captions at all (DefaultHlsExtractorFactory.exposeCea608WhenMissingDeclarations, on by default
+    // and not reachable through the final DefaultMediaSourceFactory). Almost no such stream actually
+    // carries captions, so the picker offered a subtitle that showed nothing once selected, on streams
+    // where every other player correctly reports no subtitles. A CC track a playlist really declares
+    // always carries INSTREAM-ID (CC1..CC4) — an accessibility channel — which the invented one lacks.
+    // ponytail: this also hides an undeclared but real CEA-608 track, the same trade-off ExoPlayer's
+    // own flag makes. Flipping the flag instead needs a custom HlsMediaSource.Factory, which means
+    // re-doing the sideloaded-subtitle merging DefaultMediaSourceFactory does for us.
+    private static boolean isPhantomClosedCaption(Format format) {
+        return MimeTypes.APPLICATION_CEA608.equals(format.sampleMimeType)
+                && format.accessibilityChannel == Format.NO_VALUE;
     }
 
     private String buildSubtitleInfo(Format text) {
@@ -4472,6 +4487,9 @@ public class PlayerActivity extends Activity {
                     continue;
                 }
                 final Format format = trackGroup.getFormat(i);
+                if (isPhantomClosedCaption(format)) {
+                    continue;
+                }
                 number++;
                 String label = buildSubtitleInfo(format);
                 if (label == null || label.isEmpty()) {

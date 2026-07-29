@@ -1449,10 +1449,11 @@ public class PlayerActivity extends Activity {
         playerListener = new PlayerListener();
 
         mBrightnessControl = new BrightnessControl(this);
-        if (mPrefs.brightness >= 0) {
-            mBrightnessControl.percent = mPrefs.brightness;
-            mBrightnessControl.setScreenBrightness(mBrightnessControl.percentToBrightness(mBrightnessControl.percent));
-        }
+        // Only the level is restored here. Putting it on the window as well tied the brightness to the
+        // activity instead of the video: the empty state kept the last clip's dimming, and every trip to
+        // the settings screen — a window of its own — flipped back to the device brightness and back again.
+        // show/hideEmptyState own the window now.
+        mBrightnessControl.percent = mPrefs.brightness;
         playerView.setBrightnessControl(mBrightnessControl);
 
         final LinearLayout exoBasicControls = playerView.findViewById(R.id.exo_basic_controls);
@@ -5416,9 +5417,11 @@ public class PlayerActivity extends Activity {
         final View link = findViewById(R.id.empty_state_link);
         final View settings = findViewById(R.id.empty_state_settings);
 
-        // No video to match, so the orientation preference has nothing to say here: hand the page back to
-        // the system, whichever way the device is held. Reapplied by hideEmptyState once media takes over.
+        // No video to match, so neither the orientation nor the brightness preference has anything to say
+        // here: hand the page back to the system, whichever way the device is held and however bright it
+        // keeps its screen. Both are reapplied by hideEmptyState once media takes over.
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        mBrightnessControl.setActive(false, !isReducedMotion());
 
         open.setOnClickListener(v -> openFile(mPrefs.mediaUri));
         link.setOnClickListener(v -> askForLink());
@@ -5606,9 +5609,10 @@ public class PlayerActivity extends Activity {
     }
 
     private void hideEmptyState() {
-        // Media is taking the screen, so the preference applies again — including after an empty state
-        // relaxed it. No video format yet, so VIDEO lands on landscape and STATE_READY corrects it.
+        // Media is taking the screen, so the preferences apply again — including after an empty state
+        // relaxed them. No video format yet, so VIDEO lands on landscape and STATE_READY corrects it.
         Utils.setOrientation(this, mPrefs.orientation);
+        mBrightnessControl.setActive(true, !isReducedMotion());
         stopEmptyStatePulse();
         final View overlay = findViewById(R.id.empty_state);
         if (overlay != null && overlay.getVisibility() != View.GONE) {

@@ -205,6 +205,12 @@ public class SettingsActivity extends AppCompatActivity {
                 try {
                     // MissingResourceException: Couldn't find 3-letter language code for zz
                     String key = locale.getISO3Language();
+                    if (languages.containsKey(key)) {
+                        // Hundreds of locales collapse onto the same language here, and the display
+                        // name never depends on region or script — resolving it again only burns
+                        // main-thread time while Settings opens.
+                        continue;
+                    }
                     String language = locale.getDisplayLanguage();
                     int length = language.offsetByCodePoints(0, 1);
                     if (!language.isEmpty()) {

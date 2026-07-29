@@ -19,6 +19,7 @@
     <string name="error_playback_general">Couldn\'t play this video.</string>
     <string name="error_playback_timeout">Playback took too long to start. Please try again.</string>
     <string name="error_playback_stalled">Playback stalled — this device may not be able to decode this file.</string>
+    <string name="error_stream_interrupted">The live stream keeps stopping and could not be resumed. Please try again later.</string>
     <string name="error_stream_broken">The video stream is damaged or unavailable. Please try again.</string>
     <string name="error_stream_http_status">Server error %1$d at %2$s</string>
     <string name="error_media_access_expired">Access to this video has expired. Open it again from the app you shared it from.</string>
@@ -48,7 +49,8 @@
     <string name="pref_allow_system_framerate_on">The player may switch the display refresh rate to match the video (can cause flicker on some TVs)</string>
     <string name="pref_allow_system_framerate_off">Keep the display refresh rate unchanged during playback</string>
     <string name="pref_tunneling">Tunneled playback</string>
-    <string name="pref_tunneling_summary">Tunneling provides better support for 4K/HDR content, but may not work on all devices</string>
+    <string name="pref_tunneling_summary">On some TV boxes the picture freezes completely, with no error — the app then turns this off by itself. Where it works, it improves 4K/HDR playback</string>
+    <string name="notice_tunneling_disabled">Tunneled playback disabled — it freezes the picture on this device</string>
     <string name="pref_auto_pip">Auto picture-in-picture</string>
     <string name="pref_auto_pip_on">Switch to PiP when leaving the app</string>
     <string name="pref_auto_pip_off">Do not automatically switch to PiP</string>
@@ -145,7 +147,7 @@
     <string name="pref_captioning_preferences">Captioning preferences</string>
     <string name="pref_decoder_priority">Decoder priority</string>
     <string name="pref_decoder_priority_prefer_device">Prefer device decoders (default)</string>
-    <string name="pref_decoder_priority_prefer_app">Prefer app decoders</string>
+    <string name="pref_decoder_priority_prefer_app">Prefer app decoders (audio, AV1)</string>
     <string name="pref_decoder_priority_only_device">Device decoders only</string>
     <string name="pref_language_audio">Default audio track</string>
     <string name="pref_language_track_device">Device languages</string>

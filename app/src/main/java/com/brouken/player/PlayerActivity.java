@@ -99,11 +99,14 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
+import androidx.media3.common.util.StuckPlayerException;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -111,6 +114,7 @@ import androidx.media3.exoplayer.ExoTimeoutException;
 import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.SeekParameters;
+import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.ForwardingAudioSink;
@@ -256,6 +260,25 @@ public class PlayerActivity extends Activity {
     private boolean forceHevcForDolbyVision;
     private boolean pendingStuckRecovery;
     private String stuckRecoveryAttemptedUri;
+    // Names of the decoders that actually opened, for the error report. The mime does not tell them apart
+    // — c2.android.* (software) and OMX.<vendor>.* (hardware) decode the same hevc very differently — and
+    // "the device decoder wedged" is unreadable without knowing which one it was. Written on the app
+    // thread by the analytics listener, reset per player build.
+    private String videoDecoderName;
+    private String audioDecoderName;
+    private final AnalyticsListener decoderNameListener = new AnalyticsListener() {
+        @Override
+        public void onVideoDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
+                                             long initializedTimestampMs, long initializationDurationMs) {
+            videoDecoderName = decoderName;
+        }
+
+        @Override
+        public void onAudioDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
+                                              long initializedTimestampMs, long initializationDurationMs) {
+            audioDecoderName = decoderName;
+        }
+    };
     // A fatal report has just been shown for the current clip. onStart re-initialises the player every
     // time the activity comes back, so without this the clip is prepared again the moment the report is
     // closed, fails the same way and reopens it — a window that cannot be dismissed. Fall back to the
@@ -273,6 +296,27 @@ public class PlayerActivity extends Activity {
             player.prepare();
         }
     };
+    // Less progress than this counts as "never started" rather than "stopped mid-stream" — see
+    // stalledAtStart(). Generous on purpose: the point is only to separate a decoder that took the stream
+    // and produced nothing from one that played for a while and then stopped.
+    private static final long STALL_AT_START_MS = 2_000L;
+    // Whether the bundled ffmpeg decoder loaded on this ABI, for the error report. Sampled where the
+    // renderers are built — that is where the library is loaded anyway — so a report never pays for a
+    // dlopen on the main thread, and stays null until then rather than lying.
+    private static Boolean ffmpegAvailable;
+    // Position where playback actually began (first STATE_READY, then every seek), so progress is measured
+    // against it rather than against zero: a film resumed at the fortieth minute, or a live stream
+    // positioned inside its window, still has a large position when it wedges on its first frame, and
+    // judging by the position alone would call that a mid-stream stall. C.TIME_UNSET until known.
+    private long playerStartPositionMs = C.TIME_UNSET;
+    private final Timeline.Period stallPeriod = new Timeline.Period();
+    // Re-prepares spent on a live channel that stopped advancing (see recoverLiveStall).
+    private int liveStallRecoveries;
+    private long lastLiveStallMs;
+    private static final int MAX_LIVE_STALL_RECOVERIES = 2;
+    private static final long LIVE_STALL_FORGET_MS = TimeUnit.MINUTES.toMillis(1);
+    // Per process, not per player: a rebuilt player must not re-report what is already known.
+    private static boolean liveRejoinReported;
     // Re-reads spent on a transient decoder failure this session (see recoverFromDecoderFailure), reset
     // per player build and on reaching STATE_READY.
     private int decoderRetries;
@@ -4919,6 +4963,10 @@ public class PlayerActivity extends Activity {
         // Fresh player — the source re-read budget starts over.
         sourceRetries = 0;
         decoderRetries = 0;
+        liveStallRecoveries = 0;
+        playerStartPositionMs = C.TIME_UNSET;
+        videoDecoderName = null;
+        audioDecoderName = null;
         // A restart that never got its onTracksChanged belongs to the player being replaced here.
         audioRestartInFlight = false;
 
@@ -4932,6 +4980,9 @@ public class PlayerActivity extends Activity {
         errorToShow = null;
         if (player != null) {
             player.removeListener(playerListener);
+            // Renderer decoder-init events reach the collector via a post from the playback thread, so one
+            // enqueued during teardown would write the old player's decoder name onto the next session.
+            player.removeAnalyticsListener(decoderNameListener);
             player.clearMediaItems();
             player.release();
             player = null;
@@ -5023,6 +5074,10 @@ public class PlayerActivity extends Activity {
         };
         @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = baseRenderersFactory
                 .setExtensionRendererMode(mPrefs.decoderPriority)
+                // Several decoders often claim the same mime, and the first one is not always the one that
+                // works. Without this, a decoder that fails to initialise ends playback outright instead
+                // of letting the next candidate try.
+                .setEnableDecoderFallback(true)
                 .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
         if (forceHevcForDolbyVision || blockHeavyMkvAudio) {
             // One combined codec selector for two independent needs:
@@ -5232,6 +5287,12 @@ public class PlayerActivity extends Activity {
         }
 
         player.addListener(playerListener);
+        player.addAnalyticsListener(decoderNameListener);
+        // The renderers factory has just loaded the extension libraries it needs, so this is free here.
+        if (ffmpegAvailable == null
+                && mPrefs.decoderPriority != DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF) {
+            ffmpegAvailable = FfmpegLibrary.isAvailable();
+        }
         player.prepare();
 
         // Only while the activity is up: a recovery rebuild posted from onPlayerError can land after the user
@@ -5607,6 +5668,9 @@ public class PlayerActivity extends Activity {
                 restorePlayState = true;
             }
             player.removeListener(playerListener);
+            // Renderer decoder-init events reach the collector via a post from the playback thread, so one
+            // enqueued during teardown would write the old player's decoder name onto the next session.
+            player.removeAnalyticsListener(decoderNameListener);
             player.clearMediaItems();
             player.release();
             player = null;
@@ -5693,6 +5757,14 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
                                             Player.PositionInfo newPosition, int reason) {
+            // A new item starts its own playback, so progress is measured from where it begins — otherwise
+            // an item that wedges on its first frame would look mid-stream because the previous one played.
+            // Only on an item change: rebasing on every discontinuity would also rebase on a seek (the user
+            // scrubbing to shake a frozen picture loose is exactly when the distinction has to hold), on
+            // each skipped silence, and on internal live-window updates.
+            if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+                playerStartPositionMs = currentPeriodPositionMs();
+            }
             if (apiPlaylistPositions == null || player == null) {
                 return;
             }
@@ -5874,6 +5946,12 @@ public class PlayerActivity extends Activity {
                 // Loaded successfully — clear any pending resolver-handshake flag from a prior attempt.
                 resolverNotReadyUri = null;
                 decoderRetries = 0;
+                // Playback starts here, so this is what stalledAtStart() measures progress against. A live
+                // stream is positioned well inside its window before it becomes ready, and a resumed file
+                // starts at its saved timecode — neither is progress.
+                if (playerStartPositionMs == C.TIME_UNSET) {
+                    playerStartPositionMs = currentPeriodPositionMs();
+                }
 
                 // Ready — hide the spinner and re-enable the episode arrows. Done unconditionally (not only on
                 // the initial open) so episode switches, which don't set videoLoading, are also cleared.
@@ -6021,36 +6099,55 @@ public class PlayerActivity extends Activity {
             // to. Nothing failed for them: the position was saved in onPause, and onStart builds a new
             // player from scratch, so there is nothing to say and nothing to report.
             //
-            // A StuckPlayerException is the real thing: Media3's StuckPlayerDetector reporting "no
-            // progress" mid-playback because the device decoder wedged (commonly a Dolby Vision stream
-            // its DV decoder can't handle). Try a one-shot recovery that re-decodes DV as plain HEVC;
-            // if not applicable / already tried, show a friendly message.
+            // A StuckPlayerException is the real thing, and it carries which failure this was: a dead
+            // buffer, a frozen playback clock, an item running past its declared duration without ending,
+            // or a suppression that never lifts. The detector reports them through
+            // createForUnexpected(e, ERROR_CODE_TIMEOUT), so the type has to be read here. Only a frozen
+            // clock is something this app can act on: re-decoding Dolby Vision as plain HEVC, dropping
+            // tunneling or denying a passthrough mime cannot help a source that stopped sending bytes.
             if (error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT) {
-                if (error.getCause() instanceof ExoTimeoutException) {
+                final Throwable cause = error.getCause();
+                if (cause instanceof ExoTimeoutException) {
                     return;
                 }
-                if (recoverFromStuckPlayback()) {
-                    return;
-                }
-                // Second rung: not a Dolby Vision video wedge (or already tried on this URI) — the
-                // more common cause in the field is passthrough audio that opened but never actually
-                // drained. Blame whichever mime was playing when the stall was declared.
-                final Format stalledAudioFormat = player != null ? player.getAudioFormat() : null;
-                if (recoverByRevokingAudioMime(stalledAudioFormat != null ? stalledAudioFormat.sampleMimeType : null)) {
-                    return;
-                }
-                showErrorScreen(errorSummary(error), "Stall class: device_decoder\n\n" + errorReport(error));
-                // Report as device/firmware telemetry (tagged), not an app bug.
-                io.sentry.Sentry.captureException(error, scope -> {
-                    scope.setTag("player.error_code", error.getErrorCodeName());
-                    scope.setTag("player.stall_class", "device_decoder");
-                    final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
-                    final Uri uri = item != null && item.localConfiguration != null
-                            ? item.localConfiguration.uri : mPrefs.mediaUri;
-                    if (Utils.isSupportedNetworkUri(uri)) {
-                        scope.setExtra("media_uri", Utils.uriToReportString(uri));
+                final StuckPlayerException stuck = cause instanceof StuckPlayerException
+                        ? (StuckPlayerException) cause : null;
+                if (stuck == null || stuck.stuckType == StuckPlayerException.STUCK_PLAYING_NO_PROGRESS) {
+                    if (recoverFromStuckPlayback()) {
+                        return;
                     }
-                });
+                    if (recoverByDisablingTunneling()) {
+                        return;
+                    }
+                    // Rejoining a broadcast is cheap and undoes itself, so it goes before revoking a mime,
+                    // which is permanent and device-wide: a source that froze while a bitstream track
+                    // happened to be playing would otherwise cost the user passthrough for that codec for
+                    // good. A device that really cannot bitstream still gets cured — by the same rung on
+                    // any non-live item, or by the AudioTrack failure below.
+                    if (recoverLiveStall(error, stuck)) {
+                        return;
+                    }
+                    // Passthrough audio that opened but never drained. Blame whichever mime was playing,
+                    // but only while the sink actually is bitstreaming: a track being decoded to PCM (AAC,
+                    // MP3) cannot be wedged by passthrough, and revoking its mime would persist a
+                    // workaround that denies nothing and, for "device decoders only", pull the ffmpeg
+                    // renderer in for good.
+                    final Format stalledAudioFormat = player != null ? player.getAudioFormat() : null;
+                    if (audioSink != null && audioSink.isPassthrough()
+                            && recoverByRevokingAudioMime(stalledAudioFormat != null ? stalledAudioFormat.sampleMimeType : null)) {
+                        return;
+                    }
+                }
+                reportStall(error, stuck, null);
+                // A broadcast that kept freezing gets one line rather than a full-screen decoder report:
+                // what failed is the channel, not this clip. The report stays reachable behind "Details"
+                // so support does not have to go to the crash reporter for it.
+                if (player != null && player.isCurrentMediaItemLive()) {
+                    stopWithMessage(getString(R.string.error_stream_interrupted), errorReport(error));
+                    return;
+                }
+                showErrorScreen(errorSummary(error),
+                        "Stall class: " + stallClass(stuck) + "\n\n" + errorReport(error));
                 releasePlayer(false);
                 return;
             }
@@ -6128,17 +6225,9 @@ public class PlayerActivity extends Activity {
                 stopWithMessage(message, null);
                 return;
             }
-            // Enrich via the per-capture ScopeCallback overload (not withScope) so the tag/extra land
+            // Enrich via the per-capture ScopeCallback overload (not withScope) so the tags/extras land
             // on exactly this event.
-            io.sentry.Sentry.captureException(error, scope -> {
-                scope.setTag("player.error_code", error.getErrorCodeName());
-                final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
-                final Uri uri = item != null && item.localConfiguration != null
-                        ? item.localConfiguration.uri : mPrefs.mediaUri;
-                if (Utils.isSupportedNetworkUri(uri)) {
-                    scope.setExtra("media_uri", Utils.uriToReportString(uri));
-                }
-            });
+            io.sentry.Sentry.captureException(error, scope -> enrichPlaybackScope(error, scope));
             if (error instanceof ExoPlaybackException) {
                 final ExoPlaybackException exoPlaybackException = (ExoPlaybackException) error;
                 if (exoPlaybackException.type == ExoPlaybackException.TYPE_SOURCE) {
@@ -6227,6 +6316,14 @@ public class PlayerActivity extends Activity {
         if (sourceRetries >= MAX_SOURCE_RETRIES) {
             return false;
         }
+        // The position is gone from the window, so re-preparing there would only reproduce the error until
+        // the budget is spent. Rejoin the window instead. Only for this code: isCurrentMediaItemLive() is
+        // true for any HLS without #EXT-X-ENDLIST, which includes proxy/torrent remuxes of ordinary films —
+        // seeking those on a plain read error would throw the viewer's place away.
+        if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+                && player.isCurrentMediaItemLive()) {
+            player.seekToDefaultPosition();
+        }
         sourceRetries++;
         updateLoading(true);
         playerView.postDelayed(sourceRetryRunnable, 1_000);
@@ -6268,6 +6365,105 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
+    // A live channel stopped advancing. An error screen is the wrong answer for a broadcast: re-preparing
+    // rebuilds the decoder at the same timecode, which is all a frozen render path needs, and playWhenReady
+    // survives the error so playback simply resumes. No seek — the buffer and the loader were both healthy
+    // when the clock froze, and seeking would cost a DVR viewer their place.
+    //
+    // The budget only bites on a channel that keeps freezing: it decays LIVE_STALL_FORGET_MS after the last
+    // stall, so hours-apart blips each get a fresh one while a stall every few seconds runs out and gets a
+    // message instead. Should the freeze be in the playback thread rather than the render path,
+    // prepare() masks the state to BUFFERING, which re-arms the 30 s load watchdog as the backstop.
+    //
+    // Declines when the stream never actually started (stalledAtStart): re-preparing at a position that
+    // was never reached changes nothing, and spending the budget on it only delays the message.
+    private boolean recoverLiveStall(PlaybackException error, StuckPlayerException stuck) {
+        if (player == null || !player.isCurrentMediaItemLive() || stalledAtStart()) {
+            return false;
+        }
+        final long now = SystemClock.elapsedRealtime();
+        if (now - lastLiveStallMs > LIVE_STALL_FORGET_MS) {
+            liveStallRecoveries = 0;
+        }
+        lastLiveStallMs = now;
+        if (liveStallRecoveries >= MAX_LIVE_STALL_RECOVERIES) {
+            return false;
+        }
+        liveStallRecoveries++;
+        // Once per process: enough to tell a working recovery apart from a channel that silently rejoins
+        // every few seconds, without spending an event on every rejoin.
+        if (!liveRejoinReported) {
+            liveRejoinReported = true;
+            reportStall(error, stuck, "live-rejoin");
+        }
+        updateLoading(true);
+        playerView.post(sourceRetryRunnable);
+        return true;
+    }
+
+    // Position measured from the start of the period rather than of the window, which is the only monotonic
+    // reading on a live stream: getCurrentPosition() is relative to a window that slides, so on a live
+    // channel it drifts backwards as segments age out even while playback runs normally. This is the same
+    // quantity StuckPlayerDetector itself compares, so a stall verdict and this test agree by construction.
+    private long currentPeriodPositionMs() {
+        if (player == null) {
+            return C.TIME_UNSET;
+        }
+        long position = player.getCurrentPosition();
+        final Timeline timeline = player.getCurrentTimeline();
+        if (!timeline.isEmpty() && player.getCurrentAdGroupIndex() == C.INDEX_UNSET) {
+            position -= timeline.getPeriod(player.getCurrentPeriodIndex(), stallPeriod)
+                    .getPositionInWindowMs();
+        }
+        return position;
+    }
+
+    // Whether the clock froze before playback had really begun. A tunneled or wedging decoder takes the
+    // stream, renders the first frames and stops, so the position never moves away from where it started;
+    // a stall after minutes of fine playback is a different failure and must not be blamed on the same
+    // things. Used both to pick a recovery and to group the reports.
+    private boolean stalledAtStart() {
+        return player != null && (playerStartPositionMs == C.TIME_UNSET
+                || currentPeriodPositionMs() - playerStartPositionMs < STALL_AT_START_MS);
+    }
+
+    // The device advertises tunneled playback and takes the stream through its tunneled decoder, then
+    // never advances: the picture freezes on the first frames with no error of its own. Confirmed in the
+    // field on a Realtek box, where playback froze at 2 ms of a live channel and 62 ms of a file, and
+    // recovered as soon as tunneling was switched off by hand.
+    //
+    // Media3 makes this easy to hit: tunneling needs both the video and the audio renderer to claim
+    // support, and DecoderAudioRenderer.supportsFormat claims it unconditionally, so preferring the
+    // bundled ffmpeg decoder for audio still ends up driving a tunneled video codec from software-decoded
+    // PCM — a pairing vendor stacks are not built for.
+    //
+    // So the setting is switched off rather than overridden: what Settings shows then matches what
+    // playback does, and a user who needs tunneling can turn it back on. Writing false is also the whole
+    // guard — the rung cannot fire twice. Only on a stall at the very start (see stalledAtStart): if the
+    // stream played for a while, tunneling was evidently working and something else stopped it.
+    private boolean recoverByDisablingTunneling() {
+        // The baseline has to be known: this rung changes a setting the user made, so it must not act on a
+        // player that was never ready. A frozen clock implies it was, but that is a library invariant.
+        if (player == null || !mPrefs.tunneling
+                || playerStartPositionMs == C.TIME_UNSET || !stalledAtStart()) {
+            return false;
+        }
+        mPrefs.disableTunneling();
+        Toast.makeText(this, R.string.notice_tunneling_disabled, Toast.LENGTH_LONG).show();
+        restorePlayState = true;
+        // Keeps the Dolby Vision workaround and its per-URI guard across this rebuild: without it a device
+        // that needs both fixes would lose the first one here, and the DV rung would be free to fire again.
+        pendingStuckRecovery = true;
+        // Tunneling is applied to the track selector when the player is built, so it takes a rebuild.
+        // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
+        // released while its own listener is executing.
+        playerView.post(() -> {
+            releasePlayer();
+            initializePlayer();
+        });
+        return true;
+    }
+
     // Revoke audio passthrough for this specific mime, for good, persisted for future playbacks.
     // Reached from two symptoms of the same root cause — AudioTrack.Builder throwing at open, or a
     // StuckPlayerException where the AudioTrack opened but never drained — since there is no way to
@@ -6289,6 +6485,9 @@ public class PlayerActivity extends Activity {
             // mime may now need is absent, since buildAudioRenderers only forces it in once a revocation
             // exists. The one case that does need a rebuild — position is kept by savePlayer().
             restorePlayState = true;
+            // Same reason as in recoverByDisablingTunneling(): keep the Dolby Vision workaround and its
+            // per-URI guard rather than letting this rebuild clear them.
+            pendingStuckRecovery = true;
             playerView.post(() -> {
                 releasePlayer();
                 initializePlayer();
@@ -6841,6 +7040,12 @@ public class PlayerActivity extends Activity {
         }
         sb.append("\nVideo: ").append(Format.toLogString(player.getVideoFormat()));
         sb.append("\nAudio: ").append(Format.toLogString(player.getAudioFormat()));
+        // Which decoders actually opened — the mime does not say whether this was the vendor's hardware
+        // codec or the platform software one, and for a wedged decoder that is the whole question.
+        if (videoDecoderName != null || audioDecoderName != null) {
+            sb.append("\nDecoders: ").append(videoDecoderName != null ? videoDecoderName : "none")
+                    .append(" / ").append(audioDecoderName != null ? audioDecoderName : "none");
+        }
         sb.append("\nSubtitle: ").append(subtitle != null ? Format.toLogString(subtitle) : "none");
         sb.append("\nTracks: ").append(video).append(" video, ").append(audio).append(" audio, ")
                 .append(text).append(" subtitle");
@@ -6852,6 +7057,10 @@ public class PlayerActivity extends Activity {
                 .append(player.isPlaying() ? " (playing)" : " (paused)")
                 .append(", item ").append(player.getCurrentMediaItemIndex() + 1)
                 .append('/').append(player.getMediaItemCount());
+        final long liveOffset = player.getCurrentLiveOffset();
+        if (liveOffset != C.TIME_UNSET) {
+            sb.append("\nLive: ").append(liveOffset).append(" ms behind the edge");
+        }
         sb.append("\nPlayback: decoder priority ").append(mPrefs.decoderPriority)
                 .append(", speed ").append(mPrefs.speed)
                 .append(", resize ").append(mPrefs.resizeMode)
@@ -6873,6 +7082,95 @@ public class PlayerActivity extends Activity {
         final MediaItem item = player != null ? player.getCurrentMediaItem() : null;
         return item != null && item.localConfiguration != null
                 ? item.localConfiguration.uri : mPrefs.mediaUri;
+    }
+
+    /**
+     * Playback context for a report: the values worth grouping and filtering on as tags, and the same
+     * detail the error screen shows as one extra — appendPlayerState is the single source for that text.
+     */
+    private void enrichPlaybackScope(final PlaybackException error, final io.sentry.IScope scope) {
+        scope.setTag("player.error_code", error.getErrorCodeName());
+        final Uri uri = currentMediaUri();
+        if (Utils.isSupportedNetworkUri(uri)) {
+            scope.setExtra("media_uri", Utils.uriToReportString(uri));
+        }
+        scope.setTag("decoder.priority", String.valueOf(mPrefs.decoderPriority));
+        scope.setTag("player.tunneling", String.valueOf(mPrefs.tunneling));
+        if (ffmpegAvailable != null) {
+            scope.setTag("decoder.ffmpeg", String.valueOf(ffmpegAvailable));
+        }
+        if (player == null) {
+            return;
+        }
+        final Format videoFormat = player.getVideoFormat();
+        final Format audioFormat = player.getAudioFormat();
+        if (videoFormat != null) {
+            scope.setTag("media.video_mime", String.valueOf(videoFormat.sampleMimeType));
+        }
+        if (audioFormat != null) {
+            scope.setTag("media.audio_mime", String.valueOf(audioFormat.sampleMimeType));
+        }
+        if (videoDecoderName != null) {
+            scope.setTag("decoder.video_name", videoDecoderName);
+        }
+        // Worth a tag of its own rather than only the text below: whether the track went to a platform
+        // codec or to the bundled ffmpeg one is what separates the audio-side failures from each other.
+        if (audioDecoderName != null) {
+            scope.setTag("decoder.audio_name", audioDecoderName);
+        }
+        scope.setTag("media.is_live", String.valueOf(player.isCurrentMediaItemLive()));
+        if (audioSink != null) {
+            scope.setTag("audio.sink_passthrough", String.valueOf(audioSink.isPassthrough()));
+        }
+        final StringBuilder state = new StringBuilder();
+        appendPlayerState(state);
+        scope.setExtra("player_state", state.toString());
+    }
+
+    /** What stalled — device_decoder means the playback clock froze, which is the only decoder verdict. */
+    private static String stallClass(final StuckPlayerException stuck) {
+        if (stuck == null) {
+            return "device_decoder";
+        }
+        switch (stuck.stuckType) {
+            case StuckPlayerException.STUCK_PLAYING_NO_PROGRESS:
+                return "device_decoder";
+            case StuckPlayerException.STUCK_PLAYING_NOT_ENDING:
+                return "not_ending";
+            case StuckPlayerException.STUCK_SUPPRESSED:
+                return "suppressed";
+            default:
+                return "source_stalled";
+        }
+    }
+
+    /**
+     * Report a StuckPlayerDetector verdict, grouped by what actually stalled: ExoPlayerImpl reports five
+     * unrelated failures under one error code, and a single issue holding all of them cannot be reasoned
+     * about. The remaining detail stays in tags, which break down inside the issue.
+     *
+     * @param recoveredAs non-null when playback was rescued rather than surfaced, grouped separately so a
+     *                    working recovery is visible instead of merely looking like the issue went away.
+     */
+    private void reportStall(final PlaybackException error, final StuckPlayerException stuck,
+                             final String recoveredAs) {
+        final String stallClass = stallClass(stuck);
+        // "Froze at 2 ms" and "froze in the fortieth minute" are different failures with different
+        // causes, so they must not share an issue.
+        final String when = stalledAtStart() ? "at-start" : "mid-stream";
+        io.sentry.Sentry.captureException(error, scope -> {
+            scope.setFingerprint(Arrays.asList(
+                    recoveredAs != null ? "stuck-recovered" : "stuck", stallClass, when));
+            scope.setTag("player.stall_class", stallClass);
+            scope.setTag("player.stall_when", when);
+            scope.setTag("player.stuck_type",
+                    stuck != null ? String.valueOf(stuck.stuckType) : "unknown");
+            if (recoveredAs != null) {
+                scope.setTag("player.stuck_recovery", recoveredAs);
+                scope.setLevel(io.sentry.SentryLevel.INFO);
+            }
+            enrichPlaybackScope(error, scope);
+        });
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {

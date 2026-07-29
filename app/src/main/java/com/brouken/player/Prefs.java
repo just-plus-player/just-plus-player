@@ -67,6 +67,7 @@ class Prefs {
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
     private static final String PREF_KEY_UPDATE_SKIPPED = "updateSkippedVersionCode";
     private static final String PREF_KEY_REVOKED_AUDIO_MIMES = "revokedAudioMimes";
+    private static final String PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED = "revokedAudioMimesRelearned";
 
     public static final String SKIP_MODE_BUTTON = "button";
     public static final String SKIP_MODE_AUTO = "auto";
@@ -137,7 +138,31 @@ class Prefs {
         mContext = context;
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
         loadSavedPreferences();
+        relearnRevokedAudioMimes();
         loadPositions();
+    }
+
+    /**
+     * Clears the learned passthrough denylist once, so entries left by builds whose stall recovery blamed
+     * whichever mime happened to be playing do not stay for good. Those entries deny nothing (the track was
+     * being decoded, not bitstreamed) but keep the set non-empty, which forces the ffmpeg audio renderer in
+     * for "device decoders only" and puts a misleading line in every error report.
+     *
+     * Nothing here inspects the mimes: no list can separate a bogus entry from a real one, since a device
+     * that bitstreams AAC is as plausible as one that bitstreams AC4. Dropping the whole set is
+     * self-correcting instead: a mime this device really cannot bitstream is revoked again by its next
+     * failure, at the cost of one recoverable hiccup, while a bogus entry can no longer come back now that
+     * the stall path checks the sink first.
+     */
+    private void relearnRevokedAudioMimes() {
+        if (mSharedPreferences.getBoolean(PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED, false)) {
+            return;
+        }
+        revokedAudioMimes = Collections.emptySet();
+        mSharedPreferences.edit()
+                .remove(PREF_KEY_REVOKED_AUDIO_MIMES)
+                .putBoolean(PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED, true)
+                .apply();
     }
 
     private void loadSavedPreferences() {
@@ -197,7 +222,11 @@ class Prefs {
         systemVolume = Utils.isTvBox(mContext) || mSharedPreferences.getBoolean(PREF_KEY_SYSTEM_VOLUME, systemVolume);
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);
         autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);
-        revokedAudioMimes = mSharedPreferences.getStringSet(PREF_KEY_REVOKED_AUDIO_MIMES, revokedAudioMimes);
+        // Defaulting to the field would hand back the stale in-memory set once the key is gone, so
+        // "Reset learned audio workarounds" (which removes the key) would not take effect until the
+        // process restarted — including for the player rebuild that follows leaving the settings screen.
+        revokedAudioMimes = mSharedPreferences.getStringSet(
+                PREF_KEY_REVOKED_AUDIO_MIMES, Collections.emptySet());
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {
@@ -307,6 +336,16 @@ class Prefs {
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putInt(PREF_KEY_UPDATE_SKIPPED, versionCode);
         sharedPreferencesEditor.apply();
+    }
+
+    /**
+     * Turns tunneled playback off after this device has proven it freezes with it — see
+     * PlayerActivity.recoverByDisablingTunneling(). Writes the same key the settings switch uses, so the
+     * switch itself goes off: the user can see what happened and turn it back on if they want to.
+     */
+    public void disableTunneling() {
+        tunneling = false;
+        mSharedPreferences.edit().putBoolean(PREF_KEY_TUNNELING, false).apply();
     }
 
     public void revokeAudioMime(final String mime) {

@@ -18,6 +18,7 @@
     <string name="error_playback_general">Не вдалося відтворити це відео.</string>
     <string name="error_playback_timeout">Відтворення надто довго не починається. Спробуйте ще раз.</string>
     <string name="error_playback_stalled">Відтворення зупинилося — цей пристрій, можливо, не може декодувати цей файл.</string>
+    <string name="error_stream_interrupted">Ефір постійно переривається, продовжити не вдалося. Спробуйте пізніше.</string>
     <string name="error_stream_broken">Потік відео пошкоджено або недоступний. Спробуйте ще раз.</string>
     <string name="error_stream_http_status">Помилка сервера %1$d на %2$s</string>
     <string name="error_media_access_expired">Доступ до цього відео закінчився. Відкрийте його знову із застосунку, звідки поділилися.</string>
@@ -47,7 +48,8 @@
     <string name="pref_allow_system_framerate_on">Плеєр може змінювати частоту оновлення екрана під частоту відео (на деяких телевізорах можливе мигання)</string>
     <string name="pref_allow_system_framerate_off">Не змінювати частоту оновлення екрана під час відтворення</string>
     <string name="pref_tunneling">Тунельне відтворення</string>
-    <string name="pref_tunneling_summary">Тунелювання забезпечує кращу підтримку вмісту 4K/HDR, але може працювати не на всіх пристроях</string>
+    <string name="pref_tunneling_summary">На частині ТВ-приставок зображення повністю зупиняється без жодної помилки — тоді додаток вимкне цей параметр сам. Де працює, покращує відтворення 4K/HDR</string>
+    <string name="notice_tunneling_disabled">Тунельне відтворення вимкнено — на цьому пристрої воно зупиняє зображення</string>
     <string name="pref_auto_pip">Автоматичний режим PiP</string>
     <string name="pref_auto_pip_on">Перемикати автоматично на режим PiP при виході з додатку</string>
     <string name="pref_auto_pip_off">Не перемикатися автоматично на режим PiP</string>
@@ -129,7 +131,7 @@
     <string name="pref_captioning_preferences">Налаштування субтитрів</string>
     <string name="pref_decoder_priority">Пріоритет декодера</string>
     <string name="pref_decoder_priority_prefer_device">Надавати перевагу декодерам пристрою</string>
-    <string name="pref_decoder_priority_prefer_app">Надавати перевагу декодерам додатку</string>
+    <string name="pref_decoder_priority_prefer_app">Надавати перевагу декодерам додатку (звук, AV1)</string>
     <string name="pref_decoder_priority_only_device">Лише декодери пристрою</string>
     <string name="pref_language_audio">Звукова доріжка за замовчуванням</string>
     <string name="pref_language_track_device">Мова пристрою</string>

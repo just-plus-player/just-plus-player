@@ -119,6 +119,7 @@ import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.ForwardingAudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -252,14 +253,17 @@ public class PlayerActivity extends Activity {
         updateLoading(true);
         setEpisodeNavLoading(true);
     };
-    // One-shot recovery for a mid-playback stall (Media3 StuckPlayerDetector → ERROR_CODE_TIMEOUT),
-    // typically the device's Dolby Vision decoder wedging on a stream: re-decode the DV track as plain
-    // HEVC (HDR10). forceHevcForDolbyVision drives the codec selector at the next player build;
-    // pendingStuckRecovery marks that rebuild so the reset in initializePlayer keeps the flag;
-    // stuckRecoveryAttemptedUri guards against retrying the same URI in a loop.
-    private boolean forceHevcForDolbyVision;
+    // One-shot recovery from the device's Dolby Vision decoder failing on a stream: re-decode the DV
+    // track as plain HEVC — its base layer — so the picture comes back as HDR10. Reached from both
+    // symptoms the decoder shows: wedging silently (Media3 StuckPlayerDetector → ERROR_CODE_TIMEOUT) and
+    // failing loudly mid-render (ERROR_CODE_DECODING_FAILED). forceHevcForDolbyVision drives the codec
+    // selector at the next player build and doubles as the guard against firing twice;
+    // pendingStuckRecovery marks that rebuild so the reset in initializePlayer keeps the flag.
+    // Read by the codec selector on the playback thread.
+    private volatile boolean forceHevcForDolbyVision;
     private boolean pendingStuckRecovery;
-    private String stuckRecoveryAttemptedUri;
+    // Per process, not per player: a device that keeps needing the fallback must not re-report it.
+    private static boolean dolbyVisionFallbackReported;
     // Names of the decoders that actually opened, for the error report. The mime does not tell them apart
     // — c2.android.* (software) and OMX.<vendor>.* (hardware) decode the same hevc very differently — and
     // "the device decoder wedged" is unreadable without knowing which one it was. Written on the app
@@ -4957,14 +4961,13 @@ public class PlayerActivity extends Activity {
         resumeFrameRendered = true;
         cancelLoadWatchdog();
 
-        // Unless this is the stuck-playback recovery rebuild (which must keep forceHevcForDolbyVision),
-        // clear the one-shot Dolby Vision recovery state so a normal open plays DV through its regular
-        // path and a future stall on any item can recover again.
+        // Unless this is the recovery rebuild itself (which must keep forceHevcForDolbyVision), clear the
+        // one-shot Dolby Vision recovery state so a normal open plays DV through its regular path and a
+        // future failure on any item can recover again.
         if (pendingStuckRecovery) {
             pendingStuckRecovery = false;
         } else {
             forceHevcForDolbyVision = false;
-            stuckRecoveryAttemptedUri = null;
         }
 
         // Fresh player — the source re-read budget starts over.
@@ -5091,7 +5094,8 @@ public class PlayerActivity extends Activity {
             // - blockHeavyMkvAudio: no platform decoder for the heavy MKV audio codecs, so they
             //   passthrough (if the sink supports it) or fall back to ffmpeg (see above).
             // - forceHevcForDolbyVision: route a Dolby Vision track to the plain HEVC decoder (its base
-            //   layer is HEVC), bypassing a device DV decoder that wedged. Picture stays HDR10.
+            //   layer is HEVC), bypassing a device DV decoder that wedged or failed while decoding.
+            //   Picture stays HDR10.
             renderersFactory.setMediaCodecSelector((mimeType, requiresSecureDecoder, requiresTunnelingDecoder) -> {
                 if (blockHeavyMkvAudio && HEAVY_MKV_AUDIO_MIMES.contains(mimeType)) {
                     return Collections.emptyList();
@@ -6127,7 +6131,8 @@ public class PlayerActivity extends Activity {
                 final StuckPlayerException stuck = cause instanceof StuckPlayerException
                         ? (StuckPlayerException) cause : null;
                 if (stuck == null || stuck.stuckType == StuckPlayerException.STUCK_PLAYING_NO_PROGRESS) {
-                    if (recoverFromStuckPlayback()) {
+                    if (recoverByForcingHevcForDolbyVision(error,
+                            player != null ? player.getVideoFormat() : null)) {
                         return;
                     }
                     if (recoverByDisablingTunneling()) {
@@ -6174,6 +6179,17 @@ public class PlayerActivity extends Activity {
             }
             if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error))
                     && recoverFromDecoderFailure()) {
+                return;
+            }
+            // Those re-reads handed the same stream back to the same decoder: for a failure that happens
+            // while decoding rather than while opening the codec, Media3 never picks a different one. So if
+            // it was the device's Dolby Vision decoder, decode the base layer instead of giving up. Only
+            // that error code — a decoder-init failure was already offered the HEVC decoders as fallback
+            // candidates, so those have failed too and rebuilding for them would be a pointless teardown.
+            if (error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED
+                    && error instanceof ExoPlaybackException
+                    && recoverByForcingHevcForDolbyVision(error,
+                            ((ExoPlaybackException) error).rendererFormat)) {
                 return;
             }
             // The remembered clip can no longer be opened: a foreign app's one-off URI grant has
@@ -6344,32 +6360,51 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
-    // One-shot recovery from a mid-playback stall (ERROR_CODE_TIMEOUT) on a Dolby Vision track: rebuild
-    // the player forcing the DV track through the plain HEVC decoder (bypassing a device DV decoder that
-    // wedged). The renderers factory / codec selector can only be set at construction, so a full rebuild
-    // is required; position is preserved via savePlayer() and restorePlayState resumes playback. Guarded
-    // per URI so a stream that stalls again after the switch fails once instead of looping. Returns true
-    // when a recovery rebuild was scheduled.
-    private boolean recoverFromStuckPlayback() {
-        if (player == null) {
+    // Rebuild the player forcing a Dolby Vision track through the plain HEVC decoder, bypassing a device
+    // DV decoder that either wedged (ERROR_CODE_TIMEOUT) or failed outright mid-render
+    // (ERROR_CODE_DECODING_FAILED). The failing format is passed in rather than read from the player: on
+    // the loud path ExoPlayer has already disabled its renderers by the time this runs, which nulls
+    // getVideoFormat(). The renderers factory / codec selector can only be set at construction, so a full
+    // rebuild is required; the position is preserved via savePlayer(). The flag is its own guard — it
+    // outlives a media-item change, so a stream that fails again after the switch (or the next episode
+    // failing the same way) fails once instead of rebuilding in a loop. Returns true when a recovery
+    // rebuild was scheduled.
+    private boolean recoverByForcingHevcForDolbyVision(PlaybackException error, Format failingFormat) {
+        if (player == null || forceHevcForDolbyVision || failingFormat == null) {
             return false;
         }
-        final MediaItem item = player.getCurrentMediaItem();
-        if (item == null || item.localConfiguration == null) {
+        // Media3's own verdict on whether the base layer can stand in for the whole track: HEVC for DV
+        // profiles 4, 7 and 8, other codec families (or nothing at all) for the rest, which this rung does
+        // not offer, and nothing when the container gave no parsable codec string. Profile 7 needs the
+        // flag, which is passed regardless of the "Dolby Vision profile 7" setting: that setting governs
+        // remapping a decoder that works, while this runs after one has already failed, and a base-layer
+        // picture beats an error screen.
+        if (!MimeTypes.VIDEO_DOLBY_VISION.equals(failingFormat.sampleMimeType)
+                || !MimeTypes.VIDEO_H265.equals(MediaCodecUtil.getAlternativeCodecMimeType(
+                        failingFormat, /* mapDv7ToHevc= */ true))) {
             return false;
         }
-        final Format videoFormat = player.getVideoFormat();
-        if (videoFormat == null || !MimeTypes.VIDEO_DOLBY_VISION.equals(videoFormat.sampleMimeType)) {
-            return false;
+        // Once per process, as information rather than an error: a device silently dropping to HDR10 would
+        // otherwise look like the decoder failure had simply stopped happening. Same reason reportStall
+        // carries recoveredAs. Before the flag is set, so the report says what the player was doing when it
+        // failed rather than what it is about to be rebuilt as. The codecs string comes from the exception
+        // because the player has already dropped its video format by now, so enrichPlaybackScope cannot
+        // see which Dolby Vision profile this was.
+        if (!dolbyVisionFallbackReported) {
+            dolbyVisionFallbackReported = true;
+            io.sentry.Sentry.captureException(error, scope -> {
+                scope.setFingerprint(Collections.singletonList("dv-hevc-fallback"));
+                scope.setLevel(io.sentry.SentryLevel.INFO);
+                enrichPlaybackScope(error, scope);
+                scope.setTag("media.video_codecs", String.valueOf(failingFormat.codecs));
+            });
         }
-        final String uri = item.localConfiguration.uri.toString();
-        if (uri.equals(stuckRecoveryAttemptedUri)) {
-            return false;
-        }
-        stuckRecoveryAttemptedUri = uri;
         forceHevcForDolbyVision = true;
         pendingStuckRecovery = true;
-        restorePlayState = true;
+        // Only resume if it was playing: a decode failure can also reach a paused clip (a codec reclaimed
+        // while the picture stood still), and the rebuild must not start playing on its own. playWhenReady
+        // survives the error.
+        restorePlayState = player.getPlayWhenReady();
         // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
         // released while its own listener is executing.
         playerView.post(() -> {
@@ -6465,8 +6500,8 @@ public class PlayerActivity extends Activity {
         mPrefs.disableTunneling();
         Toast.makeText(this, R.string.notice_tunneling_disabled, Toast.LENGTH_LONG).show();
         restorePlayState = true;
-        // Keeps the Dolby Vision workaround and its per-URI guard across this rebuild: without it a device
-        // that needs both fixes would lose the first one here, and the DV rung would be free to fire again.
+        // Keeps the Dolby Vision workaround across this rebuild: without it a device that needs both fixes
+        // would lose the first one here, and the DV rung would be free to fire again.
         pendingStuckRecovery = true;
         // Tunneling is applied to the track selector when the player is built, so it takes a rebuild.
         // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
@@ -6499,8 +6534,8 @@ public class PlayerActivity extends Activity {
             // mime may now need is absent, since buildAudioRenderers only forces it in once a revocation
             // exists. The one case that does need a rebuild — position is kept by savePlayer().
             restorePlayState = true;
-            // Same reason as in recoverByDisablingTunneling(): keep the Dolby Vision workaround and its
-            // per-URI guard rather than letting this rebuild clear them.
+            // Same reason as in recoverByDisablingTunneling(): keep the Dolby Vision workaround rather
+            // than letting this rebuild clear it.
             pendingStuckRecovery = true;
             playerView.post(() -> {
                 releasePlayer();
@@ -7082,10 +7117,8 @@ public class PlayerActivity extends Activity {
                 .append(mPrefs.frameRateMatching ? ", frame rate matching" : "")
                 .append(mPrefs.skipSilence ? ", skip silence" : "")
                 .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "");
-        if (forceHevcForDolbyVision || stuckRecoveryAttemptedUri != null) {
-            sb.append("\nRecovery: ")
-                    .append(forceHevcForDolbyVision ? "forced HEVC for Dolby Vision" : "none")
-                    .append(stuckRecoveryAttemptedUri != null ? ", after stuck playback" : "");
+        if (forceHevcForDolbyVision) {
+            sb.append("\nRecovery: forced HEVC for Dolby Vision");
         }
         if (!mPrefs.revokedAudioMimes.isEmpty()) {
             sb.append("\nAudio passthrough revoked: ").append(mPrefs.revokedAudioMimes);

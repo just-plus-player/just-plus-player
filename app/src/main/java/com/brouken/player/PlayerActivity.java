@@ -5194,8 +5194,15 @@ public class PlayerActivity extends Activity {
 
         playerView.setControllerShowTimeoutMs(-1);
 
-        locked = false;
-        clearLockUi();
+        // Only when a lock is actually there to undo — the flag is static, so it can outlive the session
+        // that set it. Undoing one that was never on also restored the video orientation, which turned a
+        // launcher start into landscape until showEmptyState relaxed it again a few lines below: a visible
+        // flip to landscape and back on a phone held upright. Both branches below set the orientation the
+        // page really needs, so nothing is lost by leaving it alone here.
+        if (locked) {
+            locked = false;
+            clearLockUi();
+        }
 
         if (haveMedia) {
             hideEmptyState();

@@ -680,7 +680,14 @@ public class PlayerActivity extends Activity {
         // Boost is session state kept in statics, so a launch must not inherit it from the last one
         boostLevel = 0;
         boostWarned = false;
-        Utils.setOrientation(this, mPrefs.orientation);
+        // Only when something is actually going to play: a launcher start opens on the empty state, and the
+        // orientation preference is about the video, so there is nothing to rotate for there. Doing it here
+        // rather than leaving it to showEmptyState below avoids launching landscape and flipping back.
+        if (getIntent().getData() != null || Intent.ACTION_SEND.equals(getIntent().getAction())) {
+            Utils.setOrientation(this, mPrefs.orientation);
+        } else {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
 
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT == 28 && Build.MANUFACTURER.equalsIgnoreCase("xiaomi") &&
@@ -5380,6 +5387,10 @@ public class PlayerActivity extends Activity {
         final View link = findViewById(R.id.empty_state_link);
         final View settings = findViewById(R.id.empty_state_settings);
 
+        // No video to match, so the orientation preference has nothing to say here: hand the page back to
+        // the system, whichever way the device is held. Reapplied by hideEmptyState once media takes over.
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+
         open.setOnClickListener(v -> openFile(mPrefs.mediaUri));
         link.setOnClickListener(v -> askForLink());
         settings.setOnClickListener(v -> openSettings());
@@ -5566,6 +5577,9 @@ public class PlayerActivity extends Activity {
     }
 
     private void hideEmptyState() {
+        // Media is taking the screen, so the preference applies again — including after an empty state
+        // relaxed it. No video format yet, so VIDEO lands on landscape and STATE_READY corrects it.
+        Utils.setOrientation(this, mPrefs.orientation);
         stopEmptyStatePulse();
         final View overlay = findViewById(R.id.empty_state);
         if (overlay != null && overlay.getVisibility() != View.GONE) {

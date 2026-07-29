@@ -87,7 +87,9 @@ class Prefs {
     public Uri scopeUri;
     public String mediaType;
     public int resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT;
-    public Utils.Orientation orientation = Utils.Orientation.UNSPECIFIED;
+    // VIDEO from the start: UNSPECIFIED is a no-op in Utils.setOrientation, so defaulting to it left the
+    // first-ever launch following the device until the first STATE_READY upgraded it to VIDEO anyway.
+    public Utils.Orientation orientation = Utils.Orientation.VIDEO;
     public float scale = 1.f;
     public float aspectRatio = 0f; // 0 = natural video AR; >0 = forced display AR (16:9, 4:3, …)
     public float speed = 1.f;

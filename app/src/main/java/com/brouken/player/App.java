@@ -10,6 +10,7 @@ import io.sentry.protocol.Message;
 import io.sentry.protocol.SentryException;
 
 import java.util.List;
+import java.util.Map;
 
 public class App extends Application {
 
@@ -63,6 +64,22 @@ public class App extends Application {
         if (exceptions != null) {
             for (SentryException exception : exceptions) {
                 exception.setValue(Utils.stripUrlQuery(exception.getValue()));
+            }
+        }
+        // Tags and extras need the same pass: a Format's id/label can be a URL (SubtitleUtils stores the
+        // subtitle's own uri there), and any future tag would otherwise bypass this sanitisation silently.
+        final Map<String, String> tags = event.getTags();
+        if (tags != null) {
+            for (Map.Entry<String, String> tag : tags.entrySet()) {
+                tag.setValue(Utils.stripUrlQuery(tag.getValue()));
+            }
+        }
+        final Map<String, Object> extras = event.getExtras();
+        if (extras != null) {
+            for (Map.Entry<String, Object> extra : extras.entrySet()) {
+                if (extra.getValue() instanceof String) {
+                    extra.setValue(Utils.stripUrlQuery((String) extra.getValue()));
+                }
             }
         }
     }

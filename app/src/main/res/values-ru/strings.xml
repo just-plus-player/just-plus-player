@@ -5,6 +5,7 @@
     <string name="error_playback_general">Не удалось воспроизвести это видео.</string>
     <string name="error_playback_timeout">Воспроизведение слишком долго не начинается. Попробуйте ещё раз.</string>
     <string name="error_playback_stalled">Воспроизведение остановилось — это устройство, возможно, не может декодировать этот файл.</string>
+    <string name="error_stream_interrupted">Эфир постоянно прерывается, продолжить не удалось. Попробуйте позже.</string>
     <string name="error_stream_broken">Поток видео повреждён или недоступен. Попробуйте ещё раз.</string>
     <string name="error_stream_http_status">Ошибка сервера %1$d на %2$s</string>
     <string name="error_media_access_expired">Доступ к этому видео истёк. Откройте его снова из того приложения.</string>
@@ -43,8 +44,9 @@
     <string name="pref_auto_pip_off">Не переключаться автоматически на картинку в картинке</string>
     <string name="pref_auto_pip_on">Переключение на картинку в картинке при выходе из приложения</string>
     <string name="pref_auto_pip">Автоматическая картинка в картинке</string>
-    <string name="pref_tunneling_summary">Туннелирование обеспечивает лучшую поддержку контента 4K/HDR, но может работать не на всех устройствах</string>
+    <string name="pref_tunneling_summary">На части ТВ-приставок картинка полностью замирает без всякой ошибки — тогда приложение выключит эту настройку само. Где работает, улучшает воспроизведение 4K/HDR</string>
     <string name="pref_tunneling">Туннельное воспроизведение</string>
+    <string name="notice_tunneling_disabled">Туннельное воспроизведение отключено — на этом устройстве оно останавливает картинку</string>
     <string name="pref_framerate_matching_off">Не изменять частоту обновления экрана</string>
     <string name="pref_framerate_matching_on">Переключать частоту обновления экрана в соответствии с частотой кадров видеосигнала</string>
     <string name="pref_framerate_matching">Автоматическое согласование частоты кадров</string>
@@ -118,7 +120,7 @@
     <string name="pref_captioning_preferences">Настройки субтитров</string>
     <string name="pref_decoder_priority">Приоритет декодера</string>
     <string name="pref_decoder_priority_prefer_device">Предпочтительные декодеры устройства(по умолчанию)</string>
-    <string name="pref_decoder_priority_prefer_app">Предпочитайте декодеры приложения</string>
+    <string name="pref_decoder_priority_prefer_app">Предпочитать декодеры приложения (звук, AV1)</string>
     <string name="pref_decoder_priority_only_device">Только декодеры устройства</string>
     <string name="mediastore_empty">Видеофайлы не найдены</string>
     <string name="pref_shortcuts_header">Ярлыки</string>

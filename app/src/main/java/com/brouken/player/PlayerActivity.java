@@ -524,6 +524,15 @@ public class PlayerActivity extends Activity {
     // from the listener, which is dispatched inside player.pause() — there isScrubbing is not set yet.
     private boolean audioRestartInFlight;
     private final Runnable passthroughRestartRunnable = this::restartPassthroughAudio;
+    // A seek releases the audio output too (MediaCodecAudioRenderer.onPositionReset -> audioSink.flush()), and
+    // the field reported it coming back silent on a receiver just like a pause does. Latched rather than acted
+    // on at once, because restartPassthroughAudio needs STATE_READY and a seek out of the buffered range
+    // spends a while in BUFFERING first; spent on the next STATE_READY. Only for a seek within the same item —
+    // an item change brings its own fresh output, and tearing that one down is how a just-started stream ends
+    // up silent.
+    private boolean audioRestartAfterSeek;
+    // Retry budget for one request: restartPassthroughAudio drops nothing on a transient blocker, it waits.
+    private int audioRestartRetries;
     public boolean frameRendered;
     private boolean alive;
     public static boolean focusPlay = false;
@@ -5148,6 +5157,7 @@ public class PlayerActivity extends Activity {
         audioDecoderName = null;
         // A restart that never got its onTracksChanged belongs to the player being replaced here.
         audioRestartInFlight = false;
+        audioRestartAfterSeek = false;
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
@@ -5837,6 +5847,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(backgroundReleaseRunnable);
             playerView.removeCallbacks(resumeWatchdogRunnable);
             playerView.removeCallbacks(passthroughRestartRunnable);
+            audioRestartAfterSeek = false;
             playerView.removeCallbacks(showLoadingRunnable);
             // A pending key-seek target belongs to the session being torn down; left armed it would land
             // on whatever plays next.
@@ -5961,6 +5972,12 @@ public class PlayerActivity extends Activity {
             if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
                 playerStartPositionMs = currentPeriodPositionMs();
             }
+            // The seek flushed the audio output, so the bitstream may need re-locking (see
+            // audioRestartAfterSeek). Latched, not run here. Within one item only.
+            if (reason == Player.DISCONTINUITY_REASON_SEEK
+                    && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) {
+                audioRestartAfterSeek = true;
+            }
             if (apiPlaylistPositions == null || player == null) {
                 return;
             }
@@ -5998,6 +6015,8 @@ public class PlayerActivity extends Activity {
                     }
                 }
             }
+            // The new item opens its own audio output; a seek latched on the old one must not tear it down.
+            audioRestartAfterSeek = false;
             updateTopInfo();
             hideSkipButton();
             cancelSegmentFinder();
@@ -6078,7 +6097,7 @@ public class PlayerActivity extends Activity {
                         && reason != Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)) {
                 return;
             }
-            playerView.post(passthroughRestartRunnable);
+            requestPassthroughRestart();
         }
 
         @Override
@@ -6147,6 +6166,12 @@ public class PlayerActivity extends Activity {
                 // starts at its saved timecode — neither is progress.
                 if (playerStartPositionMs == C.TIME_UNSET) {
                     playerStartPositionMs = currentPeriodPositionMs();
+                }
+
+                // The seek is over: give the bitstream a fresh AudioTrack (see audioRestartAfterSeek). The
+                // flag is cleared by the restart itself, so a transient blocker keeps the request alive.
+                if (audioRestartAfterSeek) {
+                    requestPassthroughRestart();
                 }
 
                 // Ready — hide the spinner and re-enable the episode arrows. Done unconditionally (not only on
@@ -6725,22 +6750,44 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
-    // Recreates the AudioTrack behind a paused bitstream (see audioRestartInFlight). Runs one message after
-    // the pause was dispatched, so the guards are real: the player may already be gone, and the user may
-    // have gone on to scrub, in which case their own seek recreates the track anyway. STATE_READY keeps us
-    // out of a rebuffer that is already under way; alive drops the onStop pause, where savePlayer() has run
-    // and the work would be spent on a session that is going away. Nothing here seeks, so seekability and
-    // liveness do not matter — and with no audio track selected there is nothing to recreate.
+    // Recreates the AudioTrack behind a bitstream that was torn down (see audioRestartInFlight). Runs one
+    // message after the pause, or after the STATE_READY that ends a seek, so the guards are real: the player
+    // may already be gone, and the user may have gone on to scrub, in which case their own seek recreates the
+    // track anyway. alive drops the onStop pause, where savePlayer() has run and the work would be spent on a
+    // session that is going away. Nothing here seeks, so seekability and liveness do not matter — and with no
+    // audio track selected there is nothing to recreate.
     private void restartPassthroughAudio() {
-        if (!alive || player == null || isScrubbing || audioRestartInFlight
+        if (!alive || player == null || isScrubbing
                 || audioSink == null || !audioSink.isPassthrough() || mPrefs.tunneling
-                || player.getPlaybackState() != Player.STATE_READY
                 || !player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_AUDIO)) {
             return;
         }
+        // Transient blockers, so wait rather than drop: a previous reselect has not reported back through
+        // onTracksChanged yet, or a rebuffer moved us out of STATE_READY between the trigger and this
+        // message. Dropping the request is how the sound is lost with no cure — the trigger is spent and
+        // nothing retries, so only the *next* pause or seek fixes it, which is exactly the reported "first
+        // seek loses it, second brings it back". The budget is per request (reset by
+        // requestPassthroughRestart), so an abandoned one cannot starve the next.
+        if (audioRestartInFlight || player.getPlaybackState() != Player.STATE_READY) {
+            if (audioRestartRetries < 5) {
+                audioRestartRetries++;
+                playerView.postDelayed(passthroughRestartRunnable, 100);
+            }
+            return;
+        }
+        // Cleared here rather than at the trigger: until the reselect is actually issued the request still
+        // has to survive, or every guard above becomes a silent no-cure path.
+        audioRestartAfterSeek = false;
         audioRestartInFlight = true;
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
+    }
+
+    /** One restart request, with a fresh retry budget. */
+    private void requestPassthroughRestart() {
+        audioRestartRetries = 0;
+        playerView.removeCallbacks(passthroughRestartRunnable);
+        playerView.post(passthroughRestartRunnable);
     }
 
     // AudioSink.InitializationException.format is a public field in this build — no reflection needed.

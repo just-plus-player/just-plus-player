@@ -609,7 +609,7 @@ public class PlayerActivity extends Activity {
     // afterwards even on an item that itself has no segments.
     private boolean skipSeenThisSession;
     private static final double SKIP_OFFSET_MAX_SEC = 30;   // ± range of the offset slider
-    private static final double SKIP_OFFSET_STEP_SEC = 0.25; // fine step (touch / ± buttons)
+    private static final double SKIP_OFFSET_STEP_SEC = 0.25; // fine step (± buttons / D-pad)
     // Set before a reinitialisation that must not auto-play — a SOURCE switch, or any rebuild caused by
     // returning to the foreground (initializePlayer otherwise force-plays under apiAccess or at position
     // zero). Consumed once inside initializePlayer.
@@ -2472,209 +2472,26 @@ public class PlayerActivity extends Activity {
         buttonSkipOffset.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
-    private String formatSkipOffset(double sec) {
-        if (Math.abs(sec) < 0.001) {
-            return "0 s";
-        }
-        String s = String.format(java.util.Locale.US, "%+.2f", sec);
-        if (s.indexOf('.') >= 0) { // trim trailing zeros: "+2.50" -> "+2.5", "+3.00" -> "+3"
-            int end = s.length();
-            while (end > 0 && s.charAt(end - 1) == '0') {
-                end--;
-            }
-            if (end > 0 && s.charAt(end - 1) == '.') {
-                end--;
-            }
-            s = s.substring(0, end);
-        }
-        return s + " s";
-    }
-
     /** Apply a new session skip offset and re-derive the segments (moves timeline highlights live). */
     private void applySkipOffset(double sec) {
         skipOffsetSec = sec;
         rebuildSkip();
     }
 
-    // Session-only skip-offset panel: an end-docked translucent panel matching the quality/playlist
-    // dialogs — a large centred value readout, a coral-tinted SeekBar (touch = fine 0.25s drag; TV =
-    // D-pad 0.5s steps) flanked by borderless −/+ icon buttons, and a subtle Reset pill.
+    /** Session-only skip-offset panel — the shared {@link OffsetPanel} bound to {@link #skipOffsetSec}. */
     private void showSkipOffsetDialog() {
         if (player == null) {
             return;
         }
-        final int accent = brandColor();    // coral, matches the skip timeline highlight
-        final int trackBg = 0x33FFFFFF;
-        final int progressMax = (int) Math.round(2 * SKIP_OFFSET_MAX_SEC / SKIP_OFFSET_STEP_SEC);
-        final int mid = progressMax / 2;
-
-        final LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-
-        final TextView header = new TextView(this);
-        header.setText(getString(R.string.skip_offset_title));
-        header.setTextColor(Color.WHITE);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
-        header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(0, 0, 0, Utils.dpToPx(14));
-        root.addView(header);
-
-        final View divider = new View(this);
-        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-        divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(0x1AFFFFFF);
-        root.addView(divider);
-
-        root.addView(makeVerticalSpacer());
-
-        final TextView value = new TextView(this);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textValue());
-        value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-        value.setGravity(Gravity.CENTER);
-        value.setPadding(0, 0, 0, Utils.dpToPx(20));
-        root.addView(value);
-
-        final android.widget.SeekBar seekBar = new android.widget.SeekBar(this);
-        seekBar.setMax(progressMax);
-        seekBar.setKeyProgressIncrement(2); // D-pad step = 0.5 s
-        seekBar.setProgress((int) Math.round(skipOffsetSec / SKIP_OFFSET_STEP_SEC) + mid);
-        seekBar.setFocusable(true);
-        seekBar.setSplitTrack(false);
-        seekBar.setProgressTintList(ColorStateList.valueOf(accent));
-        seekBar.setThumbTintList(ColorStateList.valueOf(accent));
-        seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(trackBg));
-
-        final ImageButton minus = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        minus.setImageResource(R.drawable.ic_remove_24dp);
-        minus.setContentDescription("-");
-        final ImageButton plus = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        plus.setImageResource(R.drawable.ic_add_24dp);
-        plus.setContentDescription("+");
-
-        final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        final LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        seekLp.leftMargin = Utils.dpToPx(6);
-        seekLp.rightMargin = Utils.dpToPx(6);
-        seekBar.setLayoutParams(seekLp);
-        row.addView(minus);
-        row.addView(seekBar);
-        row.addView(plus);
-        root.addView(row);
-
-        root.addView(makeVerticalSpacer());
-
-        final TextView reset = new TextView(this);
-        reset.setText(getString(R.string.skip_offset_reset));
-        reset.setTextColor(Color.WHITE);
-        reset.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
-        reset.setGravity(Gravity.CENTER);
-        reset.setClickable(true);
-        reset.setFocusable(true);
-        reset.setPadding(Utils.dpToPx(28), Utils.dpToPx(11), Utils.dpToPx(28), Utils.dpToPx(11));
-        final GradientDrawable resetContent = new GradientDrawable();
-        resetContent.setCornerRadius(Utils.dpToPx(22));
-        resetContent.setColor(0x1AFFFFFF);
-        final GradientDrawable resetMask = new GradientDrawable();
-        resetMask.setCornerRadius(Utils.dpToPx(22));
-        resetMask.setColor(Color.WHITE);
-        reset.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), resetContent, resetMask));
-        final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        resetLp.gravity = Gravity.CENTER_HORIZONTAL;
-        reset.setLayoutParams(resetLp);
-        root.addView(reset);
-
-        // Reflects the current value into the readout (coral when non-zero, white at rest).
-        final Runnable render = () -> {
-            value.setText(formatSkipOffset(skipOffsetSec));
-            value.setTextColor(Math.abs(skipOffsetSec) < 0.001 ? Color.WHITE : accent);
-        };
-        render.run();
-
-        seekBar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
-                if (fromUser) {
-                    applySkipOffset((progress - mid) * SKIP_OFFSET_STEP_SEC);
-                    render.run();
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(android.widget.SeekBar sb) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(android.widget.SeekBar sb) {
-            }
-        });
-        minus.setOnClickListener(v -> {
-            final int p = Math.max(0, seekBar.getProgress() - 1);
-            seekBar.setProgress(p);
-            applySkipOffset((p - mid) * SKIP_OFFSET_STEP_SEC);
-            render.run();
-        });
-        plus.setOnClickListener(v -> {
-            final int p = Math.min(progressMax, seekBar.getProgress() + 1);
-            seekBar.setProgress(p);
-            applySkipOffset((p - mid) * SKIP_OFFSET_STEP_SEC);
-            render.run();
-        });
-        reset.setOnClickListener(v -> {
-            seekBar.setProgress(mid);
-            applySkipOffset(0);
-            render.run();
-        });
-
-        int padTop = 0;
-        int padBottom = 0;
-        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
-        if (rootInsets != null) {
-            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
-            // inset can include the camera cutout), where that same height looks oversized — use a compact
-            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-            final boolean landscape = getResources().getConfiguration().orientation
-                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            final int landscapeTop = ui.pickerTopPadLand();
-            if (Build.VERSION.SDK_INT >= 30) {
-                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
-                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
-                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
-            }
-        }
-        final int hPad = Utils.dpToPx(24) + ui.overscanH();
-        root.setPadding(hPad, padTop + Utils.dpToPx(20), hPad, padBottom + Utils.dpToPx(24));
-
         if (skipOffsetDialog != null) {
             skipOffsetDialog.dismiss();
         }
-        skipOffsetDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        skipOffsetDialog.setContentView(root);
-        skipOffsetDialog.setCanceledOnTouchOutside(true);
-        final Window window = skipOffsetDialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
-            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
-            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
-        }
+        skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
+                brandColor(),   // coral, matches the skip timeline highlight
+                getString(R.string.skip_offset_title),
+                SKIP_OFFSET_MAX_SEC, SKIP_OFFSET_STEP_SEC, skipOffsetSec,
+                this::applySkipOffset);
         showPickerDialog(skipOffsetDialog);
-        seekBar.post(seekBar::requestFocus);
-    }
-
-    private View makeVerticalSpacer() {
-        final View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        return spacer;
     }
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,

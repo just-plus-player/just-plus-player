@@ -1153,6 +1153,24 @@ public class PlayerActivity extends Activity {
                         - titleView.getPaint().getFontMetricsInt().top);
         headerClockColumn.setLayoutParams(headerClockColumnParams);
 
+        // This column asks for MATCH_PARENT height so the spacer can push the icon row onto the header's
+        // bottom line. A LinearLayout ignores such a child when it works out how tall it has to be — a
+        // MATCH_PARENT child contributes only its margins — so the header's height is decided by the text
+        // column alone, and the column is then re-measured to exactly that. With no poster and one meta line
+        // missing (a file with no audio track drops the audio line) that came out shorter than the clock plus
+        // the icons, and the icon row was clipped to a 35px sliver of its 120px.
+        //
+        // So the floor goes on the text column, which is what the header measures: it may not end above the
+        // line the icons need. It only ever grows the header where the text alone would not reach; with a
+        // poster, or a full set of meta lines, the column is already taller and nothing changes.
+        if (!isTvBox) {
+            infoColumn.setMinimumHeight(headerClockColumnParams.topMargin
+                    + headerClock.getLineHeight()          // the clock row this column sits beside
+                    + headerButtonsParams.topMargin
+                    + ui.clusterBox()                      // the icon row itself
+                    + ui.clusterPad());                    // and the nudge that lands it on the grid line
+        }
+
         topInfoPanel.addView(headerClockColumn);
 
         centerView.addView(topInfoPanel);
@@ -1566,7 +1584,14 @@ public class PlayerActivity extends Activity {
                     == View.LAYOUT_DIRECTION_RTL;
             headerButtons.setTranslationX(rtl ? -ui.clusterPad() : ui.clusterPad());
             headerButtons.setTranslationY(ui.clusterPad());
+            // The nudge moves the row outside its own layout box, so every ancestor that would clip it has to
+            // stop: the padding clip on the panel, and the child clip on both the panel and the column. Without
+            // the child clips off, the row is cut by exactly the nudge — a fifth of every glyph.
             topInfoPanel.setClipToPadding(false);
+            topInfoPanel.setClipChildren(false);
+            if (headerButtons.getParent() instanceof ViewGroup) {
+                ((ViewGroup) headerButtons.getParent()).setClipChildren(false);
+            }
         }
         // Group the bottom-right pickers (subtitle / audio / HD / playlist / settings) into a matching pill.
         applyControlPill(controls);

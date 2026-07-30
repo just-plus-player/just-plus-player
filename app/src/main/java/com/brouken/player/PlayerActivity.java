@@ -50,8 +50,11 @@ import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.text.style.ForegroundColorSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Rational;
@@ -86,6 +89,7 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -629,6 +633,14 @@ public class PlayerActivity extends Activity {
     };
 
     static final long SKIP_POLL_INTERVAL_MS = 250;
+    // How early the Skip button is offered before a segment actually starts, so it is already on screen
+    // when the intro's first frames arrive. Only the button is pre-shown; auto-skip waits for the
+    // segment itself, or it would silently cut the seconds of real content that still precede it.
+    static final double SKIP_LEAD_SEC = 3;
+    // How long the "undo" pill stays up after an automatic jump.
+    static final long SKIP_NOTICE_MS = 3000;
+    // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
+    static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
     // Segment highlights (see CustomDefaultTimeBar): a *_FILL band across the segment plus a crisp boundary
     // hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral = playback, blue =
     // skip (complementary to the warm coral so it never merges over the played track, and still legible
@@ -642,16 +654,50 @@ public class PlayerActivity extends Activity {
     boolean skipBuilt;
     Button buttonSkip;
     ClipDrawable skipButtonProgress;
-    TextView notificationSkip;
+
+    /**
+     * What the floating skip pill is currently offering — which is also what a tap (or OK on a remote)
+     * does. All three states share one view, so they share its place on screen, its look and its focus:
+     * {@link #SKIP} offers to jump, {@link #CANCEL} offers to refuse an automatic jump that is about to
+     * happen, {@link #UNDO} offers to take one back.
+     */
+    private enum SkipPill { NONE, SKIP, CANCEL, UNDO }
+
+    private SkipPill skipPill = SkipPill.NONE;
+    private Drawable skipIconForward;
+    private Drawable skipIconKeep;
+    private Drawable skipIconBack;
+    private GradientDrawable skipPillGroove;
     // Top-center pill shown while hold-to-speed (2x) is active. Non-clickable so it never intercepts the hold.
     TextView speedBoostIndicator;
-    final Runnable skipNotificationHider = new Runnable() {
+    final Runnable skipPillHider = new Runnable() {
         @Override
         public void run() {
-            hideSkipNotification();
+            hideSkipPill();
         }
     };
     SkipSegment pendingSkip;
+    // True while the current item's segments come from the launch Intent: those are authoritative, so
+    // the online lookup never replaces them (it does replace its own earlier, less certain results).
+    private boolean skipSourceFromIntent;
+    // Bumped whenever a lookup is cancelled or superseded; a callback carrying an older generation is a
+    // late arrival from an abandoned lookup and is dropped.
+    private int segmentFetchGeneration;
+    // The next playlist item's segments are warmed into the finder's cache once per item.
+    private boolean skipNextPrefetched;
+    // Automatic-skip undo: where the jump started, where it landed, and — once the user undid it — the
+    // position up to which auto-skip stays disarmed so the same stretch is not skipped straight again.
+    private long skipUndoFromMs = C.TIME_UNSET;
+    private long skipUndoToMs = C.TIME_UNSET;
+    private long skipUndoneUntilMs = C.TIME_UNSET;
+    // End of the segment the pill is currently announcing ahead of an automatic skip, or TIME_UNSET when
+    // the pill is not a heads-up. Doubles as the tap's meaning: heads-up = refuse, otherwise = undo.
+    private long skipHeadsUpEndMs = C.TIME_UNSET;
+    // Seconds currently written on the pill, so a countdown is only repainted when it ticks and not on
+    // every 250 ms poll.
+    private int skipPillSecs;
+    // When the post-skip notice is due to disappear, so its underline can drain like the other states'.
+    private long skipNoticeHideAtMs;
     // Confirm key whose ACTION_UP must be swallowed after triggering a Skip on its ACTION_DOWN (TV).
     private int skipKeyUpToConsume = 0;
     final Runnable skipRunnable = new Runnable() {
@@ -1109,8 +1155,10 @@ public class PlayerActivity extends Activity {
 
         // Skip button — a solid dark pill floating over the video (bottom-end), independent of the
         // controller. Modern TV focus: a coral ring + slight scale-up on focus (replacing the dated flat
-        // grey selectableItemBackground wash), with the remaining-time countdown drawn as a neutral white
-        // underline integrated into the pill rather than a detached bar below it.
+        // grey selectableItemBackground wash), with the remaining-time countdown drawn as an underline
+        // integrated into the pill rather than a detached bar below it. Label and glyph stay white; only
+        // what counts time down — the underline and the seconds inside the label — is on the brand accent,
+        // so the timing reads at a glance without costing the wording its contrast over a bright frame.
         final int skipCornerRadius = Utils.dpToPx(8);
         buttonSkip = new Button(this);
         buttonSkip.setText(R.string.button_skip);
@@ -1123,14 +1171,23 @@ public class PlayerActivity extends Activity {
         // Extra bottom padding leaves room for the integrated countdown underline below the label.
         buttonSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(7), Utils.dpToPx(16), Utils.dpToPx(10));
 
-        final Drawable skipIcon = ContextCompat.getDrawable(this, R.drawable.exo_styled_controls_next);
-        if (skipIcon != null) {
-            final int skipIconSize = Utils.dpToPx(18);
-            skipIcon.setBounds(0, 0, skipIconSize, skipIconSize);
-            buttonSkip.setCompoundDrawablesRelative(skipIcon, null, null, null);
-            buttonSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
-            buttonSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
+        // Two glyphs, chosen by what the pill offers: forward for a jump, back for refusing or undoing one.
+        final int skipIconSize = Utils.dpToPx(18);
+        // One glyph per state, all three from the app's own 24dp set so they match in weight: forward to
+        // jump, play to keep watching instead, back to return. Note exo_styled_controls_next is a
+        // layer-list (controller gradient + inset glyph), not a glyph — as a compound drawable it drags
+        // the gradient in and the white tint paints it, hence the bare ic_skip_next here.
+        skipIconForward = ContextCompat.getDrawable(this, R.drawable.ic_skip_next);
+        skipIconKeep = ContextCompat.getDrawable(this, R.drawable.ic_play_arrow_24dp);
+        skipIconBack = ContextCompat.getDrawable(this, R.drawable.ic_skip_previous);
+        for (Drawable glyph : new Drawable[]{skipIconForward, skipIconKeep, skipIconBack}) {
+            if (glyph != null) {
+                glyph.setBounds(0, 0, skipIconSize, skipIconSize);
+            }
         }
+        buttonSkip.setCompoundDrawablesRelative(skipIconForward, null, null, null);
+        buttonSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
+        buttonSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
 
         // Solid dark pill with the neutral white countdown underline baked into its background as inset layers.
         // (A separate MATCH_PARENT underline View resolves to the full screen width inside a wrap-content
@@ -1141,16 +1198,16 @@ public class PlayerActivity extends Activity {
         final GradientDrawable skipPillFill = new GradientDrawable();
         skipPillFill.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
         skipPillFill.setCornerRadius(skipCornerRadius);
-        final GradientDrawable skipBarTrack = new GradientDrawable();
-        skipBarTrack.setColor(0x33FFFFFF); // faint white groove under the countdown fill
-        skipBarTrack.setCornerRadius(skipBarCorner);
+        skipPillGroove = new GradientDrawable();
+        skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
+        skipPillGroove.setCornerRadius(skipBarCorner);
         final GradientDrawable skipBarFill = new GradientDrawable();
-        skipBarFill.setColor(Color.WHITE); // neutral countdown, matches the pill's white label + icon
+        skipBarFill.setColor(brandColor()); // accent: this is a countdown, not decoration
         skipBarFill.setCornerRadius(skipBarCorner);
         skipButtonProgress = new ClipDrawable(skipBarFill, Gravity.START, ClipDrawable.HORIZONTAL);
         skipButtonProgress.setLevel(0);
         final LayerDrawable skipPillBackground = new LayerDrawable(
-                new Drawable[]{skipPillFill, skipBarTrack, skipButtonProgress});
+                new Drawable[]{skipPillFill, skipPillGroove, skipButtonProgress});
         // Pin the underline (track + draining fill) to the pill's bottom edge, inset from the corners.
         for (int layer = 1; layer <= 2; layer++) {
             skipPillBackground.setLayerGravity(layer, Gravity.BOTTOM);
@@ -1161,16 +1218,23 @@ public class PlayerActivity extends Activity {
         }
         buttonSkip.setBackground(skipPillBackground);
         buttonSkip.setOnClickListener(v -> {
-            // While the screen is locked the Skip button must never act, whether tapped or
-            // activated via a TV remote's confirm key (which routes through performClick()).
+            // While the screen is locked the pill must never act, whether tapped or activated via a TV
+            // remote's confirm key (which routes through performClick()).
             if (PlayerActivity.locked) {
                 return;
             }
-            if (pendingSkip != null && player != null) {
+            if (skipPill == SkipPill.CANCEL) {
+                cancelUpcomingSkip();
+            } else if (skipPill == SkipPill.UNDO) {
+                undoSkip();
+            } else if (pendingSkip != null && player != null) {
                 final SkipSegment segment = pendingSkip;
                 segment.skipped = true;
                 hideSkipButton();
                 skipSeekTo(segment);
+                if (skipUndoOffered(false)) {
+                    showSkipNotification(false);
+                }
             }
         });
 
@@ -1192,8 +1256,8 @@ public class PlayerActivity extends Activity {
         buttonSkip.setVisibility(View.GONE);
         coordinatorLayout.addView(buttonSkip);
 
-        // Hold-to-speed (2x) indicator: the same rounded dark pill as the auto-skip notification
-        // (fast-forward icon + label), floating top-centre. Non-clickable so it never intercepts the hold.
+        // Hold-to-speed (2x) indicator: the same rounded dark pill as the skip pill (fast-forward icon +
+        // label), floating top-centre. Non-clickable so it never intercepts the hold.
         speedBoostIndicator = new TextView(this);
         speedBoostIndicator.setText("2×");
         speedBoostIndicator.setAllCaps(false);
@@ -1226,41 +1290,6 @@ public class PlayerActivity extends Activity {
         speedBoostIndicator.setLayoutParams(speedBoostParams);
         speedBoostIndicator.setVisibility(View.GONE);
         coordinatorLayout.addView(speedBoostIndicator);
-
-        // Toast-style notification shown after an automatic skip: the same solid dark pill as the Skip
-        // button (bell icon + label, no progress underline), floating top-centre. Auto-hides after 5s or
-        // on any interaction (see onUserInteraction).
-        notificationSkip = new TextView(this);
-        notificationSkip.setText(R.string.notification_skipped);
-        notificationSkip.setAllCaps(false);
-        notificationSkip.setTextColor(Color.WHITE);
-        notificationSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
-        notificationSkip.setTypeface(Typeface.DEFAULT_BOLD);
-        notificationSkip.setGravity(Gravity.CENTER_VERTICAL);
-        notificationSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(9), Utils.dpToPx(16), Utils.dpToPx(9));
-
-        final Drawable skipDoneIcon = ContextCompat.getDrawable(this, R.drawable.ic_notifications_24dp);
-        if (skipDoneIcon != null) {
-            final int skipDoneIconSize = Utils.dpToPx(18);
-            skipDoneIcon.setBounds(0, 0, skipDoneIconSize, skipDoneIconSize);
-            notificationSkip.setCompoundDrawablesRelative(skipDoneIcon, null, null, null);
-            notificationSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
-            notificationSkip.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
-        }
-
-        final GradientDrawable notificationBackground = new GradientDrawable();
-        notificationBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
-        notificationBackground.setCornerRadius(skipCornerRadius);
-        notificationSkip.setBackground(notificationBackground);
-
-        final CoordinatorLayout.LayoutParams notificationParams = new CoordinatorLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        notificationParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        notificationParams.setMargins(0, Utils.dpToPx(28), 0, 0);
-        notificationSkip.setLayoutParams(notificationParams);
-        notificationSkip.setVisibility(View.GONE);
-        notificationSkip.setOnClickListener(v -> hideSkipNotification());
-        coordinatorLayout.addView(notificationSkip);
 
         // Persistent clock over the video, shown only when the controls (and thus the in-header clock) are
         // hidden and the "show clock" preference is on. It is positioned to exactly mirror the in-header
@@ -2396,6 +2425,9 @@ public class PlayerActivity extends Activity {
             skipManager.clear();
         }
         skipBuilt = false;
+        skipSourceFromIntent = false;
+        skipNextPrefetched = false;
+        clearSkipUndo();
         cancelSegmentFinder();
         hideSkipButton();
         // Skip offset is session-scoped: a new media session resets it and hides its control.
@@ -2422,12 +2454,22 @@ public class PlayerActivity extends Activity {
         // hiding here would cut the notification short. Its own 3s timer governs it, so it rides across the
         // transition ("carry-through") and disappears on schedule.
         final String json = currentSegmentsJson();
-        skipManager.setSource(json != null && !json.isEmpty() ? new IntentSegmentsSource(json) : null);
+        skipSourceFromIntent = json != null && !json.isEmpty();
+        skipManager.setSource(skipSourceFromIntent ? new IntentSegmentsSource(json) : null);
+        skipNextPrefetched = false;
+        clearSkipUndo();
         // Source (re)set → the manager holds no segments until rebuildSkip() runs against the new
         // duration. Drop any highlights from the previous item right now so switching episodes never
         // leaves stale timecodes on the bar; the new segments (intent or online) repaint on rebuild.
         if (timeBar != null) {
             timeBar.clearSkipHighlights();
+        }
+        // Online lookup, first wave: the ids are known now, the duration only becomes known at
+        // STATE_READY — on a network stream that is seconds of head start for the sources that do not
+        // need the stream length. When the duration is already there (local file), the full second wave
+        // below runs immediately anyway, so this wave is skipped rather than doubling the requests.
+        if (currentDurationSec() <= 0) {
+            maybeFetchSegmentsOnline();
         }
     }
 
@@ -2442,19 +2484,21 @@ public class PlayerActivity extends Activity {
         return apiSegments;
     }
 
+    /** Duration of the current media in seconds, or 0 while it is still unknown. */
+    private double currentDurationSec() {
+        if (player == null) {
+            return 0;
+        }
+        final long durationMs = player.getDuration();
+        return (durationMs != C.TIME_UNSET && durationMs > 0) ? durationMs / 1000.0 : 0;
+    }
+
     private void rebuildSkip() {
         if (skipManager == null) {
             return;
         }
-        double durationSec = 0;
-        if (player != null) {
-            final long durationMs = player.getDuration();
-            if (durationMs != C.TIME_UNSET && durationMs > 0) {
-                durationSec = durationMs / 1000.0;
-            }
-        }
         skipManager.setOffsetSec(skipOffsetSec);
-        skipManager.rebuild(durationSec);
+        skipManager.rebuild(currentDurationSec());
         updateSkipHighlights();
         if (skipManager.hasSegments()) {
             skipSeenThisSession = true;
@@ -2501,29 +2545,65 @@ public class PlayerActivity extends Activity {
         if (player == null || skipManager == null) {
             return;
         }
-        if (!mPrefs.skipEnabled || !mPrefs.skipFetchOnline || skipManager.hasSegments()) {
+        // Intent segments win outright; anything else this lookup may already have found is its own
+        // earlier, less certain result and is meant to be replaced.
+        if (!mPrefs.skipEnabled || !mPrefs.skipFetchOnline || skipSourceFromIntent) {
             return;
         }
-        final String imdbId = currentImdbId();
-        final String tmdbId = currentTmdbId();
+        final int index = player.getCurrentMediaItemIndex();
+        final String imdbId = imdbIdAt(index);
+        final String tmdbId = tmdbIdAt(index);
         if ((imdbId == null || imdbId.isEmpty()) && (tmdbId == null || tmdbId.isEmpty())) {
             return;
         }
-        final long durationMs = player.getDuration();
-        final double durationSec = (durationMs != C.TIME_UNSET && durationMs > 0) ? durationMs / 1000.0 : 0;
-        final int targetIndex = player.getCurrentMediaItemIndex();
-
         cancelSegmentFinder();
-        segmentFinderThread = SegmentFinder.find(imdbId, tmdbId, currentSeason(), currentEpisode(), durationSec,
-                segments -> runOnUiThread(() -> onSegmentsFetched(targetIndex, segments)));
+        final int generation = segmentFetchGeneration;
+        segmentFinderThread = SegmentFinder.find(imdbId, tmdbId, seasonAt(index), episodeAt(index),
+                currentDurationSec(),
+                segments -> runOnUiThread(() -> onSegmentsFetched(generation, index, segments)));
+        prefetchNextSegments();
     }
 
-    private void onSegmentsFetched(int targetIndex, java.util.List<SkipSegment> segments) {
+    /**
+     * Warms the finder's cache for the next playlist item while this one is still playing, so switching
+     * episodes shows its segments without a network round-trip. The next file is not prepared yet, so its
+     * duration is unknown and this is an early-wave lookup (duration-independent sources only).
+     *
+     * <p>The worker is deliberately neither tracked nor cancelled: it is a daemon thread bounded by the
+     * per-source call timeouts whose only effect is a write to the finder's in-memory cache. Track it if
+     * it ever gains a side effect on the UI.
+     */
+    private void prefetchNextSegments() {
+        if (skipNextPrefetched || player == null || !player.hasNextMediaItem()) {
+            return;
+        }
+        final int index = player.getCurrentMediaItemIndex();
+        final int next = player.getNextMediaItemIndex();
+        final String imdbId = imdbIdAt(next);
+        final String tmdbId = tmdbIdAt(next);
+        if ((imdbId == null || imdbId.isEmpty()) && (tmdbId == null || tmdbId.isEmpty())) {
+            return;
+        }
+        // A playlist that carries no per-item ids resolves every item to the same title and episode —
+        // warming that is just a duplicate request for what is already playing.
+        if (TextUtils.equals(imdbId, imdbIdAt(index)) && TextUtils.equals(tmdbId, tmdbIdAt(index))
+                && seasonAt(next) == seasonAt(index) && episodeAt(next) == episodeAt(index)) {
+            return;
+        }
+        skipNextPrefetched = true;
+        SegmentFinder.find(imdbId, tmdbId, seasonAt(next), episodeAt(next), 0, segments -> { });
+    }
+
+    private void onSegmentsFetched(int generation, int targetIndex, java.util.List<SkipSegment> segments) {
         if (player == null || skipManager == null || segments == null || segments.isEmpty()) {
             return;
         }
-        // Ignore if the media item changed since the fetch started, or intent segments have appeared.
-        if (player.getCurrentMediaItemIndex() != targetIndex || skipManager.hasSegments()) {
+        // Drop a late callback from a cancelled lookup, a result for another media item, or anything at
+        // all once intent segments have appeared. A newer result for this item does replace an older
+        // one: that is how the first quick answer gets corrected by the full vote.
+        if (generation != segmentFetchGeneration
+                || player.getCurrentMediaItemIndex() != targetIndex
+                || skipSourceFromIntent) {
             return;
         }
         skipManager.setSource(new NetworkSegmentsSource(segments));
@@ -2531,31 +2611,32 @@ public class PlayerActivity extends Activity {
     }
 
     private void cancelSegmentFinder() {
+        segmentFetchGeneration++;
         if (segmentFinderThread != null) {
             segmentFinderThread.interrupt();
             segmentFinderThread = null;
         }
     }
 
-    private String currentImdbId() {
+    // Per-item metadata for the lookup. The playlist lists, when present, are authoritative for the
+    // item at that index; a single-media launch falls back to the intent's own extras.
+
+    private String imdbIdAt(int index) {
         if (player != null && !apiPlaylistImdbIds.isEmpty()) {
-            final int index = player.getCurrentMediaItemIndex();
             return index >= 0 && index < apiPlaylistImdbIds.size() ? apiPlaylistImdbIds.get(index) : null;
         }
         return apiImdbId;
     }
 
-    private String currentTmdbId() {
+    private String tmdbIdAt(int index) {
         if (player != null && !apiPlaylistTmdbIds.isEmpty()) {
-            final int index = player.getCurrentMediaItemIndex();
             return index >= 0 && index < apiPlaylistTmdbIds.size() ? apiPlaylistTmdbIds.get(index) : null;
         }
         return apiTmdbId;
     }
 
-    private int currentSeason() {
+    private int seasonAt(int index) {
         if (player != null && !apiPlaylistSeasons.isEmpty()) {
-            final int index = player.getCurrentMediaItemIndex();
             if (index >= 0 && index < apiPlaylistSeasons.size()) {
                 final Integer season = apiPlaylistSeasons.get(index);
                 return season != null ? season : -1;
@@ -2565,9 +2646,8 @@ public class PlayerActivity extends Activity {
         return apiSeason;
     }
 
-    private int currentEpisode() {
+    private int episodeAt(int index) {
         if (player != null && !apiPlaylistEpisodes.isEmpty()) {
-            final int index = player.getCurrentMediaItemIndex();
             if (index >= 0 && index < apiPlaylistEpisodes.size()) {
                 final Integer episode = apiPlaylistEpisodes.get(index);
                 return episode != null ? episode : -1;
@@ -2710,44 +2790,86 @@ public class PlayerActivity extends Activity {
             return;
         }
         final double posSec = player.getCurrentPosition() / 1000.0;
+        if (skipPill == SkipPill.UNDO) {
+            updateUndoCountdown();
+        }
         final SkipSegment segment = skipManager.activeSegment(posSec);
         if (segment == null) {
-            hideSkipButton();
+            // Nothing to skip here and now — but a segment starting shortly ahead is announced early
+            // (see SKIP_LEAD_SEC): as the Skip button when the user is asked, as the pill when the jump
+            // is automatic and there is no button to offer.
+            final SkipSegment upcoming = skipManager.upcomingSegment(posSec, SKIP_LEAD_SEC);
+            if (upcoming == null || autoSkipUndone(posSec)) {
+                hideSkipButton();
+                hideSkipHeadsUp();
+            } else if (isAutoSkip(upcoming)) {
+                hideSkipButton();
+                showSkipHeadsUp(upcoming);
+            } else {
+                hideSkipHeadsUp();
+                updateSkipButtonProgress(upcoming);
+                showSkipButton(upcoming);
+            }
             return;
         }
-        // Ad segments are always skipped silently. Skip segments follow a per-position preference:
-        // end credits use skipModeCredits, everything else (intro/recap) uses skipMode.
-        final boolean auto;
-        if (segment.type == SkipSegment.Type.AD) {
-            auto = true;
-        } else if (segment.credits) {
-            auto = Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipModeCredits);
-        } else {
-            auto = Prefs.SKIP_MODE_AUTO.equals(mPrefs.skipMode);
-        }
-        if (auto) {
+        if (isAutoSkip(segment) && !autoSkipUndone(posSec)) {
             segment.skipped = true;
             hideSkipButton();
             skipSeekTo(segment);
-            showSkipNotification();
+            showSkipNotification(true);
         } else {
             updateSkipButtonProgress(segment);
             showSkipButton(segment);
         }
     }
 
-    /** Sizes the coral fill to the fraction of the segment still remaining (1 at start, 0 at the end). */
+    /**
+     * Ad segments are always skipped silently. Skip segments follow a per-position preference: end
+     * credits use skipModeCredits, everything else (intro/recap) uses skipMode.
+     */
+    private boolean isAutoSkip(SkipSegment segment) {
+        if (segment.type == SkipSegment.Type.AD) {
+            return true;
+        }
+        return Prefs.SKIP_MODE_AUTO.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+    }
+
+    /**
+     * True while playback is still inside the stretch the user just took back with Undo. Keyed on the
+     * position rather than the segment object, because a segment the user un-skipped can be re-derived
+     * (a firmer lookup result, a changed offset) with its once-only flag cleared and slightly different
+     * bounds — and it must not be skipped away again the moment it reappears.
+     */
+    private boolean autoSkipUndone(double posSec) {
+        if (skipUndoneUntilMs == C.TIME_UNSET) {
+            return false;
+        }
+        if (posSec * 1000 >= skipUndoneUntilMs) {
+            skipUndoneUntilMs = C.TIME_UNSET; // played past it — auto-skip is armed again
+            return false;
+        }
+        return true;
+    }
+
+    private Drawable pillIcon(SkipPill mode) {
+        switch (mode) {
+            case CANCEL:
+                return skipIconKeep;
+            case UNDO:
+                return skipIconBack;
+            default:
+                return skipIconForward;
+        }
+    }
+
+    /** Sizes the underline to the fraction of the segment still remaining (1 at start, 0 at the end). */
     private void updateSkipButtonProgress(SkipSegment segment) {
-        if (skipButtonProgress == null || player == null || segment == null)
-            return;
-        final long totalMs = segment.endMs() - segment.startMs();
-        if (totalMs <= 0) {
-            skipButtonProgress.setLevel(0);
+        if (player == null || segment == null) {
             return;
         }
-        final long remainingMs = segment.endMs() - player.getCurrentPosition();
-        final double fraction = Math.max(0, Math.min(1, remainingMs / (double) totalMs));
-        skipButtonProgress.setLevel((int) Math.round(fraction * 10000));
+        final long totalMs = segment.endMs() - segment.startMs();
+        setSkipPillUnderline(totalMs > 0
+                ? (segment.endMs() - player.getCurrentPosition()) / (double) totalMs : 0);
     }
 
     private void skipSeekTo(SkipSegment segment) {
@@ -2759,12 +2881,175 @@ public class PlayerActivity extends Activity {
         // short of the end (a post-credits scene/teaser follows) and the last item, with no next
         // episode, fall through to an exact seek so that trailing content still plays.
         if (segment.reachesEnd && player.hasNextMediaItem()) {
+            clearSkipUndo(); // advancing an episode is not something Undo can take back
             player.seekToNextMediaItem();
             return;
         }
+        // Remember both ends of the jump so an automatic skip can be taken back with one tap.
+        skipUndoFromMs = player.getCurrentPosition();
+        skipUndoToMs = segment.endMs();
         // Exact seek so playback resumes precisely at the segment end, not at an earlier keyframe.
         player.setSeekParameters(SeekParameters.EXACT);
         player.seekTo(segment.endMs());
+    }
+
+    /**
+     * Auto mode never offers a Skip button, so the pill counts the jump down instead and offers to refuse
+     * it — the same insurance as Undo, one step earlier. Ads stay silent: they are never announced.
+     */
+    private void showSkipHeadsUp(SkipSegment segment) {
+        if (buttonSkip == null || segment.type == SkipSegment.Type.AD) {
+            return;
+        }
+        if (locked && mPrefs.skipHideWhenLocked) {
+            return;
+        }
+        // Whole seconds still to go, rounded up: the countdown reads 3, 2, 1 and never a bare 0.
+        final int secsLeft = (int) Math.max(1,
+                Math.ceil((segment.startMs() - player.getCurrentPosition()) / 1000.0));
+        final boolean fresh = skipHeadsUpEndMs != segment.endMs();
+        if (fresh) {
+            skipHeadsUpEndMs = segment.endMs();
+            // No auto-hide: the announcement stands until the jump happens, is refused, or becomes moot.
+            playerView.removeCallbacks(skipPillHider);
+            hideSkipPillUnderline(); // the number is the countdown here; no bar to say it twice
+        }
+        if (fresh || secsLeft != skipPillSecs) {
+            skipPillSecs = secsLeft;
+            showSkipPill(SkipPill.CANCEL, countdownLabel(R.string.notification_skipping_cancel, secsLeft), true);
+        }
+    }
+
+    private void hideSkipHeadsUp() {
+        if (skipPill != SkipPill.CANCEL) {
+            return; // the pill is showing something else — leave it alone
+        }
+        hideSkipPill();
+    }
+
+    /** Tap on the countdown pill: let the announced segment play instead of skipping it. */
+    private void cancelUpcomingSkip() {
+        skipUndoneUntilMs = skipHeadsUpEndMs; // auto-skip disarmed for that stretch; Skip is still offered
+        hideSkipPill();
+    }
+
+    /**
+     * Paints and shows the one floating pill. {@code actionable} also drives focusability: a pill that
+     * does nothing must not take D-pad focus away from the player.
+     */
+    private void showSkipPill(SkipPill mode, CharSequence label, boolean actionable) {
+        if (buttonSkip == null) {
+            return;
+        }
+        skipPill = mode;
+        buttonSkip.setText(label);
+        buttonSkip.setCompoundDrawablesRelative(
+                pillIcon(mode), null, null, null);
+        buttonSkip.setClickable(actionable);
+        buttonSkip.setFocusable(actionable);
+        if (buttonSkip.getVisibility() != View.VISIBLE) {
+            buttonSkip.setVisibility(View.VISIBLE);
+            if (isTvBox && actionable) {
+                buttonSkip.requestFocus();
+            }
+        }
+    }
+
+    /**
+     * A pill label with its seconds picked out in the accent colour, so the number reads as a countdown
+     * against the white wording. Falls back to the plain string if the format left no number to find.
+     */
+    private CharSequence countdownLabel(int labelRes, int secs) {
+        final String seconds = String.valueOf(secs);
+        final String label = getString(labelRes, secs);
+        final int at = label.lastIndexOf(seconds);
+        if (at < 0) {
+            return label;
+        }
+        final SpannableString out = new SpannableString(label);
+        // Lightened accent, not the flat brand colour: at full strength the coral carries about half the
+        // luminance of the white wording, and a single narrow glyph that much darker than its neighbours
+        // reads as sitting off the line rather than as coloured. Same geometry, matched optical weight.
+        final int digitColor = ColorUtils.blendARGB(brandColor(), Color.WHITE, 0.25f);
+        out.setSpan(new ForegroundColorSpan(digitColor), at, at + seconds.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return out;
+    }
+
+    /**
+     * Sizes the pill's underline to a 0..1 fraction. Only the Skip offer uses it, where it measures the
+     * segment it sits over. The two cancel states count down in their label instead — a bar and a number
+     * saying the same thing is one of them too many.
+     */
+    private void setSkipPillUnderline(double fraction) {
+        if (skipPillGroove != null) {
+            skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
+        }
+        if (skipButtonProgress != null) {
+            skipButtonProgress.setLevel((int) Math.round(Math.max(0, Math.min(1, fraction)) * 10000));
+        }
+    }
+
+    private void hideSkipPillUnderline() {
+        if (skipPillGroove != null) {
+            skipPillGroove.setColor(Color.TRANSPARENT);
+        }
+        if (skipButtonProgress != null) {
+            skipButtonProgress.setLevel(0);
+        }
+    }
+
+    /** Ticks the seconds left on the undo pill while it is up. */
+    private void updateUndoCountdown() {
+        if (buttonSkip == null || !buttonSkip.isClickable()) {
+            return; // a plain "skipped" notice has nothing to count down to
+        }
+        final int secsLeft = (int) Math.max(1,
+                Math.ceil((skipNoticeHideAtMs - SystemClock.uptimeMillis()) / 1000.0));
+        if (secsLeft != skipPillSecs) {
+            skipPillSecs = secsLeft;
+            buttonSkip.setText(countdownLabel(R.string.notification_skipped_undo, secsLeft));
+        }
+    }
+
+    /** Takes the pill away whatever it is showing, cancelling its timer. */
+    private void hideSkipPill() {
+        skipPill = SkipPill.NONE;
+        skipHeadsUpEndMs = C.TIME_UNSET;
+        skipPillSecs = 0;
+        pendingSkip = null;
+        if (playerView != null) {
+            playerView.removeCallbacks(skipPillHider);
+        }
+        if (buttonSkip != null) {
+            if (isTvBox && buttonSkip.hasFocus() && playerView != null) {
+                playerView.requestFocus();
+            }
+            buttonSkip.setVisibility(View.GONE);
+        }
+    }
+
+    /** Tap on the "skipped" pill: back to where the automatic skip started, and leave that stretch alone. */
+    private void undoSkip() {
+        if (player == null || skipUndoFromMs == C.TIME_UNSET) {
+            hideSkipPill();
+            return;
+        }
+        final long backTo = skipUndoFromMs;
+        skipUndoneUntilMs = skipUndoToMs; // survives clearSkipUndo below: it is what disarms the re-skip
+        skipUndoFromMs = C.TIME_UNSET;
+        skipUndoToMs = C.TIME_UNSET;
+        player.setSeekParameters(SeekParameters.EXACT);
+        player.seekTo(backTo);
+        hideSkipPill();
+    }
+
+    private void clearSkipUndo() {
+        skipUndoFromMs = C.TIME_UNSET;
+        skipUndoToMs = C.TIME_UNSET;
+        skipUndoneUntilMs = C.TIME_UNSET;
+        skipHeadsUpEndMs = C.TIME_UNSET;
+        skipPillSecs = 0;
     }
 
     // OK/Enter-style keys that activate the focused Skip button on a TV remote / gamepad.
@@ -2792,8 +3077,7 @@ public class PlayerActivity extends Activity {
             unlockScreen();
         }
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
-            hideSkipButton();
-            hideSkipNotification();
+            hideSkipPill();
         }
     }
 
@@ -2825,61 +3109,66 @@ public class PlayerActivity extends Activity {
     }
 
     private void showSkipButton(SkipSegment segment) {
-        // When configured, keep the Skip button hidden while the screen is locked.
+        // When configured, keep the pill hidden while the screen is locked.
         if (locked && mPrefs.skipHideWhenLocked) {
             hideSkipButton();
             return;
         }
         pendingSkip = segment;
-        if (buttonSkip != null && buttonSkip.getVisibility() != View.VISIBLE) {
-            buttonSkip.setVisibility(View.VISIBLE);
-            if (isTvBox) {
-                buttonSkip.requestFocus();
-            }
-        }
+        showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true);
     }
 
+    /**
+     * What the skip polling calls when there is nothing to offer. The post-skip notice is the exception:
+     * it owns the pill for its three seconds, so the poll running 250 ms later must not sweep it away.
+     */
     private void hideSkipButton() {
-        pendingSkip = null;
-        if (buttonSkip != null) {
-            if (isTvBox && buttonSkip.hasFocus() && playerView != null) {
-                playerView.requestFocus();
-            }
-            buttonSkip.setVisibility(View.GONE);
-        }
-    }
-
-    private void showSkipNotification() {
-        if (notificationSkip == null) {
+        if (skipPill == SkipPill.UNDO) {
             return;
         }
-        // When configured, suppress the auto-skip notification while the screen is locked.
+        hideSkipPill();
+    }
+
+    /**
+     * Whether the "go back" pill is offered for a skip the user just made or the player just made for
+     * them — {@code skipUndo} decides, so someone who never wants the pill can turn it off and someone
+     * who only distrusts the automatic jumps can keep it just for those.
+     */
+    private boolean skipUndoOffered(boolean automatic) {
+        if (Prefs.SKIP_UNDO_ALL.equals(mPrefs.skipUndo)) {
+            return true;
+        }
+        return automatic
+                ? Prefs.SKIP_UNDO_AUTO.equals(mPrefs.skipUndo)
+                : Prefs.SKIP_UNDO_MANUAL.equals(mPrefs.skipUndo);
+    }
+
+    private void showSkipNotification(boolean automatic) {
+        if (buttonSkip == null) {
+            return;
+        }
+        // When configured, suppress the auto-skip notice while the screen is locked.
         if (locked && mPrefs.skipHideWhenLocked) {
             return;
         }
-        notificationSkip.setVisibility(View.VISIBLE);
-        playerView.removeCallbacks(skipNotificationHider);
-        playerView.postDelayed(skipNotificationHider, 3000);
+        // The same pill now offers to take the jump back — the cheap insurance against a wrong automatic
+        // skip. It only promises undo where the promise can be kept: an episode advance has no position to
+        // return to, and then it is a plain notice that takes no focus.
+        final boolean undoable = skipUndoFromMs != C.TIME_UNSET && skipUndoOffered(automatic);
+        skipNoticeHideAtMs = SystemClock.uptimeMillis() + SKIP_NOTICE_MS;
+        skipPillSecs = (int) (SKIP_NOTICE_MS / 1000);
+        hideSkipPillUnderline();
+        showSkipPill(SkipPill.UNDO, undoable
+                        ? countdownLabel(R.string.notification_skipped_undo, skipPillSecs)
+                        : getString(R.string.notification_skipped),
+                undoable);
+        playerView.removeCallbacks(skipPillHider);
+        playerView.postDelayed(skipPillHider, SKIP_NOTICE_MS);
     }
 
-    private void hideSkipNotification() {
-        if (notificationSkip == null) {
-            return;
-        }
-        if (playerView != null) {
-            playerView.removeCallbacks(skipNotificationHider);
-        }
-        if (notificationSkip.getVisibility() != View.GONE) {
-            notificationSkip.setVisibility(View.GONE);
-        }
-    }
-
-    @Override
-    public void onUserInteraction() {
-        super.onUserInteraction();
-        // Any touch or key dispatched to the player dismisses the auto-skip notification.
-        hideSkipNotification();
-    }
+    // Note: the pill is deliberately not dismissed on any user interaction. onUserInteraction runs on the
+    // ACTION_DOWN, before the event reaches the view, so dismissing it there would swallow the tap that is
+    // supposed to undo the skip. Its own 3s timer takes it away instead.
 
     private void startSkipPolling() {
         if (playerView == null) {
@@ -5542,8 +5831,7 @@ public class PlayerActivity extends Activity {
         }
         stopSkipPolling();
         cancelSegmentFinder();
-        hideSkipButton();
-        hideSkipNotification();
+        hideSkipPill();
         skipBuilt = false;
         if (timeBar != null) {
             timeBar.clearSkipHighlights();

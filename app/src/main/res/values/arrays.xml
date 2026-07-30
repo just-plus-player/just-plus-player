@@ -36,4 +36,18 @@
     <item>auto</item>
   </string-array>
 
+  <string-array name="skip_undo_entries">
+    <item>@string/pref_skip_undo_all</item>
+    <item>@string/pref_skip_undo_manual</item>
+    <item>@string/pref_skip_undo_auto</item>
+    <item>@string/pref_skip_undo_off</item>
+  </string-array>
+
+  <string-array name="skip_undo_values">
+    <item>all</item>
+    <item>manual</item>
+    <item>auto</item>
+    <item>off</item>
+  </string-array>
+
 </resources>

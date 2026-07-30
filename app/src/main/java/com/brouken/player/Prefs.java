@@ -59,6 +59,7 @@ class Prefs {
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
     private static final String PREF_KEY_SKIP_MODE_CREDITS = "skipModeCredits";
     private static final String PREF_KEY_SKIP_FETCH = "skipFetchOnline";
+    private static final String PREF_KEY_SKIP_UNDO = "skipUndo";
     private static final String PREF_KEY_SKIP_HIDE_LOCKED = "skipHideWhenLocked";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
     private static final String PREF_KEY_SYSTEM_VOLUME = "systemVolume";
@@ -71,6 +72,12 @@ class Prefs {
 
     public static final String SKIP_MODE_BUTTON = "button";
     public static final String SKIP_MODE_AUTO = "auto";
+
+    // Which skips offer the "go back" pill afterwards.
+    public static final String SKIP_UNDO_ALL = "all";
+    public static final String SKIP_UNDO_MANUAL = "manual";
+    public static final String SKIP_UNDO_AUTO = "auto";
+    public static final String SKIP_UNDO_OFF = "off";
 
     public static final String TRACK_DEFAULT = "default";
     public static final String TRACK_DEVICE = "device";
@@ -120,6 +127,7 @@ class Prefs {
     public String skipModeCredits = SKIP_MODE_BUTTON;
     public boolean skipHideWhenLocked = false;
     public boolean skipFetchOnline = true;
+    public String skipUndo = SKIP_UNDO_ALL;
     public boolean showClock = false;
     public boolean systemVolume = true;
     public boolean crashReporting = true;
@@ -217,6 +225,7 @@ class Prefs {
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
         skipModeCredits = mSharedPreferences.getString(PREF_KEY_SKIP_MODE_CREDITS, skipModeCredits);
         skipFetchOnline = mSharedPreferences.getBoolean(PREF_KEY_SKIP_FETCH, skipFetchOnline);
+        skipUndo = mSharedPreferences.getString(PREF_KEY_SKIP_UNDO, skipUndo);
         skipHideWhenLocked = mSharedPreferences.getBoolean(PREF_KEY_SKIP_HIDE_LOCKED, skipHideWhenLocked);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
         // Forced on for TV boxes, where the remote routes volume to the panel or receiver over CEC and

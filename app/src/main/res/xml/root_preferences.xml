@@ -94,6 +94,15 @@
             app:title="@string/pref_skip_mode_credits"
             app:useSimpleSummaryProvider="true" />
 
+        <ListPreference
+            app:defaultValue="all"
+            app:dependency="skipEnabled"
+            app:entries="@array/skip_undo_entries"
+            app:entryValues="@array/skip_undo_values"
+            app:key="skipUndo"
+            app:title="@string/pref_skip_undo"
+            app:useSimpleSummaryProvider="true" />
+
         <SwitchPreferenceCompat
             app:key="skipFetchOnline"
             app:defaultValue="true"

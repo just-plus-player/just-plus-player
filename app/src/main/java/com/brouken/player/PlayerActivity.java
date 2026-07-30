@@ -227,6 +227,10 @@ public class PlayerActivity extends Activity {
     private YouTubeOverlay youTubeOverlay;
 
     private Object mPictureInPictureParamsBuilder;
+    // True between the two onPictureInPictureModeChanged callbacks. Read instead of
+    // isInPictureInPictureMode() so the guards below need no API-level dance and cannot be caught by the
+    // window's own state lagging a frame behind the callback.
+    private boolean inPip;
 
     public Prefs mPrefs;
     public BrightnessControl mBrightnessControl;
@@ -2347,10 +2351,18 @@ public class PlayerActivity extends Activity {
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        inPip = isInPictureInPictureMode;
 
         if (isInPictureInPictureMode) {
             // On Android TV it is required to hide controller in this PIP change callback
             playerView.hideController();
+            // The floating overlays are not part of the controller, so hiding it leaves them on the video.
+            // Nothing of ours belongs in the PiP window: it is a thumbnail with the system's own controls
+            // over it, and a tap there expands the window instead of reaching our views.
+            hideSkipPill();
+            hideSwipeToUnlock();
+            setSpeedBoostIndicatorVisible(false);
+            updateOverlayClock();
             setSubtitleTextSizePiP();
             playerView.setScale(1.f);
             mReceiver = new BroadcastReceiver() {
@@ -2373,6 +2385,9 @@ public class PlayerActivity extends Activity {
             ContextCompat.registerReceiver(this, mReceiver, new IntentFilter(ACTION_MEDIA_CONTROL), ContextCompat.RECEIVER_EXPORTED);
         } else {
             setSubtitleTextSize();
+            // Back to the full window: the clock returns if the preference wants it, and the skip pill
+            // comes back by itself on the next poll while a segment is still current.
+            updateOverlayClock();
             if (mPrefs.aspectRatio > 0) {
                 playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
             } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
@@ -2939,6 +2954,10 @@ public class PlayerActivity extends Activity {
      */
     private void showSkipPill(SkipPill mode, CharSequence label, boolean actionable) {
         if (buttonSkip == null) {
+            return;
+        }
+        if (inPip) {
+            hideSkipPill(); // unusable in the PiP window; automatic skips still happen, just silently
             return;
         }
         skipPill = mode;
@@ -3640,7 +3659,7 @@ public class PlayerActivity extends Activity {
         if (overlayClock == null) {
             return;
         }
-        final boolean show = mPrefs.showClock;
+        final boolean show = mPrefs.showClock && !inPip;
         if (headerClock != null) {
             headerClock.setAlpha(show ? 0f : 1f);
         }
@@ -3677,7 +3696,7 @@ public class PlayerActivity extends Activity {
     // Reveal the swipe-to-unlock bar and auto-hide it after the standard long-touch timeout. While the user
     // is actively dragging (onStartTouching) the auto-hide is cancelled and rescheduled on release.
     void showSwipeToUnlock() {
-        if (swipeToUnlock == null) {
+        if (swipeToUnlock == null || inPip) {
             return;
         }
         swipeToUnlock.setVisibility(View.VISIBLE);
@@ -7997,7 +8016,7 @@ public class PlayerActivity extends Activity {
 
     public void setSpeedBoostIndicatorVisible(boolean visible) {
         if (speedBoostIndicator != null)
-            speedBoostIndicator.setVisibility(visible ? View.VISIBLE : View.GONE);
+            speedBoostIndicator.setVisibility(visible && !inPip ? View.VISIBLE : View.GONE);
     }
 
     // Arms the pause auto-hide when the controller is fully visible and playback is paused (ready, not

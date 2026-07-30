@@ -69,6 +69,11 @@
     <string name="pref_skip_fetch">Шукати сегменти онлайн</string>
     <string name="pref_skip_fetch_on">Шукати сегменти заставок і титрів в онлайн-базах, якщо джерело їх не надало</string>
     <string name="pref_skip_fetch_off">Використовувати лише сегменти від застосунку</string>
+    <string name="pref_skip_undo">Пропонувати «Повернутися»</string>
+    <string name="pref_skip_undo_all">Після будь-якого пропуску</string>
+    <string name="pref_skip_undo_manual">Лише після пропуску вручну</string>
+    <string name="pref_skip_undo_auto">Лише після автопропуску</string>
+    <string name="pref_skip_undo_off">Ніколи</string>
     <string name="pref_skip_hide_locked">Ховати кнопки пропуску під час блокування</string>
     <string name="pref_skip_hide_locked_on">Кнопка «Пропустити» та сповіщення про автопропуск приховані, поки екран заблоковано</string>
     <string name="pref_skip_hide_locked_off">Кнопка «Пропустити» та сповіщення про автопропуск лишаються видимими, поки екран заблоковано</string>
@@ -76,7 +81,9 @@
     <string name="skip_offset_reset">Скинути</string>
     <string name="button_skip_offset">Зміщення пропуску</string>
     <string name="button_skip">Пропустити</string>
-    <string name="notification_skipped">Сегмент пропущено</string>
+    <string name="notification_skipped">Пропущено</string>
+    <string name="notification_skipped_undo">Повернутися %1$d</string>
+    <string name="notification_skipping_cancel">Не пропускати %1$d</string>
     <string name="pref_show_clock">Показувати годинник</string>
     <string name="pref_show_clock_on">Годинник завжди у верхньому правому куті поверх відео</string>
     <string name="pref_show_clock_off">Годинник показується лише з елементами керування</string>

@@ -10,8 +10,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -39,6 +40,15 @@ import okhttp3.ResponseBody;
  * </ul>
  * Coverage is prioritized for single-source categories: a category seen by only one source is still
  * offered (as {@code confirmed=false}) rather than dropped.
+ *
+ * <p>Results are published <b>as they firm up</b>: the vote is recomputed every time a source lands
+ * and re-delivered whenever it changed, so the first usable answer arrives in one source's latency
+ * instead of the whole profile's. The callback is therefore called more than once per lookup.
+ *
+ * <p>Sources that need the stream length (SkipDB, SkipMe.db send it in the request) are only asked
+ * when it is known. A lookup with an unknown duration is the <b>early wave</b>: it queries the
+ * duration-independent sources by id alone, which is what makes a lookup possible before playback is
+ * ready and for an episode that has not started yet.
  *
  * <p>Runs on a background thread; the callback fires on that same worker thread (the caller marshals
  * to the UI thread). Results are cached in memory keyed by {@code imdb|tmdb|season|episode|duration};
@@ -102,23 +112,55 @@ public final class SegmentFinder {
      */
     public static Thread find(String imdbId, String tmdbId, int season, int episode, double durationSec,
                               Callback callback) {
-        final Thread thread = new Thread(() -> {
-            final List<SkipSegment> result = lookup(imdbId, tmdbId, season, episode, durationSec);
-            if (!Thread.currentThread().isInterrupted()) {
-                callback.onSegments(result);
-            }
-        }, "SegmentFinder");
+        final Thread thread = new Thread(
+                () -> lookup(imdbId, tmdbId, season, episode, durationSec, new Emitter(callback)),
+                "SegmentFinder");
         thread.setDaemon(true);
         thread.start();
         return thread;
     }
 
-    private static List<SkipSegment> lookup(String imdbIdIn, String tmdbIdIn, int season, int episode,
-                                            double durationSec) {
+    /**
+     * Delivers results to the caller, dropping empties and repeats so the progressive publishing never
+     * re-delivers a list the caller already has. Silent once the lookup thread has been interrupted.
+     */
+    private static final class Emitter {
+        private final Callback callback;
+        private List<SkipSegment> last;
+
+        Emitter(Callback callback) {
+            this.callback = callback;
+        }
+
+        void emit(List<SkipSegment> segments) {
+            if (segments.isEmpty() || same(segments, last) || Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            last = segments;
+            callback.onSegments(segments);
+        }
+
+        private static boolean same(List<SkipSegment> a, List<SkipSegment> b) {
+            if (b == null || a.size() != b.size()) {
+                return false;
+            }
+            for (int i = 0; i < a.size(); i++) {
+                final SkipSegment x = a.get(i);
+                final SkipSegment y = b.get(i);
+                if (x.category != y.category || x.startSec != y.startSec || x.endSec != y.endSec) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static void lookup(String imdbIdIn, String tmdbIdIn, int season, int episode,
+                               double durationSec, Emitter emitter) {
         final String imdbInput = isBlank(imdbIdIn) ? null : imdbIdIn;
         final String tmdbInput = isBlank(tmdbIdIn) ? null : tmdbIdIn;
         if (imdbInput == null && tmdbInput == null) {
-            return new ArrayList<>();
+            return;
         }
         // A season implies a series episode even if the episode number is missing/0 — don't blindly
         // treat it as a movie (that would query the wrong, movie-only sources).
@@ -133,7 +175,8 @@ public final class SegmentFinder {
                 + "|" + durationBucket;
         final List<SkipSegment> cached = getCached(key);
         if (cached != null) {
-            return cached;
+            emitter.emit(cached);
+            return;
         }
 
         // A tmdb id from the intent is numeric and needs no network to use.
@@ -155,14 +198,21 @@ public final class SegmentFinder {
         final String imdb = imdbId;      // effectively final for the step lambdas
         final long tmdb = tmdbNumeric;
         final int ep = Math.max(episode, -1);
+        // SkipDB and SkipMe.db take the stream length as a request parameter and answer in its
+        // coordinates. Asked without it they still answer — with the highest timeTrust of the profile —
+        // so a length-less early wave would let them win the vote with timings meant for another cut.
+        // They are therefore left out until the duration is known; the second wave picks them up.
+        final boolean durationKnown = durationSec > 0;
         final List<Step> steps = new ArrayList<>();
         if (isMovie) {
             // Duration-aware first, absolute community sources last.
-            if (imdb != null) {
+            if (imdb != null && durationKnown) {
                 steps.add(() -> skipDb(imdb, -1, -1, durationSec));
             }
             if (imdb != null || tmdb >= 0) {
-                steps.add(() -> skipMe(imdb, tmdb, -1, -1, durationSec));
+                if (durationKnown) {
+                    steps.add(() -> skipMe(imdb, tmdb, -1, -1, durationSec));
+                }
                 steps.add(() -> theIntroDb(imdb, tmdb, -1, -1, true));
             }
             if (imdb != null) {
@@ -174,8 +224,10 @@ public final class SegmentFinder {
                 // — usually the broadcast cut — its absolute timings match, so it is the primary time
                 // source (TT_ANIME). It returns empty fast for non-anime, so it simply drops out then.
                 steps.add(() -> aniskip(imdb, season, ep));
-                steps.add(() -> skipDb(imdb, season, ep, durationSec));
-                steps.add(() -> skipMe(imdb, tmdb, season, ep, durationSec));
+                if (durationKnown) {
+                    steps.add(() -> skipDb(imdb, season, ep, durationSec));
+                    steps.add(() -> skipMe(imdb, tmdb, season, ep, durationSec));
+                }
                 steps.add(() -> introDbApp(imdb, season, ep));
             }
             if (imdb != null || tmdb >= 0) {
@@ -186,13 +238,16 @@ public final class SegmentFinder {
             }
         }
 
-        final List<Scored> results = probeAll(steps);
+        if (steps.isEmpty()) {
+            return; // nothing in this profile can be asked with the ids that resolved
+        }
+        final List<Scored> results = probeAll(steps, emitter);
         if (Thread.currentThread().isInterrupted()) {
-            return new ArrayList<>(); // media changed mid-probe — don't deliver or cache
+            return; // media changed mid-probe — don't deliver or cache
         }
         final List<SkipSegment> result = voteSegments(results);
         putCached(key, result);
-        return result;
+        emitter.emit(result); // no-op when the progressive publishing already delivered this list
     }
 
     private static boolean isBlank(String s) {
@@ -243,11 +298,15 @@ public final class SegmentFinder {
      * Runs every step concurrently and collects their results, bounded by {@link #PROBE_DEADLINE_SEC}.
      * Slots for steps that time out remain null. Each source's own call timeouts keep this well under
      * the deadline in practice.
+     *
+     * <p>The vote is recomputed on every arrival and handed to {@code emitter} when it changed, so a
+     * source that answers in 300 ms is acted on immediately instead of waiting out a peer that hangs
+     * until the deadline. Returns the final slots for the authoritative vote.
      */
-    private static List<Scored> probeAll(List<Step> steps) {
+    private static List<Scored> probeAll(List<Step> steps, Emitter emitter) {
         final int n = steps.size();
         final AtomicReferenceArray<Scored> slots = new AtomicReferenceArray<>(n);
-        final CountDownLatch latch = new CountDownLatch(n);
+        final BlockingQueue<Integer> arrivals = new ArrayBlockingQueue<>(n);
         final Thread[] workers = new Thread[n];
         for (int i = 0; i < n; i++) {
             final int idx = i;
@@ -258,15 +317,24 @@ public final class SegmentFinder {
                 } catch (Throwable ignored) {
                     // A misbehaving source must never break the probe.
                 } finally {
-                    latch.countDown();
+                    arrivals.offer(idx);
                 }
             }, "SegmentSource-" + i);
             worker.setDaemon(true);
             workers[i] = worker;
             worker.start();
         }
+        final long deadlineAt = System.currentTimeMillis() + PROBE_DEADLINE_SEC * 1000L;
         try {
-            latch.await(PROBE_DEADLINE_SEC, TimeUnit.SECONDS);
+            for (int arrived = 0; arrived < n; arrived++) {
+                final long waitMs = deadlineAt - System.currentTimeMillis();
+                if (waitMs <= 0 || arrivals.poll(waitMs, TimeUnit.MILLISECONDS) == null) {
+                    break;
+                }
+                if (arrived < n - 1) {
+                    emitter.emit(voteSegments(snapshot(slots, n))); // last arrival: caller votes anyway
+                }
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
@@ -274,6 +342,10 @@ public final class SegmentFinder {
                 worker.interrupt();
             }
         }
+        return snapshot(slots, n);
+    }
+
+    private static List<Scored> snapshot(AtomicReferenceArray<Scored> slots, int n) {
         final List<Scored> out = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             out.add(slots.get(i));
@@ -326,6 +398,9 @@ public final class SegmentFinder {
                 out.add(best);
             }
         }
+        // Chronological, not arrival-ordered: the progressive publishing compares consecutive results
+        // to decide whether anything changed, so the same segments must always come back in one order.
+        Collections.sort(out, (a, b) -> Double.compare(a.startSec, b.startSec));
         return out;
     }
 

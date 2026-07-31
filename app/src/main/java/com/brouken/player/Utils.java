@@ -30,6 +30,7 @@ import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.Rational;
 import android.view.Display;
@@ -101,6 +102,12 @@ class Utils {
 
     public static int dpToPx(int dp) {
         return (int) (dp * Resources.getSystem().getDisplayMetrics().density);
+    }
+
+    /** True when the user has turned animations off system-wide (developer options, accessibility). */
+    public static boolean isReducedMotion(Context context) {
+        return Settings.Global.getFloat(context.getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
     }
 
     public static float pxToDp(float px) {

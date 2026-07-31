@@ -4,9 +4,6 @@ import static android.content.pm.PackageManager.FEATURE_EXPANDED_PICTURE_IN_PICT
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
-import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
@@ -16,8 +13,6 @@ import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.app.RemoteAction;
 import android.content.BroadcastReceiver;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -49,7 +44,6 @@ import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
-import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -70,11 +64,8 @@ import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.view.animation.PathInterpolator;
 import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
@@ -408,7 +399,7 @@ public class PlayerActivity extends Activity {
     private static final int CONTROL_TYPE_PLAY = 1;
     private static final int CONTROL_TYPE_PAUSE = 2;
 
-    private CoordinatorLayout coordinatorLayout;
+    CoordinatorLayout coordinatorLayout;
     private LinearLayout topInfoPanel;
     private LinearLayout headerButtons;
     private FrameLayout posterSlot;
@@ -442,7 +433,7 @@ public class PlayerActivity extends Activity {
             playerView.hideController();
     };
     // Adaptive sizing source of truth (phone/tablet/TV). Computed in onCreate, recomputed on config change.
-    private UiMetrics ui;
+    UiMetrics ui;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
     // Forced display aspect ratio currently applied (0 = natural video AR). Persisted via Prefs.aspectRatio.
@@ -455,7 +446,8 @@ public class PlayerActivity extends Activity {
     private SwipeToUnlockView swipeToUnlock;
     // Back-button guard while locked: the first Back arms this, a second Back within the window exits.
     private boolean lockBackPressedOnce;
-    private ObjectAnimator emptyStatePulse;
+    // The page shown when there is nothing to play; owns its own views, reveal and pulse.
+    private final EmptyState emptyState = new EmptyState(this);
     private ImageButton exoSettings;
     private ImageButton exoSubtitle;
     private ImageButton exoPlayPause;
@@ -537,7 +529,7 @@ public class PlayerActivity extends Activity {
     private boolean alive;
     public static boolean focusPlay = false;
     private Uri nextUri;
-    private static boolean isTvBox;
+    static boolean isTvBox;
     public static boolean locked = false;
     private Thread nextUriThread;
     private Thread segmentFinderThread;
@@ -1678,7 +1670,7 @@ public class PlayerActivity extends Activity {
                 } else {
                     Utils.toggleSystemUi(PlayerActivity.this, playerView, visibility == View.VISIBLE);
                 }
-                if (visibility == View.VISIBLE && !isEmptyStateVisible()) {
+                if (visibility == View.VISIBLE && !emptyState.isVisible()) {
                     // Because when using dpad controls, focus resets to first item in bottom controls bar
                     findViewById(R.id.exo_play_pause).requestFocus();
                 }
@@ -1813,9 +1805,9 @@ public class PlayerActivity extends Activity {
     public void onStop() {
         super.onStop();
         alive = false;
-        // Stop the empty-state pulse while backgrounded (it's an infinite animator); showEmptyState restarts
-        // it cleanly on return. Avoids ticking the Choreographer with no media loaded and the activity stopped.
-        stopEmptyStatePulse();
+        // Stop the empty-state pulse while backgrounded: no point ticking the Choreographer with no media
+        // loaded and the activity stopped. It does not come back on return — the page is already revealed.
+        emptyState.stopPulse();
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
         }
@@ -1991,7 +1983,7 @@ public class PlayerActivity extends Activity {
     // Media plus every api extra (title, playlist, subs, position, ...) of a VIEW intent. Shared by
     // onCreate and onNewIntent: with launchMode="singleTask" a second intent lands in the running
     // activity, and its extras have to replace the previous ones instead of being ignored.
-    private void handleViewIntent(Intent intent) {
+    void handleViewIntent(Intent intent) {
         resetApiAccess();
         final Uri uri = intent.getData();
         final String type = intent.getType();
@@ -2754,7 +2746,7 @@ public class PlayerActivity extends Activity {
     // needs the view focused or selected, and the focusable view is the row, not its texts, hence the
     // relay below; only the TextViews move, the poster/number box of a playlist row is a sibling.
     private void fitLongText(final View row, final TextView... texts) {
-        final boolean scroll = ui.deviceClass == UiMetrics.DeviceClass.TV && !isReducedMotion();
+        final boolean scroll = ui.deviceClass == UiMetrics.DeviceClass.TV && !Utils.isReducedMotion(this);
         for (final TextView text : texts) {
             if (text == null) {
                 continue;
@@ -4755,7 +4747,7 @@ public class PlayerActivity extends Activity {
         // Same two entry points the empty state offers (hence its strings), so opening something else is
         // not a matter of first getting back to an empty player.
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
-        items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, this::askForLink));
+        items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
         // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
         items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, this::openSettings));
         showSideMenu(getString(R.string.pref_title), items);
@@ -5384,7 +5376,7 @@ public class PlayerActivity extends Activity {
         }
 
         if (haveMedia) {
-            hideEmptyState();
+            emptyState.hide();
             if (isNetworkUri) {
                 // Reads as a light rail ahead of the playhead, the way the design shows a buffering stream.
                 timeBar.setBufferedColor(0xC0FFFFFF);
@@ -5480,7 +5472,7 @@ public class PlayerActivity extends Activity {
 //            mediaSession.setActive(true);
         } else {
             playerView.showController();
-            showEmptyState();
+            emptyState.show();
         }
 
         player.addListener(playerListener);
@@ -5508,7 +5500,7 @@ public class PlayerActivity extends Activity {
      * has to be against a snapshot taken before it opens — taking one on the way back always compares
      * the new state with itself.
      */
-    private void openSettings() {
+    void openSettings() {
         settingsBefore = mPrefs.snapshot();
         startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS);
     }
@@ -5549,260 +5541,6 @@ public class PlayerActivity extends Activity {
     private void rememberEpisodePosition(final int index, final long position) {
         if (apiPlaylistPositions != null && index >= 0 && index < apiPlaylistPositions.length) {
             apiPlaylistPositions[index] = position;
-        }
-    }
-
-    private boolean isEmptyStateVisible() {
-        final View overlay = findViewById(R.id.empty_state);
-        return overlay != null && overlay.getVisibility() == View.VISIBLE;
-    }
-
-    private boolean isReducedMotion() {
-        return Settings.Global.getFloat(getContentResolver(),
-                Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
-    }
-
-    // Branded empty state shown while there is no clip to play: an animated brand-mark reveal, the
-    // "Open video" call to action and an "Open link" pill — together the only entry points to media
-    // when nothing is loaded.
-    private void showEmptyState() {
-        final View overlay = findViewById(R.id.empty_state);
-        if (overlay == null) {
-            return;
-        }
-        final View mark = findViewById(R.id.empty_state_mark);
-        final TextView title = findViewById(R.id.empty_state_title);
-        final TextView subtitle = findViewById(R.id.empty_state_subtitle);
-        final View open = findViewById(R.id.empty_state_open);
-        final View link = findViewById(R.id.empty_state_link);
-        final View settings = findViewById(R.id.empty_state_settings);
-
-        // No video to match, so neither the orientation nor the brightness preference has anything to say
-        // here: hand the page back to the system, whichever way the device is held and however bright it
-        // keeps its screen. Both are reapplied by hideEmptyState once media takes over.
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-        mBrightnessControl.setActive(false, !isReducedMotion());
-
-        open.setOnClickListener(v -> openFile(mPrefs.mediaUri));
-        link.setOnClickListener(v -> askForLink());
-        settings.setOnClickListener(v -> openSettings());
-        stopEmptyStatePulse();
-
-        // TV is viewed from across the room; scale the phone-tuned sizes up, matching the
-        // isTvBox sizing used elsewhere (poster, clock, skip button).
-        // The overlay runs edge to edge, so the corner lockup has to dodge the status bar and any
-        // cutout itself. The listener keeps it right across rotations, which don't recreate this activity.
-        overlay.setOnApplyWindowInsetsListener((v, insets) -> {
-            padEmptyState(v, insets);
-            return insets;
-        });
-        padEmptyState(overlay, coordinatorLayout.getRootWindowInsets());
-
-        if (isTvBox) {
-            setViewSize(findViewById(R.id.empty_state_mark_icon), 40);
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
-            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
-            setViewSize(findViewById(R.id.empty_state_open_icon), 28);
-            ((TextView) findViewById(R.id.empty_state_open_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-            final int padV = Utils.dpToPx(18);
-            open.setPadding(Utils.dpToPx(30), padV, Utils.dpToPx(32), padV);
-            open.setMinimumHeight(Utils.dpToPx(64));
-            setViewSize(findViewById(R.id.empty_state_link_icon), 28);
-            ((TextView) findViewById(R.id.empty_state_link_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-            link.setPadding(Utils.dpToPx(26), padV, Utils.dpToPx(28), padV);
-            link.setMinimumHeight(Utils.dpToPx(64));
-            setViewSize(findViewById(R.id.empty_state_settings_icon), 28);
-            ((TextView) findViewById(R.id.empty_state_settings_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-            settings.setPadding(Utils.dpToPx(26), padV, Utils.dpToPx(28), padV);
-            settings.setMinimumHeight(Utils.dpToPx(64));
-        } else if (ui.deviceClass != UiMetrics.DeviceClass.PHONE) {
-            // Tablet: scale the phone XML defaults by the device-class factor (phone keeps the XML sizes).
-            setViewSize(findViewById(R.id.empty_state_mark_icon), ui.dpS(28));
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(18));
-            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(20));
-            setViewSize(findViewById(R.id.empty_state_open_icon), ui.dpS(20));
-            ((TextView) findViewById(R.id.empty_state_open_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(16));
-            setViewSize(findViewById(R.id.empty_state_link_icon), ui.dpS(20));
-            ((TextView) findViewById(R.id.empty_state_link_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(16));
-            setViewSize(findViewById(R.id.empty_state_settings_icon), ui.dpS(20));
-            ((TextView) findViewById(R.id.empty_state_settings_label))
-                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(15));
-        }
-
-        overlay.setVisibility(View.VISIBLE);
-        overlay.bringToFront();
-
-        final View[] items = {mark, title, subtitle, open, link, settings};
-
-        if (isReducedMotion()) {
-            for (View v : items) {
-                v.setAlpha(1f);
-                v.setScaleX(1f);
-                v.setScaleY(1f);
-                v.setTranslationY(0f);
-            }
-            open.requestFocus();
-            return;
-        }
-
-        final float density = getResources().getDisplayMetrics().density;
-        final PathInterpolator easeOutExpo = new PathInterpolator(0.16f, 1f, 0.3f, 1f);
-
-        // The title is part of the logo lockup now, so it reveals with the mark rather than
-        // sliding in behind it.
-        mark.setAlpha(0f);
-        mark.setScaleX(0.85f);
-        mark.setScaleY(0.85f);
-        subtitle.setAlpha(0f);
-        subtitle.setTranslationY(12 * density);
-        open.setAlpha(0f);
-        open.setTranslationY(16 * density);
-        link.setAlpha(0f);
-        link.setTranslationY(16 * density);
-        settings.setAlpha(0f);
-        settings.setTranslationY(16 * density);
-
-        mark.animate().alpha(1f).scaleX(1f).scaleY(1f)
-                .setStartDelay(0).setDuration(450).setInterpolator(easeOutExpo).start();
-        subtitle.animate().alpha(1f).translationY(0f)
-                .setStartDelay(160).setDuration(300).setInterpolator(easeOutExpo).start();
-        open.animate().alpha(1f).translationY(0f)
-                .setStartDelay(260).setDuration(350).setInterpolator(easeOutExpo)
-                .withEndAction(() -> {
-                    open.requestFocus();
-                    startEmptyStatePulse(open);
-                }).start();
-        link.animate().alpha(1f).translationY(0f)
-                .setStartDelay(310).setDuration(350).setInterpolator(easeOutExpo).start();
-        settings.animate().alpha(1f).translationY(0f)
-                .setStartDelay(360).setDuration(350).setInterpolator(easeOutExpo).start();
-    }
-
-    // Typing a URL into a player is the exception, so it lives behind a plain input dialog rather than
-    // a surface of its own. Prefilled from the clipboard when that already holds a playable link — the
-    // usual way one arrives here, and the only bearable one with a TV remote.
-    private void askForLink() {
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
-        input.setSingleLine(true);
-        input.setHint("https://");
-        final Uri pasted = clipboardUri();
-        if (pasted != null) {
-            input.setText(pasted.toString());
-            input.setSelection(input.getText().length());
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.empty_state_link)
-                .setView(input)
-                .setPositiveButton(android.R.string.ok,
-                        (dialog, which) -> openLink(input.getText().toString()))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    private void openLink(final String text) {
-        final Uri uri = Uri.parse(text.trim());
-        if (!Utils.isSupportedNetworkUri(uri)) {
-            showSnack(getString(R.string.error_link_invalid), null);
-            return;
-        }
-        // Hand the link to the same VIEW path a shared link takes through onNewIntent, so API state
-        // reset, subtitle discovery and focus behave identically — and getIntent() keeps pointing at
-        // what is actually playing.
-        final Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-        setIntent(intent);
-        handleViewIntent(intent);
-        initializePlayer();
-    }
-
-    private Uri clipboardUri() {
-        final ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        final ClipData clip = cm != null ? cm.getPrimaryClip() : null;
-        if (clip == null || clip.getItemCount() == 0) {
-            return null;
-        }
-        final CharSequence text = clip.getItemAt(0).coerceToText(this);
-        if (text == null) {
-            return null;
-        }
-        final Uri uri = Uri.parse(text.toString().trim());
-        return Utils.isSupportedNetworkUri(uri) ? uri : null;
-    }
-
-    // Inset the empty state by the system bars plus a margin — 48dp on TV, where panels still cut
-    // the outer few percent, 24dp elsewhere.
-    private void padEmptyState(View overlay, WindowInsets insets) {
-        int top = 0, left = 0, right = 0, bottom = 0;
-        if (insets != null) {
-            if (Build.VERSION.SDK_INT >= 30) {
-                final android.graphics.Insets bars = insets.getInsets(
-                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                top = bars.top;
-                left = bars.left;
-                right = bars.right;
-                bottom = bars.bottom;
-            } else {
-                top = insets.getSystemWindowInsetTop();
-                left = insets.getSystemWindowInsetLeft();
-                right = insets.getSystemWindowInsetRight();
-                bottom = insets.getSystemWindowInsetBottom();
-            }
-        }
-        // Mirror each axis on its larger inset: the centred block then sits on the screen's real centre
-        // (a one-sided cutout would otherwise push it off), while every edge still clears its bar.
-        final int pad = Utils.dpToPx(isTvBox ? 48 : 24);
-        final int padH = pad + Math.max(left, right);
-        final int padV = pad + Math.max(top, bottom);
-        overlay.setPadding(padH, padV, padH, padV);
-    }
-
-    private void setViewSize(View view, int dp) {
-        final ViewGroup.LayoutParams lp = view.getLayoutParams();
-        lp.width = Utils.dpToPx(dp);
-        lp.height = Utils.dpToPx(dp);
-        view.setLayoutParams(lp);
-    }
-
-    private void hideEmptyState() {
-        // Media is taking the screen, so the preferences apply again — including after an empty state
-        // relaxed them. No video format yet, so VIDEO lands on landscape and STATE_READY corrects it.
-        Utils.setOrientation(this, mPrefs.orientation);
-        mBrightnessControl.setActive(true, !isReducedMotion());
-        stopEmptyStatePulse();
-        final View overlay = findViewById(R.id.empty_state);
-        if (overlay != null && overlay.getVisibility() != View.GONE) {
-            overlay.setVisibility(View.GONE);
-        }
-    }
-
-    private void startEmptyStatePulse(View view) {
-        // Rasterise the pill once and scale that texture. Scaling the view itself re-measures the label
-        // and re-hints its glyphs every frame, which reads as the text twitching rather than growing.
-        view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        emptyStatePulse = ObjectAnimator.ofPropertyValuesHolder(view,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.04f),
-                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.04f));
-        emptyStatePulse.setDuration(1400);
-        emptyStatePulse.setRepeatCount(ValueAnimator.INFINITE);
-        emptyStatePulse.setRepeatMode(ValueAnimator.REVERSE);
-        emptyStatePulse.setInterpolator(new AccelerateDecelerateInterpolator());
-        emptyStatePulse.start();
-    }
-
-    private void stopEmptyStatePulse() {
-        if (emptyStatePulse != null) {
-            emptyStatePulse.cancel();
-            emptyStatePulse = null;
-        }
-        // Drop the layer whenever the pulse is not running — it is only worth its texture while animating.
-        final View open = findViewById(R.id.empty_state_open);
-        if (open != null) {
-            open.setLayerType(View.LAYER_TYPE_NONE, null);
         }
     }
 
@@ -6869,7 +6607,7 @@ public class PlayerActivity extends Activity {
         return (isTvBox && Build.VERSION.SDK_INT >= 30 && targetSdkVersion >= 30 && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("mediastore");
     }
 
-    private void openFile(Uri pickerInitialUri) {
+    void openFile(Uri pickerInitialUri) {
         if (useMediaStore()) {
             Intent intent = new Intent(this, MediaStoreChooserActivity.class);
             startActivityForResult(intent, REQUEST_CHOOSER_VIDEO_MEDIASTORE);
@@ -7906,7 +7644,7 @@ public class PlayerActivity extends Activity {
         haveMedia = false;
         setEndControlsVisible(false);
         playerView.setControllerShowTimeoutMs(-1);
-        showEmptyState();
+        emptyState.show();
     }
 
     void deleteMedia() {

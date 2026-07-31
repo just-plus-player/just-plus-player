@@ -512,17 +512,22 @@ public class PlayerActivity extends Activity {
     // falls back to the source if that fails), so nothing is lost and nothing re-loads. It is the same
     // machinery as the app's own audio-track menu. Restoring has to wait for onTracksChanged, because a
     // reselect reads the selector's current parameters and skips equivalent results: two calls made back to
-    // back can both land after the restore and cancel each other out. Armed with post() rather than inline
-    // from the listener, which is dispatched inside player.pause() — there isScrubbing is not set yet.
+    // back can both land after the restore and cancel each other out. Posted rather than run inline from the
+    // listener, which is dispatched inside player.play() / player.pause() — there isScrubbing is not set yet.
     private boolean audioRestartInFlight;
     private final Runnable passthroughRestartRunnable = this::restartPassthroughAudio;
-    // A seek releases the audio output too (MediaCodecAudioRenderer.onPositionReset -> audioSink.flush()), and
-    // the field reported it coming back silent on a receiver just like a pause does. Latched rather than acted
-    // on at once, because restartPassthroughAudio needs STATE_READY and a seek out of the buffered range
-    // spends a while in BUFFERING first; spent on the next STATE_READY. Only for a seek within the same item —
-    // an item change brings its own fresh output, and tearing that one down is how a just-started stream ends
-    // up silent.
-    private boolean audioRestartAfterSeek;
+    // Both a pause and a seek leave the output stale: the pause stops the AudioTrack, and a seek releases it
+    // outright (MediaCodecAudioRenderer.onPositionReset -> audioSink.flush()). Hence one latch for the two,
+    // and it is spent only while playback is actually wanted. That condition is the whole fix: a reselect made
+    // while paused ends in enableRenderer computing playing = shouldPlayWhenReady() && READY, so
+    // RendererHolder.start() is skipped and the fresh AudioTrack handleBuffer builds is left *unstarted*. It
+    // then idles for the length of the pause — the box's screensaver comes on, the platform puts the direct
+    // output into standby — and merely starting an already-built track does not renegotiate the HDMI format,
+    // so the sound never comes back. Recreating while playing starts the track inside the same handleBuffer
+    // pass, which is why a seek cures what a second pause cannot. Only for a seek within the same item — an
+    // item change brings its own fresh output, and tearing that one down is how a just-started stream ends up
+    // silent.
+    private boolean audioRestartPending;
     // Retry budget for one request: restartPassthroughAudio drops nothing on a transient blocker, it waits.
     private int audioRestartRetries;
     public boolean frameRendered;
@@ -5149,7 +5154,7 @@ public class PlayerActivity extends Activity {
         audioDecoderName = null;
         // A restart that never got its onTracksChanged belongs to the player being replaced here.
         audioRestartInFlight = false;
-        audioRestartAfterSeek = false;
+        audioRestartPending = false;
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
@@ -5585,7 +5590,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(backgroundReleaseRunnable);
             playerView.removeCallbacks(resumeWatchdogRunnable);
             playerView.removeCallbacks(passthroughRestartRunnable);
-            audioRestartAfterSeek = false;
+            audioRestartPending = false;
             playerView.removeCallbacks(showLoadingRunnable);
             // A pending key-seek target belongs to the session being torn down; left armed it would land
             // on whatever plays next.
@@ -5711,10 +5716,10 @@ public class PlayerActivity extends Activity {
                 playerStartPositionMs = currentPeriodPositionMs();
             }
             // The seek flushed the audio output, so the bitstream may need re-locking (see
-            // audioRestartAfterSeek). Latched, not run here. Within one item only.
+            // audioRestartPending). Latched, not run here. Within one item only.
             if (reason == Player.DISCONTINUITY_REASON_SEEK
                     && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) {
-                audioRestartAfterSeek = true;
+                audioRestartPending = true;
             }
             if (apiPlaylistPositions == null || player == null) {
                 return;
@@ -5753,8 +5758,8 @@ public class PlayerActivity extends Activity {
                     }
                 }
             }
-            // The new item opens its own audio output; a seek latched on the old one must not tear it down.
-            audioRestartAfterSeek = false;
+            // The new item opens its own audio output; a restart latched on the old one must not tear it down.
+            audioRestartPending = false;
             updateTopInfo();
             hideSkipButton();
             cancelSegmentFinder();
@@ -5821,21 +5826,33 @@ public class PlayerActivity extends Activity {
             }
         }
 
-        // Only a pause the user asked for. AUDIO_BECOMING_NOISY means the HDMI or headphone output has just
-        // gone away, so re-opening a direct track for it is the last thing to do; AUDIO_FOCUS_LOSS and
+        // A pause only latches; the resume is what recreates the AudioTrack (see audioRestartPending).
+        //
+        // Latch only a pause the user asked for. AUDIO_BECOMING_NOISY means the HDMI or headphone output has
+        // just gone away, so re-opening a direct track for it is the last thing to do; AUDIO_FOCUS_LOSS and
         // SUPPRESSED_TOO_LONG mean another app holds the output. Nothing wanted is lost by the filter: the
-        // play/pause button, the remote keys, the PiP actions and a media session all report USER_REQUEST or
-        // REMOTE. A transient focus loss (a notification chime on TV) does not change playWhenReady at all
-        // and so is not covered here — nor is a rebuffer's own stopRenderers().
+        // play/pause button, the remote keys, the PiP actions, a media session and onStop's own pause all
+        // report USER_REQUEST or REMOTE. A transient focus loss (a notification chime on TV) does not change
+        // playWhenReady at all and so is not covered here — nor is a rebuffer's own stopRenderers().
+        //
+        // The resume side needs no reason filter: the latch is the filter. Only something that lowered
+        // playWhenReady can have armed it, and every such call site either checks isPlaying() first or is a
+        // key/remote pause, which does nothing on an already-paused player. So the player's own autoplay —
+        // which also reports USER_REQUEST — finds nothing armed and leaves the opening track alone.
         @Override
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-            playerView.removeCallbacks(passthroughRestartRunnable);
-            if (playWhenReady
-                    || (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
-                        && reason != Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)) {
+            if (playWhenReady) {
+                if (audioRestartPending) {
+                    requestPassthroughRestart();
+                }
                 return;
             }
-            requestPassthroughRestart();
+            // Whatever was posted would now run against a paused player, which is the one thing to avoid.
+            playerView.removeCallbacks(passthroughRestartRunnable);
+            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+                    || reason == Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE) {
+                audioRestartPending = true;
+            }
         }
 
         @Override
@@ -5906,9 +5923,11 @@ public class PlayerActivity extends Activity {
                     playerStartPositionMs = currentPeriodPositionMs();
                 }
 
-                // The seek is over: give the bitstream a fresh AudioTrack (see audioRestartAfterSeek). The
-                // flag is cleared by the restart itself, so a transient blocker keeps the request alive.
-                if (audioRestartAfterSeek) {
+                // Ready again after a seek or a rebuffer: give the bitstream a fresh AudioTrack (see
+                // audioRestartPending). Only while playback is wanted — building the track for a still-paused
+                // player is the failure this latch exists to avoid; the resume below will ask again. The flag
+                // is cleared by the restart itself, so a transient blocker keeps the request alive.
+                if (audioRestartPending && player.getPlayWhenReady()) {
                     requestPassthroughRestart();
                 }
 
@@ -6489,11 +6508,11 @@ public class PlayerActivity extends Activity {
     }
 
     // Recreates the AudioTrack behind a bitstream that was torn down (see audioRestartInFlight). Runs one
-    // message after the pause, or after the STATE_READY that ends a seek, so the guards are real: the player
+    // message after the resume, or after the STATE_READY that ends a seek, so the guards are real: the player
     // may already be gone, and the user may have gone on to scrub, in which case their own seek recreates the
-    // track anyway. alive drops the onStop pause, where savePlayer() has run and the work would be spent on a
-    // session that is going away. Nothing here seeks, so seekability and liveness do not matter — and with no
-    // audio track selected there is nothing to recreate.
+    // track anyway. alive drops a resume that is not on screen — nothing plays there, so the work would be
+    // spent on a session that is going away. Nothing here seeks, so seekability and liveness do not matter —
+    // and with no audio track selected there is nothing to recreate.
     private void restartPassthroughAudio() {
         if (!alive || player == null || isScrubbing
                 || audioSink == null || !audioSink.isPassthrough() || mPrefs.tunneling
@@ -6514,8 +6533,10 @@ public class PlayerActivity extends Activity {
             return;
         }
         // Cleared here rather than at the trigger: until the reselect is actually issued the request still
-        // has to survive, or every guard above becomes a silent no-cure path.
-        audioRestartAfterSeek = false;
+        // has to survive, or every guard above becomes a silent no-cure path. It is also what backs up the
+        // retry budget above — a resume that spends it all while the retained session is still buffering
+        // leaves the latch armed, and the STATE_READY that follows asks again.
+        audioRestartPending = false;
         audioRestartInFlight = true;
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());

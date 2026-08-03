@@ -6349,7 +6349,16 @@ public class PlayerActivity extends Activity {
                     && recoverByRevokingAudioMime(audioTrackInitFailureMime(error))) {
                 return;
             }
-            if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error))
+            // A bitstream's AudioTrack can also die under a player that was happily feeding it for an hour
+            // (AudioTrack.write returns ERROR_DEAD_OBJECT: the audio server restarted, or the HDMI route to
+            // the receiver dropped). Media3 calls that recoverable but spends its single attempt at the front
+            // of the message queue — milliseconds after the output died, so it fails again and ends playback.
+            // The same delayed re-read is what this needs: by then the route is usually back, and prepare()
+            // keeps the item, position, surface and track selection. Not a reason to revoke the mime as the
+            // branch above does — this device had been bitstreaming it fine until the output went away, and
+            // if it comes back without passthrough the reselect falls to ffmpeg on its own.
+            if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error)
+                    || error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
                     && recoverFromDecoderFailure()) {
                 return;
             }

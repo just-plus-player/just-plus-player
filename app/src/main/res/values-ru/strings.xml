@@ -4,7 +4,7 @@
     <string name="error_stream_not_ready">Не удалось получить ссылку на видео. Попробуйте перезапустить воспроизведение.</string>
     <string name="error_playback_general">Не удалось воспроизвести это видео.</string>
     <string name="error_playback_timeout">Воспроизведение слишком долго не начинается. Попробуйте ещё раз.</string>
-    <string name="error_playback_stalled">Воспроизведение остановилось — это устройство, возможно, не может декодировать этот файл.</string>
+    <string name="error_playback_stalled">Воспроизведение остановилось и не продолжилось. Попробуйте ещё раз.</string>
     <string name="error_stream_interrupted">Эфир постоянно прерывается, продолжить не удалось. Попробуйте позже.</string>
     <string name="error_stream_broken">Поток видео повреждён или недоступен. Попробуйте ещё раз.</string>
     <string name="error_stream_http_status">Ошибка сервера %1$d на %2$s</string>

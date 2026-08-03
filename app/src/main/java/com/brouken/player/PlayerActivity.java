@@ -57,6 +57,7 @@ import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -1790,7 +1791,14 @@ public class PlayerActivity extends Activity {
         // it armed, and a rebuild here or in onActivityResult would consume it as "play". Show the
         // controls with it, so the return lands on an obviously paused player and not a frozen frame.
         restorePlayState = false;
-        playerView.showController();
+        // Except over a locked screen, which now survives the trip: the controller's buttons are ordinary
+        // views and take taps whatever the gesture handler thinks, and scheduleHideControllerOnPause refuses
+        // to hide it while locked, so it would sit there permanently. Show the way out instead.
+        if (locked) {
+            showSwipeToUnlock();
+        } else {
+            playerView.showController();
+        }
         if (player == null) {
             initializePlayer();
         } else if (player.getPlayerError() != null) {
@@ -1816,6 +1824,9 @@ public class PlayerActivity extends Activity {
     public void onResume() {
         super.onResume();
         restorePlayStateAllowed = true;
+        // Back in front, so nothing we launched can still need the device's auto-rotate. onActivityResult
+        // normally beats us to this; it does not run for a picker that finishes without handing back a result.
+        restoreRotationLock();
         if (isTvBox && Build.VERSION.SDK_INT >= 31) {
             updateSubtitleStyle(this);
         }
@@ -2459,8 +2470,13 @@ public class PlayerActivity extends Activity {
             if (player != null) {
                 if (player.isPlaying())
                     Utils.toggleSystemUi(this, playerView, false);
-                else
+                else if (!locked)
                     playerView.showController();
+            }
+            // Entering PiP only hid the unlock bar, so a lock held on the way in comes back out still on.
+            // Put its one affordance back — and above, keep the controller a locked screen must not show.
+            if (locked) {
+                showSwipeToUnlock();
             }
         }
     }
@@ -3151,7 +3167,7 @@ public class PlayerActivity extends Activity {
         if (locked) {
             lockScreen();
         } else {
-            unlockScreen();
+            clearLockUi();
         }
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
             hideSkipPill();
@@ -3161,21 +3177,29 @@ public class PlayerActivity extends Activity {
     // Entering the lock: pin the current orientation (restored on unlock), arm the swipe bar and reset the
     // Back guard. The controller is already hidden by CustomPlayerView.toggleLock().
     private void lockScreen() {
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+        // A concrete side, not SCREEN_ORIENTATION_LOCKED. LOCKED means "whichever way round it is now", and
+        // the system works that out afresh every time the activity takes charge of the screen again — so a
+        // lock set in landscape came back from the background pinned to however the phone was being held at
+        // that moment. Naming the side outright is the same freeze that cannot drift.
+        final int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        final boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        // Which way up comes from the rotation, which side from the configuration: that pair is right whether
+        // the device is naturally portrait (phone) or naturally landscape (tablet).
+        final boolean reverse = rotation == Surface.ROTATION_180 || rotation == Surface.ROTATION_270;
+        if (portrait) {
+            setRequestedOrientation(reverse
+                    ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                    : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        } else {
+            setRequestedOrientation(reverse
+                    ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                    : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        }
         lockBackPressedOnce = false;
         showSwipeToUnlock();
     }
 
-    // Leaving the lock: hide the bar and restore the user's orientation preference.
-    private void unlockScreen() {
-        hideSwipeToUnlock();
-        lockBackPressedOnce = false;
-        if (mPrefs != null) {
-            Utils.setOrientation(this, mPrefs.orientation);
-        }
-    }
-
-    // Some paths flip `locked` directly (new media, playback stopped) without going through onLockChanged;
+    // Some paths flip `locked` directly (new media, playback ended) without going through onLockChanged;
     // the lock does not persist, so undo its UI (bar + orientation pin) here too.
     private void clearLockUi() {
         hideSwipeToUnlock();
@@ -4957,14 +4981,7 @@ public class PlayerActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        try {
-            if (restoreOrientationLock) {
-                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
-                restoreOrientationLock = false;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        restoreRotationLock();
 
         if (resultCode == RESULT_OK && alive) {
             releasePlayer();
@@ -5944,7 +5961,13 @@ public class PlayerActivity extends Activity {
                 }
             }
 
-            if (!isPlaying && PlayerActivity.locked) {
+            // Only a film that has actually run out drops the lock. Every pause used to, and playback stops
+            // for reasons the viewer never asked for: onStop pauses on the way to the background, a network
+            // stream re-buffering reports isPlaying() false mid-film, and the PiP action pauses too — each
+            // one silently unlocked the screen and, through clearLockUi, threw the pinned orientation away
+            // with it. Nobody is trapped by keeping it: a tap brings the unlock bar back and two Backs leave.
+            if (!isPlaying && PlayerActivity.locked
+                    && player != null && player.getPlaybackState() == Player.STATE_ENDED) {
                 PlayerActivity.locked = false;
                 clearLockUi();
             }
@@ -6667,15 +6690,41 @@ public class PlayerActivity extends Activity {
                 && resolverNotReadyUri.equals(item.localConfiguration.uri.toString());
     }
 
+    // Turns the device's own auto-rotate on so a system picker can be read the way the phone is held. This is
+    // global state belonging to the whole device, so the promise to put it back has to be kept even if this
+    // activity never gets another callback — hence the flag goes to disk as well as onto the instance.
     private void enableRotation() {
         try {
             if (Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION) == 0) {
                 Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
                 restoreOrientationLock = true;
+                mPrefs.setRestoreAutoRotate(true);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Puts back what enableRotation borrowed, from onActivityResult (the ordinary way back) and from onResume.
+     * onResume is the one that closes the leak: being in front at all means nothing we launched still needs
+     * the setting, which covers both a picker that hands back no result and a launch whose predecessor was
+     * killed with the picker open — that process left the flag on disk and nothing else would have read it.
+     * <p>
+     * Deliberately not called from onStop: the picker covering us is itself what stops this activity, so
+     * restoring there would switch auto-rotate off at the exact moment the picker needs it.
+     */
+    private void restoreRotationLock() {
+        if (!restoreOrientationLock && !mPrefs.restoreAutoRotate) {
+            return;
+        }
+        try {
+            Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        restoreOrientationLock = false;
+        mPrefs.setRestoreAutoRotate(false);
     }
 
     boolean useMediaStore() {

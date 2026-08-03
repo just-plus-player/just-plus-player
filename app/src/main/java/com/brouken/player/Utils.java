@@ -476,6 +476,51 @@ class Utils {
             return new Rational(format.width, format.height);
     }
 
+    /**
+     * Pads a side-panel's content for the system bars, the way every picker in this app wants it.
+     *
+     * The status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+     * room — but breathing room the content genuinely needs, since the window spans the full height and the
+     * camera cutout lives up there. Hence the height is read IGNORING VISIBILITY: {@code getInsets()} reports
+     * zero for a bar that is currently hidden, and a panel opened from another panel (the skip-offset and
+     * sleep-timer panels come off a side menu, which has already turned the bars off) would then get no top
+     * padding at all and put its header under the cutout. The playlist panel only ever escaped this by being
+     * opened straight off the controls, while the bars were still up.
+     *
+     * In portrait the status-bar height reads well; landscape is much shorter (and its status-bar inset can
+     * include the camera cutout), where that same height looks oversized — use a compact fixed inset there.
+     * Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
+     *
+     * @param insetSource any attached view, used to read the window insets
+     * @param target      the view whose padding is set (horizontal padding comes from the caller's own grid)
+     */
+    public static void padForPickerInsets(final Activity activity, final UiMetrics ui, final View insetSource,
+                                         final View target, final int hPad,
+                                         final int extraTopPx, final int extraBottomPx) {
+        final boolean landscape = activity.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        int padTop = landscape ? ui.pickerTopPadLand() : ui.dp(24);
+        int padBottom = ui.overscanV();
+        final WindowInsets rootInsets = insetSource.getRootWindowInsets();
+        if (rootInsets != null) {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (!landscape) {
+                    padTop = rootInsets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
+                }
+                padBottom = rootInsets.getInsetsIgnoringVisibility(
+                        WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                // No ignoring-visibility variant before 30, and the legacy inset drops to 0 just the same
+                // once the bars are off — so the floor above stands in for it.
+                if (!landscape) {
+                    padTop = Math.max(padTop, rootInsets.getSystemWindowInsetTop());
+                }
+                padBottom = Math.max(padBottom, rootInsets.getSystemWindowInsetBottom() + ui.overscanV());
+            }
+        }
+        target.setPadding(hPad, padTop + extraTopPx, hPad, padBottom + extraBottomPx);
+    }
+
     public static String formatMilis(long time) {
         final int totalSeconds = Math.abs((int) time / 1000);
         final int seconds = totalSeconds % 60;

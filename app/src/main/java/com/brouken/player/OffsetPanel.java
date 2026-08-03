@@ -3,19 +3,16 @@ package com.brouken.player;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.res.ColorStateList;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
-import android.os.Build;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.view.WindowInsets;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
@@ -187,27 +184,8 @@ final class OffsetPanel {
             apply.run();
         });
 
-        int padTop = 0;
-        int padBottom = 0;
-        final WindowInsets rootInsets = insetSource.getRootWindowInsets();
-        if (rootInsets != null) {
-            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
-            // inset can include the camera cutout), where that same height looks oversized — use a compact
-            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-            final boolean landscape = activity.getResources().getConfiguration().orientation
-                    == Configuration.ORIENTATION_LANDSCAPE;
-            final int landscapeTop = ui.pickerTopPadLand();
-            if (Build.VERSION.SDK_INT >= 30) {
-                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
-                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
-                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
-            }
-        }
-        final int hPad = Utils.dpToPx(24) + ui.overscanH();
-        root.setPadding(hPad, padTop + Utils.dpToPx(20), hPad, padBottom + Utils.dpToPx(24));
+        Utils.padForPickerInsets(activity, ui, insetSource, root, Utils.dpToPx(24) + ui.overscanH(),
+                Utils.dpToPx(20), Utils.dpToPx(24));
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
         dialog.setContentView(root);

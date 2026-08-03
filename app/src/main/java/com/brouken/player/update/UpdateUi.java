@@ -76,16 +76,31 @@ public final class UpdateUi {
         layout.setPadding(pad, pad, pad, pad);
         layout.addView(bar);
 
+        // The worker does not exist yet — the dialog has to be built first so the callbacks below can
+        // dismiss it — so the cancel action reaches it through this holder. Nothing can read it before it
+        // is assigned: show() only posts, and the assignment happens before this returns to the looper.
+        final Thread[] download = new Thread[1];
         final AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle(R.string.update_downloading)
                 .setView(layout)
-                .setCancelable(false)
+                // Without this the dialog had no way out at all: a download that stalls without failing
+                // (a connection that trickles bytes never reaches OkHttp's read timeout) left the user
+                // with a modal that BACK could not dismiss, which on a TV means Home is the only escape.
+                .setNegativeButton(android.R.string.cancel, (d, which) -> cancelDownload(download[0]))
+                // BACK does the same as the button rather than nothing: it is what people reach for, and
+                // merely dismissing would leave the download running to fire the installer later, out of
+                // any context. Cancelling is not dismissing, so a normal finish does not come through here.
+                .setOnCancelListener(d -> cancelDownload(download[0]))
                 .create();
         dialog.show();
 
-        Updater.downloadApkAsync(activity, info,
+        download[0] = Updater.downloadApkAsync(activity, info,
                 percent -> activity.runOnUiThread(() -> {
-                    bar.setIndeterminate(false);
+                    // Only the first tick has anything to switch: setting this per percent swapped the
+                    // drawable and invalidated a hundred times over a download.
+                    if (bar.isIndeterminate()) {
+                        bar.setIndeterminate(false);
+                    }
                     bar.setProgress(percent);
                 }),
                 file -> activity.runOnUiThread(() -> {
@@ -98,6 +113,19 @@ public final class UpdateUi {
                         Toast.makeText(activity, R.string.update_download_failed, Toast.LENGTH_LONG).show();
                     }
                 }));
+    }
+
+    /**
+     * Stops a download the user called off. Interrupting is the whole cancel: the read loop checks the flag
+     * every chunk, and {@code downloadApkAsync} suppresses its own callback once interrupted, so no
+     * installer is launched and no failure toast is shown for something nobody is waiting for any more.
+     * A socket read already in flight is not interruptible, so the worker can sit in one until OkHttp's
+     * read timeout — harmless: it is a daemon thread, and the partial file is deleted by the next download.
+     */
+    private static void cancelDownload(final Thread download) {
+        if (download != null) {
+            download.interrupt();
+        }
     }
 
     private static int dp(final Activity activity, final int value) {

@@ -673,10 +673,10 @@ public class PlayerActivity extends Activity {
     // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
     static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
     // Segment highlights (see CustomDefaultTimeBar): a *_FILL band across the segment plus a crisp boundary
-    // hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral = playback, blue =
-    // skip (complementary to the warm coral so it never merges over the played track, and still legible
-    // over the dark unplayed track), amber = ad. The skip band is opaque, so it reads as the same blue over
-    // both the coral and the dark portions of the bar.
+    // hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral = playback (hue 354,
+    // @color/timebar_played), blue = skip, amber = ad (hue 38). The blue (hue 192) sits opposite the warm
+    // coral, so it never merges over the played track and stays legible over the dark unplayed track. The
+    // skip band is opaque, so it reads as the same blue over both.
     static final int SKIP_HIGHLIGHT_COLOR = 0xFFEAF6FF;
     static final int SKIP_FILL_COLOR = 0xFF0696BB;
     static final int AD_HIGHLIGHT_COLOR = 0xFFFFD27A;
@@ -840,17 +840,11 @@ public class PlayerActivity extends Activity {
         heroLp.width = ui.heroBox();
         heroLp.height = ui.heroBox();
         exoPlayPause.setLayoutParams(heroLp);
-        // Clip to the oval disc outline so the borderless press/focus ripple is round, not the default square
-        // (view-bounds) shape — matching the episode buttons.
-        exoPlayPause.setClipToOutline(true);
         exoPlayPause.setImageTintList(ColorStateList.valueOf(Color.WHITE));
-        // Replacing the button background drops the D-pad focus / touch-press highlight, so re-add it as a
-        // foreground ripple on top of the disc — critical for TV navigation, harmless on touch.
-        final TypedValue playHighlight = new TypedValue();
-        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, playHighlight, true)
-                && playHighlight.resourceId != 0) {
-            exoPlayPause.setForeground(ContextCompat.getDrawable(this, playHighlight.resourceId));
-        }
+        // Replacing the button background drops the D-pad focus / touch-press highlight, so re-add both as a
+        // foreground — critical for TV navigation, harmless on touch. The ripple carries its own oval mask, so
+        // no outline clip is needed (which would also cut off the focus ring sitting outside the disc).
+        exoPlayPause.setForeground(discFocusForeground(ui.heroInset()));
         loadingProgressBar = findViewById(R.id.loading);
         // Keep the loading ring proportional to the hero it overlays.
         final ViewGroup.LayoutParams spinnerLp = loadingProgressBar.getLayoutParams();
@@ -7572,6 +7566,31 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /**
+     * Foreground for a round control disc: the press ripple, masked to the disc so it stays circular, plus
+     * the D-pad focus state. Focus is a thin white ring orbiting just outside the disc, not a wash over it —
+     * the theme's borderless ripple alone was a ~20% white scrim the brand disc swallowed, and filling the
+     * disc to signal focus throws away the very colour the button exists to carry.
+     *
+     * @param discInset how far the disc itself is inset within the view (0 when the disc fills the view);
+     *                  the ring is placed halfway into that gap so it reads as attached to the disc.
+     */
+    private Drawable discFocusForeground(final int discInset) {
+        // The ring's own stroke carries the state: white on focus, transparent otherwise. A StateListDrawable
+        // cannot express "nothing" — a null entry leaves the previously drawn state on screen.
+        final GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setStroke(ui.dpS(3), new ColorStateList(
+                new int[][]{{android.R.attr.state_focused}, {}},
+                new int[]{Color.WHITE, Color.TRANSPARENT}));
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setShape(GradientDrawable.OVAL);
+        mask.setColor(Color.WHITE);
+        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF),
+                new InsetDrawable((Drawable) ring, discInset / 2),
+                new InsetDrawable((Drawable) mask, discInset));
+    }
+
     private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding, final int margin) {
         if (button == null) {
             return;
@@ -7593,14 +7612,10 @@ public class PlayerActivity extends Activity {
         disc.setShape(GradientDrawable.OVAL);
         disc.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
         button.setBackground(disc);
-        button.setClipToOutline(true);
-        // Replacing the background drops the D-pad focus / touch-press highlight, so re-add it as a foreground
-        // ripple on top of the disc — critical for TV navigation, harmless on touch.
-        final TypedValue highlight = new TypedValue();
-        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, highlight, true)
-                && highlight.resourceId != 0) {
-            button.setForeground(ContextCompat.getDrawable(this, highlight.resourceId));
-        }
+        // Replacing the background drops the D-pad focus / touch-press highlight, so re-add both as a
+        // foreground — critical for TV navigation, harmless on touch. The disc fills the whole view here, so
+        // the focus ring lands on its own edge.
+        button.setForeground(discFocusForeground(0));
     }
 
     // Grey out and disable the prev/next episode arrows while a video is loading, using the same disabled

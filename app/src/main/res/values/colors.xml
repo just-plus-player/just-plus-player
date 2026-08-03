@@ -18,8 +18,9 @@
     <color name="controls_scrim">#66000000</color>
 
     <!-- Progress bar: the played run and its scrubber, over a solid dark rail ahead of the playhead
-         (not a wash of the frame behind it). -->
-    <color name="timebar_played">#FFE96220</color>
+         (not a wash of the frame behind it). The played colour is the midpoint of the Play hero's ramp
+         (brand_ramp_start..end), so the bar reads as the same tone as the button it sits under. -->
+    <color name="timebar_played">#FFFF3E50</color>
     <color name="timebar_track">#FF38393C</color>
 
     <!-- Volume/brightness OSD bar (LevelBar); the boost segment is everything above 100%. -->

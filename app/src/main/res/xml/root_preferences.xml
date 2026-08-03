@@ -84,7 +84,7 @@
             app:title="@string/pref_skip_enabled" />
 
         <ListPreference
-            app:defaultValue="button"
+            app:defaultValue="brief"
             app:dependency="skipEnabled"
             app:entries="@array/skip_mode_entries"
             app:entryValues="@array/skip_mode_values"
@@ -93,7 +93,7 @@
             app:useSimpleSummaryProvider="true" />
 
         <ListPreference
-            app:defaultValue="button"
+            app:defaultValue="brief"
             app:dependency="skipEnabled"
             app:entries="@array/skip_mode_entries"
             app:entryValues="@array/skip_mode_values"

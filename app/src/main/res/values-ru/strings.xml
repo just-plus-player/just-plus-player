@@ -65,7 +65,8 @@
     <string name="pref_skip_enabled_on">Пропускать заставки и рекламные сегменты от запускающего приложения</string>
     <string name="pref_skip_enabled_off">Воспроизводить как есть</string>
     <string name="pref_skip_mode">Заставка</string>
-    <string name="pref_skip_mode_button">Показывать кнопку «Пропустить»</string>
+    <string name="pref_skip_mode_brief">Кнопка «Пропустить» на 3 секунды</string>
+    <string name="pref_skip_mode_button">Кнопка «Пропустить» на весь сегмент</string>
     <string name="pref_skip_mode_auto">Пропускать автоматически</string>
     <string name="pref_skip_mode_credits">Финальные титры</string>
     <string name="pref_skip_fetch">Искать сегменты онлайн</string>
@@ -83,6 +84,7 @@
     <string name="skip_offset_reset">Сбросить</string>
     <string name="button_skip_offset">Смещение пропуска</string>
     <string name="button_skip">Пропустить</string>
+    <string name="button_skip_countdown">Пропустить %1$d</string>
     <string name="notification_skipped">Пропущено</string>
     <string name="notification_skipped_undo">Вернуться %1$d</string>
     <string name="notification_skipping_cancel">Не пропускать %1$d</string>

@@ -44,6 +44,7 @@ class Prefs {
     private static final String PREF_KEY_ASK_SCOPE = "askScope";
     private static final String PREF_KEY_RESTORE_AUTO_ROTATE = "restoreAutoRotate";
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
+    private static final String PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES = "disableVolumeBrightnessGestures";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_SKIP_SILENCE = "skipSilence";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
@@ -114,6 +115,8 @@ class Prefs {
     // with the picker still open cannot leave the whole phone rotating — see PlayerActivity.enableRotation.
     public boolean restoreAutoRotate = false;
     public boolean autoPiP = false;
+    // Off means the vertical swipes work as they always have; on takes them away entirely.
+    public boolean disableVolumeBrightnessGestures = false;
 
     public boolean tunneling = false;
     public boolean skipSilence = false;
@@ -215,6 +218,8 @@ class Prefs {
 
     public void loadUserPreferences() {
         autoPiP = mSharedPreferences.getBoolean(PREF_KEY_AUTO_PIP, autoPiP);
+        disableVolumeBrightnessGestures = mSharedPreferences.getBoolean(
+                PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES, disableVolumeBrightnessGestures);
         tunneling = mSharedPreferences.getBoolean(PREF_KEY_TUNNELING, tunneling);
         skipSilence = mSharedPreferences.getBoolean(PREF_KEY_SKIP_SILENCE, skipSilence);
         frameRateMatching = mSharedPreferences.getBoolean(PREF_KEY_FRAMERATE_MATCHING, frameRateMatching);

@@ -27,11 +27,13 @@
   </string-array>
 
   <string-array name="skip_mode_entries">
+    <item>@string/pref_skip_mode_brief</item>
     <item>@string/pref_skip_mode_button</item>
     <item>@string/pref_skip_mode_auto</item>
   </string-array>
 
   <string-array name="skip_mode_values">
+    <item>brief</item>
     <item>button</item>
     <item>auto</item>
   </string-array>

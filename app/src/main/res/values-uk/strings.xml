@@ -66,7 +66,8 @@
     <string name="pref_skip_enabled_on">Пропускати заставки та рекламні сегменти від застосунку</string>
     <string name="pref_skip_enabled_off">Відтворювати контент як є</string>
     <string name="pref_skip_mode">Заставка</string>
-    <string name="pref_skip_mode_button">Показувати кнопку «Пропустити»</string>
+    <string name="pref_skip_mode_brief">Кнопка «Пропустити» на 3 секунди</string>
+    <string name="pref_skip_mode_button">Кнопка «Пропустити» на весь сегмент</string>
     <string name="pref_skip_mode_auto">Пропускати автоматично</string>
     <string name="pref_skip_mode_credits">Кінцеві титри</string>
     <string name="pref_skip_fetch">Шукати сегменти онлайн</string>
@@ -84,6 +85,7 @@
     <string name="skip_offset_reset">Скинути</string>
     <string name="button_skip_offset">Зміщення пропуску</string>
     <string name="button_skip">Пропустити</string>
+    <string name="button_skip_countdown">Пропустити %1$d</string>
     <string name="notification_skipped">Пропущено</string>
     <string name="notification_skipped_undo">Повернутися %1$d</string>
     <string name="notification_skipping_cancel">Не пропускати %1$d</string>

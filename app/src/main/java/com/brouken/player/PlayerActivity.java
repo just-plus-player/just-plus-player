@@ -669,7 +669,9 @@ public class PlayerActivity extends Activity {
     // when the intro's first frames arrive. Only the button is pre-shown; auto-skip waits for the
     // segment itself, or it would silently cut the seconds of real content that still precede it.
     static final double SKIP_LEAD_SEC = 3;
-    // How long the "undo" pill stays up after an automatic jump.
+    // How long a timed pill stays up: the "undo" offer after a jump, and brief mode's Skip offer. The
+    // pref_skip_mode_brief option names these seconds out loud ("Skip button for 3 seconds"), so changing
+    // this means changing that string in every locale too.
     static final long SKIP_NOTICE_MS = 3000;
     // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
     static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
@@ -730,6 +732,13 @@ public class PlayerActivity extends Activity {
     private int skipPillSecs;
     // When the post-skip notice is due to disappear, so its underline can drain like the other states'.
     private long skipNoticeHideAtMs;
+    // Brief mode: when the timed Skip offer is due to go. Ownership of the pill is derived from it rather
+    // than latched (see skipFlashActive), so anything that takes the pill over ends the flash by itself.
+    private long skipFlashEndMs;
+    // Brief mode: end of the segment whose one automatic offer has already been made. Keyed on the position
+    // and not the segment object for the reason spelled out at autoSkipUndone — a segment can come back
+    // re-derived, with its once-only flags cleared.
+    private long skipBriefFlashedUntilMs = C.TIME_UNSET;
     // Confirm key whose ACTION_UP must be swallowed after triggering a Skip on its ACTION_DOWN (TV).
     private int skipKeyUpToConsume = 0;
     final Runnable skipRunnable = new Runnable() {
@@ -1673,6 +1682,8 @@ public class PlayerActivity extends Activity {
                 }
                 updateOverlayClock();
                 scheduleHideControllerOnPause();
+                // Brief skip mode: the Skip button comes and goes with the controls — see rideSkipWithController.
+                updateBriefSkipWithController();
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -2880,7 +2891,9 @@ public class PlayerActivity extends Activity {
         }
         final double posSec = player.getCurrentPosition() / 1000.0;
         if (skipPill == SkipPill.UNDO) {
-            updateUndoCountdown();
+            updatePillCountdown(skipNoticeHideAtMs, R.string.notification_skipped_undo);
+        } else if (skipFlashActive()) {
+            updatePillCountdown(skipFlashEndMs, R.string.button_skip_countdown);
         }
         final SkipSegment segment = skipManager.activeSegment(posSec);
         if (segment == null) {
@@ -2894,6 +2907,13 @@ public class PlayerActivity extends Activity {
             } else if (isAutoSkip(upcoming)) {
                 hideSkipButton();
                 showSkipHeadsUp(upcoming);
+            } else if (isBriefSkip(upcoming)) {
+                // No head start in brief mode: the offer belongs to the segment, and three seconds spent
+                // before it even begins would be three the viewer never gets over the intro itself.
+                hideSkipHeadsUp();
+                if (!skipFlashActive()) {
+                    hideSkipButton(); // clear anything the segment just behind us left up
+                }
             } else {
                 hideSkipHeadsUp();
                 updateSkipButtonProgress(upcoming);
@@ -2906,6 +2926,8 @@ public class PlayerActivity extends Activity {
             hideSkipButton();
             skipSeekTo(segment);
             showSkipNotification(true);
+        } else if (isBriefSkip(segment)) {
+            briefSkipTick(segment);
         } else {
             updateSkipButtonProgress(segment);
             showSkipButton(segment);
@@ -3005,7 +3027,7 @@ public class PlayerActivity extends Activity {
         }
         if (fresh || secsLeft != skipPillSecs) {
             skipPillSecs = secsLeft;
-            showSkipPill(SkipPill.CANCEL, countdownLabel(R.string.notification_skipping_cancel, secsLeft), true);
+            showSkipPill(SkipPill.CANCEL, countdownLabel(R.string.notification_skipping_cancel, secsLeft), true, true);
         }
     }
 
@@ -3024,9 +3046,11 @@ public class PlayerActivity extends Activity {
 
     /**
      * Paints and shows the one floating pill. {@code actionable} also drives focusability: a pill that
-     * does nothing must not take D-pad focus away from the player.
+     * does nothing must not take D-pad focus away from the player. {@code claimFocus} says whether this
+     * pill may take the focus at all — a pill the viewer summoned themselves must not, or it snatches the
+     * focus out from under the controls they are navigating.
      */
-    private void showSkipPill(SkipPill mode, CharSequence label, boolean actionable) {
+    private void showSkipPill(SkipPill mode, CharSequence label, boolean actionable, boolean claimFocus) {
         if (buttonSkip == null) {
             return;
         }
@@ -3034,17 +3058,28 @@ public class PlayerActivity extends Activity {
             hideSkipPill(); // unusable in the PiP window; automatic skips still happen, just silently
             return;
         }
+        // Whatever timer the outgoing pill had is not the incoming one's. Without this a pill replaced
+        // mid-countdown — back-to-back segments land the next offer inside the previous notice's three
+        // seconds — inherited a hider that took the new pill away early. Callers that want a timer arm
+        // it after calling this.
+        if (playerView != null) {
+            playerView.removeCallbacks(skipPillHider);
+        }
+        // Read before the assignment below: a change of state is what earns a focus request, so a countdown
+        // repainting itself every second cannot keep yanking the focus back.
+        final boolean stateChanged = skipPill != mode;
         skipPill = mode;
         buttonSkip.setText(label);
         buttonSkip.setCompoundDrawablesRelative(
                 pillIcon(mode), null, null, null);
         buttonSkip.setClickable(actionable);
         buttonSkip.setFocusable(actionable);
-        if (buttonSkip.getVisibility() != View.VISIBLE) {
+        final boolean appearing = buttonSkip.getVisibility() != View.VISIBLE;
+        if (appearing) {
             buttonSkip.setVisibility(View.VISIBLE);
-            if (isTvBox && actionable) {
-                buttonSkip.requestFocus();
-            }
+        }
+        if (isTvBox && actionable && claimFocus && (appearing || stateChanged)) {
+            buttonSkip.requestFocus();
         }
     }
 
@@ -3092,16 +3127,16 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    /** Ticks the seconds left on the undo pill while it is up. */
-    private void updateUndoCountdown() {
+    /** Ticks the seconds left on whichever timed pill is up — the undo offer or brief mode's Skip offer. */
+    private void updatePillCountdown(long deadlineMs, int labelRes) {
         if (buttonSkip == null || !buttonSkip.isClickable()) {
             return; // a plain "skipped" notice has nothing to count down to
         }
         final int secsLeft = (int) Math.max(1,
-                Math.ceil((skipNoticeHideAtMs - SystemClock.uptimeMillis()) / 1000.0));
+                Math.ceil((deadlineMs - SystemClock.uptimeMillis()) / 1000.0));
         if (secsLeft != skipPillSecs) {
             skipPillSecs = secsLeft;
-            buttonSkip.setText(countdownLabel(R.string.notification_skipped_undo, secsLeft));
+            buttonSkip.setText(countdownLabel(labelRes, secsLeft));
         }
     }
 
@@ -3143,6 +3178,10 @@ public class PlayerActivity extends Activity {
         skipUndoneUntilMs = C.TIME_UNSET;
         skipHeadsUpEndMs = C.TIME_UNSET;
         skipPillSecs = 0;
+        // Called on every media item change, which is exactly when brief mode's "already offered" mark has
+        // to go: two episodes of the same length can carry intros that end on the very same millisecond, and
+        // the mark is keyed on that position, so keeping it would swallow the next episode's offer.
+        skipBriefFlashedUntilMs = C.TIME_UNSET;
     }
 
     // OK/Enter-style keys that activate the focused Skip button on a TV remote / gamepad.
@@ -3216,7 +3255,103 @@ public class PlayerActivity extends Activity {
             return;
         }
         pendingSkip = segment;
-        showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true);
+        showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true, true);
+    }
+
+    /** Whether this segment's position is set to offer the Skip button briefly rather than throughout. */
+    private boolean isBriefSkip(SkipSegment segment) {
+        return Prefs.SKIP_MODE_BRIEF.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+    }
+
+    /** True while brief mode's timed offer is on screen and owns the pill. */
+    private boolean skipFlashActive() {
+        return skipPill == SkipPill.SKIP && SystemClock.uptimeMillis() < skipFlashEndMs;
+    }
+
+    /**
+     * Brief mode, once playback is inside a segment the viewer is asked about. The offer comes twice over:
+     * once by itself when the segment starts, and thereafter only while the controller is up. Between the
+     * two the picture is left alone, which is the whole point of the mode — the Skip button in the corner
+     * for the length of an intro is exactly what it exists to avoid.
+     */
+    private void briefSkipTick(SkipSegment segment) {
+        pendingSkip = segment;
+        if (skipFlashActive()) {
+            if (!controllerVisible) {
+                return; // still counting down; leave it its three seconds
+            }
+            // Controls came up mid-countdown. End the flash here and hand the pill over rather than letting
+            // its timer run out under an open controller, which would blink the button out and back in.
+            skipFlashEndMs = 0;
+        }
+        // Controls already up when the segment arrived: ride along with them and keep the segment's own
+        // offer in hand. Counting down over an open controller would say nothing — the button is not about
+        // to go while the controls are there — and would then blink out and straight back in as this rides.
+        if (controllerVisible) {
+            rideSkipWithController();
+            return;
+        }
+        if (segment.endMs() != skipBriefFlashedUntilMs) {
+            flashSkipOffer(segment);
+            return;
+        }
+        rideSkipWithController();
+    }
+
+    /**
+     * The one unprompted offer: three seconds of Skip, counted down in the label, then gone. Same timer and
+     * same countdown as the undo pill, because it is the same promise in the other direction.
+     */
+    private void flashSkipOffer(SkipSegment segment) {
+        if (buttonSkip == null || playerView == null) {
+            return;
+        }
+        // Do not spend the segment's one offer where it cannot be seen — it would be spent invisibly and
+        // never come back on its own. The controller can still summon it, and PiP/unlock re-arms nothing.
+        if (inPip || (locked && mPrefs.skipHideWhenLocked)) {
+            return;
+        }
+        skipBriefFlashedUntilMs = segment.endMs();
+        skipFlashEndMs = SystemClock.uptimeMillis() + SKIP_NOTICE_MS;
+        skipPillSecs = (int) (SKIP_NOTICE_MS / 1000);
+        hideSkipPillUnderline(); // the number is the countdown here; no bar to say it twice
+        showSkipPill(SkipPill.SKIP, countdownLabel(R.string.button_skip_countdown, skipPillSecs), true, true);
+        playerView.postDelayed(skipPillHider, SKIP_NOTICE_MS);
+    }
+
+    /**
+     * After the flash, the button is the controller's companion: shown whenever the controls are, gone with
+     * them. No countdown and no timer — the screen is already given over to controls, so there is nothing
+     * left to keep clean, and a button vanishing from under the viewer's finger would read as a fault. It
+     * takes no focus either: they are steering, and the pill must not grab the D-pad out of their hands.
+     */
+    private void rideSkipWithController() {
+        if (locked && mPrefs.skipHideWhenLocked) {
+            return;
+        }
+        if (controllerVisible) {
+            hideSkipPillUnderline();
+            showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true, false);
+        } else if (skipPill == SkipPill.SKIP) {
+            hideSkipButton();
+        }
+    }
+
+    /**
+     * Brief mode's second trigger, driven by the controller rather than the clock. Called from the
+     * controller's visibility listener because the 250 ms poll is both too slow to feel like a response to
+     * a tap and stopped altogether while playback is paused.
+     */
+    private void updateBriefSkipWithController() {
+        if (player == null || skipManager == null || mPrefs == null || !mPrefs.skipEnabled) {
+            return;
+        }
+        final double posSec = player.getCurrentPosition() / 1000.0;
+        final SkipSegment segment = skipManager.activeSegment(posSec);
+        if (segment == null || isAutoSkip(segment) || !isBriefSkip(segment)) {
+            return;
+        }
+        briefSkipTick(segment);
     }
 
     /**
@@ -3262,8 +3397,7 @@ public class PlayerActivity extends Activity {
         showSkipPill(SkipPill.UNDO, undoable
                         ? countdownLabel(R.string.notification_skipped_undo, skipPillSecs)
                         : getString(R.string.notification_skipped),
-                undoable);
-        playerView.removeCallbacks(skipPillHider);
+                undoable, true);
         playerView.postDelayed(skipPillHider, SKIP_NOTICE_MS);
     }
 

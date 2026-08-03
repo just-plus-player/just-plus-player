@@ -314,8 +314,8 @@ public class PlayerActivity extends Activity {
     // renderers are built — that is where the library is loaded anyway — so a report never pays for a
     // dlopen on the main thread, and stays null until then rather than lying.
     private static Boolean ffmpegAvailable;
-    // Position where playback actually began (first STATE_READY, then every seek), so progress is measured
-    // against it rather than against zero: a film resumed at the fortieth minute, or a live stream
+    // Position where playback actually began (first STATE_READY, then every item change), so progress is
+    // measured against it rather than against zero: a film resumed at the fortieth minute, or a live stream
     // positioned inside its window, still has a large position when it wedges on its first frame, and
     // judging by the position alone would call that a mid-stream stall. C.TIME_UNSET until known.
     private long playerStartPositionMs = C.TIME_UNSET;
@@ -1808,6 +1808,12 @@ public class PlayerActivity extends Activity {
         } else {
             resumeFrameRendered = false;
             playerView.postDelayed(resumeWatchdogRunnable, RESUME_WATCHDOG_MS);
+            // Put back what onStop cancelled, and only that: a load that was still buffering when the user
+            // left gets a full timeout from the moment they are looking at it again.
+            if (player.getPlaybackState() == Player.STATE_BUFFERING) {
+                cancelLoadWatchdog();
+                playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
+            }
         }
         updateButtonRotation();
     }
@@ -1856,6 +1862,12 @@ public class PlayerActivity extends Activity {
             displayManager.unregisterDisplayListener(displayListener);
         }
         player.pause();
+        // The load watchdog only ever ran while the activity was on screen by accident: nothing cancelled it
+        // on this path, so an item still buffering when the user left would time out in the background —
+        // stopping a session they may come straight back to, and posting a snackbar nobody can see. onStart
+        // re-arms it, which it has to do by hand: pausing does not leave STATE_BUFFERING, so the state does
+        // not change across the trip and onPlaybackStateChanged never re-fires.
+        cancelLoadWatchdog();
         playerView.removeCallbacks(resumeWatchdogRunnable);
         playerView.postDelayed(backgroundReleaseRunnable, BACKGROUND_RELEASE_MS);
     }
@@ -5596,7 +5608,14 @@ public class PlayerActivity extends Activity {
         // error paths ever re-enabled them, so a timeout left the one escape from a stuck episode dead.
         // They work from here: stepEpisodeWhileIdle reloads out of an idle player.
         setEpisodeNavLoading(false);
-        showSnack(getString(R.string.error_playback_timeout), null);
+        // A film that has been playing for an hour and then stopped is not a film that "took too long to
+        // start", and that was the message it got. Deliberately not stalledAtStart(): that answers a
+        // different question — whether *this* playback attempt produced anything — and its baseline is not
+        // rebased on a seek (see playerStartPositionMs), so a rewind reads as "at start" in mid-film. All
+        // this message needs is whether the item ever became ready, which is exactly what a set baseline
+        // means. Both messages ask for the same thing, and the play button re-prepares either way.
+        showSnack(getString(playerStartPositionMs == C.TIME_UNSET
+                ? R.string.error_playback_timeout : R.string.error_playback_stalled), null);
     }
 
     public void releasePlayer() {

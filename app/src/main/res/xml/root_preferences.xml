@@ -65,6 +65,13 @@
             app:summary="@string/pref_repeat_toggle_summary"
             app:title="@string/pref_repeat_toggle" />
 
+        <SwitchPreferenceCompat
+            app:key="disableVolumeBrightnessGestures"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_disable_volume_brightness_gestures_on"
+            app:summaryOff="@string/pref_disable_volume_brightness_gestures_off"
+            app:title="@string/pref_disable_volume_brightness_gestures" />
+
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_skip_header">

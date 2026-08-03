@@ -120,6 +120,11 @@ public class SettingsActivity extends AppCompatActivity {
                 // stream responds — an isolated player volume would look broken there.
                 preferenceSystemVolume.setVisible(false);
             }
+            Preference preferenceDisableGestures = findPreference("disableVolumeBrightnessGestures");
+            if (preferenceDisableGestures != null && Utils.isTvBox(getContext())) {
+                // A remote has no swipes to give up, so there is nothing here to turn off.
+                preferenceDisableGestures.setVisible(false);
+            }
             ListPreference listPreferenceFileAccess = findPreference("fileAccess");
             if (listPreferenceFileAccess != null) {
                 List<String> entries = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.file_access_entries)));

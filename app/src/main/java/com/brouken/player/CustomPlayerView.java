@@ -207,6 +207,15 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         return false;
     }
 
+    // True when the viewer has turned the volume/brightness swipes off in the settings.
+    private boolean volumeBrightnessGesturesOff() {
+        if (!(getContext() instanceof PlayerActivity)) {
+            return false;
+        }
+        final Prefs prefs = ((PlayerActivity) getContext()).mPrefs;
+        return prefs != null && prefs.disableVolumeBrightnessGestures;
+    }
+
     @Override
     public boolean onScroll(MotionEvent motionEvent, MotionEvent motionEvent1, float distanceX, float distanceY) {
         // No player check here: brightness and volume must stay reachable even when playback has died
@@ -284,7 +293,12 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         }
 
         // LEFT = Brightness  |  RIGHT = Volume
-        if (gestureOrientation == Orientation.VERTICAL || gestureOrientation == Orientation.UNKNOWN) {
+        // Guarding the branch as a whole, rather than the two changeBrightness/setVolumePercent calls inside
+        // it, is what makes the setting a real off switch: gestureOrientation never becomes VERTICAL, so no
+        // level bar, no boost zone and no indicator ever appear either. The horizontal branch above has
+        // already had its turn, so seeking is untouched.
+        if (!volumeBrightnessGesturesOff()
+                && (gestureOrientation == Orientation.VERTICAL || gestureOrientation == Orientation.UNKNOWN)) {
             gestureScrollY += distanceY;
             if (gestureOrientation == Orientation.UNKNOWN) {
                 if (Math.abs(gestureScrollY) <= SCROLL_STEP)

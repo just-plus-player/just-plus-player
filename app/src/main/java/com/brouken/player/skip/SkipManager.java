@@ -30,6 +30,14 @@ public class SkipManager {
      */
     private static final double CREDITS_END_TOLERANCE_SEC = 1.5;
 
+    /**
+     * A segment spanning more than this fraction of the file is not an intro, recap or credits — no
+     * such segment covers a third of an episode. Sources do return one: a credits entry whose start
+     * was recorded wrong and whose end is open-ended arrives as "skip from minute six to the end".
+     * Acting on it would skip the episode, so it is dropped once the duration is known.
+     */
+    private static final double MAX_SEGMENT_FRACTION = 1.0 / 3;
+
     private SkipSource source;
     private List<SkipSegment> segments = Collections.emptyList();
 
@@ -56,8 +64,37 @@ public class SkipManager {
     public void rebuild(double durationSec) {
         final List<SkipSegment> base = source != null
                 ? source.getSegments(durationSec) : Collections.<SkipSegment>emptyList();
-        segments = offsetSec != 0 ? applyOffset(base, durationSec) : base;
+        segments = sanitize(offsetSec != 0 ? applyOffset(base, durationSec) : base, durationSec);
         classifyCredits(durationSec);
+    }
+
+    /**
+     * Clamps segment ends to the file end — an open-ended credits segment arrives with a sentinel end
+     * far past it — and drops whatever is left spanning more than {@link #MAX_SEGMENT_FRACTION} of the
+     * file. A no-op while the duration is unknown: there is nothing to judge a segment against then,
+     * and the next rebuild runs this once it is.
+     */
+    private static List<SkipSegment> sanitize(List<SkipSegment> in, double durationSec) {
+        if (!(durationSec > 0)) {
+            return in; // also covers NaN
+        }
+        final double maxSpan = durationSec * MAX_SEGMENT_FRACTION;
+        final List<SkipSegment> out = new ArrayList<>(in.size());
+        for (SkipSegment s : in) {
+            final double end = Math.min(s.endSec, durationSec);
+            if (end <= s.startSec || end - s.startSec > maxSpan) {
+                continue;
+            }
+            if (end == s.endSec) {
+                out.add(s);
+                continue;
+            }
+            final SkipSegment clamped = new SkipSegment(s.startSec, end, s.type, s.category,
+                    s.coordBase, s.timeTrust);
+            clamped.confirmed = s.confirmed;
+            out.add(clamped);
+        }
+        return out;
     }
 
     /** Shift every segment by {@link #offsetSec}, clamped to the media bounds; drop any pushed out. */

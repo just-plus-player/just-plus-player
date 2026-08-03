@@ -42,6 +42,7 @@ class Prefs {
     private static final String PREF_KEY_ASPECT_RATIO = "aspectRatio";
     private static final String PREF_KEY_SCOPE_URI = "scopeUri";
     private static final String PREF_KEY_ASK_SCOPE = "askScope";
+    private static final String PREF_KEY_RESTORE_AUTO_ROTATE = "restoreAutoRotate";
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_SKIP_SILENCE = "skipSilence";
@@ -109,6 +110,9 @@ class Prefs {
     public int volume = 100;
     public boolean firstRun = true;
     public boolean askScope = true;
+    // Set while we have turned the device's own auto-rotate on for a system picker, so that a process death
+    // with the picker still open cannot leave the whole phone rotating — see PlayerActivity.enableRotation.
+    public boolean restoreAutoRotate = false;
     public boolean autoPiP = false;
 
     public boolean tunneling = false;
@@ -202,6 +206,7 @@ class Prefs {
         if (mSharedPreferences.contains(PREF_KEY_SCOPE_URI))
             scopeUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SCOPE_URI, null));
         askScope = mSharedPreferences.getBoolean(PREF_KEY_ASK_SCOPE, askScope);
+        restoreAutoRotate = mSharedPreferences.getBoolean(PREF_KEY_RESTORE_AUTO_ROTATE, restoreAutoRotate);
         speed = mSharedPreferences.getFloat(PREF_KEY_SPEED, speed);
         updateLastCheck = mSharedPreferences.getLong(PREF_KEY_UPDATE_LAST_CHECK, updateLastCheck);
         updateSkippedVersionCode = mSharedPreferences.getInt(PREF_KEY_UPDATE_SKIPPED, updateSkippedVersionCode);
@@ -326,6 +331,18 @@ class Prefs {
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_FIRST_RUN, false);
         sharedPreferencesEditor.apply();
+    }
+
+    /**
+     * commit, not apply: the flag exists precisely so that a process killed with a system picker still open
+     * can put the device's auto-rotate back on the next launch, and an apply() queued behind that kill would
+     * be the one write we cannot afford to lose.
+     */
+    public void setRestoreAutoRotate(final boolean restore) {
+        this.restoreAutoRotate = restore;
+        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
+        sharedPreferencesEditor.putBoolean(PREF_KEY_RESTORE_AUTO_ROTATE, restore);
+        sharedPreferencesEditor.commit();
     }
 
     public void markScopeAsked() {

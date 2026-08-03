@@ -171,4 +171,17 @@
     <string name="pref_subtitle_style_bold">Bold style</string>
     <string name="pref_subtitle_style_bold_on">Use bold typeface as regular</string>
     <string name="pref_subtitle_style_bold_off">Use default regular typeface</string>
+    <string name="sleep_timer_title">Sleep timer</string>
+    <string name="sleep_timer_off">Off</string>
+    <string name="sleep_timer_end_of_item">After the current file</string>
+    <string name="sleep_timer_custom">Custom…</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_hours">%1$s h</string>
+    <string name="sleep_timer_hours_minutes">%1$d h %2$d min</string>
+    <string name="sleep_timer_set">Sleep timer: %1$s</string>
+    <string name="sleep_timer_cancelled">Sleep timer off</string>
+    <string name="sleep_timer_warning">Sleep timer: closing in %1$d s</string>
+    <string name="sleep_timer_start">Start</string>
+    <string name="sleep_timer_backspace">Delete</string>
+    <string name="sleep_timer_stop">Stop</string>
 </resources>

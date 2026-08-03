@@ -155,4 +155,17 @@
     <string name="pref_subtitle_style_bold">Полужирный стиль</string>
     <string name="pref_subtitle_style_bold_on">Использовать полужирный шрифт как обычный</string>
     <string name="pref_subtitle_style_bold_off">Использовать стандартный шрифт по умолчанию</string>
+    <string name="sleep_timer_title">Таймер сна</string>
+    <string name="sleep_timer_off">Выкл</string>
+    <string name="sleep_timer_end_of_item">После текущего файла</string>
+    <string name="sleep_timer_custom">Своё…</string>
+    <string name="sleep_timer_minutes">%1$d мин</string>
+    <string name="sleep_timer_hours">%1$s ч</string>
+    <string name="sleep_timer_hours_minutes">%1$d ч %2$d мин</string>
+    <string name="sleep_timer_set">Таймер сна: %1$s</string>
+    <string name="sleep_timer_cancelled">Таймер сна выключен</string>
+    <string name="sleep_timer_warning">Таймер сна: закрытие через %1$d с</string>
+    <string name="sleep_timer_start">Старт</string>
+    <string name="sleep_timer_backspace">Удалить цифру</string>
+    <string name="sleep_timer_stop">Стоп</string>
 </resources>

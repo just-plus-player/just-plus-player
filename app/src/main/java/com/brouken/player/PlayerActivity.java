@@ -429,6 +429,7 @@ public class PlayerActivity extends Activity {
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
+    private android.app.Dialog sleepTimerDialog;
     private android.app.Dialog menuDialog;
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
     // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
@@ -4177,26 +4178,7 @@ public class PlayerActivity extends Activity {
         // them. Use a FIXED inset captured now (the status bar is visible while the controls — and thus this
         // dialog — are shown): a dynamic inset listener would drop to 0 when hideController() flips the
         // activity to immersive flags, making the list visibly "jump" up under the still-visible status bar.
-        int padTop = 0;
-        int padBottom = 0;
-        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
-        if (rootInsets != null) {
-            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
-            // inset can include the camera cutout), where that same height looks oversized — use a compact
-            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-            final boolean landscape = getResources().getConfiguration().orientation
-                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            final int landscapeTop = ui.pickerTopPadLand();
-            if (Build.VERSION.SDK_INT >= 30) {
-                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
-                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
-                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
-            }
-        }
-        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
 
         if (playlistDialog != null) {
             playlistDialog.dismiss();
@@ -4439,26 +4421,7 @@ public class PlayerActivity extends Activity {
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
-        int padTop = 0;
-        int padBottom = 0;
-        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
-        if (rootInsets != null) {
-            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
-            // inset can include the camera cutout), where that same height looks oversized — use a compact
-            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-            final boolean landscape = getResources().getConfiguration().orientation
-                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            final int landscapeTop = ui.pickerTopPadLand();
-            if (Build.VERSION.SDK_INT >= 30) {
-                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
-                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
-                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
-            }
-        }
-        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
 
         if (qualityDialog != null) {
             qualityDialog.dismiss();
@@ -4636,26 +4599,7 @@ public class PlayerActivity extends Activity {
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
-        int padTop = 0;
-        int padBottom = 0;
-        final WindowInsets rootInsets = coordinatorLayout.getRootWindowInsets();
-        if (rootInsets != null) {
-            // Status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-            // room. In portrait the status-bar height reads well; landscape is much shorter (and its status-bar
-            // inset can include the camera cutout), where that same height looks oversized — use a compact
-            // fixed inset there. Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-            final boolean landscape = getResources().getConfiguration().orientation
-                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-            final int landscapeTop = ui.pickerTopPadLand();
-            if (Build.VERSION.SDK_INT >= 30) {
-                padTop = landscape ? landscapeTop : rootInsets.getInsets(WindowInsets.Type.statusBars()).top;
-                padBottom = rootInsets.getInsets(WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                padTop = landscape ? landscapeTop : rootInsets.getSystemWindowInsetTop();
-                padBottom = rootInsets.getSystemWindowInsetBottom() + ui.overscanV();
-            }
-        }
-        scrollView.setPadding(ui.overscanH(), padTop, ui.overscanH(), padBottom);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
 
         if (menuDialog != null) {
             menuDialog.dismiss();
@@ -4924,12 +4868,172 @@ public class PlayerActivity extends Activity {
         button.setLayoutParams(params);
     }
 
+    // ---- Sleep timer ------------------------------------------------------------------------------------
+    // Two shapes of "stop once I am asleep" in one list, because they answer different nights: a duration,
+    // for a film playing on into an empty room, and "after this file", for a series whose autoplay would
+    // otherwise run until morning. Session-only — nothing is persisted, so a timer can never outlive the
+    // sitting that set it.
+    //
+    // Firing closes the player rather than only pausing it. In an api session (a resolver handing over a
+    // temporary link) the position is written nowhere on disk and reaches the launcher solely through the
+    // result intent that finish() builds, so pausing and then being killed overnight would lose the very
+    // position the timer exists to protect. Closing also frees the decoder and the receiver's audio lock.
+
+    private static final int[] SLEEP_PRESETS_MIN = {15, 30, 45, 60, 90};
+    private static final long SLEEP_WARN_MS = 30_000;   // fade + notice window ahead of the close
+    private static final long SLEEP_TICK_MS = 1000;
+    private static final long SLEEP_FADE_TICK_MS = 250; // fine enough a ramp to read as a fade, not a step
+
+    private long sleepDeadlineMs;      // uptimeMillis deadline; 0 = nothing armed
+    private int sleepSetMinutes;       // what was picked, for the ✓ in the list
+    private boolean sleepAtEndOfItem;  // stop when the current file ends, instead of on a clock
+    private boolean sleepWarned;
+
+    private final Runnable sleepTickRunnable = new Runnable() {
+        @Override
+        public void run() {
+            final long remaining = sleepRemainingMs();
+            if (remaining <= 0) {
+                fireSleepTimer();
+                return;
+            }
+            if (remaining <= SLEEP_WARN_MS) {
+                if (!sleepWarned) {
+                    sleepWarned = true;
+                    Utils.showText(playerView, getString(R.string.sleep_timer_warning,
+                            Math.round(remaining / 1000f)));
+                }
+                // Ease the sound out rather than cut it — the one warning that still lands with the screen
+                // already dark. A no-op on a passthrough output, where the player has no gain of its own to
+                // give; the notice above covers that case.
+                if (player != null) {
+                    player.setVolume(baseVolume() * (remaining / (float) SLEEP_WARN_MS));
+                }
+                playerView.postDelayed(this, SLEEP_FADE_TICK_MS);
+            } else {
+                playerView.postDelayed(this, SLEEP_TICK_MS);
+            }
+        }
+    };
+
+    /** Arms a duration; {@code minutes <= 0} turns the timer off. */
+    private void armSleepTimer(final int minutes) {
+        cancelSleepTimer();
+        if (minutes <= 0) {
+            Utils.showText(playerView, getString(R.string.sleep_timer_cancelled));
+            return;
+        }
+        sleepSetMinutes = minutes;
+        // uptimeMillis, to match the handler's own clock. That it does not advance in deep sleep is no
+        // constraint here: a sleep timer runs with the video playing and the screen awake.
+        sleepDeadlineMs = SystemClock.uptimeMillis() + minutes * 60_000L;
+        playerView.postDelayed(sleepTickRunnable, SLEEP_TICK_MS);
+        Utils.showText(playerView, getString(R.string.sleep_timer_set, formatSleepDuration(minutes)));
+    }
+
+    private void armSleepAtEndOfItem() {
+        cancelSleepTimer();
+        sleepAtEndOfItem = true;
+        applySleepAtEndOfItem();
+        Utils.showText(playerView, getString(R.string.sleep_timer_set,
+                getString(R.string.sleep_timer_end_of_item)));
+    }
+
+    /** Clears whatever was armed and undoes the fade — the way back from every off/cancel path. */
+    private void cancelSleepTimer() {
+        playerView.removeCallbacks(sleepTickRunnable);
+        sleepDeadlineMs = 0;
+        sleepSetMinutes = 0;
+        sleepWarned = false;
+        if (sleepAtEndOfItem) {
+            sleepAtEndOfItem = false;
+            applySleepAtEndOfItem();
+        }
+        applyVolumeMode();
+    }
+
+    // Media3's own end-of-item pause is the entire mechanism; the listener below turns that pause into a
+    // close. Re-applied after every player rebuild (a quality switch makes a new instance).
+    private void applySleepAtEndOfItem() {
+        if (player != null) {
+            player.setPauseAtEndOfMediaItems(sleepAtEndOfItem);
+        }
+    }
+
+    private long sleepRemainingMs() {
+        return sleepDeadlineMs == 0 ? 0 : Math.max(0, sleepDeadlineMs - SystemClock.uptimeMillis());
+    }
+
+    private void fireSleepTimer() {
+        playerView.removeCallbacks(sleepTickRunnable);
+        sleepDeadlineMs = 0;
+        sleepSetMinutes = 0;
+        sleepAtEndOfItem = false;
+        sleepWarned = false;
+        // Write the position before closing: finish() carries it out of an api session in its result intent,
+        // and savePlayer covers the ordinary one. Deliberately no applyVolumeMode() — restoring the level for
+        // the last instants before the window goes would put the sound back at full.
+        savePlayer();
+        if (player != null) {
+            player.pause();
+        }
+        finish();
+    }
+
+    /** "15 min" / "1 h" / "1 h 30 min" — whole hours lose the minutes. */
+    private String formatSleepDuration(final int minutes) {
+        if (minutes % 60 == 0) {
+            return getString(R.string.sleep_timer_hours, String.valueOf(minutes / 60));
+        }
+        if (minutes > 60) {
+            return getString(R.string.sleep_timer_hours_minutes, minutes / 60, minutes % 60);
+        }
+        return getString(R.string.sleep_timer_minutes, minutes);
+    }
+
+    /** Detail line for the overflow row: what is armed, or null when nothing is. */
+    private String sleepTimerSummary() {
+        if (sleepAtEndOfItem) {
+            return getString(R.string.sleep_timer_end_of_item);
+        }
+        final long remaining = sleepRemainingMs();
+        return remaining > 0 ? Utils.formatMilis(remaining) : null;
+    }
+
+    private void showSleepTimerMenu() {
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.sleep_timer_off), null,
+                !sleepAtEndOfItem && sleepRemainingMs() == 0, () -> armSleepTimer(0)));
+        for (final int minutes : SLEEP_PRESETS_MIN) {
+            final boolean current = !sleepAtEndOfItem && sleepSetMinutes == minutes;
+            items.add(new MenuItem(formatSleepDuration(minutes),
+                    current ? Utils.formatMilis(sleepRemainingMs()) : null,
+                    current, () -> armSleepTimer(minutes)));
+        }
+        items.add(new MenuItem(getString(R.string.sleep_timer_end_of_item), null, sleepAtEndOfItem,
+                this::armSleepAtEndOfItem));
+        items.add(new MenuItem(getString(R.string.sleep_timer_custom), null, false,
+                this::showSleepTimerCustomDialog));
+        showSideMenu(getString(R.string.sleep_timer_title), items);
+    }
+
+    private void showSleepTimerCustomDialog() {
+        if (sleepTimerDialog != null) {
+            sleepTimerDialog.dismiss();
+        }
+        sleepTimerDialog = DurationPanel.create(this, ui, coordinatorLayout, brandColor(),
+                getString(R.string.sleep_timer_title), this::armSleepTimer);
+        showPickerDialog(sleepTimerDialog);
+    }
+
     // Overflow menu: everything used rarely or once per session lives here so the main row stays calm.
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_title),
                     formatSpeed(player.getPlaybackParameters().speed), false, this::showSpeedDialog));
+            items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
+                    sleepTimerSummary(), false, this::showSleepTimerMenu));
         }
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
             items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
@@ -5533,6 +5637,7 @@ public class PlayerActivity extends Activity {
         if (mPrefs.skipSilence) {
             player.setSkipSilenceEnabled(true);
         }
+        applySleepAtEndOfItem();
 
         youTubeOverlay.player(player);
         playerView.setPlayer(player);
@@ -5697,8 +5802,13 @@ public class PlayerActivity extends Activity {
      */
     private void applyVolumeMode() {
         if (player != null) {
-            player.setVolume(systemVolume ? 1f : Math.min(playerVolume, 100f) / 100f);
+            player.setVolume(baseVolume());
         }
+    }
+
+    /** The player gain the current volume mode asks for — the level a fade ramps down from and back to. */
+    private float baseVolume() {
+        return systemVolume ? 1f : Math.min(playerVolume, 100f) / 100f;
     }
 
     private void savePlayer() {
@@ -5845,6 +5955,11 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null) {
             skipOffsetDialog.dismiss();
             skipOffsetDialog = null;
+        }
+        // Only the panel goes: this runs on a quality switch too, and an armed timer has to ride across that.
+        if (sleepTimerDialog != null) {
+            sleepTimerDialog.dismiss();
+            sleepTimerDialog = null;
         }
         if (menuDialog != null) {
             menuDialog.dismiss();
@@ -6039,6 +6154,11 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
             if (playWhenReady) {
+                return;
+            }
+            // The end-of-item pause Media3 was asked for on behalf of the sleep timer — turn it into a close.
+            if (sleepAtEndOfItem && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                fireSleepTimer();
                 return;
             }
             // Whatever was posted would now run against a paused player, which is the one thing to avoid.
@@ -6252,7 +6372,10 @@ public class PlayerActivity extends Activity {
             } else if (state == Player.STATE_ENDED) {
                 cancelLoadWatchdog();
                 playbackFinished = true;
-                if (apiAccess) {
+                // A single item, or the last of a playlist, ends here rather than in an end-of-item pause.
+                if (sleepAtEndOfItem) {
+                    fireSleepTimer();
+                } else if (apiAccess) {
                     finish();
                 }
             }
@@ -7157,7 +7280,8 @@ public class PlayerActivity extends Activity {
     }
 
     private void dismissOpenPickers() {
-        final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog, menuDialog };
+        final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog,
+                sleepTimerDialog, menuDialog };
         for (final android.app.Dialog d : pickers) {
             if (d != null && d.isShowing()) {
                 d.dismiss();

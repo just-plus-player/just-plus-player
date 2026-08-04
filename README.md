@@ -1,162 +1,284 @@
-# Just (Video) Player 
+# Just+ Player
 
 [![Latest release](https://img.shields.io/github/v/release/just-plus-player/just-plus-player?logo=github&logoColor=white&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/just-plus-player/just-plus-player/total?logo=github&logoColor=white&label=downloads&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases)
 [![Media3](https://img.shields.io/badge/Media3-1.11.0--beta01-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.0-beta01)
-[![Weblate project translated](https://img.shields.io/weblate/progress/just-player?logo=weblate&logoColor=white&cacheSeconds=36000)](https://hosted.weblate.org/engage/just-player/)
 
-Android video player based on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)), compatible with Android 6+ and Android TV.
+Video player for Android phones, tablets and Android TV, built on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)). Android 6.0 or later, one APK for all form factors.
 
-It uses ExoPlayer's ``ffmpeg`` extension with [all its audio formats](https://exoplayer.dev/supported-formats.html#ffmpeg-extension) enabled (it can handle even special formats like AC3, EAC3, DTS, DTS HD, TrueHD etc.).
+It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita and keeps what makes it good: no ads, no tracking, barely any permissions, ExoPlayer's `ffmpeg` extension for AC3, E-AC-3, DTS, DTS-HD and TrueHD, and audio that stays in sync over Bluetooth. On top of that it adds a reworked player interface and the features below.
 
-It properly syncs audio with video track when using Bluetooth earphones/speaker. (I was not able to find any other nice ExoPlayer based video player so I created this one.)
+## What Just+ adds
+
+**Player and controls**
+
+ * Reworked controls: poster, title and a metadata line (container · resolution · codec · fps · bitrate · audio track) in the header, next to the clock and the time playback will end
+ * Tap anywhere on the time bar to seek there
+ * Hold the picture for 2× speed, let go to return to normal
+ * Ten scaling modes — Fit, Crop, Fill, 16:9, 4:3, 16:10, 2:1, 2.35:1, 2.39:1, 5:4. A tap cycles the first five, a long press opens the full picker
+ * Volume up to 200 % with a loudness boost, and volume and brightness gestures that report a percentage instead of an unlabelled bar
+ * Lock the screen from the bottom bar, unlock with a swipe
+ * Transfer rate under the loading ring, so a stalling stream is obvious
+ * Optional always-on clock over the video, and a mode where the volume keys and gestures change only the player and leave the device volume alone
+
+**Skip segments**
+
+ * Skip intros, recaps, ad breaks and end credits — segments are drawn right on the time bar
+ * Segments come from the launching app, or are looked up online in SkipDB, SkipMe.db, IntroHater, IntroDB, TheIntroDB and Aniskip
+ * The sources vote: a segment several databases agree on is used, and its timing is taken from the most reliable one rather than averaged
+ * Separately for the intro and the end credits: a Skip button for three seconds, a Skip button for the whole segment, or skip automatically
+ * Every skip can be undone, and an automatic skip can be cancelled before it happens
+ * A session offset slider for when a database is a few seconds off
+
+**Sleep timer**
+
+ * Off, 15/30/45/60/90 minutes, after the current file, or a custom time on a VLC-style keypad
+ * Fades the volume out over the last 30 seconds instead of cutting off mid-sentence
+
+**Tracks and quality**
+
+ * Side panels instead of pop-up menus for audio, subtitles, quality, speed and the playlist; a button stays hidden until the media actually has something to put in it
+ * Manual video quality: optimal, highest, a specific resolution, or one of the sources the launching app supplied
+ * Track names built from the container's own metadata
+ * Sturdier audio: passthrough (AC3/DTS/TrueHD) is rebuilt after a seek or a resume, a format the device mishandles is learned and avoided, and playback survives the audio output disappearing
+
+**Android TV**
+
+ * One focus row of controls, sized for a remote
+ * Left and Right accelerate while held, and a burst of presses commits as a single seek
+ * Down opens the controls on the time bar, Up dismisses them, and a stray Back no longer drops out of the player
+ * An error report can be uploaded and read off the screen as a QR code — no keyboard needed
+
+**When something breaks**
+
+ * A full-screen error page with plain-language messages instead of ExoPlayer codes, and Copy / Share / Upload log
+ * Watchdogs for a load that never starts, a stall in the middle of a film, and a live stream that keeps dropping
+ * Fallbacks for Dolby Vision profile 7, for tunneled playback that freezes the picture, and for HLS playlists served without an extension
+ * Crash reporting that can be switched off in Settings → Privacy
+
+**Launcher integration**
+
+ * Intent extras for position, title, poster, subtitles, HTTP headers, a playlist of episodes with per-episode segments and resume positions, quality variants, and IMDb/TMDB ids — as used by [LAMPA](https://github.com/lampa-app/LAMPA)/Lampac
+ * Sideloaded builds check GitHub releases for updates, show the release notes and install them in place
+
+## Screenshots
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/player.jpg" width="880">
+
+**Playlist** — a queue of episodes with poster thumbnails and per-item resume positions. **Skip segments** — one pill for skipping, cancelling or undoing.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/playlist.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/skip.jpg" width="430">
+
+**Video quality** — pick a resolution or one of the launcher's sources. **Sleep timer** — presets, or type a time.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/quality.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/sleep_timer.jpg" width="430">
+
+**Lock** — one tap locks the screen against pockets and curious hands; a swipe unlocks it.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/unlock.jpg" width="430">
 
 ## Supported formats
 
  * **Audio**: Vorbis, Opus, FLAC, ALAC, PCM/WAVE (μ-law, A-law), MP1, MP2, MP3, AMR (NB, WB), AAC (LC, ELD, HE; xHE on Android 9+), AC-3, E-AC-3, DTS, DTS-HD, TrueHD, IAMF, MPEG-H
  * **Video**: H.263, H.264 AVC (Baseline Profile; Main Profile on Android 6+), H.265 HEVC, MPEG-4 SP, VP8, VP9, AV1
- * **Containers**: MP4, MOV, WebM, MKV, Ogg, MPEG-TS, MPEG-PS, FLV, AVI (🚧)
+ * **Containers**: MP4, MOV, WebM, MKV, AVI, Ogg, MPEG-TS, MPEG-PS, FLV
  * **Streaming**: DASH, HLS, SmoothStreaming, RTSP
  * **Subtitles**: SRT, SSA/ASS ([limited styling](https://github.com/google/ExoPlayer/issues/8435)), TTML, VTT, DVB
 
-HDR (HDR10+ and Dolby Vision) video playback on compatible/supported hardware.
+HDR (HDR10+ and Dolby Vision) playback on compatible hardware. AC-4 audio works on devices that ship such a system decoder (e.g. Samsung Galaxy A, S and Z series on Android 11 or later).
 
-AC-4 audio is supported on devices providing such system decoder (e.g. Samsung Galaxy A, S and Z series running Android 11 or later).
+## Inherited from Just (Video) Player
 
-## Screenshots
-
-**Playlist** — play a queue of videos with poster thumbnails and jump between items from the playlist panel.
-
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/playlist_player.jpg" width="400"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/playlist.jpg" width="400">
-
-**Skip segments** — skip intros, credits and ad segments with a one-tap Skip button or automatically.
-
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/skip.jpg" width="400">
-
-<img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="806"> <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="400"> <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="400">
-
-## Features
-
- * Audio/subtitle track selection
  * Playback speed control
- * Horizontal swipe and double tap to quickly seek
+ * Horizontal swipe and double tap to seek
  * Vertical swipe to change brightness (left) / volume (right)
  * Pinch to zoom (Android 7+)
- * PiP (Picture in Picture) on Android 8+ (resizable on Android 11+)
- * Resize (fit/crop)
- * Volume boost
- * Auto frame rate matching on Android TV/boxes
- * Post-playback actions (delete file/skip to next)
- * Touch lock (long tap)
- * App shortcut for direct access to file chooser (Android 7.1+)
- * 3rd party equalizer / audio processing support (e.g. [Wavelet](https://github.com/Pittvandewitt/Wavelet))
- * Media Session and Audio Focus support
- * Pause playback when disconnecting headphones
- * Playlist with poster thumbnails and quick navigation between videos
- * Skip segments — skip intros, credits and ad segments with a Skip button or automatically
- * No ads, tracking or excessive permissions
+ * Picture-in-picture on Android 8+ (resizable on Android 11+), automatically when you leave the app
+ * Auto frame rate matching on Android TV and TV boxes
+ * Post-playback actions (delete the file, skip to the next one)
+ * Resume where you left off, per file
+ * App shortcut straight to the file chooser (Android 7.1+)
+ * Third-party equalizer / audio processing support (e.g. [Wavelet](https://github.com/Pittvandewitt/Wavelet))
+ * Media Session and Audio Focus support, pause when headphones are disconnected
+ * No ads, no tracking, no excessive permissions
 
-Some advanced features can be enabled or configured in settings. To access it, long press the ⚙️ gear icon. (Alternatively, you can also enter this settings from App info screen.)
+## Install
 
- * Default audio tracks. Set specific language, prefer device language, media file defaults.
- * File access mode. Use of Storage Access Framework / MediaStore / legacy file access.
- * Decoder priority. Prefer device or app decoders.
- * Auto frame rate matching. (On Android 11+ and "compatible" displays, ExoPlayer supports [seamless refresh rate switching](https://source.android.com/devices/graphics/multiple-refresh-rate))
- * [Tunneled playback](https://medium.com/google-exoplayer/tunneled-video-playback-in-exoplayer-84f084a8094d). Enabling tunneling can improve playback of 4K/HDR content on Android TV.
- * Playback of Dolby Vision profile 7 (UHD Blu-ray) as HDR HEVC
- * Auto picture-in-picture. When you leave Just Player through the home button and video is playing, PiP will be activated automatically.
- * Skip silence
- * Repeat toggle
+Grab the APK from [Releases](https://github.com/just-plus-player/just-plus-player/releases/latest) and install it. Sideloaded builds check for updates themselves and can install them without going through a store.
 
-**`WRITE_SETTINGS` ("Modify system settings") permission**: When the system file chooser is opened, it will always use current system orientation, even if the Player app sets its own. Granting this permission via adb (`adb shell pm grant com.justplus.player android.permission.WRITE_SETTINGS`) or App info screen will allow this app to temporarily enable Auto-rotate to at least partially mitigate [this imperfection](https://issuetracker.google.com/issues/141968218).
+## Build
 
-Translate: [Weblate](https://hosted.weblate.org/engage/just-player/)
+JDK 17 and the Gradle wrapper:
 
-## ❓FAQ
+```bash
+./gradlew assembleLatestUniversalDebug   # debug APK
+./gradlew build                          # what CI runs
+```
 
-### How do I open subtitle file (e.g. .srt)?
+Two flavour dimensions: `targetSdk` (`latest` = targetSdk 36, `legacy` = targetSdk 29 for legacy storage access) × `distribution` (`universal` with the in-app updater, `amazon`, `accrescent`). `latestUniversal` is the one that gets released.
 
-To load external (non-embedded) subtitles, long press the 📁 file open action in the bottom bar. The first time you do that, you will be offered to select root video folder to enable automatic loading of external subtitles.
+`app/libs/lib-*.aar` are **prebuilt binaries** — a locally built ExoPlayer core plus the ffmpeg, AV1, IAMF and MPEG-H decoder extensions. They are what makes AC3/DTS/TrueHD work, and their version has to stay in step with `media3_version` in `app/build.gradle`. See [`app/libs/README.md`](app/libs/README.md).
 
-💡📺 Because of [limitations on Android TV](https://github.com/moneytoo/Player/issues/248#issuecomment-1019565204), Just Player is also able to open subtitle files from external file managers. You can open video file from your file manager, then return back and also  open subtitle file in Just Player. Subtitle will be available in the last selected video.
+## Integration
 
-Just Player is also able to detect some subtitle files when accessing videos over HTTP/HTTPS. Just use the [same naming](https://github.com/moneytoo/Player/issues/173) for video files as well as subtitles (e.g. `video.mkv` and `video.srt`).
+### Launching the player from another app
+
+An `ACTION_VIEW` intent addressed to `com.justplus.player`, with the video as the data URI:
+
+```java
+Intent intent = new Intent(Intent.ACTION_VIEW);
+intent.setPackage("com.justplus.player");                 // or the explicit component
+intent.setDataAndType(Uri.parse(url), "video/*");         // content:// also needs FLAG_GRANT_READ_URI_PERMISSION
+intent.putExtra("title", "Machines");
+startActivityForResult(intent, REQUEST_PLAY);             // startActivity if you do not want a result
+```
+
+Everything else is optional extras:
+
+| Extra | Type | Meaning |
+|---|---|---|
+| `title` | String / CharSequence | Title in the header. HTML entities are unescaped |
+| `thumbnail` | String | Poster shown next to the title |
+| `position` | int, ms | Where to start |
+| `return_result` | boolean | Report position and duration back on exit (see below) |
+| `headers` | String[] | Flat `name, value, name, value…`, applied to every HTTP request |
+| `subs` | Parcelable[] of Uri | External subtitle files |
+| `subs.name` | String[] | Their labels, aligned by index with `subs` |
+| `subs.enable` | Parcelable[] of Uri | Its first element is the track to pre-select |
+| `segments` | String | Skip/ad segments as JSON — format below |
+| `season`, `episode` | int | Episode this file belongs to |
+| `imdb_id` | String | IMDb id, used to look segments up online |
+| `id` | String or int | TMDB id, same purpose |
+| `quality_levels` | String[] | Labels of the quality variants, e.g. `1080p` |
+| `quality_urls` | String[] or Parcelable[] of Uri | Their URLs, aligned by index with `quality_levels` |
+
+A queue is passed the same way, with everything aligned by index against `video_list`:
+
+| Extra | Type | Meaning |
+|---|---|---|
+| `video_list` | Parcelable[] of Uri, or String[] | The queue. The entry equal to the intent's data URI becomes the starting item |
+| `video_list.name` | String[] | Titles; `video_list.filename` is the fallback, then the last path segment |
+| `video_list.thumbnail` | String[] | Posters for the playlist panel |
+| `video_list.segments` | String[] | One segments JSON per item |
+| `video_list.season`, `.episode`, `.imdb_id`, `.id` | String[] | Episode metadata per item |
+| `video_list.subtitles` | Parcelable[] or ArrayList of Bundle | External subtitles per item. Each Bundle holds `uris` (Parcelable[] of Uri) and `names` (String[]), aligned with each other |
+| `video_list.quality_levels.<i>` | String[] | Quality labels for item `<i>` (0-based index in `video_list`) |
+| `video_list.quality_urls.<i>` | String[] | Matching URLs for item `<i>` |
+
+`video_list` and every `video_list.*` string array, as well as `quality_levels` and `quality_urls`, are read leniently — `String[]`, `ArrayList<String>` and `CharSequence[]` all work, and `quality_urls` also takes a `Parcelable[]` of `Uri`. `subs`, `subs.name` and `headers` are not: they have to be exactly the types in the table above, or they are silently ignored.
+
+**Segments JSON** — `start` and `end` are seconds, `duration_ms` is the duration those timings were measured against, so the player can rescale them to the real file. `skip` is intro/recap/credits, `ad` is advertising:
+
+```json
+{ "duration_ms": 2696000,
+  "skip": [{ "start": 62, "end": 152 }],
+  "ad":   [{ "start": 0,  "end": 12  }] }
+```
+
+**Session mode.** The presence of `position`, `return_result`, `subs`, `subs.enable`, `video_list` or `quality_levels` puts the player in API mode: it keeps positions for that session only and writes nothing to its own resume store, so a launcher stays the owner of the watch state. `title` alone does not — the title is used and the state is still persisted.
+
+**Result** (only with `return_result`): `RESULT_OK` and an intent with action `com.mxtech.intent.result.VIEW` (MX Player's contract), whose data URI is the item that was playing — not necessarily the one that was launched. Extras: `end_by` is `playback_completion` or `user`, and on an early exit `position` and `duration` (both int, ms).
+
+The player is `singleTask`: a further `ACTION_VIEW` sent to the running instance replaces the extras rather than being ignored, which is how a source or an episode is switched without a restart.
+
+### Feeding it from a LAMPA plugin
+
+A plugin does not build the intent — LAMPA does, from the JSON handed to `Lampa.Player.play()`. Use these keys and it maps onto the extras above by itself:
+
+```js
+Lampa.Player.play({
+    url: 'https://host/s01e03-1080.mp4',        // required, and must be byte-identical to the playlist entry
+    title: 'Machines',
+    thumbnail: 'https://host/still.jpg',
+    quality: { '1080p': 'https://host/s01e03-1080.mp4', '720p': 'https://host/s01e03-720.mp4' },
+    subtitles: [{ url: 'https://host/en.srt', label: 'English', language: 'en' }],
+    segments: { duration_ms: 2696000, skip: [{ start: 62, end: 152 }], ad: [] },
+    season: 1, episode: 3,
+    imdb_id: 'tt14688458',
+    headers: { 'User-Agent': '…', Referer: '…' },
+    playlist: [ /* the same objects, one per episode */ ]
+})
+```
+
+| Plugin JSON | Becomes |
+|---|---|
+| `url` | The data URI, and the entry in `video_list` |
+| `title` | `title`, `video_list.name` |
+| `thumbnail` | `thumbnail`, `video_list.thumbnail` |
+| `quality` (`{label: url}`) | `quality_levels` / `quality_urls`, or `video_list.quality_*.<i>` per episode |
+| `subtitles` (`[{url, label, language}]`) | `subs` / `subs.name` for a single video, `video_list.subtitles` in a queue |
+| `segments` | `segments` / `video_list.segments`, serialised verbatim |
+| `season`, `episode` | `season`, `episode` and the per-item arrays |
+| `imdb_id`, or `card.imdb_id` from the open card | `imdb_id` |
+| the card's `id` | `id` (TMDB) |
+| `headers` (`{name: value}`) | `headers`, flattened to pairs |
+
+What actually decides whether it matches:
+
+ * **`url` must be identical** to the `playlist` entry it stands for. LAMPA finds the starting index by exact string comparison, and the player then matches its data URI against `video_list` the same way. One extra token or a trailing slash and the queue opens on episode 1.
+ * **`playlist` is only read when auto-next is on** in LAMPA; otherwise the payload itself is the only item. Put the episode's own metadata on the top-level object as well, not just inside `playlist`.
+ * **Name quality variants by resolution.** Both sides sort them by the number in the label, so `1080p`/`720p` order correctly while `HD`/`SD` do not.
+ * **`segments` is passed through untouched**, so it has to be the shape above — seconds, plus `duration_ms` for rescaling.
+ * **`imdb_id` and the card's `id` are what the online lookup keys on.** Without them only the segments you supply yourself are used; there is no title search.
+ * **Nothing is switched on for the viewer.** Subtitles arrive as selectable tracks and LAMPA sends no default, so one has to be picked from the subtitle panel. `language` is not forwarded either — put whatever should be shown into `label`.
+ * `subtitles[]` entries need both `url` and `label`; an entry without a label takes the whole list down with it.
+ * **The subtitle format is taken from the URL path**, falling back to SubRip. A WebVTT or ASS file served from an extension-less endpoint therefore arrives labelled as SRT and will not parse — keep the real extension in the URL.
+
+## FAQ
+
+### Where are the settings?
+
+Long press the ⚙️ button in the bottom bar, or open **More → Settings**. The App info screen works too.
+
+### How do I open a subtitle file (e.g. .srt)?
+
+Long press the 📁 file open button in the bottom bar. The first time, you will be offered to pick the root video folder so that external subtitles can be loaded automatically afterwards.
+
+Subtitles sitting next to a video on an HTTP server are found too, as long as they share the video's name (`video.mkv` → `video.srt`).
+
+📺 Because of [limitations on Android TV](https://github.com/moneytoo/Player/issues/248#issuecomment-1019565204), the player can also take a subtitle file from an external file manager: open the video, go back, then open the subtitle file — it will be applied to the last video.
 
 ### How do I change subtitle font, size or color?
 
-Open system [Caption preferences](https://support.google.com/accessibility/android/answer/6006554) on your device (usually in the _Accessibility_ section of _Settings_) and you will be able to fully customize the subtitle style.
+Open the system [Caption preferences](https://support.google.com/accessibility/android/answer/6006554) (usually under _Accessibility_ in _Settings_) — they control the subtitle style completely. Long pressing the subtitle button takes you straight there.
 
-To quickly access the system _Caption preferences_ screen, long tap the subtitle button.
+### How do I open a streaming link?
 
-<img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/readmeScreenshots/caption_preferences_1.png" width="140"> <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/readmeScreenshots/caption_preferences_2.png" width="140">
+**More → Open link**, and paste an `http://` or `rtsp://` address; a link on the clipboard is offered automatically. The player is also registered for compatible links, so tapping one in another app should offer it as an option, and sharing a selected URL works as well.
 
 ### Are there any media formats it CANNOT play?
 
-Unfortunately, upstream ExoPlayer doesn't handle some older formats like ~~[AVI container](https://github.com/google/ExoPlayer/issues/2092)~~, WMV or [Theora](https://github.com/google/ExoPlayer/issues/4970). Majority of devices also cannot handle [10-bit AVC](https://github.com/moneytoo/Player/issues/87#issuecomment-816228143).
+ExoPlayer does not handle some older formats such as WMV or [Theora](https://github.com/google/ExoPlayer/issues/4970), and most devices cannot decode [10-bit AVC](https://github.com/moneytoo/Player/issues/87#issuecomment-816228143). Audio-only playback is not a goal — this is a video player.
 
-Just Player focuses on playing videos so audio only playback isn't officialy supported ([request](https://github.com/moneytoo/Player/issues/55)).
+### I prefer a media library instead of a file chooser...
 
-### How to view detailed video information (like resolution, bitrate etc.)?
+The system file chooser already offers two modes: **Videos**, listing only folders that contain videos, and **File browser**, for the whole file system. Settings → File access can switch to MediaStore or legacy file access instead.
 
-Install app like [MediaInfo](https://play.google.com/store/apps/details?id=net.mediaarea.mediainfo) (or APK from [MediaArea.net](https://mediaarea.net/en/MediaInfo/Download/Android)). Then, to quickly open MediaInfo from Just Player, long press the video name/title.
+Some people use the media library of [Nova Video Player](https://github.com/nova-video-player/aos-AVP) with "*Allow using another video player*" enabled, which also gives convenient access to network storage.
 
-### I prefer using media library instead of a file chooser...
+### How do I get to videos on network storage (SMB, WebDAV, SFTP)?
 
-Just Player uses system file chooser which already allows two different browsing modes: 
+1. The system file chooser reaches any remote storage through a _Document Provider_ — [CIFS Documents Provider](https://github.com/wa2c/cifs-documents-provider) for Samba, [WebDAV Provider](https://github.com/alexbakker/webdav-provider)/[DAVx⁵](https://github.com/bitfireAT/davx5-ose) for WebDAV, [FileManagerUtils](https://github.com/rikyiso01/FileManagerUtils) for SFTP, or [rcx](https://github.com/x0b/rcx). Document providers are not available on Android TV.
+2. Or open the video straight from a file explorer — _Solid Explorer_ works well, especially for automatic subtitles.
 
-1. **Videos** - listing only device directories that contain videos
+### How do I get rid of the black bars?
 
-    <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/readmeScreenshots/files_1.png" width="280">
+Pinch to zoom, or tap the resize button to cycle Fit → Crop → Fill → 16:9 → 4:3. A long press opens the full list of scaling modes. **Android TV**: long press resize to enter zoom mode, then zoom precisely with Up and Down.
 
-2. **File browser** - full navigation in the device file system structure
+### Bluetooth audio is out of sync
 
-    <img src="https://raw.githubusercontent.com/moneytoo/Player/master/fastlane/metadata/android/en-US/images/readmeScreenshots/files_2.png" width="280">
+Pause and resume once.
 
-Alternatively, some people choose to use the media library function of
-[Nova Video Player](https://github.com/nova-video-player/aos-AVP) and integrate it with Just Player by enabling "*Allow using another video player*" feature. This also gives you convenient access to content on network storages (SMB, UPnP, FTP and SFTP).
+### Why does it ask for "Modify system settings"?
 
-### How to access videos on network storages (SMB, WebDAV, SFTP, etc.)?
+The system file chooser always uses the current system orientation, even when the player sets its own. Granting `WRITE_SETTINGS` from the App info screen or via adb (`adb shell pm grant com.justplus.player android.permission.WRITE_SETTINGS`) lets the app temporarily enable Auto-rotate to partially work around [this imperfection](https://issuetracker.google.com/issues/141968218). Nothing else uses the permission, and the app works without it.
 
-1. The default system file chooser allows access to any remote storage using appropriate _Document Provider_. I highly recommend [CIFS Documents Provider](https://github.com/wa2c/cifs-documents-provider) for accessing Samba shares. There are also providers like [WebDAV Provider](https://github.com/alexbakker/webdav-provider)/[DAVx⁵](https://github.com/bitfireAT/davx5-ose) (WebDAV), [FileManagerUtils](https://github.com/rikyiso01/FileManagerUtils) (SFTP) and [rcx](https://github.com/x0b/rcx). Sadly, Document providers are not supported on Android TV.
+### The orientation button does nothing
 
-2. Open video directly from your favorite file explorer. _Solid Explorer_ works really well, especially if you also want to automatically load subtitles.
+Since Android 16 apps cannot [switch orientation](https://android-developers.googleblog.com/2025/01/orientation-and-resizability-changes-in-android-16.html) programmatically, but it can be re-enabled per app: open "Aspect ratio" in system Settings, find Just+ Player and switch it from "Full screen" to "App default".
 
-### How do I open a streaming link, where do I enter an url?
+## Credits and licence
 
-Just Player does not have any UI to enter internet addresses, but it is registered for handling all compatible streaming links. When opening/tapping links in other apps, Just Player should be generally offered as an option. (Though this may not work in all situations, especially on Android 12+.)
+Built on [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita and on [AndroidX Media3](https://github.com/androidx/media). Translations come from upstream's [Weblate project](https://hosted.weblate.org/engage/just-player/). Released into the public domain under [the Unlicense](LICENSE), like upstream.
 
-Alternatively, select the text url in the source app, choose _Share_ and find Just Player to play it.
-
-### How to zoom in to get rid of black bars?
-
-If your device has a touchscreen you can use the pinch-to-zoom gesture or just tap the Resize button for a Crop. **Android TV**: Long tap the Resize button to enter Zoom mode. Then use Up and Down keys for precise zoom.
-
-### What to do if Bluetooth audio is not in sync with video?
-
-Just pause and resume playback once again.
-
-### The orientation switch button doesn't work...
-
-Starting Android 16, apps can't programmatically [switch orientation](https://android-developers.googleblog.com/2025/01/orientation-and-resizability-changes-in-android-16.html). However this functionality can be re-enabled per app. 
-
-Open "Aspect ratio" in system Settings, find Just Player and switch from "Full screen" to "App default".
-
-## Other open source Android video players
-
-Here's a comparison table presenting all available and significant open source video players for Android I was able to find. Just Player is something like ~~80%~~ 90% feature complete. It will probably never have dozens of options or some rich media library UI. It will never truly compete with feature rich VLC. It just attempts to provide functional feature set and motive others to create greater players based on amazing ExoPlayer.
-
-| App name (source)                                                 | Media engine                                                                                                                                                            |
-|-------------------------------------------------------------------| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Fermata Media Player](https://github.com/AndreyPavlenko/Fermata) | [MediaPlayer](https://developer.android.com/guide/topics/media/mediaplayer), [ExoPlayer](https://exoplayer.dev/) and [libVLC](https://www.videolan.org/vlc/libvlc.html) |
-| [Just (Video) Player](https://github.com/moneytoo/Player)         | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
-| [Just+ Player](https://github.com/just-plus-player/just-plus-player) | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                  |
-| [Just Player+](https://github.com/wasky/just-player)              | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
-| [Kodi](https://github.com/xbmc/xbmc)                              | ?                                                                                                                                                                       |
-| [mpv](https://github.com/mpv-android/mpv-android)                 | [libmpv](https://github.com/mpv-player/mpv)                                                                                                                             |
-| [mpvEx](https://github.com/marlboro-advance/mpvEx)                | [libmpv](https://github.com/mpv-player/mpv)                                                                                                                             |
-| [Next Player](https://github.com/anilbeesetti/nextplayer)         | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
-| [Nova Video Player](https://github.com/nova-video-player/aos-AVP) | MediaPlayer                                                                                                                                                             |
-| [Only Player](https://github.com/Kindness-Kismet/only_player)     | [ExoPlayer](https://exoplayer.dev/)                                                                                                                                     |
-| [VLC](https://code.videolan.org/videolan/vlc-android)             | [libVLC](https://www.videolan.org/vlc/libvlc.html)                                                                                                                      |
-
-To find other video players (including non-FOSS), check out [a list on IzzyOnDroid](https://android.izzysoft.de/applists/category/named/multimedia_video_player).
+Other open source Android video players worth knowing: [VLC](https://code.videolan.org/videolan/vlc-android), [mpv](https://github.com/mpv-android/mpv-android), [Next Player](https://github.com/anilbeesetti/nextplayer), [Fermata](https://github.com/AndreyPavlenko/Fermata), [Nova Video Player](https://github.com/nova-video-player/aos-AVP), [Kodi](https://github.com/xbmc/xbmc) — or a [longer list on IzzyOnDroid](https://android.izzysoft.de/applists/category/named/multimedia_video_player).

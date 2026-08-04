@@ -594,6 +594,7 @@ public class PlayerActivity extends Activity {
     static final String API_VIDEO_LIST_EPISODE = "video_list.episode";
     static final String API_VIDEO_LIST_IMDB_ID = "video_list.imdb_id";
     static final String API_VIDEO_LIST_ID = "video_list.id";
+    static final String API_VIDEO_LIST_SUBTITLES = "video_list.subtitles";
     static final String API_SEASON = "season";
     static final String API_EPISODE = "episode";
     static final String API_IMDB_ID = "imdb_id";
@@ -3501,6 +3502,7 @@ public class PlayerActivity extends Activity {
         final String[] episodes = getSmartStringArray(bundle, API_VIDEO_LIST_EPISODE);
         final String[] imdbIds = getSmartStringArray(bundle, API_VIDEO_LIST_IMDB_ID);
         final String[] tmdbIds = getSmartStringArray(bundle, API_VIDEO_LIST_ID);
+        final Parcelable[] subtitles = getSmartParcelableArray(bundle, API_VIDEO_LIST_SUBTITLES);
 
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
@@ -3548,10 +3550,16 @@ public class PlayerActivity extends Activity {
             if (dataUri != null && uri.equals(dataUri)) {
                 apiPlaylistStartIndex = apiMediaItems.size();
             }
-            apiMediaItems.add(new MediaItem.Builder()
+            final MediaItem.Builder itemBuilder = new MediaItem.Builder()
                     .setUri(uri)
-                    .setMediaMetadata(metadataBuilder.build())
-                    .build());
+                    .setMediaMetadata(metadataBuilder.build());
+            // Per-episode external subtitles. They have to ride on the item itself: a playlist replaces the
+            // single media item wholesale, so the apiSubs of a lone video never reach it.
+            final List<MediaItem.SubtitleConfiguration> itemSubs = readPlaylistSubtitles(subtitles, i);
+            if (!itemSubs.isEmpty()) {
+                itemBuilder.setSubtitleConfigurations(itemSubs);
+            }
+            apiMediaItems.add(itemBuilder.build());
             // Keep segments aligned by index with apiMediaItems (null when absent)
             apiPlaylistSegments.add(segments != null && i < segments.length ? segments[i] : null);
             // Episode metadata, aligned by index (null when absent). Stored, not yet used.
@@ -3571,6 +3579,42 @@ public class PlayerActivity extends Activity {
         for (int i = 0; i < apiPlaylistPositions.length; i++) {
             apiPlaylistPositions[i] = C.TIME_UNSET;
         }
+    }
+
+    /**
+     * One entry of {@code video_list.subtitles}: a Bundle per playlist item carrying parallel {@code uris}
+     * and {@code names} arrays, which is the shape Lampa sends. Nothing is pre-selected — the same as a
+     * single video launched with {@code subs} but no {@code subs.enable}.
+     */
+    private List<MediaItem.SubtitleConfiguration> readPlaylistSubtitles(Parcelable[] items, int index) {
+        final List<MediaItem.SubtitleConfiguration> result = new ArrayList<>();
+        if (items == null || index >= items.length || !(items[index] instanceof Bundle)) {
+            return result;
+        }
+        final Bundle item = (Bundle) items[index];
+        final Parcelable[] uris = getSmartParcelableArray(item, "uris");
+        if (uris == null) {
+            return result;
+        }
+        final String[] names = getSmartStringArray(item, "names");
+        for (int i = 0; i < uris.length; i++) {
+            if (!(uris[i] instanceof Uri)) {
+                continue;
+            }
+            final String name = names != null && i < names.length ? names[i] : null;
+            result.add(SubtitleUtils.buildSubtitle(this, (Uri) uris[i], name, false));
+        }
+        return result;
+    }
+
+    /** As {@link #getSmartStringArray}: an array or an array list, since senders use both. */
+    private static Parcelable[] getSmartParcelableArray(Bundle bundle, String key) {
+        final Parcelable[] array = bundle.getParcelableArray(key);
+        if (array != null) {
+            return array;
+        }
+        final ArrayList<Parcelable> list = bundle.getParcelableArrayList(key);
+        return list == null ? null : list.toArray(new Parcelable[0]);
     }
 
     // Reads two parallel extras (labels + urls) into an insertion-ordered label->url map, sorted from

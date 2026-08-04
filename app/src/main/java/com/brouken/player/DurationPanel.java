@@ -111,6 +111,12 @@ final class DurationPanel {
         final LinearLayout valueRow = new LinearLayout(activity);
         valueRow.setOrientation(LinearLayout.HORIZONTAL);
         valueRow.setGravity(Gravity.CENTER_VERTICAL);
+        // A key row's height and margin, so the readout and the backspace share the centre line of the
+        // "1 2 3" row instead of hovering a few pixels above it.
+        final LinearLayout.LayoutParams valueLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, rowHeight);
+        valueLp.topMargin = Utils.dpToPx(8);
+        valueRow.setLayoutParams(valueLp);
         readoutColumn.addView(valueRow);
 
         final TextView value = new TextView(activity);
@@ -207,7 +213,7 @@ final class DurationPanel {
         actions.setGravity(Gravity.END);
         final LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        actionsLp.topMargin = Utils.dpToPx(12);
+        actionsLp.topMargin = Utils.dpToPx(landscape ? 8 : 12);
         actions.setLayoutParams(actionsLp);
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);

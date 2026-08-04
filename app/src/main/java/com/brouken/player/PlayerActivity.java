@@ -75,6 +75,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
@@ -455,6 +456,9 @@ public class PlayerActivity extends Activity {
     private SwipeToUnlockView swipeToUnlock;
     // Back-button guard while locked: the first Back arms this, a second Back within the window exits.
     private boolean lockBackPressedOnce;
+    // Same guard on TV, once Back has nothing left to close: a stray press on a remote must not drop
+    // out of the player.
+    private boolean backPressedOnce;
     // The page shown when there is nothing to play; owns its own views, reveal and pulse.
     private final EmptyState emptyState = new EmptyState(this);
     private ImageButton exoSettings;
@@ -803,6 +807,15 @@ public class PlayerActivity extends Activity {
 
         isTvBox = Utils.isTvBox(this);
         ui = UiMetrics.of(this, isTvBox);
+
+        // Android 13+ delivers Back through OnBackInvokedDispatcher instead of onBackPressed(), and from
+        // targetSdk 36 the manifest opt-out is ignored — with no callback of our own the system finishes
+        // the task without ever asking the activity. Register one so onBackPressed() stays the single
+        // place that decides what Back means on every API level.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
+        }
 
         if (isTvBox) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
@@ -1997,6 +2010,33 @@ public class PlayerActivity extends Activity {
             }
             return;
         }
+        // On TV the remote's Back is pressed mid-interaction all the time, so it has to consume what is
+        // open before it means "leave": a pending key-seek, then the controls. Only with nothing left to
+        // close does it ask for a second press. This lives here rather than in onKeyDown because
+        // enableOnBackInvokedCallback routes Back straight to onBackPressed on Android 13+, where it
+        // never arrives as a key event at all.
+        if (isTvBox && haveMedia && !locked) {
+            if (keyScrubTarget >= 0) {
+                playerView.removeCallbacks(keyScrubCommit);
+                keyScrubTarget = -1;
+                keyScrubSteps = 0;
+                playerView.removeCallbacks(playerView.textClearRunnable);
+                playerView.textClearRunnable.run();
+                return;
+            }
+            if (controllerVisible) {
+                // A timebar D-pad scrub needs no case of its own: it can only happen with the controls
+                // up, and DefaultTimeBar stops scrubbing on its own timeout, which resumes playback.
+                playerView.hideController();
+                return;
+            }
+            if (!backPressedOnce) {
+                backPressedOnce = true;
+                Utils.showText(playerView, getString(R.string.press_back_again), 2000);
+                playerView.postDelayed(() -> backPressedOnce = false, 2000);
+                return;
+            }
+        }
         restorePlayStateAllowed = false;
         super.onBackPressed();
     }
@@ -2218,14 +2258,8 @@ public class PlayerActivity extends Activity {
                 }
                 return true;
             case KeyEvent.KEYCODE_BACK:
-                if (isTvBox) {
-                    if (controllerVisible && player != null && player.isPlaying()) {
-                        playerView.hideController();
-                        return true;
-                    } else {
-                        onBackPressed();
-                    }
-                }
+                // Handled in onBackPressed(), the one path every API level shares. The case still has to
+                // exist so Back does not fall into default: below, which would show the controller.
                 break;
             case KeyEvent.KEYCODE_UNKNOWN:
                 return super.onKeyDown(keyCode, event);

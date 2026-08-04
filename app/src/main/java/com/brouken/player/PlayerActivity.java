@@ -459,6 +459,8 @@ public class PlayerActivity extends Activity {
     // Same guard on TV, once Back has nothing left to close: a stray press on a remote must not drop
     // out of the player.
     private boolean backPressedOnce;
+    // Set while a Down press is opening the controls, so focus lands on the time bar instead of play/pause.
+    private boolean focusTimeBarOnShow;
     // The page shown when there is nothing to play; owns its own views, reveal and pulse.
     private final EmptyState emptyState = new EmptyState(this);
     private ImageButton exoSettings;
@@ -1718,7 +1720,20 @@ public class PlayerActivity extends Activity {
                 }
                 if (visibility == View.VISIBLE && !emptyState.isVisible()) {
                     // Because when using dpad controls, focus resets to first item in bottom controls bar
-                    findViewById(R.id.exo_play_pause).requestFocus();
+                    if (focusTimeBarOnShow) {
+                        // Set by Down, which opens the controls straight on the time bar. Deciding it here
+                        // rather than at the key press is what makes it stick: this listener runs twice per
+                        // show (once when the controls appear, once when the animation ends) and the second
+                        // pass would otherwise pull focus back to play/pause.
+                        timeBar.requestFocus();
+                        if (controllerVisibleFully) {
+                            focusTimeBarOnShow = false;
+                        }
+                    } else {
+                        findViewById(R.id.exo_play_pause).requestFocus();
+                    }
+                } else {
+                    focusTimeBarOnShow = false;
                 }
 
                 if (controllerVisible && playerView.isControllerFullyVisible()) {
@@ -2254,6 +2269,22 @@ public class PlayerActivity extends Activity {
                     if (event.getRepeatCount() == 0)
                         playerView.hideController();
                 } else if (event.getRepeatCount() == 0) {
+                    playerView.showController();
+                }
+                return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (controllerVisibleFully) {
+                    // Mirror of Up above: Down from the bottom row dismisses the controls, anywhere
+                    // else it stays plain focus navigation.
+                    final View focusedDown = getCurrentFocus();
+                    if (!haveMedia || (focusedDown != null && focusedDown.focusSearch(View.FOCUS_DOWN) != null))
+                        break;
+                    if (event.getRepeatCount() == 0)
+                        playerView.hideController();
+                } else if (event.getRepeatCount() == 0) {
+                    // Down opens the controls straight on the time bar, saving the press it takes to get
+                    // there from play/pause; Up still lands on play/pause. See the visibility listener.
+                    focusTimeBarOnShow = haveMedia;
                     playerView.showController();
                 }
                 return true;

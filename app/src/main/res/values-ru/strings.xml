@@ -128,6 +128,13 @@
     <string name="quality_source">Источник</string>
     <string name="quality_bitrate">%1$.1f Мбит/с</string>
     <string name="quality_unavailable">Параметры качества пока недоступны</string>
+    <string name="stats_title">Статистика</string>
+    <string name="stats_buffer">Буфер: %1$d с (%2$d%%)</string>
+    <string name="stats_dropped">Пропущенные кадры: %1$d</string>
+    <string name="stats_network">Сеть: %1$s</string>
+    <string name="stats_stream">Поток: %1$s</string>
+    <string name="pref_show_stats_on">Буфер, декодеры и пропущенные кадры показываются с элементами управления</string>
+    <string name="pref_show_stats_off">Подробности воспроизведения скрыты</string>
     <string name="volume_high_warning">Высокая громкость может повредить слух</string>
     <string name="pref_file_access_auto">Авто</string>
     <string name="pref_file_access">Доступ к файлам</string>

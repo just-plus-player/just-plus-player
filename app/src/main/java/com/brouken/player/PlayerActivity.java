@@ -13,6 +13,8 @@ import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.app.RemoteAction;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -104,6 +106,8 @@ import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
+import androidx.media3.exoplayer.DecoderCounters;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -278,7 +282,9 @@ public class PlayerActivity extends Activity {
     // thread by the analytics listener, reset per player build.
     private String videoDecoderName;
     private String audioDecoderName;
-    private final AnalyticsListener decoderNameListener = new AnalyticsListener() {
+    // Loader's throughput estimate — the one stats figure the player itself cannot be asked for.
+    private long bandwidthBitrate;
+    private final AnalyticsListener playbackInfoListener = new AnalyticsListener() {
         @Override
         public void onVideoDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
                                              long initializedTimestampMs, long initializationDurationMs) {
@@ -289,6 +295,12 @@ public class PlayerActivity extends Activity {
         public void onAudioDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
                                               long initializedTimestampMs, long initializationDurationMs) {
             audioDecoderName = decoderName;
+        }
+
+        @Override
+        public void onBandwidthEstimate(AnalyticsListener.EventTime eventTime, int totalLoadTimeMs,
+                                        long totalBytesLoaded, long bitrateEstimate) {
+            bandwidthBitrate = bitrateEstimate;
         }
     };
     // A fatal report has just been shown for the current clip. onStart re-initialises the player every
@@ -419,6 +431,7 @@ public class PlayerActivity extends Activity {
     private TextView videoInfoView;
     private TextView audioInfoView;
     private TextView endsAtView;
+    private TextView statsView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
     private ImageButton buttonOpen;
@@ -763,6 +776,9 @@ public class PlayerActivity extends Activity {
         @Override
         public void run() {
             updateEndsAt();
+            // The stats panel needs the same once-a-second tick over the same lifetime (controls visible),
+            // so it rides this one rather than starting a second timer.
+            updateStats();
             if (controllerVisible) {
                 playerView.postDelayed(this, 1000);
             }
@@ -1380,6 +1396,29 @@ public class PlayerActivity extends Activity {
         overlayClock.setVisibility(View.GONE);
         coordinatorLayout.addView(overlayClock);
 
+        // Live playback stats, opened from the overflow menu. It rides the controls (updated by
+        // endsAtRunnable, hidden by stopEndsAtUpdates), so it is never left sitting over the video, and it
+        // carries no touch handling of its own — the left half of the screen is the brightness swipe zone.
+        statsView = new TextView(this);
+        statsView.setTextColor(0xB3FFFFFF);
+        statsView.setTypeface(Typeface.MONOSPACE);
+        statsView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
+        // Same corner as the lock button, the time pill and the poster — a floating box in this UI is rounded.
+        final GradientDrawable statsBackground = new GradientDrawable();
+        statsBackground.setColor(0x99000000);
+        statsBackground.setCornerRadius(ui.pillCorner());
+        statsView.setBackground(statsBackground);
+        final int statsPadding = Utils.dpToPx(8);
+        statsView.setPadding(statsPadding, statsPadding, statsPadding, statsPadding);
+        final CoordinatorLayout.LayoutParams statsLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        // Mid-left: the only band the controls leave free, since the header and the bottom bar are on
+        // screen whenever the panel is. The left margin is the shared content grid, set with the insets.
+        statsLp.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        statsView.setLayoutParams(statsLp);
+        statsView.setVisibility(View.GONE);
+        coordinatorLayout.addView(statsView);
+
         // Whenever the in-header clock is (re)laid out, mirror its position onto the floating clock.
         headerClock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> syncOverlayClockPosition());
 
@@ -1502,6 +1541,22 @@ public class PlayerActivity extends Activity {
                     // and the progress bar), instead of a fixed 24dp + insetRight that overshoots in landscape.
                     skipLp.rightMargin = insetH + ui.gridH();
                     buttonSkip.setLayoutParams(skipLp);
+                }
+
+                // Mirror of the Skip pill on the other edge: the stats panel floats on the same coordinator,
+                // so its left edge needs the same grid the header and the bottom bar are padded to — a raw
+                // margin from the screen edge lands it in the display cutout's strip in landscape.
+                if (statsView != null) {
+                    final CoordinatorLayout.LayoutParams statsParams =
+                            (CoordinatorLayout.LayoutParams) statsView.getLayoutParams();
+                    statsParams.leftMargin = insetH + ui.gridH();
+                    // The panel is centred vertically, which is where the play/pause cluster lives, so its
+                    // width has to stop short of it: half the window, less half that cluster (hero disc plus
+                    // an episode arrow beside it) and the panel's own offset. A decoder name longer than
+                    // that wraps instead of sliding under the buttons.
+                    statsView.setMaxWidth(ui.dp(getResources().getConfiguration().screenWidthDp) / 2
+                            - ui.heroBox() / 2 - ui.episodeDisc() - statsParams.leftMargin);
+                    statsView.setLayoutParams(statsParams);
                 }
 
                 Utils.setViewMargins(findViewById(R.id.exo_error_message), 0, windowInsets.getSystemWindowInsetTop() / 2, 0, getResources().getDimensionPixelSize(R.dimen.exo_error_message_margin_bottom) + windowInsets.getSystemWindowInsetBottom() / 2);
@@ -4069,6 +4124,79 @@ public class PlayerActivity extends Activity {
         if (endsAtView != null) {
             endsAtView.setVisibility(View.GONE);
         }
+        if (statsView != null) {
+            statsView.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * The stats panel's text. Deliberately only what the header does not already say — it is on screen at
+     * the same time, and repeating "1080p H264" there would be noise. What is left is the figures that
+     * move and the decoder names the coarse codec label hides.
+     */
+    private void updateStats() {
+        if (statsView == null) {
+            return;
+        }
+        if (!mPrefs.showStats || player == null || !controllerVisible || inPip) {
+            statsView.setVisibility(View.GONE);
+            return;
+        }
+        final StringBuilder text = new StringBuilder();
+        // Ahead of the playhead, against the load control's target — the "how much slack is there"
+        // reading. On a local file this is always full, which is itself the answer.
+        final long bufferedMs = player.getTotalBufferedDuration();
+        text.append(getString(R.string.stats_buffer, bufferedMs / 1000,
+                (int) Math.min(100, bufferedMs * 100 / DefaultLoadControl.DEFAULT_MAX_BUFFER_MS)));
+        if (bandwidthBitrate > 0) {
+            text.append('\n').append(getString(R.string.stats_network,
+                    getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f)));
+        }
+        final Format video = player.getVideoFormat();
+        if (video != null) {
+            text.append('\n').append(video.width).append('×').append(video.height);
+            if (video.frameRate != Format.NO_VALUE) {
+                text.append(String.format(Locale.US, " · %.2f fps", video.frameRate));
+            }
+            // Its own line rather than a third field: the panel has to stay narrower than the gap to the
+            // centred transport buttons, and every line here is kept short enough to never wrap.
+            if (video.bitrate != Format.NO_VALUE) {
+                text.append('\n').append(getString(R.string.stats_stream,
+                        getString(R.string.quality_bitrate, video.bitrate / 1_000_000f)));
+            }
+        }
+        // The mime says "hevc"; only the decoder name says whether that went to the vendor's hardware
+        // codec or to a software one, which is the whole question behind most "it stutters" reports.
+        // One per line: the two of them on one line was the panel's widest content by a wide margin.
+        if (videoDecoderName != null) {
+            text.append('\n').append(videoDecoderName);
+        }
+        if (audioDecoderName != null) {
+            text.append('\n').append(audioDecoderName);
+        }
+        final DecoderCounters counters = player.getVideoDecoderCounters();
+        if (counters != null) {
+            text.append('\n').append(getString(R.string.stats_dropped, counters.droppedBufferCount));
+        }
+        statsView.setText(text);
+        statsView.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * The same dump the error screen carries, to the clipboard — so a report about stuttering or a wrong
+     * decoder reads like one about a crash, and appendPlayerState stays the single source for both.
+     */
+    private void copyPlayerState() {
+        final StringBuilder state = new StringBuilder();
+        appendPlayerState(state);
+        if (state.length() == 0) {
+            return;
+        }
+        final ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("Just+ Player playback", state.toString().trim()));
+            Toast.makeText(this, R.string.error_copied, Toast.LENGTH_SHORT).show();
+        }
     }
 
     // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
@@ -5204,6 +5332,13 @@ public class PlayerActivity extends Activity {
                     formatSpeed(player.getPlaybackParameters().speed), false, this::showSpeedDialog));
             items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
                     sleepTimerSummary(), false, this::showSleepTimerMenu));
+            // Rides the stats panel: the details it copies are the ones on screen, and the row would be
+            // noise for everyone who has not asked for them. From the menu rather than a long-press on the
+            // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
+            if (mPrefs.showStats) {
+                items.add(new MenuItem(R.drawable.ic_content_copy_24dp, getString(R.string.error_copy),
+                        null, false, this::copyPlayerState));
+            }
         }
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
             items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
@@ -5472,6 +5607,7 @@ public class PlayerActivity extends Activity {
             applyVolumeMode();
             updateSubtitleStyle(this);
             updateOverlayClock();
+            updateStats();
             // Coming back from the settings screen no longer rebuilds the player by itself (see onStop),
             // but options like the decoder priority or tunneling are baked into it at build time. So
             // rebuild when the screen actually changed something — going in for a look costs nothing.
@@ -5604,6 +5740,7 @@ public class PlayerActivity extends Activity {
         playerStartPositionMs = C.TIME_UNSET;
         videoDecoderName = null;
         audioDecoderName = null;
+        bandwidthBitrate = 0;
         // A restart that never got its onTracksChanged belongs to the player being replaced here.
         audioRestartInFlight = false;
         audioRestartSettling = false;
@@ -5623,7 +5760,7 @@ public class PlayerActivity extends Activity {
             player.removeListener(playerListener);
             // Renderer decoder-init events reach the collector via a post from the playback thread, so one
             // enqueued during teardown would write the old player's decoder name onto the next session.
-            player.removeAnalyticsListener(decoderNameListener);
+            player.removeAnalyticsListener(playbackInfoListener);
             player.clearMediaItems();
             player.release();
             player = null;
@@ -5927,7 +6064,7 @@ public class PlayerActivity extends Activity {
         }
 
         player.addListener(playerListener);
-        player.addAnalyticsListener(decoderNameListener);
+        player.addAnalyticsListener(playbackInfoListener);
         // The renderers factory has just loaded the extension libraries it needs, so this is free here.
         if (ffmpegAvailable == null
                 && mPrefs.decoderPriority != DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF) {
@@ -6103,7 +6240,7 @@ public class PlayerActivity extends Activity {
             player.removeListener(playerListener);
             // Renderer decoder-init events reach the collector via a post from the playback thread, so one
             // enqueued during teardown would write the old player's decoder name onto the next session.
-            player.removeAnalyticsListener(decoderNameListener);
+            player.removeAnalyticsListener(playbackInfoListener);
             player.clearMediaItems();
             player.release();
             player = null;

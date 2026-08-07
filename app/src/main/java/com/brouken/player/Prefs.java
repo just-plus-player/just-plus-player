@@ -11,6 +11,8 @@ import android.text.TextUtils;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
 
+import com.brouken.player.update.UpdateInfo;
+
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
@@ -71,6 +73,7 @@ class Prefs {
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
     private static final String PREF_KEY_UPDATE_SKIPPED = "updateSkippedVersionCode";
+    private static final String PREF_KEY_UPDATE_PENDING = "updatePending";
     private static final String PREF_KEY_REVOKED_AUDIO_MIMES = "revokedAudioMimes";
     private static final String PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED = "revokedAudioMimesRelearned";
 
@@ -150,6 +153,9 @@ class Prefs {
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
     public int updateSkippedVersionCode = 0;
+    // Last update the check found, remembered across launches so the button beside the gear is there from
+    // the first frame instead of only on the launches where the hourly throttle lets a request through.
+    public UpdateInfo updatePending;
     // Audio sample mimes (Format.sampleMimeType, e.g. MimeTypes.AUDIO_DTS) this device has proven
     // cannot passthrough — see PlayerActivity.recoverByRevokingAudioMime(). Never auto-expires;
     // only the "Reset learned audio workarounds" setting or a full app data reset clears it.
@@ -222,6 +228,12 @@ class Prefs {
         speed = mSharedPreferences.getFloat(PREF_KEY_SPEED, speed);
         updateLastCheck = mSharedPreferences.getLong(PREF_KEY_UPDATE_LAST_CHECK, updateLastCheck);
         updateSkippedVersionCode = mSharedPreferences.getInt(PREF_KEY_UPDATE_SKIPPED, updateSkippedVersionCode);
+        updatePending = UpdateInfo.fromJson(mSharedPreferences.getString(PREF_KEY_UPDATE_PENDING, null));
+        // A remembered find that has since been installed or skipped is not an offer any more.
+        if (updatePending != null && (updatePending.versionCode <= BuildConfig.VERSION_CODE
+                || updatePending.versionCode == updateSkippedVersionCode)) {
+            updatePending = null;
+        }
         loadUserPreferences();
     }
 
@@ -414,6 +426,17 @@ class Prefs {
         this.updateSkippedVersionCode = versionCode;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putInt(PREF_KEY_UPDATE_SKIPPED, versionCode);
+        sharedPreferencesEditor.apply();
+    }
+
+    public void setUpdatePending(final UpdateInfo info) {
+        this.updatePending = info;
+        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
+        if (info == null) {
+            sharedPreferencesEditor.remove(PREF_KEY_UPDATE_PENDING);
+        } else {
+            sharedPreferencesEditor.putString(PREF_KEY_UPDATE_PENDING, info.toJson());
+        }
         sharedPreferencesEditor.apply();
     }
 

@@ -115,6 +115,7 @@
     <string name="update_now">Update</string>
     <string name="update_later">Later</string>
     <string name="update_skip">Skip this version</string>
+    <string name="update_stops_playback">The player will close to install — your position is saved.</string>
     <string name="time_ends_at">Ends at %s</string>
     <string name="time_ends_at_inline">until %1$s</string>
     <string name="playlist">Playlist</string>
@@ -135,6 +136,7 @@
     <string name="button_quality">Video quality</string>
     <string name="button_audio_track">Audio</string>
     <string name="button_more">More</string>
+    <string name="button_update">Update available</string>
     <string name="audio_title">Audio track</string>
     <string name="subtitle_title">Subtitles</string>
     <string name="subtitle_off">Off</string>

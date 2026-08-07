@@ -138,6 +138,7 @@ import com.brouken.player.skip.NetworkSegmentsSource;
 import com.brouken.player.skip.SegmentFinder;
 import com.brouken.player.skip.SkipManager;
 import com.brouken.player.skip.SkipSegment;
+import com.brouken.player.update.UpdateInfo;
 import com.brouken.player.update.UpdateUi;
 import com.brouken.player.update.Updater;
 import com.bumptech.glide.Glide;
@@ -426,6 +427,7 @@ public class PlayerActivity extends Activity {
     private ImageButton buttonQuality;
     private ImageButton buttonAudio;
     private ImageButton buttonMore;
+    private ImageButton buttonUpdate;
     private ImageButton buttonSkipOffset;
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
@@ -985,6 +987,24 @@ public class PlayerActivity extends Activity {
         buttonMore.setOnLongClickListener(view -> {
             openSettings();
             return true;
+        });
+
+        // The only ambient sign that a release is waiting. It exists solely while one is (see
+        // refreshUpdateButton) and lives in the controls, which are on screen only when the user asked for
+        // them — so nothing is ever interrupted, and the brand colour is what makes it findable anyway.
+        buttonUpdate = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonUpdate.setImageResource(R.drawable.ic_update_24dp);
+        buttonUpdate.setId(View.generateViewId());
+        buttonUpdate.setContentDescription(getString(R.string.button_update));
+        buttonUpdate.setVisibility(View.GONE);
+        // Tint the glyph, never the background: a background on these buttons swallows it.
+        buttonUpdate.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.brand)));
+        buttonUpdate.setOnClickListener(view -> {
+            final UpdateInfo info = mPrefs.updatePending;
+            if (info != null) {
+                UpdateUi.showAvailableDialog(this, info, skipUpdate(info),
+                        player != null && player.isPlaying());
+            }
         });
 
         buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
@@ -1603,6 +1623,9 @@ public class PlayerActivity extends Activity {
         if (!isTvBox) {
             displayParent.addView(buttonRotation);
         }
+        // "Update available" sits immediately before the gear — one insertion point that lands in the same
+        // place on a phone and on TV, because the gear ends the bottom bar on both.
+        controls.addView(buttonUpdate);
         // "More" (overflow) always lives at the end of the bottom bar.
         controls.addView(buttonMore);
 
@@ -1615,6 +1638,8 @@ public class PlayerActivity extends Activity {
         if (mPrefs.repeatToggle) {
             styleClusterButton(exoRepeat);
         }
+        styleClusterButton(buttonUpdate);
+        refreshUpdateButton();
         styleClusterButton(buttonMore);
         styleClusterButton(buttonAspectRatio);
         if (buttonPiP != null) {
@@ -1779,10 +1804,15 @@ public class PlayerActivity extends Activity {
     }
 
     // Silent, non-intrusive self-update check. Only the sideloaded universal build self-updates
-    // (BuildConfig.ENABLE_UPDATE); the check runs only on an idle launch (no media intent), is
-    // throttled to once a day, and the "update available" dialog is shown only while nothing is
-    // playing — it must never cover a video the user just launched.
-    private static final long UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L;
+    // (BuildConfig.ENABLE_UPDATE), since everywhere else a store does it.
+    //
+    // Checking and telling are deliberately separate. The check is one background request, it disturbs
+    // nobody, and it now runs on every launch (throttled to an hour) — gating it on an idle launch meant
+    // it never ran at all for anyone who reaches the player through another app's intent, which is how
+    // most people arrive, so a hotfix could sit unseen for weeks. What stays gated is the *dialog*: it is
+    // only ever raised on an idle launch with nothing playing. Every other find surfaces as the
+    // brand-coloured button beside the gear, which is visible only once the user asks for the controls.
+    private static final long UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000L;
 
     private void maybeCheckForUpdate(final Intent launchIntent) {
         if (!BuildConfig.ENABLE_UPDATE || !mPrefs.autoUpdate) {
@@ -1792,27 +1822,45 @@ public class PlayerActivity extends Activity {
         final boolean launchedIdle = launchIntent.getData() == null
                 && !Intent.ACTION_SEND.equals(action)
                 && !"com.brouken.player.action.SHORTCUT_VIDEOS".equals(action);
-        if (!launchedIdle) {
-            return;
-        }
         final long now = System.currentTimeMillis();
         if (now - mPrefs.updateLastCheck < UPDATE_CHECK_INTERVAL_MS) {
             return;
         }
         mPrefs.setUpdateLastCheck(now);
         Updater.find(info -> runOnUiThread(() -> {
-            if (isFinishing() || info == null) {
+            if (isFinishing()) {
                 return;
             }
-            if (info.versionCode == mPrefs.updateSkippedVersionCode) {
+            // Remembered so the button survives the launches the throttle skips; cleared when there is
+            // nothing on offer any more, so a pulled release takes the button down with it.
+            final boolean offer = info != null && info.versionCode != mPrefs.updateSkippedVersionCode;
+            mPrefs.setUpdatePending(offer ? info : null);
+            refreshUpdateButton();
+            if (!offer || !launchedIdle) {
                 return;
             }
             if (haveMedia && player != null && player.isPlaying()) {
                 return;
             }
-            UpdateUi.showAvailableDialog(PlayerActivity.this, info,
-                    () -> mPrefs.setUpdateSkippedVersionCode(info.versionCode));
+            UpdateUi.showAvailableDialog(PlayerActivity.this, info, skipUpdate(info), false);
         }));
+    }
+
+    private void refreshUpdateButton() {
+        if (buttonUpdate != null) {
+            // autoUpdate is the off switch for the whole feature, so it has to take a remembered find with
+            // it — otherwise turning updates off would leave the button sitting there.
+            final boolean show = BuildConfig.ENABLE_UPDATE && mPrefs.autoUpdate && mPrefs.updatePending != null;
+            buttonUpdate.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private Runnable skipUpdate(final UpdateInfo info) {
+        return () -> {
+            mPrefs.setUpdateSkippedVersionCode(info.versionCode);
+            mPrefs.setUpdatePending(null);
+            refreshUpdateButton();
+        };
     }
 
     @Override

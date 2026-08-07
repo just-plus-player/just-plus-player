@@ -2455,7 +2455,11 @@ public class PlayerActivity extends Activity {
             }
         }
 
-        if (isTvBox && !controllerVisibleFully) {
+        // BACK is excluded: it is handled in onBackPressed(), and hijacking it here breaks the
+        // framework's key tracking. Without super.dispatchKeyEvent the DOWN event never reaches
+        // KeyEvent.dispatch(), so the UP event is not marked as tracking and Activity.onKeyUp never
+        // calls onBackPressed() — leaving Back dead below Android 13, where it still arrives as a key.
+        if (isTvBox && !controllerVisibleFully && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 onKeyDown(event.getKeyCode(), event);
             } else if (event.getAction() == KeyEvent.ACTION_UP) {

@@ -31,6 +31,10 @@ public class App extends Application {
     }
 
     private void initSentry() {
+        // Turned off for everyone, not just as a default: the consent switch is hidden, so a stored
+        // "on" from an earlier build would otherwise keep reporting with no way to stop it.
+        if (!BuildConfig.ENABLE_CRASH_REPORTING)
+            return;
         final String dsn = BuildConfig.SENTRY_DSN;
         if (dsn == null || dsn.isEmpty())
             return;

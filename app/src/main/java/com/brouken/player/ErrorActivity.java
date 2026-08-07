@@ -221,7 +221,8 @@ public class ErrorActivity extends AppCompatActivity {
         // would also load unrelated playback state.
         final android.content.SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         sb.append("Prefs: file access ").append(prefs.getString("fileAccess", "auto"))
-                .append(prefs.getBoolean("crashReporting", true) ? ", crash reporting on" : ", crash reporting off")
+                .append(BuildConfig.ENABLE_CRASH_REPORTING && prefs.getBoolean("crashReporting", false)
+                        ? ", crash reporting on" : ", crash reporting off")
                 .append('\n');
     }
 

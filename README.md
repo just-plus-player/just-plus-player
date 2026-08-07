@@ -54,7 +54,6 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
  * A full-screen error page with plain-language messages instead of ExoPlayer codes, and Copy / Share / Upload log
  * Watchdogs for a load that never starts, a stall in the middle of a film, and a live stream that keeps dropping
  * Fallbacks for Dolby Vision profile 7, for tunneled playback that freezes the picture, and for HLS playlists served without an extension
- * Crash reporting that can be switched off in Settings → Privacy
 
 **Launcher integration**
 

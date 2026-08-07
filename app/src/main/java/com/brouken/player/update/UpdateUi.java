@@ -28,8 +28,11 @@ public final class UpdateUi {
     /**
      * Shows the "update available" dialog. {@code onSkip} — when non-null — adds a "Skip this
      * version" button that runs it (used by the silent auto-check; the manual check passes null).
+     * {@code warnPlaybackStops} spells out that installing ends the film: the dialog is reachable
+     * mid-playback from the button beside the gear, and the installer takes the process with it.
      */
-    public static void showAvailableDialog(final Activity activity, final UpdateInfo info, final Runnable onSkip) {
+    public static void showAvailableDialog(final Activity activity, final UpdateInfo info,
+                                           final Runnable onSkip, final boolean warnPlaybackStops) {
         if (activity.isFinishing()) {
             return;
         }
@@ -40,6 +43,9 @@ public final class UpdateUi {
 
         final SpannableStringBuilder text = new SpannableStringBuilder(header);
         text.setSpan(new StyleSpan(Typeface.BOLD), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (warnPlaybackStops) {
+            text.append("\n").append(activity.getString(R.string.update_stops_playback));
+        }
         if (!changelog.isEmpty()) {
             text.append("\n\n").append(MarkdownRenderer.render(changelog));
         }

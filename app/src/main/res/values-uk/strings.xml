@@ -119,6 +119,8 @@
     <string name="button_quality">Якість відео</string>
     <string name="button_audio_track">Аудіо</string>
     <string name="button_more">Ще</string>
+    <string name="button_update">Доступне оновлення</string>
+    <string name="update_stops_playback">Плеєр закриється для встановлення — позиція збережеться.</string>
     <string name="audio_title">Аудіодоріжка</string>
     <string name="subtitle_title">Субтитри</string>
     <string name="subtitle_off">Вимкнено</string>

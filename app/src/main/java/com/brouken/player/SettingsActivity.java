@@ -200,7 +200,7 @@ public class SettingsActivity extends AppCompatActivity {
                                 return;
                             }
                             if (info != null) {
-                                UpdateUi.showAvailableDialog(activity, info, null);
+                                UpdateUi.showAvailableDialog(activity, info, null, false);
                             } else {
                                 Toast.makeText(activity, R.string.update_none, Toast.LENGTH_SHORT).show();
                             }

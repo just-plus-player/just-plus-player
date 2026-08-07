@@ -793,7 +793,12 @@ class Utils {
                         activity.releasePlayer();
                         Uri uri = DocumentFile.fromFile(pathFile).getUri();
                         if (video) {
-                            activity.mPrefs.setPersistent(true);
+                            // Picking a file ends whatever session was running — the same thing the SAF
+                            // chooser does in onActivityResult. This one is a dialog, so that callback
+                            // never runs, and without this the launcher's return_result stayed armed
+                            // while persistent mode came back on: finish() then reported this file
+                            // against the launcher's episode, with a position of -1.
+                            activity.resetApiAccess();
                             activity.mPrefs.updateMedia(activity, uri, null);
                             activity.searchSubtitles();
                         } else {

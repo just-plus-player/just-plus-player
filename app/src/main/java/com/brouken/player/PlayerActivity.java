@@ -2077,11 +2077,7 @@ public class PlayerActivity extends Activity {
                         intent.putExtra(API_DURATION, (int) player.getDuration());
                     }
                     if (player.isCurrentMediaItemSeekable()) {
-                        if (mPrefs.persistentMode) {
-                            intent.putExtra(API_POSITION, (int) mPrefs.nonPersitentPosition);
-                        } else {
-                            intent.putExtra(API_POSITION, (int) player.getCurrentPosition());
-                        }
+                        intent.putExtra(API_POSITION, (int) player.getCurrentPosition());
                     }
                 }
             }
@@ -2192,6 +2188,11 @@ public class PlayerActivity extends Activity {
                 if (text != null) {
                     final Uri parsedUri = Uri.parse(text);
                     if (parsedUri.isAbsolute()) {
+                        // A shared link is new media, not a continuation: end whatever session was
+                        // running, as the VIEW branch above does through handleViewIntent. Otherwise the
+                        // launcher's return_result stays armed and finish() reports this link's progress
+                        // against the episode the launcher asked for.
+                        resetApiAccess();
                         mPrefs.updateMedia(this, parsedUri, null);
                         focusPlay = true;
                         initializePlayer();
@@ -2563,6 +2564,9 @@ public class PlayerActivity extends Activity {
         apiAccess = false;
         apiAccessPartial = false;
         intentReturnResult = false;
+        // The end-of-playback flag belongs to the session being reported. Left set, the next launcher
+        // session inherits it and finish() reports a video watched to its end that the user just started.
+        playbackFinished = false;
         apiTitle = null;
         apiThumbnailUri = null;
         apiSegments = null;
@@ -6478,7 +6482,12 @@ public class PlayerActivity extends Activity {
                 // (Re)arm the watchdog: if this buffering never resolves to STATE_READY, it is a stuck load.
                 playerView.removeCallbacks(loadTimeoutRunnable);
                 playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
-            } else if (state == Player.STATE_ENDED) {
+            // Only real media can end. initializePlayer prepares unconditionally, and a prepare with no
+            // media items reports STATE_ENDED at once, so the empty state — a launcher start with nothing
+            // to resume, the fallback after a fatal error, a deleted file — would otherwise count as a
+            // video watched to its end and report that to the launcher. Same guard as on the end controls
+            // above.
+            } else if (state == Player.STATE_ENDED && haveMedia) {
                 cancelLoadWatchdog();
                 playbackFinished = true;
                 // A single item, or the last of a playlist, ends here rather than in an end-of-item pause.

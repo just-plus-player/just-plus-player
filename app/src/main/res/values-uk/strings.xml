@@ -137,6 +137,13 @@
     <string name="quality_source">Джерело</string>
     <string name="quality_bitrate">%1$.1f Мбіт/с</string>
     <string name="quality_unavailable">Параметри якості поки недоступні</string>
+    <string name="stats_title">Статистика</string>
+    <string name="stats_buffer">Буфер: %1$d с (%2$d%%)</string>
+    <string name="stats_dropped">Пропущені кадри: %1$d</string>
+    <string name="stats_network">Мережа: %1$s</string>
+    <string name="stats_stream">Потік: %1$s</string>
+    <string name="pref_show_stats_on">Буфер, декодери та пропущені кадри показуються з елементами керування</string>
+    <string name="pref_show_stats_off">Подробиці відтворення приховані</string>
     <string name="volume_high_warning">Висока гучність може зашкодити слуху</string>
     <string name="pref_file_access">Доступ до файлів</string>
     <string name="pref_file_access_auto">Автоматично</string>

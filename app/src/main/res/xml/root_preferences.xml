@@ -72,6 +72,13 @@
             app:summaryOff="@string/pref_disable_volume_brightness_gestures_off"
             app:title="@string/pref_disable_volume_brightness_gestures" />
 
+        <SwitchPreferenceCompat
+            app:key="showStats"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_show_stats_on"
+            app:summaryOff="@string/pref_show_stats_off"
+            app:title="@string/stats_title" />
+
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_skip_header">

@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
+import android.text.TextUtils;
 
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
@@ -86,8 +87,9 @@ class Prefs {
     public static final String SKIP_UNDO_AUTO = "auto";
     public static final String SKIP_UNDO_OFF = "off";
 
-    public static final String TRACK_DEFAULT = "default";
-    public static final String TRACK_DEVICE = "device";
+    // Legacy shapes of PREF_KEY_LANGUAGE_AUDIO, still read once by migrateLanguageAudio.
+    private static final String TRACK_DEFAULT = "default";
+    private static final String TRACK_DEVICE = "device";
 
     final Context mContext;
     final SharedPreferences mSharedPreferences;
@@ -131,7 +133,9 @@ class Prefs {
     public String fileAccess = "auto";
     public int decoderPriority = DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON;
     public boolean mapDV7ToHevc = false;
-    public String languageAudio = TRACK_DEVICE;
+    // Preferred audio languages, most wanted first: comma-separated ISO-639-2/T codes ("ukr,eng").
+    // Empty means no preference at all, i.e. whatever the media itself puts first.
+    public String languageAudio = "";
     public boolean subtitleStyleEmbedded = true;
     public boolean subtitleStyleBold = false;
     public boolean skipEnabled = true;
@@ -233,7 +237,7 @@ class Prefs {
         fileAccess = mSharedPreferences.getString(PREF_KEY_FILE_ACCESS, fileAccess);
         decoderPriority = Integer.parseInt(mSharedPreferences.getString(PREF_KEY_DECODER_PRIORITY, String.valueOf(decoderPriority)));
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);
-        languageAudio = mSharedPreferences.getString(PREF_KEY_LANGUAGE_AUDIO, languageAudio);
+        languageAudio = getLanguageAudio(mContext);
         subtitleStyleEmbedded = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_EMBEDDED, subtitleStyleEmbedded);
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
@@ -253,6 +257,43 @@ class Prefs {
         // process restarted — including for the player rebuild that follows leaving the settings screen.
         revokedAudioMimes = mSharedPreferences.getStringSet(
                 PREF_KEY_REVOKED_AUDIO_MIMES, Collections.emptySet());
+    }
+
+    public void setLanguageAudio(final String languages) {
+        this.languageAudio = languages;
+        setLanguageAudio(mContext, languages);
+    }
+
+    /**
+     * The audio language setting used to hold one value: "default" (no preference), "device" (the
+     * system languages) or a single ISO-639-2/T code. It is now an ordered list of codes, so the two
+     * legacy keywords are converted once and written back — a stored code is already a valid
+     * one-entry list. A missing key is a fresh install, which starts from the device languages, the
+     * same tracks "device" used to pick.
+     *
+     * Every read goes through here, not just the one in loadUserPreferences: the settings screen is
+     * exported (ACTION_APPLICATION_PREFERENCES), so it can be the first thing a fresh process opens,
+     * with no Prefs instance ever built — and it would otherwise offer "device" as if it were a
+     * language, then persist it.
+     *
+     * Note the list is a snapshot from here on: unlike the old "device", it no longer follows a later
+     * change of the device language. That is the point — what the dialog shows is what plays.
+     */
+    public static String getLanguageAudio(final Context context) {
+        final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        final String stored = preferences.getString(PREF_KEY_LANGUAGE_AUDIO, null);
+        if (stored != null && !TRACK_DEFAULT.equals(stored) && !TRACK_DEVICE.equals(stored)) {
+            return stored;
+        }
+        final String migrated = TRACK_DEFAULT.equals(stored)
+                ? "" : TextUtils.join(",", Utils.getDeviceLanguages());
+        preferences.edit().putString(PREF_KEY_LANGUAGE_AUDIO, migrated).apply();
+        return migrated;
+    }
+
+    public static void setLanguageAudio(final Context context, final String languages) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(PREF_KEY_LANGUAGE_AUDIO, languages).apply();
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {

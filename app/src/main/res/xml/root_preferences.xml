@@ -11,11 +11,11 @@
             app:title="@string/pref_file_access"
             app:useSimpleSummaryProvider="true" />
 
-        <ListPreference
+        <!-- Ordered list of languages, edited in AudioLanguagePriorityDialog; the summary lists them.
+             No defaultValue: Prefs seeds the key from the device languages on first run. -->
+        <Preference
             app:key="languageAudio"
-            android:defaultValue="device"
-            app:title="@string/pref_language_audio"
-            app:useSimpleSummaryProvider="true" />
+            app:title="@string/pref_language_audio" />
 
         <SwitchPreferenceCompat
             app:key="frameRateMatching"

@@ -125,6 +125,8 @@
     <string name="speed_title">Швидкість відтворення</string>
     <string name="speed_normal">Звичайна</string>
     <string name="audio_track_number">Доріжка %1$d</string>
+    <string name="audio_prefer_language">Завжди надавати перевагу: %1$s</string>
+    <string name="audio_prefer_language_done">%1$s тепер перша серед бажаних мов озвучення</string>
     <string name="quality_title">Якість відео</string>
     <string name="quality_auto">Авто</string>
     <string name="quality_auto_description">Оптимальна якість</string>
@@ -148,6 +150,11 @@
     <string name="pref_language_audio">Звукова доріжка за замовчуванням</string>
     <string name="pref_language_track_device">Мова пристрою</string>
     <string name="pref_language_track_default">За замовчуванням</string>
+    <string name="pref_language_audio_none">Не задано — відтворюється перша доріжка файлу</string>
+    <string name="pref_language_audio_add">Додати мову</string>
+    <string name="pref_language_audio_move_up">Вище</string>
+    <string name="pref_language_audio_move_down">Нижче</string>
+    <string name="pref_language_audio_remove">Прибрати</string>
     <string name="pref_subtitle_header">Субтитри</string>
     <string name="pref_subtitle_style_embedded">Вбудовані стилі</string>
     <string name="pref_subtitle_style_embedded_on">Застосувати вбудовані стилі субтитрів</string>

@@ -4,6 +4,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.LinearLayout;
 
@@ -33,6 +34,9 @@ import java.util.Locale;
 import java.util.MissingResourceException;
 
 public class SettingsActivity extends AppCompatActivity {
+
+    /** ISO-639-2/T codes of the audio tracks in the clip the player has open, if any. */
+    public static final String EXTRA_MEDIA_LANGUAGES = "mediaLanguages";
 
     static RecyclerView recyclerView;
 
@@ -143,14 +147,20 @@ public class SettingsActivity extends AppCompatActivity {
                 listPreferenceFileAccess.setEntryValues(values.toArray(new String[0]));
             }
 
-            ListPreference listPreferenceLanguageAudio = findPreference("languageAudio");
-            if (listPreferenceLanguageAudio != null) {
-                LinkedHashMap<String, String> entries = new LinkedHashMap<>();
-                entries.put(Prefs.TRACK_DEFAULT, getString(R.string.pref_language_track_default));
-                entries.put(Prefs.TRACK_DEVICE, getString(R.string.pref_language_track_device));
-                entries.putAll(getLanguages());
-                listPreferenceLanguageAudio.setEntries(entries.values().toArray(new String[0]));
-                listPreferenceLanguageAudio.setEntryValues(entries.keySet().toArray(new String[0]));
+            Preference preferenceLanguageAudio = findPreference("languageAudio");
+            if (preferenceLanguageAudio != null) {
+                final LinkedHashMap<String, String> languages = getLanguages();
+                updateLanguageSummary(preferenceLanguageAudio, languages);
+                preferenceLanguageAudio.setOnPreferenceClickListener(preference -> {
+                    AudioLanguagePriorityDialog.show(requireContext(),
+                            getString(R.string.pref_language_audio),
+                            Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
+                            languages, pinnedLanguages(), picked -> {
+                                Prefs.setLanguageAudio(requireContext(), TextUtils.join(",", picked));
+                                updateLanguageSummary(preference, languages);
+                            });
+                    return true;
+                });
             }
 
             Preference resetAudioWorkarounds = findPreference("resetRevokedAudioMimes");
@@ -202,6 +212,37 @@ public class SettingsActivity extends AppCompatActivity {
             if (Build.VERSION.SDK_INT >= 29) {
                 recyclerView = getListView();
             }
+        }
+
+        /** The chosen languages, in order, or a note that nothing is preferred. */
+        private void updateLanguageSummary(final Preference preference,
+                                           final LinkedHashMap<String, String> languages) {
+            final List<String> chosen = Utils.splitLanguages(Prefs.getLanguageAudio(requireContext()));
+            if (chosen.isEmpty()) {
+                preference.setSummary(R.string.pref_language_audio_none);
+                return;
+            }
+            final List<String> labels = new ArrayList<>();
+            for (final String code : chosen) {
+                final String label = languages.get(code);
+                labels.add(label != null ? label : code);
+            }
+            preference.setSummary(TextUtils.join(", ", labels));
+        }
+
+        /** Offered at the top of the picker: what the device speaks, and what the open media carries. */
+        private List<String> pinnedLanguages() {
+            final List<String> pinned = new ArrayList<>(Arrays.asList(Utils.getDeviceLanguages()));
+            final String[] media = requireActivity().getIntent()
+                    .getStringArrayExtra(EXTRA_MEDIA_LANGUAGES);
+            if (media != null) {
+                for (final String language : media) {
+                    if (!pinned.contains(language)) {
+                        pinned.add(language);
+                    }
+                }
+            }
+            return pinned;
         }
 
         LinkedHashMap<String, String> getLanguages() {

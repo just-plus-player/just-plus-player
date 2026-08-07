@@ -172,6 +172,11 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            PreferenceCategory privacyCategory = findPreference("privacyCategory");
+            if (privacyCategory != null && !BuildConfig.ENABLE_CRASH_REPORTING) {
+                privacyCategory.setVisible(false);
+            }
+
             PreferenceCategory updateCategory = findPreference("updateCategory");
             if (!BuildConfig.ENABLE_UPDATE) {
                 if (updateCategory != null) {

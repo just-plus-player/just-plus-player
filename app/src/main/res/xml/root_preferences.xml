@@ -185,11 +185,14 @@
 
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/pref_privacy_header">
+    <!-- Hidden unless BuildConfig.ENABLE_CRASH_REPORTING — see SettingsActivity. -->
+    <PreferenceCategory
+        app:key="privacyCategory"
+        app:title="@string/pref_privacy_header">
 
         <SwitchPreferenceCompat
             app:key="crashReporting"
-            app:defaultValue="true"
+            app:defaultValue="false"
             app:summaryOn="@string/pref_crash_reporting_on"
             app:summaryOff="@string/pref_crash_reporting_off"
             app:title="@string/pref_crash_reporting" />

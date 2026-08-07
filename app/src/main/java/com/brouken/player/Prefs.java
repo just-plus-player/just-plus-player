@@ -146,7 +146,7 @@ class Prefs {
     public String skipUndo = SKIP_UNDO_ALL;
     public boolean showClock = false;
     public boolean systemVolume = true;
-    public boolean crashReporting = true;
+    public boolean crashReporting = false;
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
     public int updateSkippedVersionCode = 0;

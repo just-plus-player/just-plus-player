@@ -40,6 +40,8 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
  * Side panels instead of pop-up menus for audio, subtitles, quality, speed and the playlist; a button stays hidden until the media actually has something to put in it
  * Manual video quality: optimal, highest, a specific resolution, or one of the sources the launching app supplied
  * Track names built from the container's own metadata
+ * A list of preferred audio languages instead of a single one — the player takes the first language a file actually carries, so a release without yours falls back to the next language you named rather than to whatever the file happens to list first
+ * A language can be promoted straight from the audio panel, without a trip to Settings
  * Sturdier audio: passthrough (AC3/DTS/TrueHD) is rebuilt after a seek or a resume, a format the device mishandles is learned and avoided, and playback survives the audio output disappearing
 
 **Android TV**
@@ -73,9 +75,9 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
 
 <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/quality.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/sleep_timer.jpg" width="430">
 
-**Lock** — one tap locks the screen against pockets and curious hands; a swipe unlocks it.
+**Lock** — one tap locks the screen against pockets and curious hands; a swipe unlocks it. **Audio languages** — order them once; the player takes the first one a file actually has.
 
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/unlock.jpg" width="430">
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/unlock.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/audio_languages.jpg" width="430">
 
 ## Supported formats
 

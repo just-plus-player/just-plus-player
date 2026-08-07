@@ -680,7 +680,7 @@ public class PlayerActivity extends Activity {
     // How long a timed pill stays up: the "undo" offer after a jump, and brief mode's Skip offer. The
     // pref_skip_mode_brief option names these seconds out loud ("Skip button for 3 seconds"), so changing
     // this means changing that string in every locale too.
-    static final long SKIP_NOTICE_MS = 3000;
+    static final long SKIP_NOTICE_MS = 5000;
     // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
     static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
     // Segment highlights (see CustomDefaultTimeBar): a *_FILL band across the segment plus a crisp boundary

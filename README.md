@@ -26,7 +26,7 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
  * Skip intros, recaps, ad breaks and end credits — segments are drawn right on the time bar
  * Segments come from the launching app, or are looked up online in SkipDB, SkipMe.db, IntroHater, IntroDB, TheIntroDB and Aniskip
  * The sources vote: a segment several databases agree on is used, and its timing is taken from the most reliable one rather than averaged
- * Separately for the intro and the end credits: a Skip button for three seconds, a Skip button for the whole segment, or skip automatically
+ * Separately for the intro and the end credits: a Skip button for five seconds, a Skip button for the whole segment, or skip automatically
  * Every skip can be undone, and an automatic skip can be cancelled before it happens
  * A session offset slider for when a database is a few seconds off
 

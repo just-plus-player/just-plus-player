@@ -67,7 +67,7 @@
     <string name="pref_skip_enabled_on">Skip intros and ad segments provided by the launching app</string>
     <string name="pref_skip_enabled_off">Play content as is</string>
     <string name="pref_skip_mode">Intro</string>
-    <string name="pref_skip_mode_brief">Skip button for 3 seconds</string>
+    <string name="pref_skip_mode_brief">Skip button for 5 seconds</string>
     <string name="pref_skip_mode_button">Skip button for the whole segment</string>
     <string name="pref_skip_mode_auto">Skip automatically</string>
     <string name="pref_skip_mode_credits">End credits</string>

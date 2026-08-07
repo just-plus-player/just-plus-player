@@ -4364,8 +4364,10 @@ public class PlayerActivity extends Activity {
                     String details = codec == null ? dimensions : dimensions + "  •  " + codec;
                     String bitrate = format.bitrate > 0
                             ? getString(R.string.quality_bitrate, format.bitrate / 1_000_000f) : "";
+                    // Same label the header badge shows, so the two never disagree.
+                    String label = resolutionClass(format.width, format.height);
                     renditions.put(longSide, VideoQualityChoice.track(
-                            longSide + "p", details, bitrate,
+                            label != null ? label : longSide + "p", details, bitrate,
                             group.getMediaTrackGroup(), index, format.bitrate));
                 }
             }
@@ -6100,6 +6102,9 @@ public class PlayerActivity extends Activity {
     private class PlayerListener implements Player.Listener {
         @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
+            // Fires when the new rendition actually renders, which is when getVideoFormat() finally
+            // reports it — onTracksChanged is too early for the header badge.
+            updateMediaInfo();
             // Media3 resets the content-frame AR to the video's natural AR on every size change (e.g. a
             // mid-stream video-track switch), silently dropping a forced ratio. Reassert it after that
             // update (posted, so it wins).

@@ -7447,6 +7447,14 @@ public class PlayerActivity extends Activity {
         if (Utils.isSupportedNetworkUri(currentMediaUri())) {
             return 0;
         }
+        // A local file that stops short of its own container index: the extractor re-opens the source
+        // near the end to read a trailing moov or the Matroska cues, and the read lands past the last
+        // byte there is — a download that never finished, a truncated copy. The file's fault, not the
+        // app's, and the same thing isBrokenNetworkSource already forgives on a remote stream. Matched
+        // by code because Media3 raises ContentDataSourceException with no cause to walk.
+        if (error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE) {
+            return R.string.error_playback_general;
+        }
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof SecurityException) {
                 return R.string.error_media_access_expired;

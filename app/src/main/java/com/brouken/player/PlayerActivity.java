@@ -5930,8 +5930,16 @@ public class PlayerActivity extends Activity {
             if (haveMedia) {
                 // Prevent overwriting temporarily inaccessible media position
                 if (player.isCurrentMediaItemSeekable()) {
-                    mPrefs.updatePosition(player.getCurrentPosition());
-                    rememberEpisodePosition(player.getCurrentMediaItemIndex(), player.getCurrentPosition());
+                    // A clip watched to its end is remembered as unwatched: keeping the end as its
+                    // position reopens it already finished — seeked to the last frame and paused, since
+                    // initializePlayer only autoplays from zero. Keyed on STATE_ENDED and not on being
+                    // near the end, because savePlayer is also how a recovery rebuild carries the
+                    // position across a released player: a decoder that wedges in the closing seconds
+                    // has to come back where it was, not at the start.
+                    final long position = player.getPlaybackState() == Player.STATE_ENDED
+                            ? 0 : player.getCurrentPosition();
+                    mPrefs.updatePosition(position);
+                    rememberEpisodePosition(player.getCurrentMediaItemIndex(), position);
                 }
                 mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
                         getSelectedTrack(C.TRACK_TYPE_TEXT),
@@ -6142,9 +6150,12 @@ public class PlayerActivity extends Activity {
             }
             final int oldIndex = oldPosition.mediaItemIndex;
             final int newIndex = newPosition.mediaItemIndex;
-            // Leaving an episode (auto-advance or manual jump): remember where we left it.
+            // Leaving an episode: remember where we left it, except that an auto transition means it
+            // played to its end, so that one is remembered as unwatched. Keeping its end would send a
+            // manual jump back to it straight to its last frame, from where it advances off again.
             if (oldIndex != newIndex) {
-                rememberEpisodePosition(oldIndex, oldPosition.positionMs);
+                rememberEpisodePosition(oldIndex,
+                        reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION ? 0 : oldPosition.positionMs);
             }
             // Manually jumping back to an already-watched episode: resume where we left it. Auto-advance
             // (gapless) keeps starting the next episode from the beginning, as it should. The follow-up

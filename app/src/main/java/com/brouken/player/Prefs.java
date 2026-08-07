@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.preference.PreferenceManager;
+import android.provider.DocumentsContract;
 
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
@@ -434,25 +435,34 @@ class Prefs {
             return (long) val;
 
         // Return position for uri from limited scope (loaded after using Next action)
-        if (ContentResolver.SCHEME_CONTENT.equals(mediaUri.getScheme())) {
-            final String searchPath = SubtitleUtils.getTrailPathFromUri(mediaUri);
-            if (searchPath == null || searchPath.length() < 1)
-                return 0L;
-            final Set<String> keySet = positions.keySet();
-            final Object[] keys = keySet.toArray();
+        final String searchId = documentIdentity(mediaUri);
+        if (searchId != null) {
+            final Object[] keys = positions.keySet().toArray();
             for (int i = keys.length; i > 0; i--) {
                 final String key = (String) keys[i - 1];
-                final Uri uri = Uri.parse(key);
-                if (ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
-                    final String keyPath = SubtitleUtils.getTrailPathFromUri(uri);
-                    if (searchPath.equals(keyPath)) {
-                        return (long) positions.get(key);
-                    }
+                if (searchId.equals(documentIdentity(Uri.parse(key)))) {
+                    return (long) positions.get(key);
                 }
             }
         }
 
         return 0L;
+    }
+
+    // How two uris for one document compare. The picker hands out .../document/<id> and the folder
+    // walk hands out .../tree/<tree>/document/<id> for the same file: same authority, same document
+    // id, different string. The id is what has to match — the tail of the path alone drops the
+    // storage volume, which is the only thing telling Movies/1.mkv on a memory card apart from
+    // Movies/1.mkv in internal storage. Null for anything that is not a document uri.
+    private static String documentIdentity(final Uri uri) {
+        if (!ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
+            return null;
+        }
+        try {
+            return uri.getAuthority() + '/' + DocumentsContract.getDocumentId(uri);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     public void updateOrientation() {

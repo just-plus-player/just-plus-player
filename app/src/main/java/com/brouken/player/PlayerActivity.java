@@ -4741,12 +4741,14 @@ public class PlayerActivity extends Activity {
         final TrackGroup group;
         final int trackIndex;
         final boolean selected;
+        final String language; // ISO-639-2/T, null when the track declares none
 
-        AudioChoice(String label, TrackGroup group, int trackIndex, boolean selected) {
+        AudioChoice(String label, TrackGroup group, int trackIndex, boolean selected, String language) {
             this.label = label;
             this.group = group;
             this.trackIndex = trackIndex;
             this.selected = selected;
+            this.language = language;
         }
     }
 
@@ -4772,7 +4774,8 @@ public class PlayerActivity extends Activity {
                 if (label == null || label.isEmpty()) {
                     label = getString(R.string.audio_track_number, number);
                 }
-                choices.add(new AudioChoice(label, trackGroup, i, group.isTrackSelected(i)));
+                choices.add(new AudioChoice(label, trackGroup, i, group.isTrackSelected(i),
+                        Utils.toIso3Language(format.language)));
             }
         }
         return choices;
@@ -4830,11 +4833,59 @@ public class PlayerActivity extends Activity {
             return;
         }
         final List<MenuItem> items = new ArrayList<>();
+        String selectedLanguage = null;
         for (final AudioChoice choice : choices) {
             items.add(new MenuItem(choice.label, null, choice.selected,
                     () -> applyAudio(choice)));
+            if (choice.selected) {
+                selectedLanguage = choice.language;
+            }
+        }
+        // The moment a language is worth preferring is the moment it gets picked by hand — the settings
+        // screen is nowhere near it. Offered only after a deliberate pick (an override exists), and
+        // only while that language does not already lead the list: every other row of this menu
+        // applies to one clip, this one to all of them.
+        final List<String> preferred = Utils.splitLanguages(mPrefs.languageAudio);
+        if (selectedLanguage != null && hasOverrideType(C.TRACK_TYPE_AUDIO)
+                && (preferred.isEmpty() || !preferred.get(0).equals(selectedLanguage))) {
+            final String language = selectedLanguage;
+            items.add(new MenuItem(R.drawable.ic_star_24dp,
+                    getString(R.string.audio_prefer_language, languageDisplayName(language)),
+                    null, false, () -> preferAudioLanguage(language)));
         }
         showSideMenu(getString(R.string.audio_title), items);
+    }
+
+    /**
+     * Moves one language to the head of the audio priority list. The track playing right now is an
+     * explicit override and stays put, but the selector is updated too — the next item of a playlist
+     * is selected by this same player, which is never rebuilt on this path.
+     */
+    private void preferAudioLanguage(final String language) {
+        final List<String> languages = Utils.splitLanguages(mPrefs.languageAudio);
+        languages.remove(language);
+        languages.add(0, language);
+        mPrefs.setLanguageAudio(TextUtils.join(",", languages));
+        applyPreferredAudioLanguages();
+        Utils.showText(playerView, getString(R.string.audio_prefer_language_done,
+                languageDisplayName(language)));
+    }
+
+    /**
+     * Ordered fallback chain: the selector walks the list and takes the first language the media
+     * actually carries. An empty list leaves the media's own order alone.
+     */
+    private void applyPreferredAudioLanguages() {
+        if (trackSelector == null) {
+            return;
+        }
+        final List<String> languages = Utils.splitLanguages(mPrefs.languageAudio);
+        if (languages.isEmpty()) {
+            return;
+        }
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setPreferredAudioLanguages(languages.toArray(new String[0]))
+        );
     }
 
     // ExoPlayer invents an empty CEA-608 track for every HLS stream whose playlist declares no closed
@@ -5583,19 +5634,9 @@ public class PlayerActivity extends Activity {
                     .setTunnelingEnabled(true)
             );
         }
-        switch (mPrefs.languageAudio) {
-            case Prefs.TRACK_DEFAULT:
-                break;
-            case Prefs.TRACK_DEVICE:
-                trackSelector.setParameters(trackSelector.buildUponParameters()
-                        .setPreferredAudioLanguages(Utils.getDeviceLanguages())
-                );
-                break;
-            default:
-                trackSelector.setParameters(trackSelector.buildUponParameters()
-                        .setPreferredAudioLanguages(mPrefs.languageAudio)
-                );
-        }
+        // Ordered fallback chain: the selector walks the list and takes the first language the media
+        // actually carries. An empty list leaves the media's own order alone.
+        applyPreferredAudioLanguages();
         final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
         if (!captioningManager.isEnabled()) {
             trackSelector.setParameters(trackSelector.buildUponParameters()
@@ -5908,7 +5949,19 @@ public class PlayerActivity extends Activity {
      */
     void openSettings() {
         settingsBefore = mPrefs.snapshot();
-        startActivityForResult(new Intent(this, SettingsActivity.class), REQUEST_SETTINGS);
+        final Intent intent = new Intent(this, SettingsActivity.class);
+        // Lets the audio language picker put the languages of the clip on screen right now on top,
+        // instead of burying them somewhere in the device's several hundred locales.
+        final List<String> languages = new ArrayList<>();
+        for (final AudioChoice choice : buildAudioChoices()) {
+            if (choice.language != null && !languages.contains(choice.language)) {
+                languages.add(choice.language);
+            }
+        }
+        if (!languages.isEmpty()) {
+            intent.putExtra(SettingsActivity.EXTRA_MEDIA_LANGUAGES, languages.toArray(new String[0]));
+        }
+        startActivityForResult(intent, REQUEST_SETTINGS);
     }
 
     /**

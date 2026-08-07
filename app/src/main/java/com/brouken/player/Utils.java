@@ -46,8 +46,11 @@ import android.widget.Toast;
 import androidx.annotation.RequiresApi;
 import androidx.core.text.HtmlCompat;
 import androidx.documentfile.provider.DocumentFile;
+import androidx.annotation.OptIn;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
 
 import com.obsez.android.lib.filechooser.ChooserDialog;
 import com.sigpwned.chardet4j.Chardet;
@@ -70,6 +73,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.MissingResourceException;
 
 class Utils {
 
@@ -918,13 +922,58 @@ class Utils {
         if (Build.VERSION.SDK_INT >= 24) {
             final LocaleList localeList = Resources.getSystem().getConfiguration().getLocales();
             for (int i = 0; i < localeList.size(); i++) {
-                locales.add(localeList.get(i).getISO3Language());
+                addLanguage(locales, localeList.get(i));
             }
         } else {
-            final Locale locale = Resources.getSystem().getConfiguration().locale;
-            locales.add(locale.getISO3Language());
+            addLanguage(locales, Resources.getSystem().getConfiguration().locale);
         }
         return locales.toArray(new String[0]);
+    }
+
+    // The system list often names the same language twice (uk-UA, uk-Cyrl); the audio priority list
+    // this seeds must not show it twice.
+    private static void addLanguage(final List<String> languages, final Locale locale) {
+        final String language = toIso3Language(locale.getLanguage());
+        if (language != null && !languages.contains(language)) {
+            languages.add(language);
+        }
+    }
+
+    /**
+     * Folds whatever a container declared ("en", "eng", "en-US") onto the ISO-639-2/T code the audio
+     * priority list is keyed by, so a stored preference and a track's language can be compared at all.
+     * Returns null when there is no usable language.
+     *
+     * Media3 normalizes first because Locale alone cannot: getISO3Language returns any 3-letter input
+     * unchanged, and Matroska muxers routinely tag the bibliographic form ("ger", "fre", "cze"), which
+     * would then never match the terminological code ("deu", "fra", "ces") everything else produces.
+     */
+    @OptIn(markerClass = UnstableApi.class)
+    public static String toIso3Language(final String language) {
+        if (language == null || language.isEmpty() || "und".equals(language)) {
+            return null;
+        }
+        try {
+            // Not new Locale(language): that treats the whole string as the language, so "en-US" would
+            // have no 3-letter form at all.
+            final String iso3 = Locale.forLanguageTag(
+                    Util.normalizeLanguageCode(language.replace('_', '-'))).getISO3Language();
+            return iso3.isEmpty() ? null : iso3;
+        } catch (MissingResourceException e) {
+            return null;
+        }
+    }
+
+    /** The stored audio priority list ("ukr,eng") as a mutable list, blanks dropped. */
+    public static List<String> splitLanguages(final String languages) {
+        final List<String> list = new ArrayList<>();
+        for (String language : languages.split(",")) {
+            language = language.trim();
+            if (!language.isEmpty() && !list.contains(language)) {
+                list.add(language);
+            }
+        }
+        return list;
     }
 
     public static ComponentName getSystemComponent(Context context, Intent intent) {

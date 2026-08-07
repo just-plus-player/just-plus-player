@@ -141,6 +141,8 @@
     <string name="speed_title">Playback speed</string>
     <string name="speed_normal">Normal</string>
     <string name="audio_track_number">Track %1$d</string>
+    <string name="audio_prefer_language">Always prefer %1$s</string>
+    <string name="audio_prefer_language_done">%1$s is now the first preferred audio language</string>
     <string name="quality_title">Video quality</string>
     <string name="quality_auto">Auto</string>
     <string name="quality_auto_description">Optimal quality</string>
@@ -164,6 +166,11 @@
     <string name="pref_language_audio">Default audio track</string>
     <string name="pref_language_track_device">Device languages</string>
     <string name="pref_language_track_default">Default</string>
+    <string name="pref_language_audio_none">Not set — the first audio track of the file plays</string>
+    <string name="pref_language_audio_add">Add language</string>
+    <string name="pref_language_audio_move_up">Move up</string>
+    <string name="pref_language_audio_move_down">Move down</string>
+    <string name="pref_language_audio_remove">Remove</string>
     <string name="pref_subtitle_header">Subtitle</string>
     <string name="pref_subtitle_style_embedded">Embedded styles</string>
     <string name="pref_subtitle_style_embedded_on">Apply embedded subtitle styles</string>

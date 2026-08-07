@@ -75,7 +75,7 @@ class Prefs {
     private static final String PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED = "revokedAudioMimesRelearned";
 
     // How a skippable segment is offered. BRIEF shows the Skip button for PlayerActivity.SKIP_NOTICE_MS and
-    // then leaves the picture alone; the option's name says "3 seconds", so that constant and the
+    // then leaves the picture alone; the option's name says "5 seconds", so that constant and the
     // pref_skip_mode_brief strings have to move together.
     public static final String SKIP_MODE_BRIEF = "brief";
     public static final String SKIP_MODE_BUTTON = "button";

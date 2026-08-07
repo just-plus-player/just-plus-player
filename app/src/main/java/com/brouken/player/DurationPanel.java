@@ -112,11 +112,14 @@ final class DurationPanel {
         valueRow.setOrientation(LinearLayout.HORIZONTAL);
         valueRow.setGravity(Gravity.CENTER_VERTICAL);
         // A key row's height and margin, so the readout and the backspace share the centre line of the
-        // "1 2 3" row instead of hovering a few pixels above it.
+        // "1 2 3" row instead of hovering a few pixels above it. A minimum rather than a fixed height:
+        // rowHeight does not follow the system font scale but the 24sp readout does, and at the largest
+        // scales a fixed row would crop it.
         final LinearLayout.LayoutParams valueLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, rowHeight);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         valueLp.topMargin = Utils.dpToPx(8);
         valueRow.setLayoutParams(valueLp);
+        valueRow.setMinimumHeight(rowHeight);
         readoutColumn.addView(valueRow);
 
         final TextView value = new TextView(activity);

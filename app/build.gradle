@@ -156,6 +156,10 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:5.3.2'
     implementation 'com.sigpwned:chardet4j:78.1.0'
     implementation 'com.github.bumptech.glide:glide:4.16.0'
+    // Drawing one QR code, for the invite on a device with nothing to share it with. Pure Java, no
+    // transitive dependencies, and the alternative — handing the invite to a web service that draws it —
+    // would send the room's own password to a stranger.
+    implementation 'com.google.zxing:core:3.5.3'
     def sentry_version = '8.16.0'
     implementation "io.sentry:sentry-android:$sentry_version"
     implementation project(path: ':doubletapplayerview')

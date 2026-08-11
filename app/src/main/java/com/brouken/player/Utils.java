@@ -402,14 +402,14 @@ class Utils {
                 );
     }
 
-    public static void showText(final CustomPlayerView playerView, final String text, final long timeout) {
+    public static void showText(final CustomPlayerView playerView, final CharSequence text, final long timeout) {
         playerView.removeCallbacks(playerView.textClearRunnable);
         playerView.clearIcon();
         playerView.setCustomErrorMessage(text);
         playerView.postDelayed(playerView.textClearRunnable, timeout);
     }
 
-    public static void showText(final CustomPlayerView playerView, final String text) {
+    public static void showText(final CustomPlayerView playerView, final CharSequence text) {
         showText(playerView, text, 1200);
     }
 
@@ -1081,6 +1081,36 @@ class Utils {
             mediaExtractor.release();
         }
         return frameRate;
+    }
+
+    /**
+     * A QR code for one short piece of text, or null if it cannot be drawn. Opaque black on white
+     * whatever the theme: a code drawn in the dialog's own colours, or on nothing at all, is one no
+     * camera will read.
+     *
+     * @param size the side in pixels; the encoder rounds it down to a whole number of modules
+     */
+    static android.graphics.Bitmap qrBitmap(final String text, final int size) {
+        try {
+            final com.google.zxing.common.BitMatrix matrix = new com.google.zxing.qrcode.QRCodeWriter()
+                    .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
+                            Collections.singletonMap(com.google.zxing.EncodeHintType.MARGIN, 2));
+            final int width = matrix.getWidth();
+            final int height = matrix.getHeight();
+            final int[] pixels = new int[width * height];
+            for (int y = 0; y < height; y++) {
+                final int row = y * width;
+                for (int x = 0; x < width; x++) {
+                    pixels[row + x] = matrix.get(x, y) ? 0xFF000000 : 0xFFFFFFFF;
+                }
+            }
+            final android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
+                    width, height, android.graphics.Bitmap.Config.ARGB_8888);
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+            return bitmap;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public static boolean switchFrameRate(final PlayerActivity activity, final Uri uri) {

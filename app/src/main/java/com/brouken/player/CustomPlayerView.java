@@ -65,6 +65,22 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     private static final float SPEED_BOOST = 2.f;
     private boolean speedBoostActive = false;
     private float speedBeforeBoost = 1.f;
+
+    /** True while the hold-to-speed-up gesture is running. A watch-together room does not follow it:
+     *  it is a preview held under a finger, not a choice, and the speed goes back on release. */
+    boolean isSpeedBoosting() {
+        return speedBoostActive;
+    }
+
+    private boolean seekGestureActive;
+
+    /** True while a finger is dragging the picture sideways to seek. A room stops sampling for the
+     *  duration and hears only where the drag settles, exactly as it does for the time bar: this gesture
+     *  seeks once per scroll step, and each step sampled on its own reaches everybody else as a separate
+     *  command — a jump apiece, and a notice apiece, for one drag of one thumb. */
+    boolean isSeekGesture() {
+        return seekGestureActive;
+    }
     Rect systemGestureExclusionRect = new Rect();
 
     public final Runnable textClearRunnable = () -> {
@@ -128,6 +144,9 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                // Cleared before anything else can return early: a gesture flag left standing would keep
+                // a room from ever sampling this player again.
+                seekGestureActive = false;
                 if (speedBoostActive) {
                     speedBoostActive = false;
                     if (PlayerActivity.player != null)
@@ -259,6 +278,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 }
 
                 gestureOrientation = Orientation.HORIZONTAL;
+                seekGestureActive = true;
                 long position = 0;
                 float distanceDiff = Math.max(0.5f, Math.min(Math.abs(Utils.pxToDp(distanceX) / 4), 10.f));
 

@@ -53,6 +53,7 @@ class EmptyState {
         final TextView subtitle = activity.findViewById(R.id.empty_state_subtitle);
         final View open = activity.findViewById(R.id.empty_state_open);
         final View link = activity.findViewById(R.id.empty_state_link);
+        final View room = activity.findViewById(R.id.empty_state_room);
         final View settings = activity.findViewById(R.id.empty_state_settings);
 
         // No video to match, so neither the orientation nor the brightness preference has anything to say
@@ -63,6 +64,9 @@ class EmptyState {
 
         open.setOnClickListener(v -> activity.openFile(activity.mPrefs.mediaUri));
         link.setOnClickListener(v -> askForLink());
+        // Joining needs no media of its own — the room says what it is playing — so this belongs on
+        // the page you land on with a code in hand, not only in the player's gear menu.
+        room.setOnClickListener(v -> activity.showJoinMenu());
         settings.setOnClickListener(v -> activity.openSettings());
         stopPulse();
 
@@ -91,6 +95,11 @@ class EmptyState {
                     .setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             link.setPadding(Utils.dpToPx(26), padV, Utils.dpToPx(28), padV);
             link.setMinimumHeight(Utils.dpToPx(64));
+            setViewSize(activity.findViewById(R.id.empty_state_room_icon), 28);
+            ((TextView) activity.findViewById(R.id.empty_state_room_label))
+                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+            room.setPadding(Utils.dpToPx(26), padV, Utils.dpToPx(28), padV);
+            room.setMinimumHeight(Utils.dpToPx(64));
             setViewSize(activity.findViewById(R.id.empty_state_settings_icon), 28);
             ((TextView) activity.findViewById(R.id.empty_state_settings_label))
                     .setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
@@ -108,6 +117,9 @@ class EmptyState {
             setViewSize(activity.findViewById(R.id.empty_state_link_icon), ui.dpS(20));
             ((TextView) activity.findViewById(R.id.empty_state_link_label))
                     .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(16));
+            setViewSize(activity.findViewById(R.id.empty_state_room_icon), ui.dpS(20));
+            ((TextView) activity.findViewById(R.id.empty_state_room_label))
+                    .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(16));
             setViewSize(activity.findViewById(R.id.empty_state_settings_icon), ui.dpS(20));
             ((TextView) activity.findViewById(R.id.empty_state_settings_label))
                     .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(15));
@@ -120,7 +132,7 @@ class EmptyState {
             overlay.bringToFront();
         }
 
-        final View[] items = {mark, title, subtitle, open, link, settings};
+        final View[] items = {mark, title, subtitle, open, link, room, settings};
 
         // Nothing to reveal when the page is already on screen: coming back from the background releases
         // the player (savePlayer) and rebuilds it, landing here again on the very page the user is looking
@@ -155,6 +167,8 @@ class EmptyState {
         open.setTranslationY(16 * density);
         link.setAlpha(0f);
         link.setTranslationY(16 * density);
+        room.setAlpha(0f);
+        room.setTranslationY(16 * density);
         settings.setAlpha(0f);
         settings.setTranslationY(16 * density);
 
@@ -170,8 +184,10 @@ class EmptyState {
                 }).start();
         link.animate().alpha(1f).translationY(0f)
                 .setStartDelay(310).setDuration(350).setInterpolator(easeOutExpo).start();
+        room.animate().alpha(1f).translationY(0f)
+                .setStartDelay(355).setDuration(350).setInterpolator(easeOutExpo).start();
         settings.animate().alpha(1f).translationY(0f)
-                .setStartDelay(360).setDuration(350).setInterpolator(easeOutExpo).start();
+                .setStartDelay(400).setDuration(350).setInterpolator(easeOutExpo).start();
     }
 
     void hide() {

@@ -26,6 +26,13 @@
         <intent>
             <action android:name="android.settings.PICTURE_IN_PICTURE_SETTINGS" />
         </intent>
+        <!-- Whether an invite can be handed to anything at all. Without this the answer is always "no"
+             from API 30 on, and a phone full of messengers would be offered the QR code meant for a TV. -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+
+            <data android:mimeType="text/plain" />
+        </intent>
     </queries>
 
     <application

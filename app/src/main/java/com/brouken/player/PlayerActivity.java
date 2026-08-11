@@ -23,6 +23,7 @@ import android.content.IntentFilter;
 import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Typeface;
@@ -46,11 +47,13 @@ import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Rational;
@@ -69,6 +72,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
@@ -142,6 +146,10 @@ import com.brouken.player.skip.NetworkSegmentsSource;
 import com.brouken.player.skip.SegmentFinder;
 import com.brouken.player.skip.SkipManager;
 import com.brouken.player.skip.SkipSegment;
+import com.brouken.player.together.Relay;
+import com.brouken.player.together.Room;
+import com.brouken.player.together.SessionCodec;
+import com.brouken.player.together.TogetherManager;
 import com.brouken.player.update.UpdateInfo;
 import com.brouken.player.update.UpdateUi;
 import com.brouken.player.update.Updater;
@@ -151,6 +159,8 @@ import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.snackbar.Snackbar;
+
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -432,6 +442,7 @@ public class PlayerActivity extends Activity {
     private TextView videoInfoView;
     private TextView audioInfoView;
     private TextView endsAtView;
+    private TextView roomPill;
     private TextView statsView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
@@ -707,6 +718,12 @@ public class PlayerActivity extends Activity {
     static final int SKIP_FILL_COLOR = 0xFF0696BB;
     static final int AD_HIGHLIGHT_COLOR = 0xFFFFD27A;
     static final int AD_FILL_COLOR = 0xC7FFA000;
+    // Watch together: one room per screen, alive across the player rebuilds a session accumulates.
+    TogetherManager together;
+    /** True only while the room's own media change is being applied — see checkRoomMedia. */
+    private boolean applyingRoomMedia;
+    private TextView roomBadge;
+
     SkipManager skipManager;
     boolean skipBuilt;
     Button buttonSkip;
@@ -848,6 +865,8 @@ public class PlayerActivity extends Activity {
 
         if ("com.brouken.player.action.SHORTCUT_VIDEOS".equals(action)) {
             openFile(Utils.getMoviesFolderUri());
+        } else if (handleRoomIntent(launchIntent)) {
+            // An invite link carries only a room code; what to play arrives over its channel.
         } else if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(type)) {
             String text = launchIntent.getStringExtra(Intent.EXTRA_TEXT);
             if (text != null) {
@@ -1439,6 +1458,57 @@ public class PlayerActivity extends Activity {
         statsView.setVisibility(View.GONE);
         coordinatorLayout.addView(statsView);
 
+        // Which room we are in. Floating, so it costs no row in the header or the bottom bar — both are
+        // grids whose height a fourth line visibly changes — but tied to the controls (see updateRoomBadge),
+        // so it is not standing over the film for the whole evening either. Bottom-start is the mirror of
+        // the Skip pill's corner and the only band that stays free while the controls are up: the header is
+        // above, the transport below, the stats panel is centred on the left edge.
+        roomPill = new TextView(this);
+        roomPill.setTextColor(0xE6FFFFFF);
+        roomPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
+        final GradientDrawable roomPillBackground = new GradientDrawable();
+        roomPillBackground.setColor(0x99000000);
+        roomPillBackground.setCornerRadius(ui.pillCorner());
+        roomPill.setBackground(roomPillBackground);
+        roomPill.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
+        // The glyph is what makes it a room at a glance rather than a stray number; sized to the text so it
+        // follows the font scale with it.
+        final Drawable roomGlyph = ContextCompat.getDrawable(this, R.drawable.ic_group_24dp);
+        if (roomGlyph != null) {
+            final int glyphBox = Math.round(roomPill.getTextSize());
+            roomGlyph.setBounds(0, 0, glyphBox, glyphBox);
+            roomPill.setCompoundDrawablesRelative(roomGlyph, null, null, null);
+            roomPill.setCompoundDrawablePadding(ui.dpS(6));
+        }
+        final CoordinatorLayout.LayoutParams roomPillLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        roomPillLp.gravity = Gravity.BOTTOM | Gravity.START;
+        roomPill.setLayoutParams(roomPillLp);
+        roomPill.setVisibility(View.GONE);
+        coordinatorLayout.addView(roomPill);
+
+        // The room itself reads in the pill above; this floats only for the one thing that pill cannot say
+        // in time — that the pause was the room's doing and not the viewer's, which has to show while the
+        // controls are down. It goes under the centre disc, on the loading rate's geometry, because that is
+        // where the eye already is when the picture stops.
+        roomBadge = new TextView(this);
+        roomBadge.setTextColor(0xE6FFFFFF);
+        roomBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
+        final GradientDrawable roomBackground = new GradientDrawable();
+        roomBackground.setColor(0x99000000);
+        roomBackground.setCornerRadius(ui.pillCorner());
+        roomBadge.setBackground(roomBackground);
+        roomBadge.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
+        final CoordinatorLayout.LayoutParams roomLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        roomLp.gravity = Gravity.CENTER;
+        // Clear of the hero's tap target, whatever size the hero is on this device.
+        roomLp.topMargin = ui.heroBox() / 2 + ui.dpS(12);
+        roomBadge.setLayoutParams(roomLp);
+        roomBadge.setVisibility(View.GONE);
+        coordinatorLayout.addView(roomBadge);
+
+
         // Whenever the in-header clock is (re)laid out, mirror its position onto the floating clock.
         headerClock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> syncOverlayClockPosition());
 
@@ -1561,6 +1631,19 @@ public class PlayerActivity extends Activity {
                     // and the progress bar), instead of a fixed 24dp + insetRight that overshoots in landscape.
                     skipLp.rightMargin = insetH + ui.gridH();
                     buttonSkip.setLayoutParams(skipLp);
+                }
+
+                // The room pill is the Skip pill's opposite corner, so it takes the same two offsets — the
+                // seek bar's own geometry for the bottom, the shared content grid for the side. Kept in step
+                // with Skip on purpose: the two sit on one line when both are up.
+                if (roomPill != null) {
+                    final CoordinatorLayout.LayoutParams pillLp =
+                            (CoordinatorLayout.LayoutParams) roomPill.getLayoutParams();
+                    pillLp.bottomMargin = windowInsets.getSystemWindowInsetBottom() + overscanV
+                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
+                            + ui.dpS(24);
+                    pillLp.leftMargin = insetH + ui.gridH();
+                    roomPill.setLayoutParams(pillLp);
                 }
 
                 // Mirror of the Skip pill on the other edge: the stats panel floats on the same coordinator,
@@ -1781,6 +1864,8 @@ public class PlayerActivity extends Activity {
                 scheduleHideControllerOnPause();
                 // Brief skip mode: the Skip button comes and goes with the controls — see rideSkipWithController.
                 updateBriefSkipWithController();
+                // The room pill rides the controls too — it is chrome, not something to leave over the film.
+                updateRoomBadge();
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -1961,6 +2046,13 @@ public class PlayerActivity extends Activity {
                 playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
             }
         }
+        // The room stayed connected while we were away, so this only starts sampling again — and it
+        // re-anchors first: the gap is not something the viewer did, and broadcasting it would drag
+        // everyone else back to where we left off.
+        if (together != null) {
+            together.resume();
+        }
+        updateRoomBadge();
         updateButtonRotation();
     }
 
@@ -1993,9 +2085,17 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(barsHider);
         }
         playerView.setCustomErrorMessage(null);
+        // Stop sampling before the pause below: that pause is the trip to the background, not the
+        // viewer reaching for the button, and the room must not be told to stop with us.
+        if (together != null) {
+            together.suspend();
+        }
         // With no session worth keeping (leaving for good, or nothing loaded) tear down as before —
         // the empty state and its pulse are only ever (re)built by initializePlayer.
         if (isFinishing() || player == null || !haveMedia) {
+            if (isFinishing() && together != null) {
+                together.leave();
+            }
             releasePlayer(false);
             return;
         }
@@ -2019,6 +2119,22 @@ public class PlayerActivity extends Activity {
         cancelLoadWatchdog();
         playerView.removeCallbacks(resumeWatchdogRunnable);
         playerView.postDelayed(backgroundReleaseRunnable, BACKGROUND_RELEASE_MS);
+    }
+
+    /**
+     * The room is anchored to this screen, so it cannot outlive it. onStop only leaves the room when the
+     * activity is finishing, which is the ordinary way out — but a screen destroyed from the background
+     * (low-memory reclaim, or "don't keep activities") is not finishing, and its socket stayed open:
+     * pinging every twenty seconds, reconnecting for ever, and holding the whole player view tree
+     * reachable, while the room went on listing a member whose heartbeats had stopped.
+     */
+    @Override
+    protected void onDestroy() {
+        if (together != null) {
+            together.leave();
+            together = null;
+        }
+        super.onDestroy();
     }
 
     /**
@@ -2267,6 +2383,7 @@ public class PlayerActivity extends Activity {
             }
         }
         focusPlay = true;
+        checkRoomMedia(false);
     }
 
     @Override
@@ -2281,7 +2398,9 @@ public class PlayerActivity extends Activity {
             // one-shot while we were away (this can be delivered before onStart consumes it).
             sourceSwitchKeepPaused = false;
 
-            if (Intent.ACTION_VIEW.equals(action) && uri != null) {
+            if (handleRoomIntent(intent)) {
+                // An invite link carries only a room code; what to play arrives over its channel.
+            } else if (Intent.ACTION_VIEW.equals(action) && uri != null) {
                 // Keep getIntent() pointing at what is actually playing (used by the intent report).
                 setIntent(intent);
                 handleViewIntent(intent);
@@ -2617,6 +2736,7 @@ public class PlayerActivity extends Activity {
             hideSkipPill();
             hideSwipeToUnlock();
             setSpeedBoostIndicatorVisible(false);
+            updateRoomBadge();
             updateOverlayClock();
             setSubtitleTextSizePiP();
             playerView.setScale(1.f);
@@ -2643,6 +2763,7 @@ public class PlayerActivity extends Activity {
             // Back to the full window: the clock returns if the preference wants it, and the skip pill
             // comes back by itself on the next poll while a segment is still current.
             updateOverlayClock();
+            updateRoomBadge();
             if (mPrefs.aspectRatio > 0) {
                 playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
             } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
@@ -3389,6 +3510,7 @@ public class PlayerActivity extends Activity {
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
             hideSkipPill();
         }
+        updateRoomBadge();
     }
 
     // Entering the lock: pin the current orientation (restored on unlock), arm the swipe bar and reset the
@@ -3424,6 +3546,7 @@ public class PlayerActivity extends Activity {
         if (mPrefs != null) {
             Utils.setOrientation(this, mPrefs.orientation);
         }
+        updateRoomBadge();
     }
 
     private void showSkipButton(SkipSegment segment) {
@@ -4776,6 +4899,8 @@ public class PlayerActivity extends Activity {
     // A row in the native side-panel menus (audio / speed / more).
     private static class MenuItem {
         final int iconRes;
+        /** Artwork to lead the row with instead of the glyph — a room's poster. Null for everything else. */
+        final String imageUrl;
         final CharSequence title;
         final CharSequence subtitle;
         final boolean checked;
@@ -4786,7 +4911,13 @@ public class PlayerActivity extends Activity {
         }
 
         MenuItem(int iconRes, CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this(iconRes, null, title, subtitle, checked, action);
+        }
+
+        MenuItem(int iconRes, String imageUrl, CharSequence title, CharSequence subtitle,
+                 boolean checked, Runnable action) {
             this.iconRes = iconRes;
+            this.imageUrl = imageUrl;
             this.title = title;
             this.subtitle = subtitle;
             this.checked = checked;
@@ -4843,7 +4974,31 @@ public class PlayerActivity extends Activity {
                 currentRow[0] = row;
             }
 
-            if (item.iconRes != 0) {
+            // A room with artwork leads with it rather than with a glyph: in a list of rooms the poster is
+            // what tells them apart, and the same corner radius the header's poster uses keeps the two
+            // readings of "this film" looking like one thing. Cropped, not fitted — a row of posters with
+            // ragged widths reads as broken, and losing a sliver of a 2:3 image costs nothing.
+            if (item.imageUrl != null && !item.imageUrl.isEmpty()) {
+                final ImageView art = new ImageView(this);
+                art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                // Same placeholder as the header's poster slot, so a slow load is a quiet grey card
+                // rather than a hole that shifts the text when it fills.
+                art.setBackgroundColor(0xFF333333);
+                final int artCorner = Utils.dpToPx(4);
+                art.setClipToOutline(true);
+                art.setOutlineProvider(new ViewOutlineProvider() {
+                    @Override
+                    public void getOutline(View view, Outline outline) {
+                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), artCorner);
+                    }
+                });
+                final LinearLayout.LayoutParams artLp =
+                        new LinearLayout.LayoutParams(ui.dpS(34), ui.dpS(48));
+                artLp.setMarginEnd(Utils.dpToPx(16));
+                art.setLayoutParams(artLp);
+                row.addView(art);
+                Glide.with(this).load(item.imageUrl).into(art);
+            } else if (item.iconRes != 0) {
                 final ImageView icon = new ImageView(this);
                 icon.setImageResource(item.iconRes);
                 icon.setImageTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
@@ -4867,6 +5022,19 @@ public class PlayerActivity extends Activity {
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            // The poster took the glyph's place, so whatever the glyph was saying moves in beside the
+            // name — for a room that is the padlock, and losing it would leave the password to be
+            // discovered by tapping.
+            if (item.imageUrl != null && !item.imageUrl.isEmpty() && item.iconRes != 0) {
+                final Drawable mark = ContextCompat.getDrawable(this, item.iconRes);
+                if (mark != null) {
+                    final int markBox = Math.round(title.getTextSize());
+                    mark.setBounds(0, 0, markBox, markBox);
+                    mark.setTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                    title.setCompoundDrawablesRelative(mark, null, null, null);
+                    title.setCompoundDrawablePadding(Utils.dpToPx(6));
+                }
             }
             textBlock.addView(title);
 
@@ -5173,7 +5341,7 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
-        final float current = player.getPlaybackParameters().speed;
+        final float current = userSpeed();
         final List<MenuItem> items = new ArrayList<>();
         for (final float speed : SPEED_PRESETS) {
             items.add(new MenuItem(formatSpeed(speed), null,
@@ -5377,7 +5545,7 @@ public class PlayerActivity extends Activity {
         final List<MenuItem> items = new ArrayList<>();
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_title),
-                    formatSpeed(player.getPlaybackParameters().speed), false, this::showSpeedDialog));
+                    formatSpeed(userSpeed()), false, this::showSpeedDialog));
             items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
                     sleepTimerSummary(), false, this::showSleepTimerMenu));
             // Rides the stats panel: the details it copies are the ones on screen, and the row would be
@@ -5391,6 +5559,12 @@ public class PlayerActivity extends Activity {
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
             items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
         }
+        // Only for network media: a room syncs one shared URL, and there is nothing to share about a
+        // file that lives on this device alone.
+        if (togetherAvailable()) {
+            items.add(new MenuItem(R.drawable.ic_group_24dp, getString(R.string.together_title),
+                    togetherSummary(), false, this::showTogetherMenu));
+        }
         // Same two entry points the empty state offers (hence its strings), so opening something else is
         // not a matter of first getting back to an empty player.
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
@@ -5398,6 +5572,702 @@ public class PlayerActivity extends Activity {
         // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
         items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, this::openSettings));
         showSideMenu(getString(R.string.pref_title), items);
+    }
+
+    // --- Watch together -------------------------------------------------------------------------
+    // A room syncs one shared http(s) URL between devices over a public relay. It is fixed when the
+    // room is created: no frame can change what a room plays, so nobody can push a stranger's video
+    // onto anybody else's screen. Everything here is session-scoped — no preferences, no persistence.
+
+    /**
+     * The speed the viewer chose. While a room is closing a gap it nudges the player's rate by a few
+     * percent, so the value on the player is not the one to show in the menu or to remember on exit.
+     */
+    private float userSpeed() {
+        if (together != null && together.isActive()) {
+            return together.userSpeed();
+        }
+        return player == null ? 1f : player.getPlaybackParameters().speed;
+    }
+
+    /** Rooms are offered for network media only — see the note above. */
+    private boolean togetherAvailable() {
+        if (together != null && together.isActive()) {
+            return true;
+        }
+        final Uri uri = currentPlayingUri();
+        return player != null && haveMedia && uri != null && Utils.isSupportedNetworkUri(uri);
+    }
+
+    private String togetherSummary() {
+        if (together == null || !together.isActive()) {
+            return null;
+        }
+        final String name = together.roomName();
+        // A room is named after the media by default (createRoom), and unnamed rooms are named after their own
+        // code — so the named form is only worth printing when someone actually typed something else into it.
+        // Otherwise it read "Room 123456 [123456] · 2", with the code in it twice.
+        return name.isEmpty() || name.equals(getString(R.string.together_room_default_name, together.code()))
+                ? getString(R.string.together_badge, together.code(), together.peers())
+                : getString(R.string.together_badge_named, name, together.code(), together.peers());
+    }
+
+    private void showTogetherMenu() {
+        final List<MenuItem> items = new ArrayList<>();
+        if (together != null && together.isActive()) {
+            items.add(new MenuItem(R.drawable.ic_share_24dp, getString(R.string.together_share),
+                    together.code(), false, this::shareInvite));
+            items.add(new MenuItem(R.drawable.ic_close_24dp, getString(R.string.together_leave),
+                    null, false, this::leaveRoom));
+        } else {
+            items.add(new MenuItem(R.drawable.ic_group_24dp, getString(R.string.together_create),
+                    null, false, this::createRoom));
+            items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
+                    null, false, this::findRooms));
+            items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
+                    null, false, this::askRoomCode));
+        }
+        showSideMenu(getString(R.string.together_title), items);
+    }
+
+    /** The way in when nothing is playing yet — from the empty page, where creating is impossible. */
+    void showJoinMenu() {
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
+                null, false, this::findRooms));
+        items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
+                null, false, this::askRoomCode));
+        showSideMenu(getString(R.string.together_join), items);
+    }
+
+    /**
+     * Ask the shared lobby who is watching what. There is no directory anywhere — the list is
+     * whichever rooms happen to be listening and choose to answer, collected over about a second and
+     * a half, so an empty result means "nobody answered", not "nobody is out there".
+     */
+    private void findRooms() {
+        Relay.setBase(mPrefs.togetherRelay);
+        showSnack(getString(R.string.together_searching), null);
+        TogetherManager.discover(rooms -> {
+            if (isFinishing()) {
+                return;
+            }
+            if (rooms.isEmpty()) {
+                showSnack(getString(R.string.together_none_found), null);
+                return;
+            }
+            final List<MenuItem> items = new ArrayList<>();
+            for (final JSONObject ad : rooms) {
+                final String id = ad.optString("id");
+                final boolean locked = ad.optInt("pwd") == 1;
+                final String title = ad.optString("title", "").isEmpty()
+                        ? ad.optString("name", id) : ad.optString("title");
+                final String poster = ad.optString("poster", "");
+                // The padlock is worth carrying whatever else the row has; the group glyph is only there
+                // so a row is not blank, so it steps aside for a poster rather than doubling up with it.
+                items.add(new MenuItem(
+                        locked ? R.drawable.ic_lock_24dp
+                                : poster.isEmpty() ? R.drawable.ic_group_24dp : 0,
+                        poster,
+                        title,
+                        getString(R.string.together_room_summary,
+                                ad.optString("owner", ""), ad.optInt("members")),
+                        false,
+                        () -> {
+                            if (locked) {
+                                askRoomPassword(id);
+                            } else {
+                                joinRoom(id, "");
+                            }
+                        }));
+            }
+            showSideMenu(getString(R.string.together_find), items);
+        });
+    }
+
+    /** A room from the list said it has a password; the code we already know. */
+    private void askRoomPassword(final String code) {
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setSingleLine(true);
+        input.setHint(getString(R.string.together_password_hint));
+        // The room has said it is locked, so the default is worth offering here exactly as it is offered
+        // when creating one: people watching together tend to reuse one password, and this is the only
+        // dialog that knows for certain a password is wanted. Not offered when joining by code, where
+        // nothing is known about the room — the password goes into its address, so guessing one at an
+        // open room lands in a different channel and reports, truthfully and uselessly, that it does
+        // not exist.
+        input.setText(mPrefs.togetherPassword);
+        input.setSelection(input.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle(code)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok,
+                        (dialog, which) -> joinRoom(code, input.getText().toString()))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Name the room and settle its password before opening it, which is the plugin's own order of
+     * questions. The password is pre-filled from settings so the common case is one confirmation,
+     * while a one-off room can still be given its own — or none.
+     */
+    private void createRoom() {
+        final JSONObject session = sessionDescription();
+        if (session == null) {
+            return;
+        }
+        final String code = Room.newCode();
+        final JSONObject card = roomCard();
+        final String suggested = card == null || card.optString("title", "").isEmpty()
+                ? getString(R.string.together_room_default_name, code)
+                : card.optString("title");
+
+        final EditText name = new EditText(this);
+        name.setInputType(InputType.TYPE_CLASS_TEXT);
+        name.setSingleLine(true);
+        name.setText(suggested);
+        name.setSelection(name.getText().length());
+
+        final EditText password = new EditText(this);
+        password.setInputType(InputType.TYPE_CLASS_TEXT);
+        password.setSingleLine(true);
+        password.setHint(getString(R.string.together_password_hint));
+        password.setText(mPrefs.togetherPassword);
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(name);
+        fields.addView(password);
+
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.together_create_title, code))
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> openRoom(code,
+                        name.getText().toString().trim(),
+                        password.getText().toString(),
+                        session))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void openRoom(final String code, final String name, final String password,
+                          final JSONObject session) {
+        ensureTogether();
+        together.create(code, password, mPrefs.togetherPublic,
+                name.isEmpty() ? getString(R.string.together_room_default_name, code) : name,
+                session, roomNick());
+        // The invite is the useful half, so it goes straight to the clipboard — on a phone the next
+        // step is pasting it into a chat, and on TV the code is on screen to read out.
+        copyToClipboard(together.invite());
+        showSnack(getString(R.string.together_created, together.code()), null);
+    }
+
+    /** Ask for the six digits. Also the empty state's way in, which is the only one a TV has when
+     *  nothing is playing yet — the gear menu lives in the player's controls. */
+    void askRoomCode() {
+        final EditText code = new EditText(this);
+        // Text, not digits: a room made in Lampa has a letter code, and the same six characters
+        // have to be typeable here.
+        code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        code.setSingleLine(true);
+        code.setHint("ABC234");
+
+        // Rooms made in Lampa carry a password whenever that setting is on there, and it goes into
+        // the room's address — so without it we would land somewhere else entirely and report, quite
+        // truthfully and quite uselessly, that no such room exists.
+        final EditText password = new EditText(this);
+        password.setInputType(InputType.TYPE_CLASS_TEXT);
+        password.setSingleLine(true);
+        password.setHint(getString(R.string.together_password_hint));
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(code);
+        fields.addView(password);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.together_join)
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    final String entered = code.getText().toString().trim().toUpperCase(Locale.US);
+                    if (Room.isCode(entered)) {
+                        joinRoom(entered, password.getText().toString());
+                    } else {
+                        showSnack(getString(R.string.together_code_invalid), null);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** Enter a room by code; the room says what it is playing as soon as we are in. */
+    private void joinRoom(final String code, final String password) {
+        ensureTogether();
+        together.join(code, password, roomNick());
+    }
+
+    /**
+     * The whole launch payload of this screen, as the room carries it: the media, its mime type, and
+     * every extra the player was started with — the playlist and its per-episode names, posters,
+     * seasons, imdb/tmdb ids, quality variants and subtitle lists, plus the headers a stream needs.
+     * A member who joins with nothing but a code rebuilds exactly this session.
+     */
+    private JSONObject sessionDescription() {
+        final Uri uri = currentPlayingUri();
+        if (uri == null || !Utils.isSupportedNetworkUri(uri)) {
+            return null;
+        }
+        try {
+            final JSONObject session = new JSONObject().put("uri", uri.toString());
+            final Intent intent = getIntent();
+            if (intent != null) {
+                if (intent.getType() != null) {
+                    session.put("type", intent.getType());
+                }
+                final Bundle extras = intent.getExtras();
+                if (extras != null) {
+                    final Bundle copy = new Bundle(extras);
+                    // Not the guest's to honour: it would report this playback to a launcher on their
+                    // device that never asked for it.
+                    copy.remove(API_RETURN_RESULT);
+                    // Start them where the room actually is rather than where its host began — but
+                    // only refresh a position the launcher already sent. Adding the key to a session
+                    // that had none is what flips handleViewIntent into api mode, and a guest must
+                    // not end up in a different mode from everyone else over a resume point the
+                    // first heartbeat corrects anyway.
+                    if (copy.containsKey(API_POSITION)
+                            && player != null && player.isCurrentMediaItemSeekable()) {
+                        copy.putInt(API_POSITION, (int) Math.max(0, player.getCurrentPosition()));
+                    }
+                    session.put("extras", SessionCodec.toJson(copy));
+                }
+            }
+            return session;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * The thin card a Lampa peer understands. Their room model is a resolved URL plus a little
+     * decoration — no season, no episode, no playlist — so this is all of what a viewer in the web
+     * player can be told. Our own players get {@link #sessionDescription()} instead.
+     */
+    private JSONObject roomCard() {
+        final Uri uri = currentPlayingUri();
+        if (uri == null || !Utils.isSupportedNetworkUri(uri)) {
+            return null;
+        }
+        final String title = apiTitle != null ? apiTitle : Utils.getFileName(this, uri);
+        int tmdb = 0;
+        if (apiTmdbId != null) {
+            try {
+                tmdb = Integer.parseInt(apiTmdbId);
+            } catch (NumberFormatException ignored) {
+                // Not every launcher sends a numeric id; the field is decoration on their side.
+            }
+        }
+        try {
+            return new JSONObject()
+                    .put("url", uri.toString())
+                    .put("title", title == null ? "" : title)
+                    // Only a poster another device can actually fetch. A launcher's thumbnail is very often
+                    // a content:// or file:// URI, which is meaningless off this device — and this field is
+                    // handed straight to the other client's player and into the room list it publishes,
+                    // where it shows as a broken image.
+                    .put("poster", Utils.isSupportedNetworkUri(apiThumbnailUri)
+                            ? apiThumbnailUri.toString() : "")
+                    .put("tmdb", tmdb)
+                    .put("source", "tmdb")
+                    .put("type", apiSeason > 0 ? "tv" : "movie");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Play what the room plays, rebuilding the host's launch intent and running it through the very
+     *  path a launcher's own intent takes — so the playlist, ids and subtitles behave identically. */
+    private void openSession(final JSONObject session) {
+        final String uriText = session == null ? null : session.optString("uri", null);
+        if (uriText == null) {
+            return;
+        }
+        final Uri uri = Uri.parse(uriText);
+        if (!Utils.isSupportedNetworkUri(uri)) {
+            return;
+        }
+        final Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, session.optString("type", null));
+        final JSONObject extras = session.optJSONObject("extras");
+        if (extras != null) {
+            intent.putExtras(SessionCodec.toBundle(extras));
+        }
+        // A media change from a Lampa peer carries a URL and a display title and nothing else, so
+        // pass the title through rather than leaving the header showing the tail of a URL. A room
+        // snapshot adds the artwork, which is the same extra a launcher would have sent — so the header
+        // gets its poster instead of the numbered placeholder.
+        final String title = session.optString("title", null);
+        final String poster = session.optString("poster", null);
+        if (extras == null && title != null && !title.isEmpty()) {
+            intent.putExtra(API_TITLE, title);
+        }
+        if (extras == null && poster != null && !poster.isEmpty()) {
+            intent.putExtra(API_THUMBNAIL, poster);
+        }
+        applyingRoomMedia = true;
+        try {
+            setIntent(intent);
+            handleViewIntent(intent);
+            // Start where the room is, not where this device last left this film. Between the two,
+            // handleViewIntent has just loaded our own remembered position — so playback began at it,
+            // played from there, and was then dragged across to the room a second or two later, in full
+            // view. The same lever a launcher uses to name a start position (see API_POSITION), applied
+            // after the media is set up and before the player is built, so there is nothing to see.
+            final long roomPosition = together == null ? -1 : together.roomPositionMs();
+            if (roomPosition >= 0) {
+                mPrefs.updatePosition(roomPosition);
+            }
+            initializePlayer();
+        } finally {
+            applyingRoomMedia = false;
+        }
+    }
+
+    /** How the room sees us: the name from settings, generated on first use and editable there. */
+    private String roomNick() {
+        final String nick = mPrefs.togetherNick;
+        return nick == null || nick.isEmpty() ? Build.MODEL : nick;
+    }
+
+    private void leaveRoom() {
+        if (together != null) {
+            together.leave();
+        }
+    }
+
+    /** True when the intent was an invite link and has been handled here. Such a link carries only the
+     *  room; what to play arrives over its channel a moment later. */
+    boolean handleRoomIntent(final Intent intent) {
+        final Room.Invite invite = Room.inviteFrom(intent == null ? null : intent.getData());
+        if (invite == null) {
+            return false;
+        }
+        joinRoom(invite.code, invite.password);
+        return true;
+    }
+
+    /**
+     * Playback has moved to something else. Mirrors what the Lampa plugin does, which is narrower
+     * than it first looks: only the owner, and only stepping through the playlist, pulls the room
+     * along. Everything else — a guest changing episode, anyone opening an unrelated video — simply
+     * leaves the room, and leaves it quietly. Announcing the departure would be scolding somebody
+     * for doing the obvious thing.
+     *
+     * @param playlistStep true when this is the next item of the same playlist rather than
+     *                     altogether different media
+     */
+    private void checkRoomMedia(final boolean playlistStep) {
+        // The room itself asked for this switch, so it cannot be a divergence from the room. Worth
+        // saying out loud because the check runs from handleViewIntent, where the *previous* player
+        // is still alive and still reporting the previous item — which made following the host look
+        // exactly like walking away from him.
+        if (applyingRoomMedia) {
+            return;
+        }
+        if (together == null || !together.isActive() || together.url() == null) {
+            return;
+        }
+        final Uri uri = currentPlayingUri();
+        if (uri != null && together.url().equals(uri.toString())) {
+            return;
+        }
+        final JSONObject session =
+                playlistStep && together.isOwner() ? sessionDescription() : null;
+        if (session != null) {
+            together.changeMedia(session);
+            return;
+        }
+        together.leave();
+    }
+
+    private void shareInvite() {
+        final String invite = together == null ? null : together.invite();
+        if (invite == null) {
+            return;
+        }
+        final Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, invite);
+        // Whether anything on this device can take it. A TV box has no messenger to hand a link to, and
+        // a chooser with nothing in it is a dead end — so that device is shown the invite instead, in the
+        // one form another phone can pick up off a screen.
+        if (getPackageManager().queryIntentActivities(share, 0).isEmpty()) {
+            showInviteQr(invite);
+            return;
+        }
+        try {
+            startActivity(Intent.createChooser(share, getString(R.string.together_share)));
+        } catch (Exception e) {
+            showInviteQr(invite);
+        }
+    }
+
+    /** The invite as something to point a camera at, for a screen that cannot pass it on itself. The
+     *  clipboard gets it too — a box with a keyboard, or a remote-control browser, can still use it. */
+    private void showInviteQr(final String invite) {
+        copyToClipboard(invite);
+        final DisplayMetrics metrics = getResources().getDisplayMetrics();
+        final Bitmap qr = Utils.qrBitmap(invite,
+                (int) (Math.min(metrics.widthPixels, metrics.heightPixels) * 0.6f));
+        if (qr == null) {
+            showSnack(getString(R.string.together_created, together.code()), null);
+            return;
+        }
+        final ImageView image = new ImageView(this);
+        image.setImageBitmap(qr);
+        image.setAdjustViewBounds(true);
+        final int padding = Math.round(16 * metrics.density);
+        image.setPadding(padding, padding, padding, padding);
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.together_qr_title, together.code()))
+                .setMessage(getString(R.string.together_qr_hint))
+                .setView(image)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    private void copyToClipboard(final String text) {
+        final android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null && text != null) {
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", text));
+        }
+    }
+
+    private void ensureTogether() {
+        // Read here rather than once at startup: this is the last moment before a socket opens, so a
+        // relay changed in settings takes effect on the next room without the screen being rebuilt.
+        Relay.setBase(mPrefs.togetherRelay);
+        if (together == null) {
+            together = new TogetherManager(togetherHost());
+        }
+    }
+
+    void updateRoomBadge() {
+        final boolean active = together != null && together.isActive();
+
+        // Which room, and how many of us. Shown with the controls and gone with them: the viewer asked for
+        // the chrome, this is part of it. The room's name is deliberately absent — it defaults to the media's
+        // own title, which the header prints in full two rows above.
+        if (roomPill != null) {
+            final boolean showPill = active && controllerVisible && !inPip && !locked;
+            if (showPill) {
+                // Three states, not two: a room we are talking to, one we are still getting into, and one
+                // that has gone quiet on us. Entering used to read as "reconnecting…" — nothing was
+                // reconnecting, and a first connection that then failed left a coral line that had said
+                // the wrong thing from the start and never changed.
+                roomPill.setText(together.connected()
+                        ? getString(R.string.together_badge, together.code(), together.peers())
+                        : getString(together.everConnected()
+                                ? R.string.together_offline : R.string.together_connecting,
+                                together.code()));
+                // Losing the relay does not stop the picture, so it is stated rather than alarmed about —
+                // but on the brand colour, because the room has stopped being in step and nothing else says so.
+                final int tint = together.connected()
+                        ? 0xE6FFFFFF
+                        : ContextCompat.getColor(this, R.color.brand);
+                roomPill.setTextColor(tint);
+                roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
+            }
+            roomPill.setVisibility(showPill ? View.VISIBLE : View.GONE);
+        }
+
+        // The float says only what the header cannot say in time: this pause is the room's, not yours. Bounded
+        // by SyncEngine.BUFFER_WAIT_MAX_MS, so it is never on screen for long. Nothing of ours belongs in the
+        // PiP thumbnail, and a locked screen is meant to be bare.
+        if (roomBadge == null) {
+            return;
+        }
+        // Two reasons the picture can be standing still through no fault of the viewer's: the room is
+        // filling everybody's buffer at one position, or it is waiting on one member who fell behind.
+        final boolean holding = active && together.holding();
+        final String waiting = active ? together.waitingFor() : null;
+        if ((!holding && waiting == null) || inPip || locked) {
+            roomBadge.setVisibility(View.GONE);
+            return;
+        }
+        roomBadge.setText(holding
+                ? getString(R.string.together_hold)
+                : getString(R.string.together_waiting, waiting));
+        roomBadge.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * A room message for the centred line the gestures use, but not at its size: that 20sp is set for a
+     * brightness percentage read at a glance, and a sentence at 20sp shouts across the picture. Scaled on
+     * the message rather than on the view, so nothing has to be put back afterwards and the readouts
+     * sharing this line are untouched. A ratio, not a fixed size, so the system font scale carries through.
+     */
+    private CharSequence roomNotice(final String text) {
+        final SpannableString notice = new SpannableString(text);
+        final float hudSp = getResources().getDimension(R.dimen.exo_error_message_text_size)
+                / getResources().getDisplayMetrics().scaledDensity;
+        if (hudSp > 0) {
+            notice.setSpan(new RelativeSizeSpan(ui.textSkip() / hudSp), 0, notice.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return notice;
+    }
+
+    /** The wait is over and the room is moving again — said in passing, because the float that announced
+     *  the wait has just gone and its disappearance on its own reads as something having gone wrong. */
+    private void announceHoldLifted() {
+        if (playerView == null || inPip || locked) {
+            return;
+        }
+        Utils.showText((CustomPlayerView) playerView, roomNotice(getString(R.string.together_go)),
+                CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+    }
+
+    /** Say who just took the controls. Playback has already followed them by the time this runs — the
+     *  point is that the viewer knows the pause or the jump was not theirs and not a glitch. */
+    private void announceRoomAction(final String nick, final TogetherManager.Act act) {
+        // The PiP window is a thumbnail under the system's own controls; there is nowhere to say this.
+        // A locked screen is meant to be bare — both pills hide there, and so does this.
+        if (playerView == null || inPip || locked) {
+            return;
+        }
+        final int verb;
+        switch (act) {
+            case PAUSED:   verb = R.string.together_act_paused; break;
+            case RESUMED:  verb = R.string.together_act_resumed; break;
+            case LEFT:     verb = R.string.together_act_left; break;
+            default:       verb = R.string.together_act_seeked; break;
+        }
+        // A member who never introduced themselves is still worth announcing — the room did move.
+        final String who = nick == null || nick.isEmpty()
+                ? getString(R.string.together_act_somebody)
+                : nick;
+        // MESSAGE_TIMEOUT_LONG, not the touch timeout: this is a name to read, not a number to glance at.
+        Utils.showText((CustomPlayerView) playerView, roomNotice(getString(verb, who)),
+                CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+    }
+
+    private TogetherManager.Host togetherHost() {
+        return new TogetherManager.Host() {
+            @Override
+            public boolean ready() {
+                return player != null && haveMedia;
+            }
+
+            @Override
+            public boolean scrubbing() {
+                // All three are gestures held under a finger: sampling mid-drag would broadcast every
+                // intermediate frame, and the hold-to-speed-up preview is not a choice to share.
+                return isScrubbing || ((CustomPlayerView) playerView).isSpeedBoosting()
+                        || ((CustomPlayerView) playerView).isSeekGesture();
+            }
+
+            @Override
+            public long positionMs() {
+                return player == null ? 0 : Math.max(0, player.getCurrentPosition());
+            }
+
+            @Override
+            public boolean playWhenReady() {
+                // A film that has ended is not playing, whatever playWhenReady still says. Media3 leaves
+                // the flag set and the position frozen at the duration, so the diff kept finding playback
+                // further behind where it "should" be with every tick and broadcast that as a seek — three
+                // ticks in, and then every 750 ms for ever, dragging the whole room to the end credits and
+                // popping a notice on every device as it went. Reported as stopped, the room simply pauses
+                // with us at the end, once.
+                return player != null && player.getPlayWhenReady()
+                        && player.getPlaybackState() != Player.STATE_ENDED;
+            }
+
+            @Override
+            public float speed() {
+                return player == null ? 1f : player.getPlaybackParameters().speed;
+            }
+
+            @Override
+            public boolean buffering() {
+                return player != null && player.getPlaybackState() == Player.STATE_BUFFERING;
+            }
+
+            @Override
+            public void applyPlay(final boolean play) {
+                if (player != null) {
+                    player.setPlayWhenReady(play);
+                }
+            }
+
+            @Override
+            public void applySeek(final long positionMs) {
+                if (player != null) {
+                    // Exactly where the room asked, not the nearest keyframe. setSeekParameters is sticky
+                    // and every gesture sets its own (a scrub leaves CLOSEST_SYNC, a key seek NEXT/PREVIOUS),
+                    // so without this a room seek inherited whatever the viewer last did — landing a whole
+                    // keyframe interval out, which the room then reads as a gap and seeks at again.
+                    player.setSeekParameters(SeekParameters.EXACT);
+                    player.seekTo(positionMs);
+                }
+            }
+
+            @Override
+            public void applySpeed(final float speed) {
+                if (player != null) {
+                    player.setPlaybackSpeed(speed);
+                }
+            }
+
+            @Override
+            public void onRoomChanged() {
+                updateRoomBadge();
+            }
+
+            @Override
+            public void onRoomAction(final String nick, final TogetherManager.Act act) {
+                announceRoomAction(nick, act);
+            }
+
+            @Override
+            public long bufferedAheadMs() {
+                // The same reading the statistics panel shows as "buffer": how far ahead of the playhead
+                // the loader has got. A hold is over when everybody has enough of it.
+                return player == null ? 0 : Math.max(0, player.getTotalBufferedDuration());
+            }
+
+            @Override
+            public void onHoldLifted() {
+                announceHoldLifted();
+            }
+
+            @Override
+            public JSONObject sessionDescription() {
+                return PlayerActivity.this.sessionDescription();
+            }
+
+            @Override
+            public JSONObject roomCard() {
+                return PlayerActivity.this.roomCard();
+            }
+
+            @Override
+            public void openSession(final JSONObject session) {
+                PlayerActivity.this.openSession(session);
+            }
+
+            @Override
+            public void onJoinFailed() {
+                showSnack(getString(R.string.together_no_room), null);
+            }
+        };
     }
 
     // Replaces the current item's URL with a separate-URL quality variant and reinitialises the player,
@@ -6131,6 +7001,29 @@ public class PlayerActivity extends Activity {
     }
 
     /**
+     * Spend the start-up play the loading player is holding — unless the room is standing still to let
+     * everybody fill a buffer. That pause is not ours to undo: releasing the hold is what starts playback
+     * then, at the position the whole room agreed on.
+     *
+     * <p>Checked here rather than where the hold pauses us, because on the join this is for there is
+     * nothing to pause yet — the other client announces its hold before it says what the room is playing,
+     * so the player that ignores it is one built afterwards. Left to itself it played through the hold,
+     * and the room's "carry on" then had to drag it back, which cost a second load of the very buffer the
+     * hold had just filled.
+     */
+    private void playPending() {
+        if (together != null && together.holding()) {
+            return;
+        }
+        if (player != null) {
+            player.play();
+        }
+        if (playerView != null) {
+            playerView.hideController();
+        }
+    }
+
+    /**
      * Opens the settings screen, recording the preference state first. The screen writes into the same
      * SharedPreferences instance this activity reads, so the "did anything actually change" comparison
      * has to be against a snapshot taken before it opens — taking one on the way back always compares
@@ -6194,7 +7087,9 @@ public class PlayerActivity extends Activity {
                         playerView.getResizeMode(),
                         playerView.getVideoSurfaceView().getScaleX(),
                         currentAspectRatio,
-                        player.getPlaybackParameters().speed);
+                        // The viewer's speed, not the one a room may be nudging to close a gap —
+                        // otherwise leaving mid-correction remembers 1.05× as a preference.
+                        userSpeed());
             }
         }
     }
@@ -6451,6 +7346,8 @@ public class PlayerActivity extends Activity {
             hideSkipButton();
             cancelSegmentFinder();
             setupSkipSource();
+            // The next episode of the same playlist — the one case the room can follow.
+            checkRoomMedia(true);
         }
 
         @Override
@@ -6699,12 +7596,7 @@ public class PlayerActivity extends Activity {
                                         if (play) {
                                             play = false;
                                             displayManager.unregisterDisplayListener(this);
-                                            if (player != null) {
-                                                player.play();
-                                            }
-                                            if (playerView != null) {
-                                                playerView.hideController();
-                                            }
+                                            playPending();
                                         }
                                     }
                                 };
@@ -6719,8 +7611,7 @@ public class PlayerActivity extends Activity {
                         }
                         if (play) {
                             play = false;
-                            player.play();
-                            playerView.hideController();
+                            playPending();
                         }
                     }
 
@@ -6999,9 +7890,11 @@ public class PlayerActivity extends Activity {
         }
         player.setMediaItems(items, index, position);
         player.prepare();
-        if (alive) {
-            player.play();
-        }
+        // And nothing is started here. Re-preparing keeps playWhenReady, so a player that was running
+        // carries on by itself, and one that had not started yet still has its pending start to spend at
+        // STATE_READY — where whether it may run is decided properly. Starting playback outright made this
+        // recovery override every reason not to: the pause of a room holding for somebody who has just
+        // joined, and the viewer's own pause during a load.
         return true;
     }
 

@@ -4,6 +4,8 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
+
+import com.brouken.player.together.AliasGenerator;
 import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 import android.text.TextUtils;
@@ -70,6 +72,10 @@ class Prefs {
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
     private static final String PREF_KEY_SHOW_STATS = "showStats";
     private static final String PREF_KEY_SYSTEM_VOLUME = "systemVolume";
+    private static final String PREF_KEY_TOGETHER_NICK = "togetherNick";
+    private static final String PREF_KEY_TOGETHER_PASSWORD = "togetherPassword";
+    private static final String PREF_KEY_TOGETHER_PUBLIC = "togetherPublic";
+    private static final String PREF_KEY_TOGETHER_RELAY = "togetherRelay";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
@@ -151,6 +157,15 @@ class Prefs {
     public boolean showClock = false;
     public boolean showStats = false;
     public boolean systemVolume = true;
+    /** How other people in a watch-together room see this device. Generated once, then editable. */
+    public String togetherNick = "";
+    /** Password put on rooms this device creates. Empty means anyone with the code walks in. */
+    public String togetherPassword = "";
+    /** Whether rooms this device creates announce themselves for anyone to find. Off by default:
+     *  being listed means the name, poster and viewer count are readable without ever joining. */
+    public boolean togetherPublic = false;
+    /** Relay to hold rooms on. Empty means the built-in default, which is also the plugin's. */
+    public String togetherRelay = "";
     public boolean crashReporting = false;
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
@@ -265,6 +280,16 @@ class Prefs {
         // Forced on for TV boxes, where the remote routes volume to the panel or receiver over CEC and
         // only the system stream responds — the setting is hidden there too.
         systemVolume = Utils.isTvBox(mContext) || mSharedPreferences.getBoolean(PREF_KEY_SYSTEM_VOLUME, systemVolume);
+        togetherPassword = mSharedPreferences.getString(PREF_KEY_TOGETHER_PASSWORD, togetherPassword);
+        togetherPublic = mSharedPreferences.getBoolean(PREF_KEY_TOGETHER_PUBLIC, togetherPublic);
+        togetherRelay = mSharedPreferences.getString(PREF_KEY_TOGETHER_RELAY, togetherRelay);
+        // Generated on first use and persisted, so it stays the same name from one room to the next —
+        // and so the settings screen has something to show rather than an empty field.
+        togetherNick = mSharedPreferences.getString(PREF_KEY_TOGETHER_NICK, "");
+        if (togetherNick.isEmpty()) {
+            togetherNick = AliasGenerator.random();
+            mSharedPreferences.edit().putString(PREF_KEY_TOGETHER_NICK, togetherNick).apply();
+        }
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);
         autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);
         // Defaulting to the field would hand back the stale in-memory set once the key is gone, so
@@ -580,7 +605,17 @@ class Prefs {
     // Everything the settings screen could have written, in one comparable value: the player bakes some
     // of these in at build time, so the caller can tell "settings were changed" from "settings were only
     // looked at" without keeping a hand-written list of the keys that matter.
+    /**
+     * What the player screen compares before and after a trip to settings, to decide whether it has
+     * to be rebuilt. Room settings are left out on purpose: they change nothing about how playback
+     * is built, and rebuilding for them would restart the film over a change of display name.
+     */
     public Map<String, ?> snapshot() {
-        return new HashMap<>(mSharedPreferences.getAll());
+        final Map<String, Object> all = new HashMap<>(mSharedPreferences.getAll());
+        all.remove(PREF_KEY_TOGETHER_NICK);
+        all.remove(PREF_KEY_TOGETHER_PASSWORD);
+        all.remove(PREF_KEY_TOGETHER_PUBLIC);
+        all.remove(PREF_KEY_TOGETHER_RELAY);
+        return all;
     }
 }

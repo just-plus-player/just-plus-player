@@ -44,6 +44,16 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
  * A language can be promoted straight from the audio panel, without a trip to Settings
  * Sturdier audio: passthrough (AC3/DTS/TrueHD) is rebuilt after a seek or a resume, a format the device mishandles is learned and avoided, and playback survives the audio output disappearing
 
+**Watch together**
+
+ * Watch the same film in step with someone else — play, pause and seek are shared, and everyone's player follows. No host: whoever presses something takes the room with them
+ * Create a room around whatever is playing, or join one by code, by invite link, or from the list of rooms open right now. A password is optional, and so is being listed
+ * The room protocol is [LAMPA](https://github.com/lampa-app/LAMPA)'s `lparty` plugin's, so a viewer in the web player and a viewer here can sit in the same room without either knowing which the other is using
+ * Small differences are closed by trimming the playback rate a few percent, which is inaudible; only a gap too wide to walk off is jumped
+ * Somebody joining mid-film has nothing buffered, so the room stops where it is until everyone can carry on, and everyone starts again together
+ * A badge with the room code and how many are watching, and a line when somebody else pauses, seeks, arrives or leaves
+ * Where there is nothing to share a link with — a TV box — the invite is shown as a QR code instead
+
 **Android TV**
 
  * One focus row of controls, sized for a remote
@@ -77,6 +87,14 @@ It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Mar
 **Lock** — one tap locks the screen against pockets and curious hands; a swipe unlocks it. **Audio languages** — order them once; the player takes the first one a file actually has.
 
 <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/unlock.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/audio_languages.jpg" width="430">
+
+**Watch together** — the room's code and how many are watching sit under the picture, and the room says who paused it.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/together.jpg" width="880">
+
+**Find a room** — the rooms open right now, and what each is watching. **In a room** — hand out the invite, or leave.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/together_rooms.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/together_menu.jpg" width="430">
 
 ## Supported formats
 

@@ -225,6 +225,10 @@ class Utils {
     }
 
     public static boolean canBoostVolume() {
+        return PlayerActivity.boostProcessor != null || boostEffectUsable();
+    }
+
+    private static boolean boostEffectUsable() {
         try {
             return PlayerActivity.loudnessEnhancer != null && PlayerActivity.loudnessEnhancer.hasControl();
         } catch (Exception e) {
@@ -234,18 +238,27 @@ class Utils {
     }
 
     /**
-     * Pushes boostLevel into the effect. Also called right after a LoudnessEnhancer is created, because
-     * boostLevel outlives both the effect and the activity, so a fresh effect starts at zero gain while
-     * the level still says otherwise.
+     * Pushes boostLevel into whichever boost actually works on this device: the LoudnessEnhancer effect
+     * where it does (it compresses rather than clips, so it takes far more gain), otherwise the PCM
+     * processor. Also called right after a LoudnessEnhancer is created, because boostLevel outlives both
+     * the effect and the activity, so a fresh effect starts at zero gain while the level still says
+     * otherwise.
      */
     static void applyBoost() {
-        if (PlayerActivity.loudnessEnhancer == null)
-            return;
-        try {
-            PlayerActivity.loudnessEnhancer.setTargetGain(PlayerActivity.boostLevel * 200);
-            PlayerActivity.loudnessEnhancer.setEnabled(PlayerActivity.boostLevel > 0);
-        } catch (Exception e) {
-            e.printStackTrace();
+        boolean applied = false;
+        if (PlayerActivity.loudnessEnhancer != null) {
+            try {
+                PlayerActivity.loudnessEnhancer.setTargetGain(PlayerActivity.boostLevel * 200);
+                PlayerActivity.loudnessEnhancer.setEnabled(PlayerActivity.boostLevel > 0);
+                applied = true;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        if (PlayerActivity.boostProcessor != null) {
+            // Straight amplitude, so the gain matches what the OSD says (200% = twice as loud); clipping
+            // rules out the effect's 20 dB ceiling anyway.
+            PlayerActivity.boostProcessor.setGain(applied ? 1f : 1f + PlayerActivity.boostLevel * 0.1f);
         }
     }
 

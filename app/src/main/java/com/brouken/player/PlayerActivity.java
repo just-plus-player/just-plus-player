@@ -105,6 +105,7 @@ import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
+import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.util.StuckPlayerException;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -122,6 +123,7 @@ import androidx.media3.exoplayer.SeekParameters;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
+import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.audio.ForwardingAudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
@@ -187,6 +189,8 @@ public class PlayerActivity extends Activity {
     private MediaSession mediaSession;
     private DefaultTrackSelector trackSelector;
     public static LoudnessEnhancer loudnessEnhancer;
+    // Boost fallback for devices where the effect above is a no-op, see BoostAudioProcessor
+    public static BoostAudioProcessor boostProcessor;
 
     private CustomDefaultTrackNameProvider trackNameProvider;
     // Track names read from the container (MP4 udta/name, MKV TrackEntry/Name), and the resolved
@@ -6683,6 +6687,7 @@ public class PlayerActivity extends Activity {
             player.release();
             player = null;
             audioSink = null;
+            boostProcessor = null;
         }
 
         trackSelector = new DefaultTrackSelector(this);
@@ -6752,8 +6757,15 @@ public class PlayerActivity extends Activity {
             @Override
             protected AudioSink buildAudioSink(Context context, boolean enableFloatOutput,
                                                 boolean enableAudioTrackPlaybackParams) {
-                AudioSink sink = super.buildAudioSink(context, enableFloatOutput,
-                        enableAudioTrackPlaybackParams);
+                // Same sink the base class builds, plus the boost processor — it has to be in the chain
+                // from the start, since the chain is fixed once the sink exists. Silence skipping and
+                // playback speed are appended after it by DefaultAudioProcessorChain, as before.
+                boostProcessor = new BoostAudioProcessor();
+                AudioSink sink = new DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(enableFloatOutput)
+                        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                        .setAudioProcessors(new AudioProcessor[]{boostProcessor})
+                        .build();
                 audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes);
                 return audioSink;
             }
@@ -7188,6 +7200,7 @@ public class PlayerActivity extends Activity {
             player.release();
             player = null;
             audioSink = null;
+            boostProcessor = null;
         }
         stopSkipPolling();
         cancelSegmentFinder();

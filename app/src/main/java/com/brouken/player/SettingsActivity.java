@@ -22,6 +22,8 @@ import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.SwitchPreferenceCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.brouken.player.together.AliasGenerator;
+import com.brouken.player.together.Relay;
 import com.brouken.player.update.Updater;
 import com.brouken.player.update.UpdateUi;
 
@@ -118,6 +120,50 @@ public class SettingsActivity extends AppCompatActivity {
                     preferenceAllowSystemFrameRate.setChecked(!Utils.isTvBox(getContext()));
                 }
             }
+            // The display name is generated on first use, so the field is never empty — but the
+            // regenerate button is worth having: it is how you get a different one without inventing
+            // it yourself, and it is what LocalSend offers beside the same field.
+            final androidx.preference.EditTextPreference preferenceNick = findPreference("togetherNick");
+            final Preference preferenceNickRandom = findPreference("togetherNickRandom");
+            if (preferenceNick != null && preferenceNickRandom != null) {
+                preferenceNickRandom.setOnPreferenceClickListener(preference -> {
+                    preferenceNick.setText(AliasGenerator.random());
+                    return true;
+                });
+            }
+            final androidx.preference.EditTextPreference preferencePassword =
+                    findPreference("togetherPassword");
+            if (preferencePassword != null) {
+                // Shown as dots rather than as itself: a settings list is read over shoulders, and
+                // the password is what keeps a room from being walked into.
+                preferencePassword.setSummaryProvider(preference -> {
+                    final String value = preferencePassword.getText();
+                    return value == null || value.isEmpty()
+                            ? getString(R.string.pref_together_password_none)
+                            : "••••••";
+                });
+            }
+
+            // The field holds an override; empty means the built-in relay. The summary therefore
+            // shows what is actually in effect rather than echoing an empty field back.
+            final androidx.preference.EditTextPreference preferenceRelay = findPreference("togetherRelay");
+            final Preference preferenceRelayReset = findPreference("togetherRelayReset");
+            if (preferenceRelay != null) {
+                preferenceRelay.setSummaryProvider(preference -> {
+                    final String value = preferenceRelay.getText();
+                    return value == null || value.trim().isEmpty()
+                            ? getString(R.string.pref_together_relay_default, Relay.DEFAULT_BASE)
+                            : value.trim();
+                });
+            }
+            if (preferenceRelay != null && preferenceRelayReset != null) {
+                preferenceRelayReset.setSummary(Relay.DEFAULT_BASE);
+                preferenceRelayReset.setOnPreferenceClickListener(preference -> {
+                    preferenceRelay.setText("");
+                    return true;
+                });
+            }
+
             Preference preferenceSystemVolume = findPreference("systemVolume");
             if (preferenceSystemVolume != null && Utils.isTvBox(getContext())) {
                 // TV remotes route volume to the panel or receiver over CEC, where only the system

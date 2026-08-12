@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 
 import androidx.annotation.Nullable;
 import androidx.media3.ui.DefaultTimeBar;
+import androidx.media3.ui.TimeBar;
 
 import java.lang.reflect.Field;
 
@@ -18,6 +19,9 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
     private Rect progressBar;
     private boolean scrubbing;
     private int scrubbingStartX;
+    private boolean scrubbingNow;
+    private int playheadLeft;
+    private int playheadRight;
 
     private final Paint skipPaint = new Paint();
     private long[] skipStartsMs;
@@ -54,6 +58,23 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
         } catch (NoSuchFieldException | IllegalAccessException e) {
             e.printStackTrace();
         }
+        // The scrubber grows while the bar is being dragged (DefaultTimeBar.drawPlayhead), and the base
+        // class keeps that flag private — this listener spans exactly the same window.
+        addListener(new OnScrubListener() {
+            @Override
+            public void onScrubStart(TimeBar timeBar, long position) {
+                scrubbingNow = true;
+            }
+
+            @Override
+            public void onScrubMove(TimeBar timeBar, long position) {
+            }
+
+            @Override
+            public void onScrubStop(TimeBar timeBar, long position, boolean canceled) {
+                scrubbingNow = false;
+            }
+        });
     }
 
     /**
@@ -91,6 +112,19 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
         if (barWidth <= 0) {
             return;
         }
+        // Media3 paints the playhead inside super.onDraw above, so everything below lands on top of it —
+        // and the fill is opaque, which swallowed the coral dot whole while it sat inside a segment. Keep
+        // the dot's own patch clear instead, so it stays the frontmost mark on the bar: it is what the
+        // viewer is tracking. Bounds as in DefaultTimeBar.drawPlayhead.
+        if (scrubberBar != null) {
+            final int radius = playheadRadius();
+            final int playheadX = Math.min(Math.max(scrubberBar.right, scrubberBar.left), progressBar.right);
+            playheadLeft = playheadX - radius;
+            playheadRight = playheadX + radius;
+        } else {
+            playheadLeft = 0;
+            playheadRight = 0;
+        }
         // Each segment gets a soft fill band across its whole width, plus ~1.5dp crisp hairlines on the
         // boundaries (chapter-divider style). The band demarcates the region while the edges frame it,
         // both staying lighter in weight than the coral scrubber.
@@ -105,15 +139,43 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
             }
             if (skipFillColors != null && right > left) {
                 skipPaint.setColor(skipFillColors[i]);
-                canvas.drawRect(left, progressBar.top, right, progressBar.bottom, skipPaint);
+                drawBand(canvas, left, right);
             }
             skipPaint.setColor(skipColors[i]);
-            canvas.drawRect(left, progressBar.top, left + hairWidth, progressBar.bottom, skipPaint);
+            drawBand(canvas, left, left + hairWidth);
             // Second hairline at the segment end, only when there's room for it to read as a separate edge.
             if (right - left > hairWidth * 2) {
-                canvas.drawRect(right - hairWidth, progressBar.top, right, progressBar.bottom, skipPaint);
+                drawBand(canvas, right - hairWidth, right);
             }
         }
+    }
+
+    /** Paints a bar-height band, leaving the playhead's patch clear so the scrubber stays in front of it. */
+    private void drawBand(Canvas canvas, int left, int right) {
+        if (right <= left) {
+            return;
+        }
+        if (right > playheadLeft && left < playheadRight) {
+            if (left < playheadLeft) {
+                canvas.drawRect(left, progressBar.top, playheadLeft, progressBar.bottom, skipPaint);
+            }
+            if (right > playheadRight) {
+                canvas.drawRect(playheadRight, progressBar.top, right, progressBar.bottom, skipPaint);
+            }
+            return;
+        }
+        canvas.drawRect(left, progressBar.top, right, progressBar.bottom, skipPaint);
+    }
+
+    /** The radius Media3 is currently drawing the scrubber with — same rule as DefaultTimeBar.drawPlayhead. */
+    private int playheadRadius() {
+        if (scrubbingNow || isFocused()) {
+            return getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_dragged_thumb_size) / 2;
+        }
+        // Disabled (an unseekable stream): the base class draws no dot, so nothing has to be kept clear.
+        return isEnabled()
+                ? getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_enabled_thumb_size) / 2
+                : 0;
     }
 
     private static float clamp(float value) {

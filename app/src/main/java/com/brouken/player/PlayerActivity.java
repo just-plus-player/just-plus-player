@@ -919,6 +919,12 @@ public class PlayerActivity extends Activity {
         spinnerLp.width = ui.spinnerSize();
         spinnerLp.height = ui.spinnerSize();
         loadingProgressBar.setLayoutParams(spinnerLp);
+        // The ring holds the remote's focus while it stands in for play/pause (see parkFocusOnLoadingRing),
+        // so it must not draw a focus rectangle of its own: having no stateful background, it would otherwise
+        // get the framework's default highlight painted around the spinner.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            loadingProgressBar.setDefaultFocusHighlightEnabled(false);
+        }
         loadingSpeedView = findViewById(R.id.loading_speed);
         loadingSpeedView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
         // Just below the ring, whatever size the ring is on this device.
@@ -1899,8 +1905,10 @@ public class PlayerActivity extends Activity {
                         if (controllerVisibleFully) {
                             focusTimeBarOnShow = false;
                         }
-                    } else {
-                        findViewById(R.id.exo_play_pause).requestFocus();
+                    } else if (!exoPlayPause.requestFocus()) {
+                        // Shown while the loading ring is up (a key press during buffering): play/pause is
+                        // INVISIBLE and cannot take focus, so the ring holds it instead.
+                        parkFocusOnLoadingRing();
                     }
                 } else {
                     focusTimeBarOnShow = false;
@@ -9073,9 +9081,16 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(showLoadingRunnable);
         }
         if (enableLoading) {
+            // Read before hiding it: making a focused view invisible clears the focus. Only a remote that was
+            // sitting on play/pause is handed to the ring — a viewer who walked the D-pad to a bottom-bar
+            // button keeps their place when a mid-film rebuffer brings the ring back.
+            final boolean heroHadFocus = exoPlayPause.hasFocus();
             // INVISIBLE (not GONE): keep the 90dp slot so the row doesn't resize while the spinner shows over it.
             exoPlayPause.setVisibility(View.INVISIBLE);
             loadingProgressBar.setVisibility(View.VISIBLE);
+            if (heroHadFocus) {
+                parkFocusOnLoadingRing();
+            }
             // Network sources only: nothing flows through the media data source for a local file or a SAF
             // document, so the rate would read 0,0 MB/s exactly where it is meant to reassure.
             Uri loading = currentPlayingUri();
@@ -9093,13 +9108,28 @@ public class PlayerActivity extends Activity {
             }
         } else {
             stopLoadingSpeed();
+            // Again before hiding: the ring loses focus the moment it goes.
+            final boolean ringHadFocus = loadingProgressBar.hasFocus();
+            loadingProgressBar.setFocusable(false);
             loadingProgressBar.setVisibility(View.GONE);
             exoPlayPause.setVisibility(View.VISIBLE);
-            if (focusPlay) {
+            if (focusPlay || ringHadFocus) {
                 focusPlay = false;
                 exoPlayPause.requestFocus();
             }
         }
+    }
+
+    // TV: play/pause goes INVISIBLE while the loading ring takes its slot, and a hidden view cannot hold focus.
+    // Left to the framework, focus is re-homed to the first focusable view in the controls — the first icon of
+    // the bottom row, because exo_bottom_bar is declared before exo_center_controls — so the remote sat on
+    // "aspect ratio" / "quality" for the whole controller timeout, and OK there changed the picture instead of
+    // pausing. The ring holds focus in play/pause's place instead: same slot, no highlight of its own (see the
+    // default-focus-highlight call in onCreate), and updateLoading(false) hands it straight back. A no-op on
+    // touch devices, where neither view is focusable in touch mode.
+    private void parkFocusOnLoadingRing() {
+        loadingProgressBar.setFocusable(true);
+        loadingProgressBar.requestFocus();
     }
 
     // Shrink the built-in prev/next episode arrows (Media3 defaults render them as large as play/pause) and

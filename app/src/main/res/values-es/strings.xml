@@ -13,9 +13,6 @@
     <string name="pref_framerate_matching">Adaptación automática de la frecuencia de fotogramas</string>
     <string name="pref_general_header">General</string>
     <string name="pref_title">Ajustes</string>
-    <string name="pref_skip_silence_off">Reproducir contenido tal cual</string>
-    <string name="pref_skip_silence_on">Omitir partes con silencio en el flujo de audio</string>
-    <string name="pref_skip_silence">Omitir silencio</string>
     <string name="pref_auto_pip_off">No cambiar automáticamente a modo imagen en imagen</string>
     <string name="pref_auto_pip_on">Cambiar a modo imagen en imagen al salir de la aplicación</string>
     <string name="pref_auto_pip">Auto imagen en imagen</string>

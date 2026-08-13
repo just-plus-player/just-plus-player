@@ -18,7 +18,6 @@
     <string name="pref_framerate_matching_off">Nu modificați rata de reîmprospătare a ecranului</string>
     <string name="pref_auto_pip">Imagine în imagine automată</string>
     <string name="pref_auto_pip_on">Comutați la PiP când părăsiți aplicația</string>
-    <string name="pref_skip_silence_off">Redă conținutul așa cum este</string>
     <string name="shortcut_videos">Videoclipuri</string>
     <string name="pref_auto_pip_off">Nu comutați automat la PiP</string>
     <string name="pref_repeat_toggle">Repetați comutatorul</string>
@@ -33,11 +32,9 @@
     <string name="pref_decoder_priority_prefer_app">Prefer decodorele de aplicații</string>
     <string name="pref_decoder_priority_only_device">Numai decodoare de dispozitiv</string>
     <string name="pref_shortcuts_header">Comenzi rapide</string>
-    <string name="pref_skip_silence">Sari peste tăcere</string>
     <string name="button_crop">Redimensiona</string>
     <string name="pref_tunneling">Redare tunelizată</string>
     <string name="button_rotate">Roti</string>
-    <string name="pref_skip_silence_on">Săriți părțile cu tăcere pe fluxul audio</string>
     <string name="button_open">Deschide</string>
     <string name="pref_tunneling_summary">Tunelarea oferă suport mai bun pentru conținutul 4K/HDR, dar este posibil să nu funcționeze pe toate dispozitivele</string>
     <string name="pref_map_dv7">Dolby Vision profil 7 rezervă</string>

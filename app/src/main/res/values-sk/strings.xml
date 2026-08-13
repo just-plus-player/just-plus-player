@@ -22,7 +22,6 @@
     <string name="pref_subtitle_header">Titulky</string>
     <string name="pref_tunneling">Tunelové prehrávanie</string>
     <string name="pref_auto_pip">Automatický režim obrazu v obraze</string>
-    <string name="pref_skip_silence">Preskočiť ticho</string>
     <string name="pref_repeat_toggle">Prepínač opakovania</string>
     <string name="pref_file_access">Prístup k súborom</string>
     <string name="pref_dangerous_header">Nebezpečné ⚠️</string>
@@ -36,7 +35,6 @@
     <string name="pref_decoder_priority_only_device">Len dekodéry zariadenia</string>
     <string name="pref_language_audio">Predvolená zvuková stopa</string>
     <string name="pref_framerate_matching">Automatické prispôsobenie snímkovej frekvencie</string>
-    <string name="pref_skip_silence_off">Prehrať obsah tak, ako je</string>
     <string name="mediastore_empty">Nenašli sa žiadne video súbory</string>
     <string name="pref_decoder_priority_prefer_device">Preferovať dekodéry zariadenia (predvolené)</string>
     <string name="pref_subtitle_style_embedded_on">Použiť vložené štýly titulkov</string>
@@ -47,7 +45,6 @@
     <string name="pref_auto_pip_off">Neprepínať automaticky na režim obrazu v obraze</string>
     <string name="pref_subtitle_style_embedded_off">Nepoužívať vložené štýly titulkov</string>
     <string name="pref_auto_pip_on">Prepnúť do režimu obrazu v obraze pri opustení aplikácie</string>
-    <string name="pref_skip_silence_on">Preskakovať časti s tichom vo zvukovej stope</string>
     <string name="pref_framerate_matching_on">Prepínať obnovovaciu frekvenciu displeja podľa snímkovej frekvencie videa</string>
     <string name="pref_map_dv7_on">Prehrávať obsah s Dolby Vision 7 profilom na HDR displejoch</string>
     <string name="pref_map_dv7_off">Prehrávať UHD Blu-ray obsah obsahujúci Dolby Vision tak, ako je</string>

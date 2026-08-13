@@ -24,13 +24,10 @@
     <string name="pref_auto_pip">Automaatne pilt-pildis</string>
     <string name="pref_auto_pip_on">Rakendusest väljumisel lülita pilt-pildis vaade automaatselt sisse</string>
     <string name="pref_auto_pip_off">Ära lülita pilt-pildis vaadet automaatselt sisse</string>
-    <string name="pref_skip_silence">Jäta vaikus vahele</string>
     <string name="request_scope">Selleks, et rakendus saaks automaatselt välisest failist subtiitreid laadida ja kasutada kaustast järgmise faili automaatse esitamise võimalust, palun anna rakendusele %s ligipääs oma videote ülakaustale (nt. Movies).</string>
     <string name="pref_general_header">Üldised seadistused</string>
-    <string name="pref_skip_silence_on">Jäta vahele lõigud, kus helivoos on vaikus</string>
     <string name="pref_tunneling">Tunneldatud taasesitus</string>
     <string name="pref_tunneling_summary">Tunneldamine tagab parema 4K/HDR sisu toe, kuid ei pruugi toimida kõikides nutiseadmetes</string>
-    <string name="pref_skip_silence_off">Esita sisu sellisena nagu ta on loodud</string>
     <string name="pref_repeat_toggle">Lülita kordus sisse/välja</string>
     <string name="pref_repeat_toggle_summary">Lisavalik, mis võimaldab videot lõputult korrata (eeldab rakenduse taaskäivitamist)</string>
     <string name="pref_map_dv7">Varuvariant Dolby Visioni 7. profiili jaoks</string>

@@ -6868,10 +6868,6 @@ public class PlayerActivity extends Activity {
                 .build();
         player.setAudioAttributes(audioAttributes, true);
         applyVolumeMode();
-
-        if (mPrefs.skipSilence) {
-            player.setSkipSilenceEnabled(true);
-        }
         applySleepAtEndOfItem();
 
         youTubeOverlay.player(player);
@@ -8768,7 +8764,6 @@ public class PlayerActivity extends Activity {
                 .append(", resize ").append(mPrefs.resizeMode)
                 .append(mPrefs.tunneling ? ", tunneling" : "")
                 .append(mPrefs.frameRateMatching ? ", frame rate matching" : "")
-                .append(mPrefs.skipSilence ? ", skip silence" : "")
                 .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "");
         if (forceHevcForDolbyVision) {
             sb.append("\nRecovery: forced HEVC for Dolby Vision");

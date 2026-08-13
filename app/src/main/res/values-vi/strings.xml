@@ -19,9 +19,6 @@
     <string name="pref_auto_pip">Tự động hình trong hình</string>
     <string name="pref_auto_pip_on">Chuyển sang hình trong hình khi rời khỏi ứng dụng</string>
     <string name="pref_auto_pip_off">Không tự động chuyển sang hình trong hình</string>
-    <string name="pref_skip_silence">Bỏ qua khoảng trống của âm thanh</string>
-    <string name="pref_skip_silence_on">Bỏ qua các phần có khoảng trống trên luồng âm thanh</string>
-    <string name="pref_skip_silence_off">Phát nội dung như hiện tại</string>
     <string name="pref_repeat_toggle">Bật/tắt lập lại</string>
     <string name="pref_repeat_toggle_summary">Kiểm soát bổ sung để cho phép video lặp lại vô thời hạn (yêu cầu khởi động lại ứng dụng)</string>
     <string name="button_open">Mở</string>

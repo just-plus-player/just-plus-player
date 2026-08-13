@@ -52,7 +52,6 @@ class Prefs {
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
     private static final String PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES = "disableVolumeBrightnessGestures";
     private static final String PREF_KEY_TUNNELING = "tunneling";
-    private static final String PREF_KEY_SKIP_SILENCE = "skipSilence";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
     private static final String PREF_KEY_ALLOW_SYSTEM_FRAMERATE = "allowSystemFrameRate";
     private static final String PREF_KEY_REPEAT_TOGGLE = "repeatToggle";
@@ -136,7 +135,6 @@ class Prefs {
     public boolean disableVolumeBrightnessGestures = false;
 
     public boolean tunneling = false;
-    public boolean skipSilence = false;
     public boolean frameRateMatching = false;
     public boolean allowSystemFrameRate = true;
     public boolean repeatToggle = false;
@@ -259,7 +257,6 @@ class Prefs {
         disableVolumeBrightnessGestures = mSharedPreferences.getBoolean(
                 PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES, disableVolumeBrightnessGestures);
         tunneling = mSharedPreferences.getBoolean(PREF_KEY_TUNNELING, tunneling);
-        skipSilence = mSharedPreferences.getBoolean(PREF_KEY_SKIP_SILENCE, skipSilence);
         frameRateMatching = mSharedPreferences.getBoolean(PREF_KEY_FRAMERATE_MATCHING, frameRateMatching);
         allowSystemFrameRate = mSharedPreferences.getBoolean(PREF_KEY_ALLOW_SYSTEM_FRAMERATE, !Utils.isTvBox(mContext));
         repeatToggle = mSharedPreferences.getBoolean(PREF_KEY_REPEAT_TOGGLE, repeatToggle);

@@ -53,13 +53,6 @@
             app:title="@string/pref_system_volume" />
 
         <SwitchPreferenceCompat
-            app:key="skipSilence"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_skip_silence_on"
-            app:summaryOff="@string/pref_skip_silence_off"
-            app:title="@string/pref_skip_silence" />
-
-        <SwitchPreferenceCompat
             app:key="repeatToggle"
             app:defaultValue="false"
             app:summary="@string/pref_repeat_toggle_summary"

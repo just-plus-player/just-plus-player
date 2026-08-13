@@ -11,9 +11,6 @@
     <string name="delete_confirmation">Supprimer</string>
     <string name="delete_query">Supprimer ce fichier \?</string>
     <string name="pref_tunneling_summary">Le mode tunnel permet une meilleure prise en charge des contenus 4K/HDR, mais il peut ne pas fonctionner sur tous les appareils</string>
-    <string name="pref_skip_silence_off">Lire le contenu tel quel</string>
-    <string name="pref_skip_silence_on">Sauter les parties avec du silence dans le flux audio</string>
-    <string name="pref_skip_silence">Passer les silences</string>
     <string name="pref_auto_pip_on">Passer en image dans l’image en quittant l’appli</string>
     <string name="pref_auto_pip_off">Ne pas passer automatiquement en image dans l’image</string>
     <string name="pref_auto_pip">Image dans l’image automatique</string>

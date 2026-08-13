@@ -20,8 +20,6 @@
     <string name="pref_auto_pip">ស្វ័យរូបភាពក្នុងរូបភាព</string>
     <string name="pref_auto_pip_on">ប្ដូរទៅ PiP នៅពេលចេញពីកម្មវិធី</string>
     <string name="pref_auto_pip_off">ចូរកុំប្ដូរទៅ PiP ដោយស្វ័យប្រវត្តិ</string>
-    <string name="pref_skip_silence">រំលងភាពស្ងាត់</string>
-    <string name="pref_skip_silence_on">រំលងផ្នែកដែលស្ងប់ស្ងាត់លើខ្សែអូឌីយោ</string>
     <string name="shortcut_videos">វីដេអូ</string>
     <string name="button_open">បើក</string>
     <string name="button_crop">ប្ដូរទំហំ</string>
@@ -47,6 +45,5 @@
     <string name="pref_subtitle_style_bold">រចនាបថដិតក្រាស់</string>
     <string name="pref_subtitle_style_bold_on">ប្រើពុម្ពអក្សរដិតក្រាស់ជាធម្មតា</string>
     <string name="pref_subtitle_style_bold_off">ប្រើបុរេជម្រើសពុម្ពអក្សរធម្មតា</string>
-    <string name="pref_skip_silence_off">ចាក់មាតិកានៅជា</string>
     <string name="pref_repeat_toggle">ប៊ូតុងបិទបើកសាឡើងវិញ</string>
 </resources>

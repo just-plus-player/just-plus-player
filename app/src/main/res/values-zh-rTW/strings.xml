@@ -21,9 +21,6 @@
     <string name="pref_auto_pip">自動子母畫面</string>
     <string name="pref_auto_pip_on">離開時切換至子母畫面</string>
     <string name="pref_auto_pip_off">停用自動切換子母畫面</string>
-    <string name="pref_skip_silence">略過無聲</string>
-    <string name="pref_skip_silence_on">跳過音訊串流中的無聲段落</string>
-    <string name="pref_skip_silence_off">播放所有內容</string>
     <string name="pref_repeat_toggle">重複播放控制項</string>
     <string name="pref_repeat_toggle_summary">啟用額外的循環播放控制項 (須重新啟動應用程式)</string>
     <string name="pref_map_dv7">Dolby Vision profile 7 配置</string>

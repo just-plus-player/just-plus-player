@@ -10,7 +10,6 @@
     <string name="pref_title">ਸੈਟਿੰਗਾਂ</string>
     <string name="delete_query">ਕੀ ਇਸ ਫ਼ਾਈਲ ਨੂੰ ਮਿਟਾਉਣਾ ਹੈ\?</string>
     <string name="pref_framerate_matching">ਆਟੋ ਫਰੇਮ ਰੇਟ ਮੈਚਿੰਗ</string>
-    <string name="pref_skip_silence_off">ਕੰਟੈਂਟ ਨੂੰ ਜਿਵੇਂ ਹੈ, ਚਲਾਓ</string>
     <string name="pref_repeat_toggle">ਰਿਪੀਟ ਟੌਗਲ</string>
     <string name="pref_repeat_toggle_summary">ਅਣਮਿੱਥੇ ਸਮੇਂ ਲਈ ਵੀਡੀਓ ਲੂਪ ਦੀ ਆਗਿਆ ਦੇਣ ਲਈ ਵਾਧੂ ਨਿਯੰਤਰਣ (ਐਪ ਰੀਸਟਾਰਟ ਦੀ ਲੋੜ ਹੈ)</string>
     <string name="pref_map_dv7">ਡੌਲਬੀ ਵਿਜ਼ਨ ਪ੍ਰੋਫਾਈਲ 7 ਫਾਲਬੈਕ</string>
@@ -39,8 +38,6 @@
     <string name="pref_tunneling">ਟਨਲ ਕੀਤਾ ਪਲੇਬੈਕ</string>
     <string name="video_orientation_system">ਡਿਵਾਈਸ ਓਰੀਐਂਟੇਸ਼ਨ</string>
     <string name="request_scope">ਬਾਹਰੀ ਉਪਸਿਰਲੇਖਾਂ ਨੂੰ ਸਵੈਚਲਿਤ ਤੌਰ \'ਤੇ ਲੋਡ ਕਰਨ ਲਈ ਜਾਂ ਡਾਇਰੈਕਟਰੀ ਵਿੱਚ ਅਗਲੀ ਫਾਈਲ \'ਤੇ ਜਾਣ ਲਈ, %s ਨੂੰ ਤੁਹਾਡੇ ਵੀਡੀਓਜ਼ (ਉਦਾਹਰਨ ਲਈ ਮੂਵੀਜ਼) ਵਾਲੇ ਸਭ ਤੋਂ ਉੱਚੇ ਫੋਲਡਰ ਤੱਕ ਪਹੁੰਚ ਦਿਓ।</string>
-    <string name="pref_skip_silence">ਚੁੱਪ ਛੱਡੋ</string>
-    <string name="pref_skip_silence_on">ਆਡੀਓ ਸਟ੍ਰੀਮ \'ਤੇ ਚੁੱਪ ਵਾਲੇ ਹਿੱਸਿਆਂ ਨੂੰ ਛੱਡੋ</string>
     <string name="pref_general_header">ਆਮ</string>
     <string name="pref_framerate_matching_on">ਵੀਡੀਓ ਫਰੇਮ ਰੇਟ ਨਾਲ ਮੇਲ ਕਰਨ ਲਈ ਡਿਸਪਲੇ ਰਿਫ੍ਰੈਸ਼ ਰੇਟ ਨੂੰ ਬਦਲੋ</string>
     <string name="pref_framerate_matching_off">ਡਿਸਪਲੇ ਰਿਫਰੈਸ਼ ਰੇਟ ਨਾ ਬਦਲੋ</string>

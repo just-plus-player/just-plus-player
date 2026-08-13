@@ -53,9 +53,6 @@
     <string name="pref_auto_pip">Автоматичний режим PiP</string>
     <string name="pref_auto_pip_on">Перемикати автоматично на режим PiP при виході з додатку</string>
     <string name="pref_auto_pip_off">Не перемикатися автоматично на режим PiP</string>
-    <string name="pref_skip_silence">Пропускати тишу</string>
-    <string name="pref_skip_silence_on">Пропускати частини з тишею в аудіопотоці</string>
-    <string name="pref_skip_silence_off">Відтворювати контент як є</string>
     <string name="pref_repeat_toggle">Переключення повтору</string>
     <string name="pref_repeat_toggle_summary">Додатковий контроль, що дозволяє необмежений цикл відео (потрібно перезапустити додаток)</string>
     <string name="pref_disable_volume_brightness_gestures">Вимкнути жести гучності та яскравості</string>

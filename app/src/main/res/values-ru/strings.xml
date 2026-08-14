@@ -94,7 +94,8 @@
     <string name="pref_together_relay">Адрес реле</string>
     <string name="pref_together_relay_summary">WebSocket-реле, через которое работают комнаты. Все в комнате должны использовать одно и то же. Пустое поле — по умолчанию.</string>
     <string name="pref_together_relay_default">По умолчанию (%1$s)</string>
-    <string name="pref_together_relay_reset">Сбросить на реле по умолчанию</string>
+    <string name="pref_together_invite_page">Страница приглашения</string>
+    <string name="pref_together_invite_page_summary">Страница, на которую ведут отправленные вами приглашения. Пустое поле — по умолчанию.</string>
     <string name="pref_together_password">Пароль комнат по умолчанию</string>
     <string name="pref_together_password_summary">Комнаты, которые вы создаёте, будут требовать этот пароль. Оставьте пустым — войдёт любой, у кого есть код.</string>
     <string name="pref_together_password_none">Не задан — войдёт любой, у кого есть код</string>

@@ -22,10 +22,16 @@ import java.util.Locale;
  */
 public final class Room {
 
-    /** Where an invite sends whoever is given one: the web player's own page, because that is the one
-     *  address a room actually has. It opens the room in their client, and a launcher that hands the same
-     *  link on to this player is read back by {@link #inviteFrom(Uri)} — so one link serves everybody. */
-    private static final String INVITE_PAGE = "https://siaivo.isroot.in/lparty/";
+    /** Where an invite sends whoever is given one unless told otherwise: the web player's own page,
+     *  because that is the one address a room actually has. It opens the room in their client, and a
+     *  launcher that hands the same link on to this player is read back by {@link #inviteFrom(Uri)} — so
+     *  one link serves everybody. */
+    public static final String DEFAULT_INVITE_PAGE = "https://siaivo.isroot.in/lparty/";
+
+    /** Process-wide, like the relay's own address: one page at a time, and every invite written uses it.
+     *  Only the link handed out follows this — an invite arriving here is read by its {@code room}
+     *  parameter whatever page it came from, so changing this cannot cut anybody off. */
+    private static volatile String invitePage = DEFAULT_INVITE_PAGE;
 
     /** Channel prefix the Lampa plugin uses. Part of the wire contract, not a preference. */
     private static final String CHANNEL_PREFIX = "lparty-r-";
@@ -87,8 +93,34 @@ public final class Room {
      *  kept private is the link, not its parts. */
     public String invite() {
         final String value = password.isEmpty() ? code : code + ':' + password;
-        return INVITE_PAGE + "?" + PARAM_ROOM + "=" + Uri.encode(Base64.encodeToString(bytes(value),
+        return invitePage + "?" + PARAM_ROOM + "=" + Uri.encode(Base64.encodeToString(bytes(value),
                 Base64.NO_WRAP));
+    }
+
+    /**
+     * Write future invites to a different page — another instance of the web player, or any page that
+     * knows what to do with a {@code room} parameter. Anything that is not an http(s) address falls back
+     * to the default rather than quietly producing links nobody can open, exactly as the relay's own
+     * setting treats its own.
+     *
+     * @param url an {@code http://} or {@code https://} address, or empty for {@link #DEFAULT_INVITE_PAGE}
+     */
+    public static void setInvitePage(final String url) {
+        final String trimmed = url == null ? "" : url.trim();
+        if (trimmed.isEmpty()
+                || !(trimmed.startsWith("http://") || trimmed.startsWith("https://"))) {
+            invitePage = DEFAULT_INVITE_PAGE;
+            return;
+        }
+        // The room is appended as this address's query, so a query already on it is dropped rather than
+        // written twice — a link with two of them opens nowhere.
+        final int query = trimmed.indexOf('?');
+        invitePage = query == -1 ? trimmed : trimmed.substring(0, query);
+    }
+
+    /** The page invites are written to, for a settings screen to show. */
+    public static String invitePage() {
+        return invitePage;
     }
 
     /** UTF-8, or the platform's default on a JVM that somehow lacks it — which no Android has. */

@@ -1486,7 +1486,7 @@ public class PlayerActivity extends Activity {
         roomPill.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
         // The glyph is what makes it a room at a glance rather than a stray number; sized to the text so it
         // follows the font scale with it.
-        final Drawable roomGlyph = ContextCompat.getDrawable(this, R.drawable.ic_group_24dp);
+        final Drawable roomGlyph = ContextCompat.getDrawable(this, R.drawable.ic_together_24dp);
         if (roomGlyph != null) {
             final int glyphBox = Math.round(roomPill.getTextSize());
             roomGlyph.setBounds(0, 0, glyphBox, glyphBox);
@@ -5578,7 +5578,7 @@ public class PlayerActivity extends Activity {
         // Only for network media: a room syncs one shared URL, and there is nothing to share about a
         // file that lives on this device alone.
         if (togetherAvailable()) {
-            items.add(new MenuItem(R.drawable.ic_group_24dp, getString(R.string.together_title),
+            items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_title),
                     togetherSummary(), false, this::showTogetherMenu));
         }
         // Same two entry points the empty state offers (hence its strings), so opening something else is
@@ -5636,7 +5636,7 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(R.drawable.ic_close_24dp, getString(R.string.together_leave),
                     null, false, this::leaveRoom));
         } else {
-            items.add(new MenuItem(R.drawable.ic_group_24dp, getString(R.string.together_create),
+            items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_create),
                     null, false, this::createRoom));
             items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
                     null, false, this::findRooms));
@@ -5683,7 +5683,7 @@ public class PlayerActivity extends Activity {
                 // so a row is not blank, so it steps aside for a poster rather than doubling up with it.
                 items.add(new MenuItem(
                         locked ? R.drawable.ic_lock_24dp
-                                : poster.isEmpty() ? R.drawable.ic_group_24dp : 0,
+                                : poster.isEmpty() ? R.drawable.ic_together_24dp : 0,
                         poster,
                         title,
                         getString(R.string.together_room_summary,
@@ -6078,8 +6078,10 @@ public class PlayerActivity extends Activity {
 
     private void ensureTogether() {
         // Read here rather than once at startup: this is the last moment before a socket opens, so a
-        // relay changed in settings takes effect on the next room without the screen being rebuilt.
+        // relay changed in settings takes effect on the next room without the screen being rebuilt. The
+        // invite page goes with it — it is read when a link is written, which is later still.
         Relay.setBase(mPrefs.togetherRelay);
+        Room.setInvitePage(mPrefs.togetherInvitePage);
         if (together == null) {
             together = new TogetherManager(togetherHost());
         }

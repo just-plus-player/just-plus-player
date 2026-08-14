@@ -183,9 +183,11 @@
             app:dialogTitle="@string/pref_together_relay"
             app:dialogMessage="@string/pref_together_relay_summary" />
 
-        <Preference
-            app:key="togetherRelayReset"
-            app:title="@string/pref_together_relay_reset" />
+        <EditTextPreference
+            app:key="togetherInvitePage"
+            app:title="@string/pref_together_invite_page"
+            app:dialogTitle="@string/pref_together_invite_page"
+            app:dialogMessage="@string/pref_together_invite_page_summary" />
 
     </PreferenceCategory>
 

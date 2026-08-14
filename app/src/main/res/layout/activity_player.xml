@@ -177,7 +177,7 @@
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:contentDescription="@null"
-                android:src="@drawable/ic_group_24dp"
+                android:src="@drawable/ic_together_24dp"
                 android:tint="#E6FFFFFF" />
 
             <TextView

@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.brouken.player.together.AliasGenerator;
 import com.brouken.player.together.Relay;
+import com.brouken.player.together.Room;
 import com.brouken.player.update.Updater;
 import com.brouken.player.update.UpdateUi;
 
@@ -144,10 +145,10 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
-            // The field holds an override; empty means the built-in relay. The summary therefore
-            // shows what is actually in effect rather than echoing an empty field back.
+            // Both fields hold an override; empty means the built-in address, which is also how one is put
+            // back. The summary therefore shows what is actually in effect rather than echoing an empty
+            // field back — and it is where the default is read, so nothing else has to offer it.
             final androidx.preference.EditTextPreference preferenceRelay = findPreference("togetherRelay");
-            final Preference preferenceRelayReset = findPreference("togetherRelayReset");
             if (preferenceRelay != null) {
                 preferenceRelay.setSummaryProvider(preference -> {
                     final String value = preferenceRelay.getText();
@@ -156,11 +157,17 @@ public class SettingsActivity extends AppCompatActivity {
                             : value.trim();
                 });
             }
-            if (preferenceRelay != null && preferenceRelayReset != null) {
-                preferenceRelayReset.setSummary(Relay.DEFAULT_BASE);
-                preferenceRelayReset.setOnPreferenceClickListener(preference -> {
-                    preferenceRelay.setText("");
-                    return true;
+
+            // The page an invite link points at, on the same terms. Only links written here follow it — an
+            // invite that arrives is read by its room parameter whatever page sent it.
+            final androidx.preference.EditTextPreference preferenceInvite =
+                    findPreference("togetherInvitePage");
+            if (preferenceInvite != null) {
+                preferenceInvite.setSummaryProvider(preference -> {
+                    final String value = preferenceInvite.getText();
+                    return value == null || value.trim().isEmpty()
+                            ? getString(R.string.pref_together_relay_default, Room.DEFAULT_INVITE_PAGE)
+                            : value.trim();
                 });
             }
 

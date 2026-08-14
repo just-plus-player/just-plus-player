@@ -75,6 +75,7 @@ class Prefs {
     private static final String PREF_KEY_TOGETHER_PASSWORD = "togetherPassword";
     private static final String PREF_KEY_TOGETHER_PUBLIC = "togetherPublic";
     private static final String PREF_KEY_TOGETHER_RELAY = "togetherRelay";
+    private static final String PREF_KEY_TOGETHER_INVITE_PAGE = "togetherInvitePage";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
@@ -164,6 +165,8 @@ class Prefs {
     public boolean togetherPublic = false;
     /** Relay to hold rooms on. Empty means the built-in default, which is also the plugin's. */
     public String togetherRelay = "";
+    /** Page an invite link points at. Empty means the built-in default, which is the web player's own. */
+    public String togetherInvitePage = "";
     public boolean crashReporting = false;
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
@@ -280,6 +283,8 @@ class Prefs {
         togetherPassword = mSharedPreferences.getString(PREF_KEY_TOGETHER_PASSWORD, togetherPassword);
         togetherPublic = mSharedPreferences.getBoolean(PREF_KEY_TOGETHER_PUBLIC, togetherPublic);
         togetherRelay = mSharedPreferences.getString(PREF_KEY_TOGETHER_RELAY, togetherRelay);
+        togetherInvitePage =
+                mSharedPreferences.getString(PREF_KEY_TOGETHER_INVITE_PAGE, togetherInvitePage);
         // Generated on first use and persisted, so it stays the same name from one room to the next —
         // and so the settings screen has something to show rather than an empty field.
         togetherNick = mSharedPreferences.getString(PREF_KEY_TOGETHER_NICK, "");

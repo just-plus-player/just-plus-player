@@ -96,7 +96,8 @@
     <string name="pref_together_relay">Relay address</string>
     <string name="pref_together_relay_summary">WebSocket relay that carries rooms. Everyone in a room must use the same one. Leave empty for the default.</string>
     <string name="pref_together_relay_default">Default (%1$s)</string>
-    <string name="pref_together_relay_reset">Reset to the default relay</string>
+    <string name="pref_together_invite_page">Invite page</string>
+    <string name="pref_together_invite_page_summary">Page the invites you share point at. Leave empty for the default.</string>
     <string name="pref_together_password">Default room password</string>
     <string name="pref_together_password_summary">Rooms you create will need this password. Leave empty and anyone with the code can join.</string>
     <string name="pref_together_password_none">Not set — anyone with the code can join</string>

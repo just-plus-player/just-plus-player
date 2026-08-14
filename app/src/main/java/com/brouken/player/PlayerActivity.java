@@ -6078,8 +6078,10 @@ public class PlayerActivity extends Activity {
 
     private void ensureTogether() {
         // Read here rather than once at startup: this is the last moment before a socket opens, so a
-        // relay changed in settings takes effect on the next room without the screen being rebuilt.
+        // relay changed in settings takes effect on the next room without the screen being rebuilt. The
+        // invite page goes with it — it is read when a link is written, which is later still.
         Relay.setBase(mPrefs.togetherRelay);
+        Room.setInvitePage(mPrefs.togetherInvitePage);
         if (together == null) {
             together = new TogetherManager(togetherHost());
         }

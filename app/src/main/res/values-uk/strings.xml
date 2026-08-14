@@ -95,7 +95,8 @@
     <string name="pref_together_relay">Адреса реле</string>
     <string name="pref_together_relay_summary">WebSocket-реле, через яке працюють кімнати. Усі в кімнаті мусять використовувати те саме. Порожнє поле — типове.</string>
     <string name="pref_together_relay_default">Типове (%1$s)</string>
-    <string name="pref_together_relay_reset">Скинути на типове реле</string>
+    <string name="pref_together_invite_page">Сторінка запрошення</string>
+    <string name="pref_together_invite_page_summary">Сторінка, на яку ведуть надіслані вами запрошення. Порожнє поле — типова.</string>
     <string name="pref_together_password">Пароль кімнат за замовчуванням</string>
     <string name="pref_together_password_summary">Кімнати, які ви створюєте, вимагатимуть цей пароль. Залиште порожнім — увійде будь-хто з кодом.</string>
     <string name="pref_together_password_none">Не заданий — увійде будь-хто з кодом</string>

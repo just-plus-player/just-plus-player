@@ -82,6 +82,15 @@ public final class SyncEngine {
     /** Ceiling on how far past the room a jump may aim. Beyond this the line is not going to hold the
      *  pace anyway, and leading further would only overshoot into a second correction. */
     private static final long SEEK_LEAD_MAX_MS = 3_000;
+    /** How far apart two reports must be before the distance between them says anything about whether
+     *  their sender is moving. Under one heartbeat of theirs. */
+    private static final long REPORT_GAP_MS = 1_500;
+    /** How near our own duration a reported position counts as that sender's file running out rather
+     *  than a place in it. Their end-of-episode pause carries the duration to the millisecond. */
+    private static final long END_SLACK_MS = 1_000;
+    /** Longest a step of our own waits for the room to say it is on the same media. Past this the room is
+     *  plainly not following, and its positions are the best — the only — thing left to go on. */
+    private static final long MEDIA_CONFIRM_MS = 10_000;
 
     /** What a tick decided. The host applies it verbatim and does nothing else. */
     public static final class Action {
@@ -161,6 +170,25 @@ public final class SyncEngine {
      *  buffering usually starts, so the position that comes with it is the viewer's and has to be heard.
      *  Set every tick, unlike the reported stall above. */
     private boolean buffering;
+    /** Whether our own media has run out. Nothing about that is a decision by the viewer, so while it
+     *  lasts we follow the room and say nothing at all — see {@link #setEnded}. */
+    private boolean ended;
+    /** Whether we are still opening media the room has just changed to, with nothing played yet — see
+     *  {@link #mediaChanged}. */
+    private boolean arriving;
+    /** How long our own media lasts, or 0 when that is not known — a live stream, or a player still
+     *  loading. Only used to recognise a report of a position we have no media for. */
+    private long durationMs;
+
+    // The last report accepted, to read the sender's own progress off two of them. See onFrame.
+    private String reportPid = "";
+    private long reportPosMs;
+    private long reportAt;
+    /** When that sender was first seen not moving, so the wait it opens is measured from then. */
+    private long stallSince;
+    /** Until when a position from the room means nothing to us, because we have stepped to media it has
+     *  not confirmed it is on — see {@link #mediaChanged}. Zero when there is nothing to wait for. */
+    private long unconfirmedUntil;
     private long lastHardSeekAt;
     /** What the last jump cost, from asking for it to the picture being back past where it asked for.
      *  Measured rather than assumed: a seek costs a segment fetch and a decode from the last keyframe on
@@ -194,6 +222,60 @@ public final class SyncEngine {
     /** Whether the player is refilling. Told on every tick, and only to hold the corrections back. */
     public void setBuffering(final boolean value) {
         buffering = value;
+    }
+
+    /**
+     * Whether our own media has run out. Told on every tick, and it silences us: playback stopping and
+     * the position freezing at the duration are the file ending, not the viewer pausing — but they are
+     * the same diff, so they went out as a real pause carrying the last frame's timecode. Everybody
+     * else stopped on it, including the peer that had just moved on to the next episode; and having
+     * spoken we became the room's reference, after which the owner's heartbeats were refused and only
+     * somebody pressing a button could unstick us.
+     *
+     * <p>Said nothing, the room plays on and the media change we are waiting for arrives as usual.
+     */
+    public void setEnded(final boolean value) {
+        ended = value;
+    }
+
+    /** How long our own media lasts, or 0 while that is not known. Told on every tick. */
+    public void setDuration(final long value) {
+        durationMs = value > 0 ? value : 0;
+    }
+
+    /**
+     * The room is watching other media now, so forget where it was: that position belongs to the file
+     * it has left, and nothing about the new one is known until somebody reports from inside it.
+     *
+     * <p>Kept on, the old timecode was handed to the player opening the new episode, which came up past
+     * its own end — a hundred percent of a film nobody was watching, with that position written down as
+     * where to resume it. And it was not merely reported: a settle silences what we say, not what we
+     * correct, so the drift correction hard-seeked the new episode back to where the old one had ended.
+     *
+     * <p>Forgotten rather than assumed to be zero, because whoever moved the room does not necessarily
+     * start at the beginning — an episode picked by hand resumes where that viewer left it — and the
+     * first heartbeat from the new file says where everybody actually is.
+     *
+     * @param confirmed whether the room is known to be on this media — true when the room is what moved
+     *                  us, false when our own playlist stepped ahead of the room's word for it, in which
+     *                  case positions are ignored until that word arrives (see {@link #mediaConfirmed})
+     *                  or the wait runs out
+     */
+    public void mediaChanged(final boolean confirmed, final long now) {
+        targetKnown = false;
+        landedOnMs = Long.MIN_VALUE;
+        arriving = true;
+        stallSince = 0;
+        reportPid = "";
+        unconfirmedUntil = confirmed ? 0 : now + MEDIA_CONFIRM_MS;
+        // The cooldown belongs to the file we have left. Kept, a jump made at the end of the old episode
+        // spent the arrival in the new one waiting it out — which is the whole of the gap this closes.
+        lastHardSeekAt = 0;
+    }
+
+    /** The room has named the media we are on, so its positions mean something again. */
+    public void mediaConfirmed() {
+        unconfirmedUntil = 0;
     }
 
     /** The speed the viewer picked, as opposed to the nudged one currently on the player. Anything
@@ -280,14 +362,21 @@ public final class SyncEngine {
         //    put there, or playback is not where simply letting it run would have left it.
         final long expected = lastPosMs + (lastPlay ? Math.round((now - lastAt) * lastSpeed) : 0);
         final boolean speedChanged = Math.abs(speed - lastSpeed) > SPEED_EPSILON;
-        final boolean userAction = speedChanged || play != lastPlay
-                || Math.abs(posMs - expected) > LOCAL_ACTION_MS;
+        final boolean userAction = !ended && (speedChanged || play != lastPlay
+                || Math.abs(posMs - expected) > LOCAL_ACTION_MS);
 
         if (speedChanged) {
             userSpeed = speed;
         }
 
         final boolean settling = now < settleUntil;
+        // Read once, and before anything is said: it decides both what to do and whether to speak. While
+        // the room holds for somebody, our own playback is stopped where it stands — and a heartbeat from
+        // there says "playing" (the held pause is deliberately never put on the wire) at a position that
+        // does not move, which is exactly what the reading in onFrame calls a stall. Two of our own players
+        // waiting for a third therefore accused each other of stalling and traded fifteen-second waits for
+        // ever. Nothing is lost by the silence: a member that is waiting has a buffering frame out already.
+        final String waiting = waitingFor(now);
 
         if (userAction && !settling) {
             seq++;
@@ -313,7 +402,10 @@ public final class SyncEngine {
             if (targetKnown) {
                 intentPlay = targetPlay;
             }
-            if (!settling && now - lastSentAt >= HEARTBEAT_MS) {
+            // Nor a heartbeat once our media has run out: offered as the room's position, the last frame
+            // of a finished file drags whoever is following us onto the end credits. Nor while the room is
+            // held for somebody, for the reason given above.
+            if (!settling && !ended && waiting == null && now - lastSentAt >= HEARTBEAT_MS) {
                 add(action, LpartyCodec.transport(LpartyCodec.T_SYNC,
                         pid, seq, posMs, intentPlay, userSpeed, null, nick));
                 lastSentAt = now;
@@ -334,9 +426,15 @@ public final class SyncEngine {
             targetKnown = false;
         }
 
+        // Arrival is over the moment playback is actually running, whether or not it took a jump to get
+        // there: from then on a refilling player is a stall to be waited out, not an empty one to aim.
+        if (!buffering) {
+            arriving = false;
+        }
+
         // 3. Follow the room's intent, minus whoever we are all waiting for.
-        action.waitingFor = waitingFor(now);
-        boolean wantPlay = intentPlay && action.waitingFor == null;
+        action.waitingFor = waiting;
+        boolean wantPlay = intentPlay && waiting == null;
 
         // 4. Close whatever gap is left. Below the deadband nothing happens; a real gap is walked
         //    off by trimming the rate in proportion to it; a gap too wide to walk off is jumped.
@@ -347,9 +445,21 @@ public final class SyncEngine {
             // not while our own buffer is refilling (the seek restarts the fill, which stalls us
             // again, which widens the gap — the loop that keeps a slow line permanently out), and not
             // on top of the last one.
-            if (Math.abs(drift) > DRIFT_HARD_SEEK_MS
-                    && !buffering && !localBuffering && jumpAllowed(now)) {
+            // Once our media has run out, only backwards: being ahead of the room is worth seeking back
+            // into, so the last seconds are watched together and everybody reaches the end at once. The
+            // room being ahead of our own end is not — there is nothing there to play, and aiming at it
+            // would re-buffer the final frame every time the cooldown allowed.
+            // Arriving in media the room has just changed to is the one case a refilling player should
+            // still jump: nothing has played yet, so the buffer being filled at the beginning is worth
+            // nothing, and there is no fill to restart. Waiting for it cost the whole of it — a device
+            // that opens the new episode slower than the rest (a web player on a laptop is quicker at
+            // this than any phone) filled a buffer at zero, played from there, and only then jumped,
+            // paying for a second fill and showing the seam to everybody.
+            if (Math.abs(drift) > DRIFT_HARD_SEEK_MS && (!ended || drift > 0)
+                    && (arriving || (!buffering && !localBuffering)) && jumpAllowed(now)) {
                 lastHardSeekAt = now;
+                // One jump is what arriving is worth; from here on the guard above applies as usual.
+                arriving = false;
                 // Past where the room is, by what the last jump cost to make. A seek on a network
                 // stream is not free: the picture comes back a second or two later and the room has
                 // moved on by exactly that, so landing where the room *was* leaves the same gap again
@@ -495,19 +605,85 @@ public final class SyncEngine {
             return null;
         }
 
+        final long framePos = LpartyCodec.positionMs(frame);
+
+        // Whether the sender is actually moving, which its own two reports answer and it does not. A
+        // Lampa peer sends no buffering frame of any kind, and its heartbeat reports position and state
+        // without checking that playback has advanced — so one that is refilling goes on saying "playing"
+        // at the same position every two seconds. Extrapolated forward between those frames, that
+        // position sawtooths by the whole interval, and every reset of it read as the room jumping
+        // backwards: four seeks in seven seconds on the line this comment came from, alternating
+        // direction, while the room in truth sat still.
+        //
+        // Fed into the same wait a member's own buffering frame opens, so a stall inferred here stops the
+        // room exactly as one that was announced. Judged on heartbeats alone: an action carries a position
+        // its sender has just moved to on purpose.
+        //
+        // Against the room's own rate, not against the clock: at half speed a player advances by half the
+        // gap between two reports, which flat arithmetic reads as a stall — so one member choosing 0.5x
+        // made everybody else stop and wait for them, for ever.
+        if (!framePid.equals(reportPid)) {
+            // A different member to read from, so how long the last one had been standing still says
+            // nothing about this one. Left behind, it dated the next stall to a wait already spent, which
+            // reads as expired the moment it opens.
+            stallSince = 0;
+        } else if (!isAction && LpartyCodec.playing(frame)
+                && now - reportAt >= REPORT_GAP_MS) {
+            final float rate = LpartyCodec.hasSpeed(frame) ? LpartyCodec.speed(frame) : userSpeed;
+            final long moved = framePos - reportPosMs;
+            final long due = Math.round((now - reportAt) * Math.max(0.05f, rate));
+            if (moved >= 0 && moved * 2 < due) {
+                // Stamped when the sender first stopped moving, not on every report that follows: the
+                // fifteen-second cap in waitingFor is measured off this, and a timestamp refreshed by each
+                // frame would push the deadline out for ever — the one thing that cap is there to prevent.
+                if (stallSince == 0) {
+                    stallSince = now;
+                }
+                stalls.put(framePid, new Stall(LpartyCodec.nick(frame), stallSince));
+            } else {
+                stallSince = 0;
+                stalls.remove(framePid);
+            }
+        }
+        reportPid = framePid;
+        reportPosMs = framePos;
+        reportAt = now;
+
+        // A report at the end of our own media is that sender's file running out, not a place to follow
+        // it to. Their client announces the end of an episode as a pause carrying the duration, and
+        // obeyed literally that skipped whatever was left here — nineteen seconds of it on the run this
+        // comment came from — and parked us on the last frame. Left alone, our own copy plays out and the
+        // room's next media change is heard as usual. After the reading above, not before it: their file
+        // ending is exactly when a stall of theirs has to be let go of, or the room waits out the whole cap
+        // at every episode boundary.
+        if (durationMs > 0 && framePos >= durationMs - END_SLACK_MS) {
+            return null;
+        }
+
+        // Nothing about a position is worth hearing while we are on media the room has not caught up with:
+        // a position carries no word for which file it is in, so the reference member's own timeline — the
+        // end of the episode we have just left — was applied to the one we have just opened, and seeked it
+        // straight into its credits. Their media change, which is what closes this window, is the only
+        // thing that can say the two of us are back on one file.
+        if (unconfirmedUntil != 0) {
+            if (now < unconfirmedUntil) {
+                return null;
+            }
+            unconfirmedUntil = 0;
+        }
+
         // Whether the room went somewhere. Read off the position rather than taken from the frame's own
         // word for itself, for the same reason outgoing state is diffed rather than intercepted: a sender
         // may say nothing — their client throttles its seek announcements, and ours cannot announce one it
         // makes during a settle window — and a room that jumps in silence looks broken.
-        final long framePosMs = LpartyCodec.positionMs(frame);
-        final boolean jumped = targetKnown && Math.abs(framePosMs - target(now)) > JUMP_NOTICE_MS;
+        final boolean jumped = targetKnown && Math.abs(framePos - target(now)) > JUMP_NOTICE_MS;
 
         // Stamped here rather than in setTarget, which the tick also calls: what keeps the room
         // alive is hearing from somebody, not us restating our own position.
         lastFrameAt = now;
         // A sender whose protocol has no speed field says nothing about speed — keep ours rather than
         // hearing "1.0" in its silence.
-        setTarget(framePosMs, LpartyCodec.playing(frame),
+        setTarget(framePos, LpartyCodec.playing(frame),
                 LpartyCodec.hasSpeed(frame) ? LpartyCodec.speed(frame) : userSpeed, now);
         // Adopt the room's speed as our own. Without this the room agrees on a rate it never plays
         // at: the gap would reopen as fast as the ±5% nudge could close it, and everyone below the

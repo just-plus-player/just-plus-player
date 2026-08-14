@@ -55,6 +55,16 @@ public final class TogetherManager implements Relay.Listener {
 
         boolean buffering();
 
+        /** Whether our own media has run out, which is not the viewer pausing. */
+        boolean ended();
+
+        /** How long our own media lasts, or 0 when that is not known yet. */
+        long durationMs();
+
+        /** What is playing right now, or null when nothing is. Only compared with what the room says
+         *  it plays. */
+        String playingUri();
+
         /** How much playback is buffered ahead of where we are, which is what a hold waits for. */
         long bufferedAheadMs();
 
@@ -365,11 +375,37 @@ public final class TogetherManager implements Relay.Listener {
         this.session = session;
         relay.send(LpartyCodec.url(PID, session.optString("uri", null), cardTitle()));
         relay.send(LpartyCodec.session(PID, session));
-        // Our own player is about to restart at the beginning of the next episode. Followers are already
-        // silenced for this by applyMedia; we were not, so the owner's own jump back to zero was diffed as
-        // a seek and every episode change popped "<owner> jumped" on every screen.
+        // Confirmed by us saying so: what the room plays is the owner's word, and this is it.
+        stepped(true);
+    }
+
+    /**
+     * Our own playlist has stepped ahead of the room's word for what it plays — a member reaching the end
+     * of an episode before the owner announces the next one, which at a boundary is a coin toss.
+     *
+     * @param session what we are playing now, so a room that later falls to us is described by the episode
+     *                we are on rather than the one we left
+     */
+    public void mediaStepped(final JSONObject session) {
+        if (session != null) {
+            this.session = session;
+        }
+        stepped(false);
+    }
+
+    /**
+     * Our own playback has moved to other media. Only the owner announces that; everybody has to stop
+     * describing the old file, which is what this does.
+     *
+     * <p>The player is about to be somewhere else entirely. Without the reprime that move was diffed as
+     * a seek, and every episode change popped "somebody jumped" on every screen; without forgetting the
+     * room's position, it was corrected back to where the previous episode ended.
+     */
+    private void stepped(final boolean confirmed) {
+        final long now = SystemClock.elapsedRealtime();
+        engine.mediaChanged(confirmed, now);
         engine.reprime();
-        engine.settle(SystemClock.elapsedRealtime() + SyncEngine.SETTLE_MS);
+        engine.settle(now + SyncEngine.SETTLE_MS);
     }
 
     /**
@@ -483,6 +519,8 @@ public final class TogetherManager implements Relay.Listener {
         // What buffering does mean is that this is no moment to jump anywhere ourselves, which is the
         // engine's business and is told to it here.
         engine.setBuffering(host.buffering());
+        engine.setEnded(host.ended());
+        engine.setDuration(host.durationMs());
 
         final SyncEngine.Action action =
                 engine.tick(now, host.positionMs(), host.playWhenReady(), host.speed());
@@ -880,11 +918,26 @@ public final class TogetherManager implements Relay.Listener {
             }
             if (LpartyCodec.T_URL.equals(type)) {
                 // Their contract: what the room plays is the owner's to change, nobody else's.
-                if (framePid != null && framePid.equals(owner)) {
-                    mediaApplied = false;
-                    applyMedia(thinSession(LpartyCodec.stateUrl(frame),
-                            LpartyCodec.stateTitle(frame), null));
+                if (framePid == null || !framePid.equals(owner)) {
+                    return;
                 }
+                final JSONObject candidate = thinSession(LpartyCodec.stateUrl(frame),
+                        LpartyCodec.stateTitle(frame), null);
+                if (candidate == null) {
+                    return;
+                }
+                // Nothing to open when it names the episode we are already on. A member with the room's
+                // playlist steps through it on its own, and usually before this frame — which has a relay
+                // hop to make — so all the owner is doing here is agreeing: applyMedia takes the title and
+                // leaves the player alone, and the agreement is what lets us follow the room's positions
+                // again. Reopening would restart what is playing.
+                if (candidate.optString("uri", "").equals(host.playingUri())) {
+                    engine.mediaConfirmed();
+                } else {
+                    stepped(true);
+                    mediaApplied = false;
+                }
+                applyMedia(candidate);
                 return;
             }
             if (LpartyCodec.T_HOST.equals(type)) {

@@ -726,6 +726,9 @@ public class PlayerActivity extends Activity {
     TogetherManager together;
     /** True only while the room's own media change is being applied — see checkRoomMedia. */
     private boolean applyingRoomMedia;
+    /** Set for the one transition a skip off the end of an episode causes. Media3 calls that a seek,
+     *  because it is one, but nobody chose the episode — so a room follows it as an end of media. */
+    private boolean steppedBySkip;
     private TextView roomBadge;
 
     SkipManager skipManager;
@@ -2395,7 +2398,7 @@ public class PlayerActivity extends Activity {
             }
         }
         focusPlay = true;
-        checkRoomMedia(false);
+        checkRoomMedia(false, false);
     }
 
     @Override
@@ -3304,6 +3307,7 @@ public class PlayerActivity extends Activity {
         // episode, fall through to an exact seek so that trailing content still plays.
         if (segment.reachesEnd && player.hasNextMediaItem()) {
             clearSkipUndo(); // advancing an episode is not something Undo can take back
+            steppedBySkip = true;
             player.seekToNextMediaItem();
             return;
         }
@@ -5983,8 +5987,10 @@ public class PlayerActivity extends Activity {
      *
      * @param playlistStep true when this is the next item of the same playlist rather than
      *                     altogether different media
+     * @param auto         true when the player stepped by itself at the end of an item, rather than the
+     *                     viewer picking another episode
      */
-    private void checkRoomMedia(final boolean playlistStep) {
+    private void checkRoomMedia(final boolean playlistStep, final boolean auto) {
         // The room itself asked for this switch, so it cannot be a divergence from the room. Worth
         // saying out loud because the check runs from handleViewIntent, where the *previous* player
         // is still alive and still reporting the previous item — which made following the host look
@@ -6003,6 +6009,15 @@ public class PlayerActivity extends Activity {
                 playlistStep && together.isOwner() ? sessionDescription() : null;
         if (session != null) {
             together.changeMedia(session);
+            return;
+        }
+        // A guest whose playlist ran into the next episode has not walked away from anything: it was
+        // given the room's own playlist along with the media, so the owner is stepping to the very same
+        // episode and its word for it is one relay hop behind us. Leaving here dropped a room at nearly
+        // every episode boundary, and it was a race — whoever's player happened to reach the end first
+        // was the one to lose the room. Choosing another episode by hand is still walking away.
+        if (playlistStep && auto) {
+            together.mediaStepped(sessionDescription());
             return;
         }
         together.leave();
@@ -6113,9 +6128,12 @@ public class PlayerActivity extends Activity {
             roomBadge.setVisibility(View.GONE);
             return;
         }
+        // A stall read off a member's own position rather than announced by it comes with no name: the
+        // heartbeat it was read from carries none. Their client's word for an unnamed member does here too.
         roomBadge.setText(holding
                 ? getString(R.string.together_hold)
-                : getString(R.string.together_waiting, waiting));
+                : getString(R.string.together_waiting, waiting.isEmpty()
+                        ? getString(R.string.together_act_somebody) : waiting));
         roomBadge.setVisibility(View.VISIBLE);
     }
 
@@ -6192,12 +6210,12 @@ public class PlayerActivity extends Activity {
 
             @Override
             public boolean playWhenReady() {
-                // A film that has ended is not playing, whatever playWhenReady still says. Media3 leaves
-                // the flag set and the position frozen at the duration, so the diff kept finding playback
-                // further behind where it "should" be with every tick and broadcast that as a seek — three
-                // ticks in, and then every 750 ms for ever, dragging the whole room to the end credits and
-                // popping a notice on every device as it went. Reported as stopped, the room simply pauses
-                // with us at the end, once.
+                // A film that has ended is not playing, whatever playWhenReady still says: Media3 leaves
+                // the flag set and the position frozen at the duration. What that used to be broadcast as
+                // — a seek to the end credits, every 750 ms, or a pause that stopped the whole room — is
+                // now nobody's business but ours, because ended() below silences the diff outright. This
+                // stays because it is true: the room's intent is followed from here, and a film that has
+                // run out is not this device's vote to keep playing.
                 return player != null && player.getPlayWhenReady()
                         && player.getPlaybackState() != Player.STATE_ENDED;
             }
@@ -6210,6 +6228,28 @@ public class PlayerActivity extends Activity {
             @Override
             public boolean buffering() {
                 return player != null && player.getPlaybackState() == Player.STATE_BUFFERING;
+            }
+
+            @Override
+            public boolean ended() {
+                // haveMedia is already covered by ready(), without which a prepare with nothing to play
+                // reports this state at once.
+                return player != null && player.getPlaybackState() == Player.STATE_ENDED;
+            }
+
+            @Override
+            public long durationMs() {
+                if (player == null) {
+                    return 0;
+                }
+                final long duration = player.getDuration();
+                return duration == C.TIME_UNSET ? 0 : duration;
+            }
+
+            @Override
+            public String playingUri() {
+                final Uri uri = currentPlayingUri();
+                return uri == null ? null : uri.toString();
             }
 
             @Override
@@ -6636,6 +6676,9 @@ public class PlayerActivity extends Activity {
     public void initializePlayer() {
         boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null && !mPrefs.suppressResume;
+        // Only the transition it was set for may read it. A skip that never produced one would otherwise
+        // leave it behind, and the next episode the viewer picked by hand would pass for an automatic step.
+        steppedBySkip = false;
         if (skipMediaAfterFatalError) {
             skipMediaAfterFatalError = false;
             haveMedia = false;
@@ -7364,7 +7407,9 @@ public class PlayerActivity extends Activity {
             cancelSegmentFinder();
             setupSkipSource();
             // The next episode of the same playlist — the one case the room can follow.
-            checkRoomMedia(true);
+            final boolean stepped = steppedBySkip;
+            steppedBySkip = false;
+            checkRoomMedia(true, stepped || reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO);
         }
 
         @Override

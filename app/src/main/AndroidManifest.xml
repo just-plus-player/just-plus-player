@@ -57,8 +57,14 @@
             android:name="io.sentry.auto-init"
             android:value="false" />
 
+        <!-- autoRemoveFromRecents: a launcher (Lampa, MX-style api) starts every episode with its own data
+             URI, and leaving one finishes the activity to hand the position back. The emptied task would stay
+             in recents, and since the URI differs the system keeps it beside the next episode's task instead
+             of collapsing them — an episode-per-card pile, each card relaunching a stale link. Dropping the
+             task once its last activity is gone leaves exactly the one card of a player still running. -->
         <activity
             android:name=".PlayerActivity"
+            android:autoRemoveFromRecents="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|touchscreen"
             android:exported="true"
             android:launchMode="singleTask"

@@ -151,8 +151,28 @@ final class MatroskaMetadataReader {
             return value;
         }
 
+        /**
+         * An element ID as it is written on disk, marker bits included — that is how the spec quotes
+         * them (and how the constants above read). Sizes drop the marker; IDs must not, or nothing
+         * ever matches.
+         */
         long readId() throws IOException {
-            return readVInt();
+            final int first = readByte();
+            if (first == -1) throw new EOFException();
+            int mask = 0x80;
+            int length = 1;
+            while ((first & mask) == 0) {
+                mask >>= 1;
+                length++;
+                if (length > 4) throw new IOException("Invalid EBML id");
+            }
+            long value = first & 0xFFL;
+            for (int i = 1; i < length; i++) {
+                final int b = readByte();
+                if (b == -1) throw new EOFException();
+                value = (value << 8) | (b & 0xFFL);
+            }
+            return value;
         }
 
         long readSize() throws IOException {

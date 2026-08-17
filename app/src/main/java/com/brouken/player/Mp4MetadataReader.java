@@ -114,7 +114,8 @@ final class Mp4MetadataReader {
             }
             remaining -= actualBoxSize;
         }
-        return trackId != -1 ? new TrackMetadata(trackId, trackName, language, type) : null;
+        // No frame rate: Media3 already fills it in from MP4 (stts), so there is nothing to recover.
+        return trackId != -1 ? new TrackMetadata(trackId, trackName, language, type, 0f) : null;
     }
 
     private static TrackMetadata.Type handlerToType(String hdlrType) {

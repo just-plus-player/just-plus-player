@@ -426,6 +426,14 @@ public class PlayerActivity extends Activity {
     };
     public static boolean controllerVisible;
     public static boolean controllerVisibleFully;
+    // Whether the chrome that floats beside the controls (the stats panel, the room pill) belongs on screen.
+    // Neither of the two flags above says that. controllerVisible stays true through the hide fade and the
+    // two seconds of seek-bar-only state that follow it, so chrome keyed off it stands over a picture the
+    // bars have already left; controllerVisibleFully is false for the whole show animation too, so chrome
+    // keyed off that one comes back a beat after everything else. What is left is the two edges — the
+    // controls have just appeared, or they have just stopped being fully visible, which is the first frame
+    // of their fade — with the states in between keeping whatever the last edge decided.
+    private boolean controllerChromeVisible;
     public static Snackbar snackbar;
     private ExoPlaybackException errorToShow;
     public static int boostLevel = 0;
@@ -451,6 +459,8 @@ public class PlayerActivity extends Activity {
     private static final int REQUEST_SETTINGS = 100;
     private static final int REQUEST_SYSTEM_CAPTIONS = 200;
     public static final int CONTROLLER_TIMEOUT = 3500;
+    // Media3's own DURATION_FOR_HIDING_ANIMATION_MS — see fadeChrome, which has to match it.
+    private static final int CHROME_FADE_MS = 250;
     private static final String ACTION_MEDIA_CONTROL = "media_control";
     private static final String EXTRA_CONTROL_TYPE = "control_type";
     private static final int REQUEST_PLAY = 1;
@@ -1886,8 +1896,21 @@ public class PlayerActivity extends Activity {
         playerView.setControllerVisibilityListener(new PlayerView.ControllerVisibilityListener() {
             @Override
             public void onVisibilityChanged(int visibility) {
+                final boolean wasVisible = controllerVisible;
+                final boolean wasVisibleFully = controllerVisibleFully;
                 controllerVisible = visibility == View.VISIBLE;
                 controllerVisibleFully = playerView.isControllerFullyVisible();
+
+                // See controllerChromeVisible. Both animations report their first frame here as "visible but
+                // not fully visible", which on its own says nothing about the direction — what tells them
+                // apart is where they came from: the show starts from hidden, the hide from fully visible.
+                if (!controllerVisible) {
+                    controllerChromeVisible = false;
+                } else if (controllerVisibleFully || !wasVisible) {
+                    controllerChromeVisible = true;
+                } else if (wasVisibleFully) {
+                    controllerChromeVisible = false;
+                }
 
                 if (controllerVisible) {
                     updateMediaInfo();
@@ -4318,6 +4341,36 @@ public class PlayerActivity extends Activity {
         swipeToUnlock.setVisibility(View.GONE);
     }
 
+    /**
+     * Show or hide a view that floats on the coordinator beside the controls, fading it out the way the
+     * controls fade themselves. A sibling of the control view cannot inherit that fade (only its children
+     * can — the header panel is inside exo_controls_background for exactly this reason), and Media3 reports
+     * the controls hidden a good two seconds after the bars have gone: it fades the bars, leaves the seek
+     * bar alone for ANIMATION_INTERVAL_MS, and only then drops the whole thing to GONE. Chrome switched off
+     * at that point stands at full opacity over a picture the rest of the chrome has already left, then
+     * blinks out. So it is faded here instead, on Media3's own duration, from the frame the bars start
+     * fading — the visibility listener is called then too, with the controls still nominally visible but no
+     * longer <em>fully</em> visible, which is what {@code controllerVisibleFully} carries to the callers.
+     */
+    private static void fadeChrome(View view, boolean show) {
+        if (view == null) {
+            return;
+        }
+        if (show) {
+            view.animate().cancel();
+            view.setAlpha(1f);
+            view.setVisibility(View.VISIBLE);
+        } else if (view.getVisibility() == View.VISIBLE && view.getAlpha() == 1f) {
+            // Full alpha, not mere visibility, is the guard: this runs again on every stats tick and every
+            // room heartbeat while the controls go away, and a restarted fade would never finish.
+            view.animate().alpha(0f).setDuration(CHROME_FADE_MS).withEndAction(() -> {
+                if (view.getAlpha() == 0f) { // a re-show mid-fade put it back; do not undo that here
+                    view.setVisibility(View.GONE);
+                }
+            });
+        }
+    }
+
     private void startEndsAtUpdates() {
         if (playerView == null) {
             return;
@@ -4347,8 +4400,8 @@ public class PlayerActivity extends Activity {
         if (statsView == null) {
             return;
         }
-        if (!mPrefs.showStats || player == null || !controllerVisible || inPip) {
-            statsView.setVisibility(View.GONE);
+        if (!mPrefs.showStats || player == null || !controllerChromeVisible || inPip) {
+            fadeChrome(statsView, false);
             return;
         }
         final StringBuilder text = new StringBuilder();
@@ -4400,7 +4453,7 @@ public class PlayerActivity extends Activity {
             text.append('\n').append(getString(R.string.stats_dropped, counters.droppedBufferCount));
         }
         statsView.setText(text);
-        statsView.setVisibility(View.VISIBLE);
+        fadeChrome(statsView, true);
     }
 
     /** The video track's frame rate as its container states it, or 0 when it does not. */
@@ -6194,7 +6247,7 @@ public class PlayerActivity extends Activity {
         // the chrome, this is part of it. The room's name is deliberately absent — it defaults to the media's
         // own title, which the header prints in full two rows above.
         if (roomPill != null) {
-            final boolean showPill = active && controllerVisible && !inPip && !locked;
+            final boolean showPill = active && controllerChromeVisible && !inPip && !locked;
             if (showPill) {
                 // Three states, not two: a room we are talking to, one we are still getting into, and one
                 // that has gone quiet on us. Entering used to read as "reconnecting…" — nothing was
@@ -6213,7 +6266,7 @@ public class PlayerActivity extends Activity {
                 roomPill.setTextColor(tint);
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
             }
-            roomPill.setVisibility(showPill ? View.VISIBLE : View.GONE);
+            fadeChrome(roomPill, showPill);
         }
 
         // The float says only what the header cannot say in time: this pause is the room's, not yours. Bounded

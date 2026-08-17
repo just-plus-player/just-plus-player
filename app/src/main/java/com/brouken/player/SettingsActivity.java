@@ -171,6 +171,15 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            // Fire OS and some TV boxes ship no system captioning screen, and the preference
+            // launches its intent itself — an unhandled one takes the app down.
+            Preference preferenceCaptioning = findPreference("captioningPreferences");
+            if (preferenceCaptioning != null && (preferenceCaptioning.getIntent() == null
+                    || preferenceCaptioning.getIntent().resolveActivity(
+                            getContext().getPackageManager()) == null)) {
+                preferenceCaptioning.setVisible(false);
+            }
+
             Preference preferenceSystemVolume = findPreference("systemVolume");
             if (preferenceSystemVolume != null && Utils.isTvBox(getContext())) {
                 // TV remotes route volume to the panel or receiver over CEC, where only the system

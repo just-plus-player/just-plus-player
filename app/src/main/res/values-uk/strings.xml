@@ -183,6 +183,8 @@
     <string name="stats_network">Мережа: %1$s</string>
     <string name="stats_stream">Потік: %1$s</string>
     <string name="stats_overall">Загалом: %1$s</string>
+    <string name="stats_report_title">Звіт про відтворення</string>
+    <string name="stats_report_message">Надішліть ці подробиці відтворення, повідомляючи про проблему із зображенням чи звуком.</string>
     <string name="pref_show_stats_on">Буфер, декодери та пропущені кадри показуються з елементами керування</string>
     <string name="pref_show_stats_off">Подробиці відтворення приховані</string>
     <string name="volume_high_warning">Висока гучність може зашкодити слуху</string>

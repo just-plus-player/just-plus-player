@@ -4478,20 +4478,20 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * The same dump the error screen carries, to the clipboard — so a report about stuttering or a wrong
-     * decoder reads like one about a crash, and appendPlayerState stays the single source for both.
+     * The same dump the error screen carries, on the error screen itself — so a report about stuttering
+     * or a wrong decoder reads like one about a crash, appendPlayerState stays the single source for
+     * both, and the dump leaves a TV box by QR instead of a clipboard nothing there can paste from.
      */
-    private void copyPlayerState() {
+    private void showPlayerState() {
         final StringBuilder state = new StringBuilder();
         appendPlayerState(state);
         if (state.length() == 0) {
             return;
         }
-        final ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        if (clipboard != null) {
-            clipboard.setPrimaryClip(ClipData.newPlainText("Just+ Player playback", state.toString().trim()));
-            Toast.makeText(this, R.string.error_copied, Toast.LENGTH_SHORT).show();
-        }
+        final Format video = player == null ? null : player.getVideoFormat();
+        ErrorActivity.showReport(this, getString(R.string.stats_report_title),
+                getString(R.string.stats_report_message),
+                video == null ? null : Format.toLogString(video), state.toString().trim());
     }
 
     // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
@@ -5672,12 +5672,12 @@ public class PlayerActivity extends Activity {
                     formatSpeed(userSpeed()), false, this::showSpeedDialog));
             items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
                     sleepTimerSummary(), false, this::showSleepTimerMenu));
-            // Rides the stats panel: the details it copies are the ones on screen, and the row would be
+            // Rides the stats panel: the details it reports are the ones on screen, and the row would be
             // noise for everyone who has not asked for them. From the menu rather than a long-press on the
             // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
             if (mPrefs.showStats) {
-                items.add(new MenuItem(R.drawable.ic_content_copy_24dp, getString(R.string.error_copy),
-                        null, false, this::copyPlayerState));
+                items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
+                        getString(R.string.stats_report_title), null, false, this::showPlayerState));
             }
         }
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {

@@ -46,6 +46,8 @@ import java.util.TimeZone;
  */
 public class ErrorActivity extends AppCompatActivity {
 
+    /** Optional headline override; defaults to the playback-error title in the layout. */
+    public static final String EXTRA_TITLE = "title";
     /** Optional headline body override; defaults to the playback-error copy in the layout. */
     public static final String EXTRA_MESSAGE = "message";
     /** Short, human-facing text shown in the panel: error code + message. */
@@ -74,6 +76,13 @@ public class ErrorActivity extends AppCompatActivity {
         report = buildReport(Utils.stripUrlQuery(getIntent().getStringExtra(EXTRA_REPORT)));
 
         ((TextView) findViewById(R.id.errorDetails)).setText(summary != null ? summary : "");
+        final String title = getIntent().getStringExtra(EXTRA_TITLE);
+        if (title != null) {
+            ((TextView) findViewById(R.id.errorTitle)).setText(title);
+            // A title override means the screen was opened on purpose, so the error glyph would announce a
+            // failure that did not happen; the logo mark keeps the halo without the alarm.
+            ((ImageView) findViewById(R.id.errorIcon)).setImageResource(R.drawable.ic_logo_mark);
+        }
         final String message = getIntent().getStringExtra(EXTRA_MESSAGE);
         if (message != null) {
             ((TextView) findViewById(R.id.errorMessage)).setText(message);
@@ -86,6 +95,11 @@ public class ErrorActivity extends AppCompatActivity {
         qrImage = findViewById(R.id.qrImage);
 
         findViewById(R.id.btnCopy).setOnClickListener(v -> copy(report));
+        // Nothing on a TV box can empty the clipboard — no keyboard, no text app — so Copy is a dead end
+        // there and only takes a D-pad stop away from Upload, which is how a report actually leaves the box.
+        if (Utils.isTvBox(this)) {
+            findViewById(R.id.btnCopy).setVisibility(View.GONE);
+        }
         findViewById(R.id.btnShare).setOnClickListener(v -> share(report));
         btnUpload.setOnClickListener(v -> upload());
         uploadUrl.setOnClickListener(v -> copy(uploadUrl.getText().toString()));
@@ -126,6 +140,19 @@ public class ErrorActivity extends AppCompatActivity {
                 System.exit(10);
             }
         });
+    }
+
+    /**
+     * The same screen, opened on purpose rather than by a failure — so the playback dump gets the device
+     * header, the QR and the three actions instead of a clipboard a TV box has no way to empty.
+     */
+    public static void showReport(final Context context, final String title, final String message,
+                                  final String summary, final String report) {
+        context.startActivity(new Intent(context, ErrorActivity.class)
+                .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_MESSAGE, message)
+                .putExtra(EXTRA_SUMMARY, summary)
+                .putExtra(EXTRA_REPORT, report));
     }
 
     // The exception type as the "code" line, plus the deepest cause message — mirrors the playback path.

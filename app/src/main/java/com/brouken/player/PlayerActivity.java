@@ -47,10 +47,12 @@ import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.text.format.DateFormat;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
@@ -5759,6 +5761,16 @@ public class PlayerActivity extends Activity {
         listed.setText(R.string.together_public);
         listed.setChecked(mPrefs.togetherPublic);
 
+        // A listed room without a password is open to whoever reads the list. Said as a quiet line under
+        // the tick that put it there, not as an error after the fact: the accent here is already the brand
+        // coral, and a red field on top of it reads as alarm rather than as the one thing left to fill in.
+        final TextView note = new TextView(this);
+        note.setText(R.string.together_public_needs_password);
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        note.setTextColor(ContextCompat.getColor(this, R.color.error_ink_muted));
+        note.setPadding(0, 0, 0, Utils.dpToPx(4));
+        note.setVisibility(View.GONE);
+
         final LinearLayout fields = new LinearLayout(this);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
@@ -5766,11 +5778,12 @@ public class PlayerActivity extends Activity {
         fields.addView(name);
         fields.addView(password);
         fields.addView(listed);
+        fields.addView(note);
 
-        new AlertDialog.Builder(this)
+        final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.together_create_title, code))
                 .setView(fields)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                .setPositiveButton(android.R.string.ok, (d, which) -> {
                     mPrefs.updateTogetherPublic(listed.isChecked());
                     openRoom(code,
                             name.getText().toString().trim(),
@@ -5778,7 +5791,31 @@ public class PlayerActivity extends Activity {
                             session);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        // OK carries the refusal — greyed out while the pair is impossible, live from both the tick and
+        // the field. Wired on show: the buttons do not exist before that.
+        dialog.setOnShowListener(d -> {
+            final Runnable sync = () -> {
+                final boolean open = listed.isChecked() && password.getText().length() == 0;
+                note.setVisibility(open ? View.VISIBLE : View.GONE);
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(!open);
+            };
+            listed.setOnCheckedChangeListener((button, checked) -> sync.run());
+            password.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    sync.run();
+                }
+            });
+            sync.run();
+        });
+        dialog.show();
     }
 
     private void openRoom(final String code, final String name, final String password,

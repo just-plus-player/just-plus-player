@@ -165,13 +165,6 @@
             app:title="@string/pref_together_nick_random"
             app:summary="@string/pref_together_nick_random_summary" />
 
-        <SwitchPreferenceCompat
-            app:key="togetherPublic"
-            app:defaultValue="false"
-            app:summaryOff="@string/pref_together_public_off"
-            app:summaryOn="@string/pref_together_public_on"
-            app:title="@string/pref_together_public" />
-
         <EditTextPreference
             app:key="togetherPassword"
             app:title="@string/pref_together_password"

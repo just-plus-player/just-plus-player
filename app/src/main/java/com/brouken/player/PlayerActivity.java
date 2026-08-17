@@ -72,6 +72,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -5636,7 +5637,7 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(R.drawable.ic_close_24dp, getString(R.string.together_leave),
                     null, false, this::leaveRoom));
         } else {
-            items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_create),
+            items.add(new MenuItem(R.drawable.ic_add_24dp, getString(R.string.together_create),
                     null, false, this::createRoom));
             items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
                     null, false, this::findRooms));
@@ -5727,7 +5728,9 @@ public class PlayerActivity extends Activity {
     /**
      * Name the room and settle its password before opening it, which is the plugin's own order of
      * questions. The password is pre-filled from settings so the common case is one confirmation,
-     * while a one-off room can still be given its own — or none.
+     * while a one-off room can still be given its own — or none. Whether the room is listed is asked
+     * here too, and the answer is remembered as the next room's default: it is a decision about the
+     * room being made, not a standing preference worth hunting for in settings.
      */
     private void createRoom() {
         final JSONObject session = sessionDescription();
@@ -5752,20 +5755,28 @@ public class PlayerActivity extends Activity {
         password.setHint(getString(R.string.together_password_hint));
         password.setText(mPrefs.togetherPassword);
 
+        final CheckBox listed = new CheckBox(this);
+        listed.setText(R.string.together_public);
+        listed.setChecked(mPrefs.togetherPublic);
+
         final LinearLayout fields = new LinearLayout(this);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
         fields.setPadding(pad, 0, pad, 0);
         fields.addView(name);
         fields.addView(password);
+        fields.addView(listed);
 
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.together_create_title, code))
                 .setView(fields)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> openRoom(code,
-                        name.getText().toString().trim(),
-                        password.getText().toString(),
-                        session))
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    mPrefs.updateTogetherPublic(listed.isChecked());
+                    openRoom(code,
+                            name.getText().toString().trim(),
+                            password.getText().toString(),
+                            session);
+                })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }

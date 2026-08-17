@@ -419,6 +419,12 @@ class Prefs {
         sharedPreferencesEditor.apply();
     }
 
+    /** Asked when a room is created, remembered as the next one's default. */
+    public void updateTogetherPublic(final boolean value) {
+        this.togetherPublic = value;
+        mSharedPreferences.edit().putBoolean(PREF_KEY_TOGETHER_PUBLIC, value).apply();
+    }
+
     public void markFirstRun() {
         this.firstRun = false;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();

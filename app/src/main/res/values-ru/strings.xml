@@ -88,9 +88,6 @@
     <string name="pref_together_nick">Имя устройства</string>
     <string name="pref_together_nick_random">Сгенерировать новое имя</string>
     <string name="pref_together_nick_random_summary">Выбрать другое случайное имя для этого устройства</string>
-    <string name="pref_together_public">Показывать комнаты в списке</string>
-    <string name="pref_together_public_on">Комнаты, которые вы создаёте, появляются в списке, а их название, постер и число зрителей можно прочитать, даже не заходя</string>
-    <string name="pref_together_public_off">В комнаты, которые вы создаёте, можно войти только по коду</string>
     <string name="pref_together_relay">Адрес реле</string>
     <string name="pref_together_relay_summary">WebSocket-реле, через которое работают комнаты. Все в комнате должны использовать одно и то же. Пустое поле — по умолчанию.</string>
     <string name="pref_together_relay_default">По умолчанию (%1$s)</string>
@@ -117,6 +114,7 @@
     <string name="together_no_room">Комнаты с таким кодом нет — или нужен пароль</string>
     <string name="together_badge_named">%1$s [%2$s] · %3$d</string>
     <string name="together_create_title">Новая комната %1$s</string>
+    <string name="together_public">Показывать комнату в списке</string>
     <string name="together_room_default_name">Комната %1$s</string>
     <string name="together_badge">Комната %1$s · %2$d</string>
     <string name="together_offline">Комната %1$s · переподключение…</string>

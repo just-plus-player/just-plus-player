@@ -90,9 +90,6 @@
     <string name="pref_together_nick">Device name</string>
     <string name="pref_together_nick_random">Generate a new name</string>
     <string name="pref_together_nick_random_summary">Pick another random name for this device</string>
-    <string name="pref_together_public">List rooms publicly</string>
-    <string name="pref_together_public_on">Rooms you create appear in the room list, and their name, poster and viewer count can be read without joining</string>
-    <string name="pref_together_public_off">Rooms you create can only be entered with the code</string>
     <string name="pref_together_relay">Relay address</string>
     <string name="pref_together_relay_summary">WebSocket relay that carries rooms. Everyone in a room must use the same one. Leave empty for the default.</string>
     <string name="pref_together_relay_default">Default (%1$s)</string>
@@ -119,6 +116,7 @@
     <string name="together_no_room">No room with that code — or it needs a password</string>
     <string name="together_badge_named">%1$s [%2$s] · %3$d</string>
     <string name="together_create_title">New room %1$s</string>
+    <string name="together_public">List the room publicly</string>
     <string name="together_room_default_name">Room %1$s</string>
     <string name="together_badge">Room %1$s · %2$d</string>
     <string name="together_offline">Room %1$s · reconnecting…</string>

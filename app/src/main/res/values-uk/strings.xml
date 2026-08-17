@@ -89,9 +89,6 @@
     <string name="pref_together_nick">Ім’я пристрою</string>
     <string name="pref_together_nick_random">Згенерувати нове ім’я</string>
     <string name="pref_together_nick_random_summary">Вибрати інше випадкове ім’я для цього пристрою</string>
-    <string name="pref_together_public">Показувати кімнати у списку</string>
-    <string name="pref_together_public_on">Кімнати, які ви створюєте, з’являються у списку, а їхню назву, постер і кількість глядачів можна прочитати, навіть не заходячи</string>
-    <string name="pref_together_public_off">До кімнат, які ви створюєте, можна увійти лише за кодом</string>
     <string name="pref_together_relay">Адреса реле</string>
     <string name="pref_together_relay_summary">WebSocket-реле, через яке працюють кімнати. Усі в кімнаті мусять використовувати те саме. Порожнє поле — типове.</string>
     <string name="pref_together_relay_default">Типове (%1$s)</string>
@@ -118,6 +115,7 @@
     <string name="together_no_room">Кімнати з таким кодом немає — або потрібен пароль</string>
     <string name="together_badge_named">%1$s [%2$s] · %3$d</string>
     <string name="together_create_title">Нова кімната %1$s</string>
+    <string name="together_public">Показувати кімнату у списку</string>
     <string name="together_room_default_name">Кімната %1$s</string>
     <string name="together_badge">Кімната %1$s · %2$d</string>
     <string name="together_offline">Кімната %1$s · перепідключення…</string>

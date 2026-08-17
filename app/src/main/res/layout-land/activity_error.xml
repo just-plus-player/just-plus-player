@@ -33,6 +33,7 @@
                 android:background="@drawable/bg_error_halo">
 
                 <ImageView
+                    android:id="@+id/errorIcon"
                     android:layout_width="38dp"
                     android:layout_height="38dp"
                     android:layout_gravity="center"
@@ -41,6 +42,7 @@
             </FrameLayout>
 
             <TextView
+                android:id="@+id/errorTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"

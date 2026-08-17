@@ -9,8 +9,8 @@ import java.util.List;
 
 /**
  * Minimal EBML/Matroska parser that walks {@code Segment → Tracks → TrackEntry} to recover each
- * track's number, {@code Name}, {@code Language} and type. Reads a forward-only stream fed by the
- * player's own reads.
+ * track's number, {@code Name}, {@code Language}, type and frame rate ({@code DefaultDuration}).
+ * Reads a forward-only stream fed by the player's own reads.
  */
 final class MatroskaMetadataReader {
 
@@ -85,6 +85,7 @@ final class MatroskaMetadataReader {
         String name = null;
         String lang = "und";
         TrackMetadata.Type type = TrackMetadata.Type.UNKNOWN;
+        float frameRate = 0f;
 
         final long startPos = reader.totalBytesRead;
 
@@ -100,6 +101,11 @@ final class MatroskaMetadataReader {
                     name = reader.readString(s);
                 } else if (id == 0x22B59CL) { // Language
                     lang = reader.readString(s);
+                } else if (id == 0x23E383L) { // DefaultDuration, nanoseconds per frame
+                    final long durationNs = reader.readUInt(s);
+                    if (durationNs > 0) {
+                        frameRate = 1_000_000_000f / durationNs;
+                    }
                 } else if (id == 0x83L) { // TrackType
                     final int mkvType = (int) reader.readUInt(s);
                     switch (mkvType) {
@@ -115,7 +121,7 @@ final class MatroskaMetadataReader {
                 break;
             }
         }
-        return new TrackMetadata(number, name, lang, type);
+        return new TrackMetadata(number, name, lang, type, frameRate);
     }
 
     private static final class EbmlReader {
@@ -151,8 +157,28 @@ final class MatroskaMetadataReader {
             return value;
         }
 
+        /**
+         * An element ID as it is written on disk, marker bits included — that is how the spec quotes
+         * them (and how the constants above read). Sizes drop the marker; IDs must not, or nothing
+         * ever matches.
+         */
         long readId() throws IOException {
-            return readVInt();
+            final int first = readByte();
+            if (first == -1) throw new EOFException();
+            int mask = 0x80;
+            int length = 1;
+            while ((first & mask) == 0) {
+                mask >>= 1;
+                length++;
+                if (length > 4) throw new IOException("Invalid EBML id");
+            }
+            long value = first & 0xFFL;
+            for (int i = 1; i < length; i++) {
+                final int b = readByte();
+                if (b == -1) throw new EOFException();
+                value = (value << 8) | (b & 0xFFL);
+            }
+            return value;
         }
 
         long readSize() throws IOException {

@@ -1,5 +1,6 @@
 package com.brouken.player;
 
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PushbackInputStream;
@@ -8,32 +9,24 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Dispatches a container byte stream to the matching parser by signature and returns the list of
- * track names/languages found. Reads sequentially and never seeks — it is fed by the bytes the
- * player itself reads (see {@link TrackNameParsingDataSource}), so it only sees track metadata that
- * lives near the start of the stream (faststart MP4 with {@code moov} up front, Matroska headers).
+ * Dispatches a container byte stream to the matching parser by signature and returns the track
+ * metadata found — names, languages, and the frame rate where the container states one. Reads
+ * sequentially and never seeks — it is fed by the bytes the player itself reads (see
+ * {@link TrackNameParsingDataSource}), so it only sees metadata that lives near the start of the
+ * stream (faststart MP4 with {@code moov} up front, Matroska and AVI headers).
  */
 final class ContainerMetadataReader {
 
     private ContainerMetadataReader() {}
 
     static List<TrackMetadata> parse(InputStream inputStream) {
-        // 8 bytes is enough for both the MKV EBML id and the MP4 ftyp signature.
-        final byte[] header = new byte[8];
-        final int bytesRead;
+        // 12 bytes covers the longest signature: RIFF, the form size, then 'AVI '. Anything shorter
+        // than that is not media, so a stream that cannot supply them is nothing to parse.
+        final byte[] header = new byte[12];
+        final PushbackInputStream pushbackStream = new PushbackInputStream(inputStream, header.length);
         try {
-            bytesRead = inputStream.read(header);
-        } catch (IOException e) {
-            return Collections.emptyList();
-        }
-
-        if (bytesRead < 4) {
-            return Collections.emptyList();
-        }
-
-        final PushbackInputStream pushbackStream = new PushbackInputStream(inputStream, 8);
-        try {
-            pushbackStream.unread(header, 0, bytesRead);
+            new DataInputStream(inputStream).readFully(header);
+            pushbackStream.unread(header);
         } catch (IOException e) {
             return Collections.emptyList();
         }
@@ -45,8 +38,13 @@ final class ContainerMetadataReader {
                 return MatroskaMetadataReader.parse(pushbackStream);
             }
             // MP4: 4-byte box size, then 'ftyp'
-            if (bytesRead >= 8 && "ftyp".equals(new String(header, 4, 4, StandardCharsets.US_ASCII))) {
+            if ("ftyp".equals(new String(header, 4, 4, StandardCharsets.US_ASCII))) {
                 return Mp4MetadataReader.parse(pushbackStream);
+            }
+            // AVI: RIFF form 'AVI '
+            if ("RIFF".equals(new String(header, 0, 4, StandardCharsets.US_ASCII))
+                    && "AVI ".equals(new String(header, 8, 4, StandardCharsets.US_ASCII))) {
+                return AviMetadataReader.parse(pushbackStream);
             }
             return Collections.emptyList();
         } catch (Exception e) {

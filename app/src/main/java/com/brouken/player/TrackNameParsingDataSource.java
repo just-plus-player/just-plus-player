@@ -2,6 +2,7 @@ package com.brouken.player;
 
 import android.net.Uri;
 
+import androidx.media3.common.C;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.ParserException;
 import androidx.media3.datasource.DataSink;
@@ -43,6 +44,13 @@ final class TrackNameParsingDataSource implements DataSource {
     interface Listener {
         void onMetadataParsed(List<TrackMetadata> tracks);
         boolean isMetadataParsed();
+
+        /**
+         * Called (on a load thread) with the length the upstream reported for a whole media item, keyed
+         * by the URI that was requested (matches the MediaItem URI). Matroska and AVI state no bitrate
+         * anywhere, so length over duration is the only figure available for them.
+         */
+        void onContentLength(Uri originalUri, long length);
 
         /**
          * Called (on a load thread) when the real HTTP response for a media item reveals a streaming
@@ -95,6 +103,11 @@ final class TrackNameParsingDataSource implements DataSource {
         // extensionless resolver that returns HLS), report it so the player can re-prepare as HLS.
         if (dataSpec.position == 0 && dataSpec.uri != null) {
             reportResolvedMediaType(dataSpec.uri);
+            // An unbounded read from the start answers with the whole thing: the stats panel turns that
+            // into an average bitrate for the containers that state none (see Listener#onContentLength).
+            if (dataSpec.length == C.LENGTH_UNSET && length > 0) {
+                listener.onContentLength(dataSpec.uri, length);
+            }
             // A media request answered with a JSON body is a stream-resolver control response (the
             // Lampac "not ready" handshake), never playable media. The resolver sends these headers
             // immediately but then long-polls the body until a read timeout — so fail now, from the

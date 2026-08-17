@@ -175,6 +175,7 @@
     <string name="stats_dropped">Пропущенные кадры: %1$d</string>
     <string name="stats_network">Сеть: %1$s</string>
     <string name="stats_stream">Поток: %1$s</string>
+    <string name="stats_overall">Всего: %1$s</string>
     <string name="pref_show_stats_on">Буфер, декодеры и пропущенные кадры показываются с элементами управления</string>
     <string name="pref_show_stats_off">Подробности воспроизведения скрыты</string>
     <string name="volume_high_warning">Высокая громкость может повредить слух</string>

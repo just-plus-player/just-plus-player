@@ -204,6 +204,9 @@ public class PlayerActivity extends Activity {
     // whose request URL had no telling extension. Keyed by the requested URI (== MediaItem URI).
     // Written from a load thread, read on the player thread — hence concurrent.
     private final java.util.Map<String, String> resolvedMediaTypes = new java.util.concurrent.ConcurrentHashMap<>();
+    // Byte length of each media item as its data source reported it, keyed the same way. Feeds the
+    // stats panel's average bitrate for the containers that state no bitrate at all.
+    private final java.util.Map<String, Long> contentLengths = new java.util.concurrent.ConcurrentHashMap<>();
     private final TrackNameParsingDataSource.Listener trackNameListener = new TrackNameParsingDataSource.Listener() {
         @Override
         public void onMetadataParsed(java.util.List<TrackMetadata> tracks) {
@@ -214,6 +217,13 @@ public class PlayerActivity extends Activity {
         @Override
         public boolean isMetadataParsed() {
             return !containerTracks.isEmpty();
+        }
+
+        @Override
+        public void onContentLength(Uri originalUri, long length) {
+            if (originalUri != null) {
+                contentLengths.put(originalUri.toString(), length);
+            }
         }
 
         @Override
@@ -4354,14 +4364,26 @@ public class PlayerActivity extends Activity {
         final Format video = player.getVideoFormat();
         if (video != null) {
             text.append('\n').append(video.width).append('×').append(video.height);
-            if (video.frameRate != Format.NO_VALUE) {
-                text.append(String.format(Locale.US, " · %.2f fps", video.frameRate));
+            // Media3 fills the rate in from MP4 only; for MKV and AVI it reads the container's own figure
+            // for its timing but never publishes it, so the parser we already run picks it up instead.
+            final float frameRate = video.frameRate != Format.NO_VALUE
+                    ? video.frameRate : containerFrameRate();
+            if (frameRate > 0) {
+                text.append(String.format(Locale.US, " · %.2f fps", frameRate));
             }
             // Its own line rather than a third field: the panel has to stay narrower than the gap to the
             // centred transport buttons, and every line here is kept short enough to never wrap.
             if (video.bitrate != Format.NO_VALUE) {
                 text.append('\n').append(getString(R.string.stats_stream,
                         getString(R.string.quality_bitrate, video.bitrate / 1_000_000f)));
+            } else {
+                // Matroska and AVI carry no bitrate to read, so the whole file over its duration is all
+                // there is. Labelled apart from Stream: it counts audio and subtitles in too.
+                final float overall = overallBitrate();
+                if (overall > 0) {
+                    text.append('\n').append(getString(R.string.stats_overall,
+                            getString(R.string.quality_bitrate, overall)));
+                }
             }
         }
         // The mime says "hevc"; only the decoder name says whether that went to the vendor's hardware
@@ -4379,6 +4401,27 @@ public class PlayerActivity extends Activity {
         }
         statsView.setText(text);
         statsView.setVisibility(View.VISIBLE);
+    }
+
+    /** The video track's frame rate as its container states it, or 0 when it does not. */
+    private float containerFrameRate() {
+        for (TrackMetadata track : containerTracks) {
+            if (track.type == TrackMetadata.Type.VIDEO && track.frameRate > 0) {
+                return track.frameRate;
+            }
+        }
+        return 0f;
+    }
+
+    /** The whole file's average bitrate in Mbit/s, or 0 while either its length or duration is unknown. */
+    private float overallBitrate() {
+        final long durationMs = player.getDuration();
+        if (durationMs <= 0 || mPrefs.mediaUri == null) {
+            return 0f;
+        }
+        final Long length = contentLengths.get(mPrefs.mediaUri.toString());
+        // bytes * 8 bits / (ms / 1000) / 1e6 Mbit == bytes / (ms * 125)
+        return length == null ? 0f : length / (durationMs * 125f);
     }
 
     /**

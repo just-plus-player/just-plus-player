@@ -255,6 +255,16 @@ public class PlayerActivity extends Activity {
     // (stuck buffering, a broken next-episode URL, etc.) a friendly LOAD_TIMEOUT message is shown.
     // Such stalls often produce no PlaybackException, so onPlayerError alone would never catch them.
     private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
+    // Bytes seen when the watchdog was last armed, so its verdict is "nothing is arriving" rather than
+    // "this is taking a while". Filling the first buffer of a large torrent-backed file routinely needs
+    // several of these windows — the backend fetches pieces from peers at whatever rate it can, and the
+    // extractor additionally reads the container index from the far end of the file, which is a second
+    // fetch from cold. That load is slow, not stuck, and killing it mid-download was the failure users
+    // saw as a timeout on big files over a connection that never dropped.
+    private long loadWatchdogBytes;
+    // Progress below this over a whole window is not a load: 8 KB/s is far under anything playable, so it
+    // is a socket dribbling keepalives rather than a source that is still working. Wait only for real bytes.
+    private static final long LOAD_PROGRESS_MIN_BYTES = 256 * 1024;
     // Buffering that resolves this fast is not worth an indicator: the spinner would replace the play button
     // for a frame or two and read as a glitch. Recreating the audio track (restartPassthroughAudio) takes
     // about 35 ms, a track switch or a seek inside the buffer are the same order, and a real wait is always
@@ -2060,8 +2070,7 @@ public class PlayerActivity extends Activity {
             // Put back what onStop cancelled, and only that: a load that was still buffering when the user
             // left gets a full timeout from the moment they are looking at it again.
             if (player.getPlaybackState() == Player.STATE_BUFFERING) {
-                cancelLoadWatchdog();
-                playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
+                armLoadWatchdog();
             }
         }
         // The room stayed connected while we were away, so this only starts sampling again — and it
@@ -6930,17 +6939,24 @@ public class PlayerActivity extends Activity {
                 headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
             }
 
-            if (!headers.isEmpty() || userAgent != null) {
-                DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory()
-                        .setAllowCrossProtocolRedirects(true);
-                if (userAgent != null) {
-                    defaultHttpDataSourceFactory.setUserAgent(userAgent);
-                }
-                if (!headers.isEmpty()) {
-                    defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
-                }
-                upstreamFactory = new DefaultDataSource.Factory(this, defaultHttpDataSourceFactory);
+            // Always our own factory, headers or not, for the read timeout. Media3 defaults it to 8 s,
+            // which is a verdict a torrent-backed server cannot meet: it answers the range request at
+            // once and then goes quiet for as long as fetching those pieces from peers takes. Silence is
+            // not a broken stream there, but the socket timeout raised it as a source error, so the
+            // re-read budget was spent on a stream that was working — the "timeout" reported on large
+            // files over a connection that never dropped. Give a read the same patience the load watchdog
+            // gives the load: past that, the watchdog stops the player with a message that says what to
+            // do, instead of a retry storm ending in a broken-stream error.
+            final DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory()
+                    .setAllowCrossProtocolRedirects(true)
+                    .setReadTimeoutMs((int) VIDEO_LOAD_TIMEOUT_MS);
+            if (userAgent != null) {
+                defaultHttpDataSourceFactory.setUserAgent(userAgent);
             }
+            if (!headers.isEmpty()) {
+                defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
+            }
+            upstreamFactory = new DefaultDataSource.Factory(this, defaultHttpDataSourceFactory);
         }
 
         final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
@@ -7215,8 +7231,25 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    // Start a fresh window, remembering how much had been transferred when it opened.
+    private void armLoadWatchdog() {
+        if (playerView == null) {
+            return;
+        }
+        cancelLoadWatchdog();
+        loadWatchdogBytes = TrackNameParsingDataSource.bytesRead.get();
+        playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
+    }
+
     private void reportVideoLoadTimeout() {
         if (player == null) {
+            return;
+        }
+        // Still downloading — give it another window instead of stopping it. The user is not left
+        // guessing: the loading ring carries the transfer rate (loadingSpeedRunnable), so a slow fill
+        // reads as "alive, just slow", and Back still leaves whenever they have had enough.
+        if (TrackNameParsingDataSource.bytesRead.get() - loadWatchdogBytes >= LOAD_PROGRESS_MIN_BYTES) {
+            armLoadWatchdog();
             return;
         }
         // A silent stall (buffering never reached READY). Stop the loaders: they keep pulling bytes for as
@@ -7636,6 +7669,11 @@ public class PlayerActivity extends Activity {
                 // Loaded successfully — clear any pending resolver-handshake flag from a prior attempt.
                 resolverNotReadyUri = null;
                 decoderRetries = 0;
+                // Same for the re-read budget, which was per player build: a stream that recovered and
+                // played on has not spent anything. Three hiccups spread over a long film — a torrent
+                // backend refilling, a proxy dropping one read an hour — would otherwise add up until the
+                // fourth ended playback outright. Three in a row still gives up.
+                sourceRetries = 0;
                 // Playback starts here, so this is what stalledAtStart() measures progress against. A live
                 // stream is positioned well inside its window before it becomes ready, and a resumed file
                 // starts at its saved timecode — neither is progress.
@@ -7741,8 +7779,7 @@ public class PlayerActivity extends Activity {
                 // arrows, but only once the wait is worth showing (see LOADING_INDICATOR_DELAY_MS).
                 playerView.postDelayed(showLoadingRunnable, LOADING_INDICATOR_DELAY_MS);
                 // (Re)arm the watchdog: if this buffering never resolves to STATE_READY, it is a stuck load.
-                playerView.removeCallbacks(loadTimeoutRunnable);
-                playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
+                armLoadWatchdog();
             // Only real media can end. initializePlayer prepares unconditionally, and a prepare with no
             // media items reports STATE_ENDED at once, so the empty state — a launcher start with nothing
             // to resume, the fallback after a fatal error, a deleted file — would otherwise count as a

@@ -20,6 +20,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.SwitchPreferenceCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.brouken.player.together.AliasGenerator;
@@ -271,6 +272,21 @@ public class SettingsActivity extends AppCompatActivity {
                     });
                 }
             }
+        }
+
+        // A D-pad can only reach a row that is laid out, and when focus search fails
+        // LinearLayoutManager extends the layout by a third of a screen and looks again — which is
+        // not past a run of unfocusable rows: the group a switched-off "dependency" disables, or the
+        // warning text in "Dangerous". Lay out two screens extra so the next focusable row is there.
+        @Override
+        public RecyclerView.LayoutManager onCreateLayoutManager() {
+            return new LinearLayoutManager(getContext()) {
+                @Override
+                protected void calculateExtraLayoutSpace(@NonNull RecyclerView.State state,
+                                                         @NonNull int[] extraLayoutSpace) {
+                    extraLayoutSpace[0] = extraLayoutSpace[1] = getHeight() * 2;
+                }
+            };
         }
 
         @Override

@@ -156,6 +156,10 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 }
                 if (handleTouch) {
                     if (gestureOrientation == Orientation.HORIZONTAL) {
+                        // The drag itself only seeks when the previous seek has landed, so the last steps
+                        // of a fast swipe are usually skipped. Land on what the label promised.
+                        if (PlayerActivity.haveMedia && PlayerActivity.player != null)
+                            PlayerActivity.player.seekTo(seekStart + seekChange);
                         setCustomErrorMessage(null);
                     } else {
                         postDelayed(textClearRunnable, isHandledLongPress ? MESSAGE_TIMEOUT_LONG : MESSAGE_TIMEOUT_TOUCH);
@@ -235,6 +239,21 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         return prefs != null && prefs.disableVolumeBrightnessGestures;
     }
 
+    // One seek in flight at a time, the same gate the time bar scrubs behind. A swipe fires a seek every
+    // 8dp, and a backward one cannot be served from the buffer already read past — it reopens the source
+    // and refills — so unthrottled they pile up on the playback thread and the position lurches along
+    // behind the finger instead of following it. Forward seeks land in buffered data, which is why only
+    // rewinding looked broken. The release in onTouchEvent seeks to wherever the drag actually ended.
+    private void seekGesture(final long position) {
+        if (!(getContext() instanceof PlayerActivity))
+            return;
+        final PlayerActivity activity = (PlayerActivity) getContext();
+        if (!activity.frameRendered)
+            return;
+        activity.frameRendered = false;
+        PlayerActivity.player.seekTo(position);
+    }
+
     @Override
     public boolean onScroll(MotionEvent motionEvent, MotionEvent motionEvent1, float distanceX, float distanceY) {
         // No player check here: brightness and volume must stay reachable even when playback has died
@@ -288,18 +307,18 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                             PlayerActivity.player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
                             seekChange -= SEEK_STEP * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            seekGesture(position);
                         }
                     } else {
                         PlayerActivity.player.setSeekParameters(SeekParameters.NEXT_SYNC);
                         if (seekMax == C.TIME_UNSET) {
                             seekChange += SEEK_STEP * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            seekGesture(position);
                         } else if (seekStart + seekChange + SEEK_STEP < seekMax) {
                             seekChange += SEEK_STEP  * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            seekGesture(position);
                         }
                     }
                     String message = Utils.formatMilisSign(seekChange);

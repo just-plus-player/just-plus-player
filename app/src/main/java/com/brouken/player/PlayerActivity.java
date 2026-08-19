@@ -7497,6 +7497,10 @@ public class PlayerActivity extends Activity {
         @Override
         public void onRenderedFirstFrame() {
             resumeFrameRendered = true;
+            // Fires again after every seek's flush, which is the only signal a seek that never left
+            // STATE_READY gives. Without it the one-seek-at-a-time gate the scrubbing and swipe-seek
+            // paths share can latch shut mid-drag.
+            frameRendered = true;
         }
 
         @Override

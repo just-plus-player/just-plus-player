@@ -48,7 +48,8 @@ import okhttp3.ResponseBody;
  * <p>Sources that need the stream length (SkipDB, SkipMe.db send it in the request) are only asked
  * when it is known. A lookup with an unknown duration is the <b>early wave</b>: it queries the
  * duration-independent sources by id alone, which is what makes a lookup possible before playback is
- * ready and for an episode that has not started yet.
+ * ready and for an episode that has not started yet. Aniskip sits in between — it uses the length to
+ * pick the submission matching this file's cut, but answers without one, so it runs in both waves.
  *
  * <p>Runs on a background thread; the callback fires on that same worker thread (the caller marshals
  * to the UI thread). Results are cached in memory keyed by {@code imdb|tmdb|season|episode|duration};
@@ -84,6 +85,16 @@ public final class SegmentFinder {
     private static final int TT_SKIPME = SkipSegment.TIME_TRUST_DURATION_AWARE - 10;  // 190 (erratic shift)
     private static final int TT_ANIME = SkipSegment.TIME_TRUST_DURATION_AWARE + 50;   // 250 (Aniskip primary)
     private static final int TT_ABS = SkipSegment.TIME_TRUST_ABSOLUTE;                // 100
+
+    /** An {@code episodeLength} this close to the file length means the timings are for our cut. */
+    private static final double CUT_MATCH_SEC = 5;
+    /**
+     * Offset of the second Aniskip probe. Aniskip matches {@code episodeLength} within ±20 s and then
+     * picks from that window itself — not the nearest entry — so a submission of exactly our length can
+     * sit hidden behind a longer one. Probing below the file length keeps ours inside the window while
+     * dropping the longer cuts out of it.
+     */
+    private static final double CUT_PROBE_SHIFT_SEC = 18;
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
@@ -223,7 +234,7 @@ public final class SegmentFinder {
                 // Aniskip is the anime specialist (crowd-voted OP/ED with real ends); for anime files
                 // — usually the broadcast cut — its absolute timings match, so it is the primary time
                 // source (TT_ANIME). It returns empty fast for non-anime, so it simply drops out then.
-                steps.add(() -> aniskip(imdb, season, ep));
+                steps.add(() -> aniskip(imdb, season, ep, durationSec));
                 if (durationKnown) {
                     steps.add(() -> skipDb(imdb, season, ep, durationSec));
                     steps.add(() -> skipMe(imdb, tmdb, season, ep, durationSec));
@@ -578,8 +589,17 @@ public final class SegmentFinder {
         return new Scored(out, Math.min(1.0, maxSub / 5.0));
     }
 
-    /** Anime gate: arm (imdb→MAL for the season), then Aniskip (MAL-relative episode). */
-    private static Scored aniskip(String imdbId, int season, int episode) {
+    /**
+     * Anime gate: arm (imdb→MAL for the season), then Aniskip (MAL-relative episode).
+     *
+     * <p>An episode is typically submitted several times, once per release cut, and the cuts do not
+     * share timings — a rip with a longer cold open puts its opening two minutes later. Aniskip filters
+     * submissions by {@code episodeLength} but chooses within that window itself, so asking at the file
+     * length can still answer with a foreign cut; the timings are then plain wrong, not merely shifted.
+     * This picks, per category, the submission recorded closest to this file. {@code durationSec <= 0}
+     * (early wave) has nothing to match on and takes whatever the wildcard returns.
+     */
+    private static Scored aniskip(String imdbId, int season, int episode, double durationSec) {
         final List<SkipSegment> out = new ArrayList<>();
         if (episode < 1) {
             return new Scored(out, 0); // Aniskip is per-episode; nothing to ask without one
@@ -612,39 +632,95 @@ public final class SegmentFinder {
         if (malId < 0) {
             return new Scored(out, 0); // not anime (or no MAL for this season) → drop out
         }
-        final HttpUrl skipUrl = HttpUrl.parse(SegmentEndpoints.ANISKIP).newBuilder()
+        // Both probes at once. The lower one is what surfaces a cut shorter than this file, and issuing
+        // it only after the first has answered would put a second round-trip on the critical path — with
+        // arm already resolving ahead of them, that made Aniskip the slowest step of the profile by far.
+        // Asking unconditionally also stops a segment submitted only for a neighbouring cut from being
+        // missed whenever the first probe happens to answer for ours.
+        final Map<SkipSegment.Category, JSONObject> best = new LinkedHashMap<>();
+        if (durationSec > 0) {
+            final long mal = malId;
+            final JSONArray[] lower = new JSONArray[1];
+            final Thread lowerProbe = new Thread(
+                    () -> lower[0] = aniskipTimes(mal, episode, durationSec - CUT_PROBE_SHIFT_SEC),
+                    "SegmentSource-aniskip-lower");
+            lowerProbe.setDaemon(true);
+            lowerProbe.start();
+            final JSONArray atLength = aniskipTimes(mal, episode, durationSec);
+            try {
+                lowerProbe.join(); // bounded by the client's own call timeout
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // media changed — go with whatever landed
+            }
+            // At-length first: on an equal distance to the file it keeps the entry Aniskip itself chose.
+            collectCuts(best, atLength, durationSec);
+            collectCuts(best, lower[0], durationSec);
+        }
+        if (best.isEmpty()) {
+            // Nothing recorded near this length — 0 is the documented "any length" wildcard, and the
+            // early wave's only option.
+            collectCuts(best, aniskipTimes(malId, episode, 0), durationSec);
+        }
+
+        boolean anyOurs = false;
+        for (Map.Entry<SkipSegment.Category, JSONObject> entry : best.entrySet()) {
+            final JSONObject interval = entry.getValue().optJSONObject("interval");
+            final double end = interval.optDouble("endTime", Double.NaN);
+            // A submission from a longer cut marks a moment this file does not reach — not our episode.
+            if (durationSec > 0 && end > durationSec + CUT_MATCH_SEC) {
+                continue;
+            }
+            // Anime files are usually the broadcast cut, so Aniskip's absolute times are the primary time
+            // source for anime (TT_ANIME, above duration-aware) — but only for a submission recorded for
+            // this cut. A foreign cut's seconds must not outrank the sources that adapt to the stream.
+            final boolean ours = cutDelta(entry.getValue(), durationSec) <= CUT_MATCH_SEC;
+            anyOurs |= ours;
+            addSeg(out, interval.optDouble("startTime", Double.NaN), end, entry.getKey(),
+                    SkipSegment.CoordBase.ABSOLUTE, ours ? TT_ANIME : TT_ABS);
+        }
+        // Crowd-voted with real op/ed ends — a high signal for anime, halved for a foreign cut.
+        return new Scored(out, anyOurs ? 0.9 : 0.45);
+    }
+
+    /**
+     * Folds one skip-times response into {@code best}, keeping per category the submission recorded
+     * closest to {@code durationSec}. Null (404 / any failure) simply contributes nothing.
+     */
+    private static void collectCuts(Map<SkipSegment.Category, JSONObject> best, JSONArray results,
+                                    double durationSec) {
+        if (results == null) {
+            return;
+        }
+        for (int i = 0; i < results.length(); i++) {
+            final JSONObject r = results.optJSONObject(i);
+            if (r == null || r.optJSONObject("interval") == null) {
+                continue;
+            }
+            final SkipSegment.Category cat = aniskipCategory(r.optString("skipType", ""));
+            final JSONObject prev = best.get(cat);
+            if (prev == null || cutDelta(r, durationSec) < cutDelta(prev, durationSec)) {
+                best.put(cat, r);
+            }
+        }
+    }
+
+    /** |episodeLength − file length|; 0 when the length is unknown — no cut is then closer than another. */
+    private static double cutDelta(JSONObject result, double durationSec) {
+        return durationSec > 0 ? Math.abs(result.optDouble("episodeLength", 0) - durationSec) : 0;
+    }
+
+    /** {@code GET /v2/skip-times/{mal}/{ep}}; the results array, or null on 404 / any failure. */
+    private static JSONArray aniskipTimes(long malId, int episode, double episodeLength) {
+        final HttpUrl url = HttpUrl.parse(SegmentEndpoints.ANISKIP).newBuilder()
                 .addPathSegment(String.valueOf(malId))
                 .addPathSegment(String.valueOf(episode))
                 .addQueryParameter("types", "op")
                 .addQueryParameter("types", "ed")
                 .addQueryParameter("types", "recap")
-                .addQueryParameter("episodeLength", "0")
+                .addQueryParameter("episodeLength", String.valueOf(Math.max(0, episodeLength)))
                 .build();
-        final JSONObject root = getJson(skipUrl);
-        if (root == null) {
-            return new Scored(out, 0);
-        }
-        final JSONArray results = root.optJSONArray("results");
-        if (results == null) {
-            return new Scored(out, 0);
-        }
-        for (int i = 0; i < results.length(); i++) {
-            final JSONObject r = results.optJSONObject(i);
-            if (r == null) {
-                continue;
-            }
-            final JSONObject interval = r.optJSONObject("interval");
-            if (interval == null) {
-                continue;
-            }
-            final SkipSegment.Category cat = aniskipCategory(r.optString("skipType", ""));
-            // Anime files are usually the broadcast cut, so Aniskip's absolute times are the primary
-            // time source for anime (TT_ANIME, above duration-aware).
-            addSeg(out, interval.optDouble("startTime", Double.NaN),
-                    interval.optDouble("endTime", Double.NaN), cat, SkipSegment.CoordBase.ABSOLUTE, TT_ANIME);
-        }
-        // Crowd-voted with real op/ed ends — a high, fixed signal for anime.
-        return new Scored(out, 0.9);
+        final JSONObject root = getJson(url);
+        return root != null ? root.optJSONArray("results") : null;
     }
 
     private static SkipSegment.Category aniskipCategory(String skipType) {

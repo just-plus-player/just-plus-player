@@ -796,6 +796,10 @@ class Utils {
     // seconds on a network file, and the user may have left in the meantime (onStop clears it).
     static void playIfCan(final PlayerActivity activity) {
         if (activity.play) {
+            // Spending it, so mark it spent: the caller waiting for a display mode uses this flag to tell
+            // "playback has not started" from "it started without a mode change", and left set it would
+            // let a later display event start playback a second time, on its own.
+            activity.play = false;
             if (PlayerActivity.player != null)
                 PlayerActivity.player.play();
             if (activity.playerView != null)

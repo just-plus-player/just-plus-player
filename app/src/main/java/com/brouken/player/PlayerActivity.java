@@ -277,6 +277,8 @@ public class PlayerActivity extends Activity {
     // (stuck buffering, a broken next-episode URL, etc.) a friendly LOAD_TIMEOUT message is shown.
     // Such stalls often produce no PlaybackException, so onPlayerError alone would never catch them.
     private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
+    /** How long to wait for a requested display mode to report back before starting playback anyway. */
+    private static final long FRAME_RATE_SWITCH_TIMEOUT_MS = 3_000L;
     // Bytes seen when the watchdog was last armed, so its verdict is "nothing is arriving" rather than
     // "this is taking a while". Filling the first buffer of a large torrent-backed file routinely needs
     // several of these windows — the backend fetches pieces from peers at whatever rate it can, and the
@@ -2179,6 +2181,7 @@ public class PlayerActivity extends Activity {
         play = false;
         // The frame-rate switch registers this listener while waiting to auto-play; with play cleared behind
         // its back it would never unregister itself.
+        playerView.removeCallbacks(frameRateGiveUpRunnable);
         if (displayManager != null && displayListener != null) {
             displayManager.unregisterDisplayListener(displayListener);
         }
@@ -7263,6 +7266,24 @@ public class PlayerActivity extends Activity {
      * and the room's "carry on" then had to drag it back, which cost a second load of the very buffer the
      * hold had just filled.
      */
+    private final Runnable frameRateGiveUpRunnable = this::frameRateSettled;
+
+    /**
+     * Nothing more to wait for from the display: disarm the listener armed for a mode change and spend
+     * the play the loading player is holding. Every path that does not request a new mode ends here, the
+     * ones that give up early included — those used to leave the play pending for good.
+     */
+    private void frameRateSettled() {
+        playerView.removeCallbacks(frameRateGiveUpRunnable);
+        if (displayManager != null && displayListener != null) {
+            displayManager.unregisterDisplayListener(displayListener);
+        }
+        if (play) {
+            play = false;
+            playPending();
+        }
+    }
+
     private void playPending() {
         if (together != null && together.holding()) {
             return;
@@ -7870,11 +7891,7 @@ public class PlayerActivity extends Activity {
 
                                     @Override
                                     public void onDisplayChanged(int displayId) {
-                                        if (play) {
-                                            play = false;
-                                            displayManager.unregisterDisplayListener(this);
-                                            playPending();
-                                        }
+                                        frameRateSettled();
                                     }
                                 };
                             }
@@ -7892,14 +7909,15 @@ public class PlayerActivity extends Activity {
                             switched = Utils.switchFrameRate(PlayerActivity.this, currentMediaUri());
                         }
                     }
-                    if (!switched) {
-                        if (displayManager != null) {
-                            displayManager.unregisterDisplayListener(displayListener);
-                        }
-                        if (play) {
-                            play = false;
-                            playPending();
-                        }
+                    if (switched) {
+                        // A requested mode either comes back as onDisplayChanged or never comes back at
+                        // all: a panel can apply a refresh-rate-only change without reporting one, and a
+                        // request the system declines reports nothing. Without a floor the pending play is
+                        // never spent — on a phone whose display is pinned to 60 Hz the file just sits on
+                        // its first frame, paused, with no spinner and no error.
+                        playerView.postDelayed(frameRateGiveUpRunnable, FRAME_RATE_SWITCH_TIMEOUT_MS);
+                    } else {
+                        frameRateSettled();
                     }
 
                     if (mPrefs.speed <= 0.99f || mPrefs.speed >= 1.01f) {

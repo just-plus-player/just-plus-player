@@ -73,6 +73,13 @@
             app:title="@string/pref_disable_volume_brightness_gestures" />
 
         <SwitchPreferenceCompat
+            app:key="holdSpeed"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_hold_speed_on"
+            app:summaryOff="@string/pref_hold_speed_off"
+            app:title="@string/pref_hold_speed" />
+
+        <SwitchPreferenceCompat
             app:key="showStats"
             app:defaultValue="false"
             app:summaryOn="@string/pref_show_stats_on"

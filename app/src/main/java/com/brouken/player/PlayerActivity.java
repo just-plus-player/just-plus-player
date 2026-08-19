@@ -798,8 +798,10 @@ public class PlayerActivity extends Activity {
     private Drawable skipIconKeep;
     private Drawable skipIconBack;
     private GradientDrawable skipPillGroove;
-    // Top-center pill shown while hold-to-speed (2x) is active. Non-clickable so it never intercepts the hold.
+    // Top-center pill shown while hold-to-speed is active. Non-clickable so it never intercepts the hold.
     TextView speedBoostIndicator;
+    private Drawable speedBoostIconForward;
+    private Drawable speedBoostIconRewind;
     final Runnable skipPillHider = new Runnable() {
         @Override
         public void run() {
@@ -1443,10 +1445,10 @@ public class PlayerActivity extends Activity {
         buttonSkip.setVisibility(View.GONE);
         coordinatorLayout.addView(buttonSkip);
 
-        // Hold-to-speed (2x) indicator: the same rounded dark pill as the skip pill (fast-forward icon +
-        // label), floating top-centre. Non-clickable so it never intercepts the hold.
+        // Hold-to-speed indicator: the same rounded dark pill as the skip pill (rate + direction arrows),
+        // floating top-centre. Non-clickable so it never intercepts the hold.
         speedBoostIndicator = new TextView(this);
-        speedBoostIndicator.setText("2×");
+        speedBoostIndicator.setText("2.0×");
         speedBoostIndicator.setAllCaps(false);
         speedBoostIndicator.setTextColor(Color.WHITE);
         speedBoostIndicator.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
@@ -1456,14 +1458,16 @@ public class PlayerActivity extends Activity {
         speedBoostIndicator.setClickable(false);
         speedBoostIndicator.setFocusable(false);
 
-        final Drawable speedBoostIcon = ContextCompat.getDrawable(this, R.drawable.exo_icon_fastforward);
-        if (speedBoostIcon != null) {
-            final int speedBoostIconSize = Utils.dpToPx(18);
-            speedBoostIcon.setBounds(0, 0, speedBoostIconSize, speedBoostIconSize);
-            speedBoostIndicator.setCompoundDrawablesRelative(speedBoostIcon, null, null, null);
-            speedBoostIndicator.setCompoundDrawablePadding(Utils.dpToPx(6));
-            speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
-        }
+        speedBoostIconForward = ContextCompat.getDrawable(this, R.drawable.exo_icon_fastforward);
+        speedBoostIconRewind = ContextCompat.getDrawable(this, R.drawable.exo_icon_rewind);
+        final int speedBoostIconSize = Utils.dpToPx(18);
+        if (speedBoostIconForward != null)
+            speedBoostIconForward.setBounds(0, 0, speedBoostIconSize, speedBoostIconSize);
+        if (speedBoostIconRewind != null)
+            speedBoostIconRewind.setBounds(0, 0, speedBoostIconSize, speedBoostIconSize);
+        speedBoostIndicator.setCompoundDrawablesRelative(null, null, speedBoostIconForward, null);
+        speedBoostIndicator.setCompoundDrawablePadding(Utils.dpToPx(6));
+        speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
 
         final GradientDrawable speedBoostBackground = new GradientDrawable();
         speedBoostBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
@@ -9865,6 +9869,17 @@ public class PlayerActivity extends Activity {
         if (mode.ratio > 0)
             return Math.abs(mode.ratio - currentAspectRatio) < 0.001f;
         return currentAspectRatio == 0 && playerView.getResizeMode() == mode.resizeMode;
+    }
+
+    // The arrows sit on the side the picture is travelling: after the rate going forward, before it
+    // going back.
+    public void setSpeedBoostIndicator(float speed, boolean rewind) {
+        if (speedBoostIndicator == null)
+            return;
+        speedBoostIndicator.setText(String.format(Locale.US, "%.1f×", speed));
+        speedBoostIndicator.setCompoundDrawablesRelative(rewind ? speedBoostIconRewind : null, null,
+                rewind ? null : speedBoostIconForward, null);
+        setSpeedBoostIndicatorVisible(true);
     }
 
     public void setSpeedBoostIndicatorVisible(boolean visible) {

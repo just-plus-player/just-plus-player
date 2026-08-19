@@ -57,6 +57,9 @@
     <string name="pref_disable_volume_brightness_gestures">Отключить жесты громкости и яркости</string>
     <string name="pref_disable_volume_brightness_gestures_on">Свайпы вверх и вниз ничего не делают; перемотка, масштаб и кнопки громкости работают</string>
     <string name="pref_disable_volume_brightness_gestures_off">Проведите вверх или вниз, чтобы изменить яркость в левой части экрана и громкость в правой</string>
+    <string name="pref_hold_speed">Удержание для ускорения</string>
+    <string name="pref_hold_speed_on">Держите палец на видео для 2×, затем тяните вбок, чтобы менять скорость или перематывать назад</string>
+    <string name="pref_hold_speed_off">Удержание пальца на видео ничего не делает</string>
     <string name="pref_skip_header">Пропуск сегментов</string>
     <string name="pref_skip_enabled">Включено</string>
     <string name="pref_skip_enabled_on">Пропускать заставки и рекламные сегменты от запускающего приложения</string>

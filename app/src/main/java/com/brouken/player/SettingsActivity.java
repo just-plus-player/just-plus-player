@@ -192,6 +192,11 @@ public class SettingsActivity extends AppCompatActivity {
                 // A remote has no swipes to give up, so there is nothing here to turn off.
                 preferenceDisableGestures.setVisible(false);
             }
+            Preference preferenceHoldSpeed = findPreference("holdSpeed");
+            if (preferenceHoldSpeed != null && Utils.isTvBox(getContext())) {
+                // Same reason: there is no finger to hold on the picture.
+                preferenceHoldSpeed.setVisible(false);
+            }
             ListPreference listPreferenceFileAccess = findPreference("fileAccess");
             if (listPreferenceFileAccess != null) {
                 List<String> entries = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.file_access_entries)));

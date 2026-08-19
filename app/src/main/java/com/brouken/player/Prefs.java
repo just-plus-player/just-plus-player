@@ -69,6 +69,7 @@ class Prefs {
     private static final String PREF_KEY_SKIP_UNDO = "skipUndo";
     private static final String PREF_KEY_SKIP_HIDE_LOCKED = "skipHideWhenLocked";
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
+    private static final String PREF_KEY_TIME_REMAINING = "timeRemaining";
     private static final String PREF_KEY_SHOW_STATS = "showStats";
     private static final String PREF_KEY_SYSTEM_VOLUME = "systemVolume";
     private static final String PREF_KEY_TOGETHER_NICK = "togetherNick";
@@ -154,6 +155,8 @@ class Prefs {
     public boolean skipFetchOnline = true;
     public String skipUndo = SKIP_UNDO_ALL;
     public boolean showClock = false;
+    /** Bottom bar counts down what is left instead of showing the total duration. */
+    public boolean timeRemaining = false;
     public boolean showStats = false;
     public boolean systemVolume = true;
     /** How other people in a watch-together room see this device. Generated once, then editable. */
@@ -276,6 +279,7 @@ class Prefs {
         skipUndo = mSharedPreferences.getString(PREF_KEY_SKIP_UNDO, skipUndo);
         skipHideWhenLocked = mSharedPreferences.getBoolean(PREF_KEY_SKIP_HIDE_LOCKED, skipHideWhenLocked);
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
+        timeRemaining = mSharedPreferences.getBoolean(PREF_KEY_TIME_REMAINING, timeRemaining);
         showStats = mSharedPreferences.getBoolean(PREF_KEY_SHOW_STATS, showStats);
         // Forced on for TV boxes, where the remote routes volume to the panel or receiver over CEC and
         // only the system stream responds — the setting is hidden there too.

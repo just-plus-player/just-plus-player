@@ -95,6 +95,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
+import androidx.media3.common.util.Util;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
@@ -177,6 +178,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Date;
+import java.util.Formatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -1598,6 +1600,21 @@ public class PlayerActivity extends Activity {
         }
 
         controlView = playerView.findViewById(R.id.exo_controller);
+
+        // The right-hand slot of the bottom bar shows the total duration, or counts down what is left when
+        // the setting says so. PlayerControlView writes that TextView itself, so rewrite it after every
+        // progress tick — updateTimeline() ends with updateProgress(), so its own value never lingers.
+        final TextView durationView = playerView.findViewById(R.id.exo_duration);
+        final StringBuilder timeBuilder = new StringBuilder();
+        final Formatter timeFormatter = new Formatter(timeBuilder, Locale.getDefault());
+        controlView.setProgressUpdateListener((position, bufferedPosition) -> {
+            final long duration = player == null ? C.TIME_UNSET : player.getContentDuration();
+            if (duration == C.TIME_UNSET)
+                return;
+            durationView.setText(mPrefs != null && mPrefs.timeRemaining
+                    ? "-" + Util.getStringForTime(timeBuilder, timeFormatter, Math.max(0, duration - position))
+                    : Util.getStringForTime(timeBuilder, timeFormatter, duration));
+        });
         controlView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
             if (windowInsets != null) {
                 if (Build.VERSION.SDK_INT >= 31) {

@@ -46,6 +46,13 @@
             app:title="@string/pref_show_clock" />
 
         <SwitchPreferenceCompat
+            app:key="timeRemaining"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_time_remaining_on"
+            app:summaryOff="@string/pref_time_remaining_off"
+            app:title="@string/pref_time_remaining" />
+
+        <SwitchPreferenceCompat
             app:key="systemVolume"
             app:defaultValue="true"
             app:summaryOn="@string/pref_system_volume_on"

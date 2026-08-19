@@ -44,10 +44,10 @@ final class MatroskaMetadataReader {
     }
 
     private static void parseSegment(EbmlReader reader, List<TrackMetadata> tracks) {
-        long bytesRead = 0L;
-        final long limit = 512 * 1024; // cap the search for Tracks inside Segment
+        // No cap of its own: the caller hands over a bounded header, and readId consumes at least one byte
+        // per turn, so running out of it is what ends this loop.
         try {
-            while (bytesRead < limit) {
+            while (true) {
                 final long id = reader.readId();
                 final long s = reader.readSize();
                 if (id == 0x1654AE6BL) { // Tracks
@@ -56,7 +56,6 @@ final class MatroskaMetadataReader {
                 } else {
                     reader.skip(s);
                 }
-                bytesRead += s; // rough estimate
             }
         } catch (Exception ignored) {
         }
@@ -69,7 +68,17 @@ final class MatroskaMetadataReader {
                 final long id = reader.readId();
                 final long s = reader.readSize();
                 if (id == 0xAEL) { // TrackEntry
-                    out.add(parseTrackEntry(reader, s));
+                    final TrackMetadata entry = parseTrackEntry(reader, s);
+                    if (entry == null) {
+                        // Cut short inside an entry. Publishing the ones before it would answer the
+                        // caller for good — isMetadataParsed() goes by whether anything was returned —
+                        // so a video entry missing its DefaultDuration would read as "this file states
+                        // no frame rate" for the rest of the session. Say nothing and let a later read
+                        // try again.
+                        out.clear();
+                        return;
+                    }
+                    out.add(entry);
                 } else {
                     reader.skip(s);
                 }
@@ -80,6 +89,7 @@ final class MatroskaMetadataReader {
         }
     }
 
+    /** The entry, or null if the stream ended inside it. */
     private static TrackMetadata parseTrackEntry(EbmlReader reader, long size) {
         int number = 0;
         String name = null;
@@ -118,11 +128,14 @@ final class MatroskaMetadataReader {
                     reader.skip(s);
                 }
             } catch (Exception e) {
-                break;
+                return null;
             }
         }
         return new TrackMetadata(number, name, lang, type, frameRate);
     }
+
+    /** Ceiling for a string element, so a corrupt size cannot turn into a huge allocation. */
+    private static final int MAX_STRING_BYTES = 64 * 1024;
 
     private static final class EbmlReader {
         private final InputStream input;
@@ -202,7 +215,14 @@ final class MatroskaMetadataReader {
             totalBytesRead += skipped;
         }
 
+        /**
+         * Throws rather than return a value cut short — as does {@link #readUInt}. Truncating in silence
+         * published a first-byte-only DefaultDuration as half a billion frames per second.
+         */
         String readString(long size) throws IOException {
+            // A name or a language code is short; anything this long is a corrupt size vint, and
+            // allocating on its word would be an OutOfMemoryError on the player's load thread.
+            if (size < 0 || size > MAX_STRING_BYTES) throw new IOException("Bad string size " + size);
             final byte[] bytes = new byte[(int) size];
             int read = 0;
             while (read < size) {
@@ -211,6 +231,7 @@ final class MatroskaMetadataReader {
                 read += r;
             }
             totalBytesRead += read;
+            if (read < size) throw new EOFException();
             return trimTrailingNul(new String(bytes, 0, read, StandardCharsets.UTF_8));
         }
 
@@ -218,7 +239,8 @@ final class MatroskaMetadataReader {
             long value = 0L;
             for (int i = 0; i < size; i++) {
                 final int b = readByte();
-                if (b != -1) value = (value << 8) | (b & 0xFFL);
+                if (b == -1) throw new EOFException();
+                value = (value << 8) | (b & 0xFFL);
             }
             return value;
         }

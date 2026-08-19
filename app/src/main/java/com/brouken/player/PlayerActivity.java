@@ -200,6 +200,14 @@ public class PlayerActivity extends Activity {
     // Format.id -> name map that the track list and header read from once tracks are known.
     private final java.util.List<TrackMetadata> containerTracks = new java.util.ArrayList<>();
     private final java.util.Map<String, String> resolvedTrackNames = new java.util.HashMap<>();
+    /**
+     * The media item {@link #containerTracks} was parsed from, keyed like {@link #contentLengths}.
+     * ExoPlayer opens the next item of a playlist while the current one is still playing, so metadata
+     * that is merely "the last parsed" belongs to whichever item won the race — the panel would print
+     * the previous episode's frame rate and the tap would be told there was nothing left to parse.
+     * Read from a load thread, written on the UI thread.
+     */
+    private volatile String containerTracksUri;
     // Streaming manifest type (HLS/DASH/SS) discovered from the real HTTP response of a media item
     // whose request URL had no telling extension. Keyed by the requested URI (== MediaItem URI).
     // Written from a load thread, read on the player thread — hence concurrent.
@@ -209,14 +217,18 @@ public class PlayerActivity extends Activity {
     private final java.util.Map<String, Long> contentLengths = new java.util.concurrent.ConcurrentHashMap<>();
     private final TrackNameParsingDataSource.Listener trackNameListener = new TrackNameParsingDataSource.Listener() {
         @Override
-        public void onMetadataParsed(java.util.List<TrackMetadata> tracks) {
-            // Parser runs on a background thread; hop to the UI thread to touch player/views.
-            runOnUiThread(() -> onContainerMetadata(tracks));
+        public void onMetadataParsed(Uri originalUri, java.util.List<TrackMetadata> tracks) {
+            if (originalUri == null) {
+                return;
+            }
+            // Parses on a load thread; hop to the UI thread to touch player/views.
+            final String key = originalUri.toString();
+            runOnUiThread(() -> onContainerMetadata(key, tracks));
         }
 
         @Override
-        public boolean isMetadataParsed() {
-            return !containerTracks.isEmpty();
+        public boolean isMetadataParsed(Uri originalUri) {
+            return originalUri != null && originalUri.toString().equals(containerTracksUri);
         }
 
         @Override
@@ -4123,11 +4135,19 @@ public class PlayerActivity extends Activity {
     }
 
     /** Called on the UI thread once the container parser has recovered track names. */
-    private void onContainerMetadata(java.util.List<TrackMetadata> tracks) {
+    private void onContainerMetadata(String uri, java.util.List<TrackMetadata> tracks) {
         containerTracks.clear();
         containerTracks.addAll(tracks);
+        containerTracksUri = uri;
         resolveTrackNames();
         updateMediaInfo();
+    }
+
+    /** {@link #containerTracks}, but only when they belong to the item playing now. */
+    private java.util.List<TrackMetadata> currentContainerTracks() {
+        final Uri uri = currentMediaUri();
+        return uri != null && uri.toString().equals(containerTracksUri)
+                ? containerTracks : java.util.Collections.emptyList();
     }
 
     /**
@@ -4137,7 +4157,7 @@ public class PlayerActivity extends Activity {
      */
     private void resolveTrackNames() {
         resolvedTrackNames.clear();
-        if (player == null || containerTracks.isEmpty()) {
+        if (player == null || currentContainerTracks().isEmpty()) {
             return;
         }
         resolveNamesForType(C.TRACK_TYPE_AUDIO, TrackMetadata.Type.AUDIO);
@@ -4146,7 +4166,7 @@ public class PlayerActivity extends Activity {
 
     private void resolveNamesForType(int trackType, TrackMetadata.Type metaType) {
         final java.util.List<TrackMetadata> ordered = new java.util.ArrayList<>();
-        for (TrackMetadata t : containerTracks) {
+        for (TrackMetadata t : currentContainerTracks()) {
             if (t.type == metaType) {
                 ordered.add(t);
             }
@@ -4165,7 +4185,7 @@ public class PlayerActivity extends Activity {
                 if (format.id != null) {
                     final Integer id = tryParseInt(format.id);
                     if (id != null) {
-                        for (TrackMetadata t : containerTracks) {
+                        for (TrackMetadata t : currentContainerTracks()) {
                             if (t.trackId == id && t.name != null && !t.name.isEmpty()) {
                                 name = t.name;
                                 break;
@@ -4419,8 +4439,7 @@ public class PlayerActivity extends Activity {
             text.append('\n').append(video.width).append('×').append(video.height);
             // Media3 fills the rate in from MP4 only; for MKV and AVI it reads the container's own figure
             // for its timing but never publishes it, so the parser we already run picks it up instead.
-            final float frameRate = video.frameRate != Format.NO_VALUE
-                    ? video.frameRate : containerFrameRate();
+            final float frameRate = videoFrameRate();
             if (frameRate > 0) {
                 text.append(String.format(Locale.US, " · %.2f fps", frameRate));
             }
@@ -4456,9 +4475,20 @@ public class PlayerActivity extends Activity {
         fadeChrome(statsView, true);
     }
 
+    /**
+     * The playing video's frame rate: from {@link Format} where Media3 fills it in — MP4, DASH, and HLS
+     * that declares FRAME-RATE — and from the container header otherwise. 0 when neither states one,
+     * which is Matroska and AVI until the header parse lands, and MPEG-TS always.
+     */
+    private float videoFrameRate() {
+        final Format video = player != null ? player.getVideoFormat() : null;
+        return video != null && video.frameRate != Format.NO_VALUE
+                ? video.frameRate : containerFrameRate();
+    }
+
     /** The video track's frame rate as its container states it, or 0 when it does not. */
     private float containerFrameRate() {
-        for (TrackMetadata track : containerTracks) {
+        for (TrackMetadata track : currentContainerTracks()) {
             if (track.type == TrackMetadata.Type.VIDEO && track.frameRate > 0) {
                 return track.frameRate;
             }
@@ -6878,6 +6908,7 @@ public class PlayerActivity extends Activity {
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
+        containerTracksUri = null;
         resolvedTrackNames.clear();
 
         // Also drops a deferred error here, not only in releasePlayer: onNewIntent (sharing a video into

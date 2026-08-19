@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import okhttp3.Cache;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -107,13 +108,45 @@ public final class SegmentFinder {
      */
     private static final double CUT_PROBE_SHIFT_SEC = 18;
 
+    /**
+     * IntroHater is off: introhater.com answers "This service has been suspended by its owner" to every
+     * request — an HTML body that parses to nothing, for a ~280 ms round-trip and one probe slot per
+     * lookup. Left wired up rather than deleted, so re-enabling is this one flag if it ever comes back.
+     */
+    private static final boolean INTROHATER_ENABLED = false;
+
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
-    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+    /**
+     * Disk budget for the HTTP cache. The bodies are small JSON documents, so this is roomy for the id
+     * resolutions and every segment reply a long binge produces.
+     */
+    private static final long HTTP_CACHE_BYTES = 1024 * 1024;
+
+    /** Replaced once by {@link #setCacheDir} with the same client plus a cache; volatile for that swap. */
+    private static volatile OkHttpClient CLIENT = new OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_SEC + 1, TimeUnit.SECONDS)
             .build();
+
+    /**
+     * Gives the finder an HTTP cache, once, at startup. The id resolvers ask to be cached for hours —
+     * arm sends {@code max-age=21600}, TMDB {@code max-age=10527} — and arm sits on Aniskip's critical
+     * path, resolving before either probe can be issued, twice per episode and identically for every
+     * episode of a series. Without a cache configured OkHttp discards those headers and re-fetches every
+     * time. The segment endpoints send only an ETag, so they revalidate instead: same latency, empty body.
+     *
+     * <p>Safe to skip — an un-cached client just behaves as before.
+     */
+    public static void setCacheDir(java.io.File cacheDir) {
+        if (cacheDir == null) {
+            return;
+        }
+        CLIENT = CLIENT.newBuilder() // shares the existing connection pool and dispatcher
+                .cache(new Cache(new java.io.File(cacheDir, "segments"), HTTP_CACHE_BYTES))
+                .build();
+    }
 
     // Process-lifetime cache; empty results are cached with an expiry (see NEG_CACHE_TTL_MS).
     private static final Map<String, CacheEntry> CACHE = new ConcurrentHashMap<>();
@@ -237,7 +270,7 @@ public final class SegmentFinder {
                 }
                 steps.add(() -> theIntroDb(imdb, tmdb, -1, -1, true));
             }
-            if (imdb != null) {
+            if (imdb != null && INTROHATER_ENABLED) {
                 steps.add(() -> introHater(imdb, -1, -1));
             }
         } else {
@@ -255,7 +288,7 @@ public final class SegmentFinder {
             if (imdb != null || tmdb >= 0) {
                 steps.add(() -> theIntroDb(imdb, tmdb, season, ep, false));
             }
-            if (imdb != null) {
+            if (imdb != null && INTROHATER_ENABLED) {
                 steps.add(() -> introHater(imdb, season, ep));
             }
         }

@@ -4,6 +4,8 @@ import android.app.Application;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
 
+import com.brouken.player.skip.SegmentFinder;
+
 import io.sentry.SentryEvent;
 import io.sentry.android.core.SentryAndroid;
 import io.sentry.protocol.Message;
@@ -25,6 +27,8 @@ public class App extends Application {
     public void onCreate() {
         super.onCreate();
         initSentry();
+        // Lets the skip-segment lookups honour the caching their sources ask for (see the method).
+        SegmentFinder.setCacheDir(getCacheDir());
         // Installed after Sentry so it wraps (and chains to) Sentry's crash handler rather than
         // replacing it: any uncaught crash lands on ErrorActivity, then Sentry still reports.
         ErrorActivity.installCrashHandler(this);

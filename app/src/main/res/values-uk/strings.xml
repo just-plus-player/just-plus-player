@@ -58,6 +58,9 @@
     <string name="pref_disable_volume_brightness_gestures">Вимкнути жести гучності та яскравості</string>
     <string name="pref_disable_volume_brightness_gestures_on">Проведення вгору та вниз нічого не робить; перемотування, масштаб і кнопки гучності працюють</string>
     <string name="pref_disable_volume_brightness_gestures_off">Проведіть вгору або вниз, щоб змінити яскравість у лівій частині екрана та гучність у правій</string>
+    <string name="pref_hold_speed">Утримання для прискорення</string>
+    <string name="pref_hold_speed_on">Тримайте палець на відео для 2×, потім тягніть убік, щоб змінити швидкість або відмотати назад</string>
+    <string name="pref_hold_speed_off">Утримання пальця на відео нічого не робить</string>
     <string name="pref_skip_header">Пропуск сегментів</string>
     <string name="pref_skip_enabled">Увімкнено</string>
     <string name="pref_skip_enabled_on">Пропускати заставки та рекламні сегменти від застосунку</string>

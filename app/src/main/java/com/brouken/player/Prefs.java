@@ -51,6 +51,7 @@ class Prefs {
     private static final String PREF_KEY_RESTORE_AUTO_ROTATE = "restoreAutoRotate";
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
     private static final String PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES = "disableVolumeBrightnessGestures";
+    private static final String PREF_KEY_HOLD_SPEED = "holdSpeed";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
     private static final String PREF_KEY_ALLOW_SYSTEM_FRAMERATE = "allowSystemFrameRate";
@@ -135,6 +136,8 @@ class Prefs {
     public boolean autoPiP = false;
     // Off means the vertical swipes work as they always have; on takes them away entirely.
     public boolean disableVolumeBrightnessGestures = false;
+    // Off takes the whole hold gesture away: a long press on the picture then does nothing at all.
+    public boolean holdSpeed = true;
 
     public boolean tunneling = false;
     public boolean frameRateMatching = false;
@@ -262,6 +265,7 @@ class Prefs {
         autoPiP = mSharedPreferences.getBoolean(PREF_KEY_AUTO_PIP, autoPiP);
         disableVolumeBrightnessGestures = mSharedPreferences.getBoolean(
                 PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES, disableVolumeBrightnessGestures);
+        holdSpeed = mSharedPreferences.getBoolean(PREF_KEY_HOLD_SPEED, holdSpeed);
         tunneling = mSharedPreferences.getBoolean(PREF_KEY_TUNNELING, tunneling);
         frameRateMatching = mSharedPreferences.getBoolean(PREF_KEY_FRAMERATE_MATCHING, frameRateMatching);
         allowSystemFrameRate = mSharedPreferences.getBoolean(PREF_KEY_ALLOW_SYSTEM_FRAMERATE, !Utils.isTvBox(mContext));

@@ -59,6 +59,9 @@
     <string name="pref_disable_volume_brightness_gestures">Turn off volume and brightness swipes</string>
     <string name="pref_disable_volume_brightness_gestures_on">Swiping up and down does nothing; seeking, zoom and the volume buttons still work</string>
     <string name="pref_disable_volume_brightness_gestures_off">Swipe up and down to change brightness on the left of the screen and volume on the right</string>
+    <string name="pref_hold_speed">Hold to speed up</string>
+    <string name="pref_hold_speed_on">Hold a finger on the video for 2×, then drag sideways to change the speed or rewind</string>
+    <string name="pref_hold_speed_off">Holding a finger on the video does nothing</string>
     <string name="pref_skip_header">Skip segments</string>
     <string name="pref_skip_enabled">Enabled</string>
     <string name="pref_skip_enabled_on">Skip intros and ad segments provided by the launching app</string>

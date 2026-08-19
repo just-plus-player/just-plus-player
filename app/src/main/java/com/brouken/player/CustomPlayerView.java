@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Rect;
 import android.media.AudioManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.Gravity;
@@ -60,11 +61,22 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     private float mScaleFactor = 1.f;
     private float mScaleFactorFit;
 
-    // Hold-to-speed (YouTube-style): while the screen is long-pressed during playback, speed jumps to 2x
-    // and the previous speed is restored on release.
+    // Hold-to-speed: a long press during playback jumps to 2x, and dragging sideways without letting go
+    // moves along one axis - right for more speed, left down to 1x and then on into rewind. The previous
+    // speed is restored on release.
     private static final float SPEED_BOOST = 2.f;
+    private static final float SPEED_MAX = 4.f;
+    private static final float SPEED_REWIND_MIN = 2.f;
+    private static final float SPEED_STEP_DP = 40.f;
+    private static final long REWIND_TICK_MS = 100;
     private boolean speedBoostActive = false;
     private float speedBeforeBoost = 1.f;
+    private float boostAnchorX;
+    private float holdSpeed = SPEED_BOOST;
+    private boolean rewinding;
+    private long rewindPosition;
+    private long rewindLastTime;
+    private final Runnable rewindRunnable = this::rewindTick;
 
     /** True while the hold-to-speed-up gesture is running. A watch-together room does not follow it:
      *  it is a preview held under a finger, not a choice, and the speed goes back on release. */
@@ -149,8 +161,15 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 seekGestureActive = false;
                 if (speedBoostActive) {
                     speedBoostActive = false;
-                    if (PlayerActivity.player != null)
+                    removeCallbacks(rewindRunnable);
+                    if (PlayerActivity.player != null) {
+                        // A rewind tick is skipped while the previous seek is still in flight, so the
+                        // player can sit behind what the pill promised. Land on the promise.
+                        if (rewinding)
+                            PlayerActivity.player.seekTo(rewindPosition);
                         PlayerActivity.player.setPlaybackSpeed(speedBeforeBoost);
+                    }
+                    rewinding = false;
                     if (getContext() instanceof PlayerActivity)
                         ((PlayerActivity) getContext()).setSpeedBoostIndicatorVisible(false);
                 }
@@ -180,6 +199,13 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                     }
                     break;
                 }
+        }
+
+        // GestureDetector drops every move once it has fired a long press, so the drag of a hold is read
+        // straight from here - which also keeps it clear of the seek and volume/brightness scrolls.
+        if (speedBoostActive && ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
+            updateHoldSpeed(ev.getX());
+            return true;
         }
 
         if (handleTouch)
@@ -237,6 +263,15 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         }
         final Prefs prefs = ((PlayerActivity) getContext()).mPrefs;
         return prefs != null && prefs.disableVolumeBrightnessGestures;
+    }
+
+    // True when the viewer has turned the hold-to-speed gesture off in the settings.
+    private boolean holdSpeedGestureOff() {
+        if (!(getContext() instanceof PlayerActivity)) {
+            return false;
+        }
+        final Prefs prefs = ((PlayerActivity) getContext()).mPrefs;
+        return prefs != null && !prefs.holdSpeed;
     }
 
     // One seek in flight at a time, the same gate the time bar scrubs behind. A swipe fires a seek every
@@ -373,13 +408,88 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
             return;
         if (!PlayerActivity.haveMedia || PlayerActivity.player == null || !PlayerActivity.player.isPlaying())
             return;
+        if (holdSpeedGestureOff())
+            return;
         speedBeforeBoost = PlayerActivity.player.getPlaybackParameters().speed;
         speedBoostActive = true;
         isHandledLongPress = true;
+        boostAnchorX = motionEvent.getX();
+        holdSpeed = SPEED_BOOST;
+        rewinding = false;
         PlayerActivity.player.setPlaybackSpeed(SPEED_BOOST);
         hideController();
+        showHoldSpeed();
+    }
+
+    // The hold axis: where the press landed is 2x, and every SPEED_STEP_DP to the right adds 1x. To the
+    // left it counts down to 1x and then flips into rewind, which starts at 2x and grows the same way.
+    // The flip has a little hysteresis, so a finger resting on the boundary cannot thrash the player
+    // between paused rewind and playback.
+    private void updateHoldSpeed(final float x) {
+        if (PlayerActivity.player == null)
+            return;
+        final float value = SPEED_BOOST + Utils.pxToDp(x - boostAnchorX) / SPEED_STEP_DP;
+        final boolean rewind = rewinding ? value < 1.1f : value < 1.f;
+        final float speed = Math.min(SPEED_MAX,
+                rewind ? SPEED_REWIND_MIN + (1.f - value) : Math.max(1.f, value));
+        // A tenth is what the pill shows; anything finer would only churn the player.
+        final float rounded = Math.round(speed * 10.f) / 10.f;
+        if (rewind == rewinding && rounded == holdSpeed)
+            return;
+        holdSpeed = rounded;
+        if (rewind != rewinding) {
+            rewinding = rewind;
+            if (rewind)
+                startRewind();
+            else
+                stopRewind();
+        }
+        if (!rewinding)
+            PlayerActivity.player.setPlaybackSpeed(holdSpeed);
+        showHoldSpeed();
+    }
+
+    private void showHoldSpeed() {
         if (getContext() instanceof PlayerActivity)
-            ((PlayerActivity) getContext()).setSpeedBoostIndicatorVisible(true);
+            ((PlayerActivity) getContext()).setSpeedBoostIndicator(holdSpeed, rewinding);
+    }
+
+    // Nothing decodes backwards, so rewind is the swipe-seek gesture on a timer: the player is paused and
+    // walked back at the held rate, one seek at a time behind the same in-flight gate.
+    private void startRewind() {
+        seekGestureActive = true;
+        if (PlayerActivity.player.isPlaying()) {
+            restorePlayState = true;
+            PlayerActivity.player.pause();
+        }
+        PlayerActivity.player.setPlaybackSpeed(speedBeforeBoost);
+        PlayerActivity.player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
+        rewindPosition = PlayerActivity.player.getCurrentPosition();
+        rewindLastTime = SystemClock.uptimeMillis();
+        if (!isControllerFullyVisible()) {
+            seekProgress = true;
+            showProgress();
+        }
+        post(rewindRunnable);
+    }
+
+    private void stopRewind() {
+        removeCallbacks(rewindRunnable);
+        PlayerActivity.player.seekTo(rewindPosition);
+        if (restorePlayState) {
+            restorePlayState = false;
+            PlayerActivity.player.play();
+        }
+    }
+
+    private void rewindTick() {
+        if (!speedBoostActive || !rewinding || PlayerActivity.player == null)
+            return;
+        final long now = SystemClock.uptimeMillis();
+        rewindPosition = Math.max(0, rewindPosition - (long) ((now - rewindLastTime) * holdSpeed));
+        rewindLastTime = now;
+        seekGesture(rewindPosition);
+        postDelayed(rewindRunnable, REWIND_TICK_MS);
     }
 
     // Toggles the touch lock (triggered by the lock button). While locked the controller stays hidden

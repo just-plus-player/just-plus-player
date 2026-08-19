@@ -7784,8 +7784,15 @@ public class PlayerActivity extends Activity {
 
                 if (!skipBuilt) {
                     rebuildSkip();
-                    skipBuilt = true;
-                    maybeFetchSegmentsOnline();
+                    // The online lookup needs the stream length: it is what SkipDB/SkipMe are asked with
+                    // at all, and what picks Aniskip's submission for this file's cut. While the duration
+                    // is still unknown, leave skipBuilt unset so the onEvents path — the one that does
+                    // check it — runs this once it lands, instead of the lookup silently staying
+                    // length-less for the whole item with no third attempt coming.
+                    if (currentDurationSec() > 0) {
+                        skipBuilt = true;
+                        maybeFetchSegmentsOnline();
+                    }
                 }
 
                 updateMediaInfo();

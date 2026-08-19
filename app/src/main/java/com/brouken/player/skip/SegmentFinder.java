@@ -75,6 +75,17 @@ public final class SegmentFinder {
     private static final double AGREE_TOLERANCE_SEC = 30;
     /** Distinct sources needed to mark a segment {@code confirmed}. */
     private static final int MIN_VOTES = 2;
+    /**
+     * A take shorter than this fraction of its cluster's longest is a truncated submission, not a
+     * differing opinion on the same segment — a five-second "intro" against a ninety-second one. It
+     * still counts as a vote, but must never supply the cluster's timing, however much its source is
+     * trusted on timing in general.
+     *
+     * <p>Deliberately far below the disagreement sources show in practice: across 52 cross-source
+     * pairs the widest honest split was 17 s against 46 s (0.37) — and there the shorter take was the
+     * right one — while the truncated submissions this guards against sit near 0.06.
+     */
+    private static final double TRUNCATED_TAKE_RATIO = 0.25;
     /** Overall wall-clock ceiling for the parallel probe (sources run concurrently, not summed). */
     private static final int PROBE_DEADLINE_SEC = TIMEOUT_SEC + 3;
     /** How long an empty ("nothing found") result stays cached before it is re-probed. */
@@ -443,12 +454,26 @@ public final class SegmentFinder {
             }
             i = j;
 
-            // Representative: most file-accurate timing (highest timeTrust), then signal, then earliest.
-            Vote rep = cluster.get(0);
+            // Representative: most file-accurate timing (highest timeTrust), then signal, then earliest —
+            // chosen among the takes that actually span the segment. The longest always qualifies, so
+            // rep is never left null.
+            // An open end is a "runs to the file end" marker, not a measured length — counting its
+            // sentinel span would make every real take look truncated next to it. With none to measure,
+            // longest stays 0 and the guard simply never fires.
+            double longest = 0;
+            for (Vote v : cluster) {
+                if (v.seg.endSec < OPEN_ENDED_SEC) {
+                    longest = Math.max(longest, v.seg.endSec - v.seg.startSec);
+                }
+            }
+            Vote rep = null;
             final java.util.Set<Integer> sources = new java.util.HashSet<>();
             for (Vote v : cluster) {
                 sources.add(v.sourceId);
-                if (v.seg.timeTrust > rep.seg.timeTrust
+                if (v.seg.endSec - v.seg.startSec < longest * TRUNCATED_TAKE_RATIO) {
+                    continue;
+                }
+                if (rep == null || v.seg.timeTrust > rep.seg.timeTrust
                         || (v.seg.timeTrust == rep.seg.timeTrust && v.signal > rep.signal)) {
                     rep = v;
                 }

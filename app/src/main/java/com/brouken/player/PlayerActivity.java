@@ -87,6 +87,7 @@ import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
@@ -133,6 +134,8 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
+import androidx.media3.extractor.text.SubtitleParser;
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.session.MediaSession;
@@ -312,6 +315,10 @@ public class PlayerActivity extends Activity {
     // Read by the codec selector on the playback thread.
     private volatile boolean forceHevcForDolbyVision;
     private boolean pendingStuckRecovery;
+    // Installed for this player build when Dolby Vision profile 7 is being rewritten as profile 8.1;
+    // null when it is not. Kept only so the dump can say which mode the stream actually got.
+    @Nullable
+    private Dv7Converter dv7Converter;
     // Per process, not per player: a device that keeps needing the fallback must not re-report it.
     private static boolean dolbyVisionFallbackReported;
     // Names of the decoders that actually opened, for the error report. The mime does not tell them apart
@@ -6919,8 +6926,13 @@ public class PlayerActivity extends Activity {
                     .setPreferredTextLanguage(locale.getISO3Language())
             );
         }
+        // Set rather than left to the default so Dv7Converter can hand the very same instance to the
+        // Matroska extractor it re-creates — subtitle parsing is a constructor argument there, and
+        // matching it by construction beats matching Media3's defaults from memory.
+        final SubtitleParser.Factory subtitleParserFactory = new DefaultSubtitleParserFactory();
         // https://github.com/google/ExoPlayer/issues/8571
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
+                .setSubtitleParserFactory(subtitleParserFactory)
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
                 .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE);
         // On TV boxes the platform MediaCodec decoder for the heavy codecs common in MKV remuxes
@@ -7056,8 +7068,16 @@ public class PlayerActivity extends Activity {
         }
 
         final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
+        // Dolby Vision profile 7 is rewritten as profile 8.1 on the way out of the extractor, so the
+        // display gets Dolby Vision instead of the base layer's HDR10 (see Dv7Converter). Not when the
+        // user asked for the base layer outright ("Dolby Vision profile 7 fallback", handled by
+        // setMapDV7ToHevc above), and not during the recovery that exists to get away from the device's
+        // Dolby Vision decoder altogether.
+        final boolean convertDV7 = !mPrefs.mapDV7ToHevc && !forceHevcForDolbyVision;
+        dv7Converter = convertDV7 ? new Dv7Converter(extractorsFactory, subtitleParserFactory) : null;
         playerBuilder.setMediaSourceFactory(
-                new DefaultMediaSourceFactory(this, extractorsFactory).setDataSourceFactory(dataSourceFactory));
+                new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
+                        .setDataSourceFactory(dataSourceFactory));
 
         player = playerBuilder.build();
 
@@ -8995,6 +9015,10 @@ public class PlayerActivity extends Activity {
                 .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "");
         if (forceHevcForDolbyVision) {
             sb.append("\nRecovery: forced HEVC for Dolby Vision");
+        }
+        final String dv7Status = dv7Converter != null ? dv7Converter.status() : null;
+        if (dv7Status != null) {
+            sb.append("\nDolby Vision profile 7: ").append(dv7Status);
         }
         if (!mPrefs.revokedAudioMimes.isEmpty()) {
             sb.append("\nAudio passthrough revoked: ").append(mPrefs.revokedAudioMimes);

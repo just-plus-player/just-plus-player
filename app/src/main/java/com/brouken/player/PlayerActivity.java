@@ -200,6 +200,14 @@ public class PlayerActivity extends Activity {
     // Format.id -> name map that the track list and header read from once tracks are known.
     private final java.util.List<TrackMetadata> containerTracks = new java.util.ArrayList<>();
     private final java.util.Map<String, String> resolvedTrackNames = new java.util.HashMap<>();
+    /**
+     * The media item {@link #containerTracks} was parsed from, keyed like {@link #contentLengths}.
+     * ExoPlayer opens the next item of a playlist while the current one is still playing, so metadata
+     * that is merely "the last parsed" belongs to whichever item won the race — the panel would print
+     * the previous episode's frame rate and the tap would be told there was nothing left to parse.
+     * Read from a load thread, written on the UI thread.
+     */
+    private volatile String containerTracksUri;
     // Streaming manifest type (HLS/DASH/SS) discovered from the real HTTP response of a media item
     // whose request URL had no telling extension. Keyed by the requested URI (== MediaItem URI).
     // Written from a load thread, read on the player thread — hence concurrent.
@@ -209,14 +217,18 @@ public class PlayerActivity extends Activity {
     private final java.util.Map<String, Long> contentLengths = new java.util.concurrent.ConcurrentHashMap<>();
     private final TrackNameParsingDataSource.Listener trackNameListener = new TrackNameParsingDataSource.Listener() {
         @Override
-        public void onMetadataParsed(java.util.List<TrackMetadata> tracks) {
-            // Parser runs on a background thread; hop to the UI thread to touch player/views.
-            runOnUiThread(() -> onContainerMetadata(tracks));
+        public void onMetadataParsed(Uri originalUri, java.util.List<TrackMetadata> tracks) {
+            if (originalUri == null) {
+                return;
+            }
+            // Parses on a load thread; hop to the UI thread to touch player/views.
+            final String key = originalUri.toString();
+            runOnUiThread(() -> onContainerMetadata(key, tracks));
         }
 
         @Override
-        public boolean isMetadataParsed() {
-            return !containerTracks.isEmpty();
+        public boolean isMetadataParsed(Uri originalUri) {
+            return originalUri != null && originalUri.toString().equals(containerTracksUri);
         }
 
         @Override
@@ -265,6 +277,8 @@ public class PlayerActivity extends Activity {
     // (stuck buffering, a broken next-episode URL, etc.) a friendly LOAD_TIMEOUT message is shown.
     // Such stalls often produce no PlaybackException, so onPlayerError alone would never catch them.
     private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
+    /** How long to wait for a requested display mode to report back before starting playback anyway. */
+    private static final long FRAME_RATE_SWITCH_TIMEOUT_MS = 3_000L;
     // Bytes seen when the watchdog was last armed, so its verdict is "nothing is arriving" rather than
     // "this is taking a while". Filling the first buffer of a large torrent-backed file routinely needs
     // several of these windows — the backend fetches pieces from peers at whatever rate it can, and the
@@ -2167,6 +2181,7 @@ public class PlayerActivity extends Activity {
         play = false;
         // The frame-rate switch registers this listener while waiting to auto-play; with play cleared behind
         // its back it would never unregister itself.
+        playerView.removeCallbacks(frameRateGiveUpRunnable);
         if (displayManager != null && displayListener != null) {
             displayManager.unregisterDisplayListener(displayListener);
         }
@@ -4123,11 +4138,19 @@ public class PlayerActivity extends Activity {
     }
 
     /** Called on the UI thread once the container parser has recovered track names. */
-    private void onContainerMetadata(java.util.List<TrackMetadata> tracks) {
+    private void onContainerMetadata(String uri, java.util.List<TrackMetadata> tracks) {
         containerTracks.clear();
         containerTracks.addAll(tracks);
+        containerTracksUri = uri;
         resolveTrackNames();
         updateMediaInfo();
+    }
+
+    /** {@link #containerTracks}, but only when they belong to the item playing now. */
+    private java.util.List<TrackMetadata> currentContainerTracks() {
+        final Uri uri = currentMediaUri();
+        return uri != null && uri.toString().equals(containerTracksUri)
+                ? containerTracks : java.util.Collections.emptyList();
     }
 
     /**
@@ -4137,7 +4160,7 @@ public class PlayerActivity extends Activity {
      */
     private void resolveTrackNames() {
         resolvedTrackNames.clear();
-        if (player == null || containerTracks.isEmpty()) {
+        if (player == null || currentContainerTracks().isEmpty()) {
             return;
         }
         resolveNamesForType(C.TRACK_TYPE_AUDIO, TrackMetadata.Type.AUDIO);
@@ -4146,7 +4169,7 @@ public class PlayerActivity extends Activity {
 
     private void resolveNamesForType(int trackType, TrackMetadata.Type metaType) {
         final java.util.List<TrackMetadata> ordered = new java.util.ArrayList<>();
-        for (TrackMetadata t : containerTracks) {
+        for (TrackMetadata t : currentContainerTracks()) {
             if (t.type == metaType) {
                 ordered.add(t);
             }
@@ -4165,7 +4188,7 @@ public class PlayerActivity extends Activity {
                 if (format.id != null) {
                     final Integer id = tryParseInt(format.id);
                     if (id != null) {
-                        for (TrackMetadata t : containerTracks) {
+                        for (TrackMetadata t : currentContainerTracks()) {
                             if (t.trackId == id && t.name != null && !t.name.isEmpty()) {
                                 name = t.name;
                                 break;
@@ -4419,8 +4442,7 @@ public class PlayerActivity extends Activity {
             text.append('\n').append(video.width).append('×').append(video.height);
             // Media3 fills the rate in from MP4 only; for MKV and AVI it reads the container's own figure
             // for its timing but never publishes it, so the parser we already run picks it up instead.
-            final float frameRate = video.frameRate != Format.NO_VALUE
-                    ? video.frameRate : containerFrameRate();
+            final float frameRate = videoFrameRate();
             if (frameRate > 0) {
                 text.append(String.format(Locale.US, " · %.2f fps", frameRate));
             }
@@ -4456,9 +4478,20 @@ public class PlayerActivity extends Activity {
         fadeChrome(statsView, true);
     }
 
+    /**
+     * The playing video's frame rate: from {@link Format} where Media3 fills it in — MP4, DASH, and HLS
+     * that declares FRAME-RATE — and from the container header otherwise. 0 when neither states one,
+     * which is Matroska and AVI until the header parse lands, and MPEG-TS always.
+     */
+    private float videoFrameRate() {
+        final Format video = player != null ? player.getVideoFormat() : null;
+        return video != null && video.frameRate != Format.NO_VALUE
+                ? video.frameRate : containerFrameRate();
+    }
+
     /** The video track's frame rate as its container states it, or 0 when it does not. */
     private float containerFrameRate() {
-        for (TrackMetadata track : containerTracks) {
+        for (TrackMetadata track : currentContainerTracks()) {
             if (track.type == TrackMetadata.Type.VIDEO && track.frameRate > 0) {
                 return track.frameRate;
             }
@@ -6878,6 +6911,7 @@ public class PlayerActivity extends Activity {
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
+        containerTracksUri = null;
         resolvedTrackNames.clear();
 
         // Also drops a deferred error here, not only in releasePlayer: onNewIntent (sharing a video into
@@ -7232,6 +7266,24 @@ public class PlayerActivity extends Activity {
      * and the room's "carry on" then had to drag it back, which cost a second load of the very buffer the
      * hold had just filled.
      */
+    private final Runnable frameRateGiveUpRunnable = this::frameRateSettled;
+
+    /**
+     * Nothing more to wait for from the display: disarm the listener armed for a mode change and spend
+     * the play the loading player is holding. Every path that does not request a new mode ends here, the
+     * ones that give up early included — those used to leave the play pending for good.
+     */
+    private void frameRateSettled() {
+        playerView.removeCallbacks(frameRateGiveUpRunnable);
+        if (displayManager != null && displayListener != null) {
+            displayManager.unregisterDisplayListener(displayListener);
+        }
+        if (play) {
+            play = false;
+            playPending();
+        }
+    }
+
     private void playPending() {
         if (together != null && together.holding()) {
             return;
@@ -7846,26 +7898,33 @@ public class PlayerActivity extends Activity {
 
                                     @Override
                                     public void onDisplayChanged(int displayId) {
-                                        if (play) {
-                                            play = false;
-                                            displayManager.unregisterDisplayListener(this);
-                                            playPending();
-                                        }
+                                        frameRateSettled();
                                     }
                                 };
                             }
                             displayManager.registerDisplayListener(displayListener, null);
                         }
-                        switched = Utils.switchFrameRate(PlayerActivity.this, mPrefs.mediaUri);
+                        // The rate the stats panel prints is the rate the display needs, and by now the app
+                        // usually has it. Measuring it again through a second MediaExtractor costs seconds
+                        // and cannot open HLS at all, which is why online sources never switched.
+                        final float rate = videoFrameRate();
+                        if (rate > 0) {
+                            Utils.handleFrameRate(PlayerActivity.this, rate);
+                            switched = true;
+                        } else {
+                            // Nothing published a rate — a container neither Media3 nor our parser reads.
+                            switched = Utils.switchFrameRate(PlayerActivity.this, currentMediaUri());
+                        }
                     }
-                    if (!switched) {
-                        if (displayManager != null) {
-                            displayManager.unregisterDisplayListener(displayListener);
-                        }
-                        if (play) {
-                            play = false;
-                            playPending();
-                        }
+                    if (switched) {
+                        // A requested mode either comes back as onDisplayChanged or never comes back at
+                        // all: a panel can apply a refresh-rate-only change without reporting one, and a
+                        // request the system declines reports nothing. Without a floor the pending play is
+                        // never spent — on a phone whose display is pinned to 60 Hz the file just sits on
+                        // its first frame, paused, with no spinner and no error.
+                        playerView.postDelayed(frameRateGiveUpRunnable, FRAME_RATE_SWITCH_TIMEOUT_MS);
+                    } else {
+                        frameRateSettled();
                     }
 
                     if (mPrefs.speed <= 0.99f || mPrefs.speed >= 1.01f) {

@@ -43,7 +43,7 @@ final class AviMetadataReader {
                 scanned += size;
             }
         } catch (IOException e) {
-            // Stream ended or the tap was cut off before the header was read.
+            // The header ended before it was fully read.
         }
         return Collections.emptyList();
     }
@@ -75,7 +75,7 @@ final class AviMetadataReader {
             if (skipped > 0) {
                 remaining -= skipped;
             } else {
-                // skip() made no progress — a blocking read forces the pipe forward.
+                // skip() made no progress — read a byte to move on.
                 if (stream.read() < 0) throw new IOException("Truncated AVI header");
                 remaining--;
             }

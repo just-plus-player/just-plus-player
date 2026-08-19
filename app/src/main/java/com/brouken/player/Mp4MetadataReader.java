@@ -20,6 +20,9 @@ final class Mp4MetadataReader {
 
     private Mp4MetadataReader() {}
 
+    /** Ceiling for a track name, so a corrupt box size cannot turn into a huge allocation. */
+    private static final int MAX_NAME_BYTES = 64 * 1024;
+
     static List<TrackMetadata> parse(InputStream inputStream) {
         final List<TrackMetadata> tracks = new ArrayList<>();
         final DataInputStream stream = new DataInputStream(inputStream);
@@ -51,9 +54,9 @@ final class Mp4MetadataReader {
                 }
             }
         } catch (EOFException e) {
-            // Stream ended (or the tap was cut off) before moov was fully read — return what we have.
+            // The header ended before moov was fully read — return what we have.
         } catch (IOException e) {
-            // Pipe closed / broken — normal termination of the tap.
+            // Malformed box layout — return what we have.
         }
         return tracks;
     }
@@ -211,6 +214,9 @@ final class Mp4MetadataReader {
             if (actualBoxSize > remaining) break;
 
             if ("name".equals(type)) {
+                // A track name is short; a larger size is a corrupt box, and allocating on its word
+                // would be an OutOfMemoryError on the player's load thread.
+                if (bodySize < 0 || bodySize > MAX_NAME_BYTES) throw new IOException("Bad name size " + bodySize);
                 final byte[] buffer = new byte[(int) bodySize];
                 stream.readFully(buffer);
 
@@ -258,7 +264,7 @@ final class Mp4MetadataReader {
             if (skipped > 0) {
                 remaining -= skipped;
             } else {
-                // skip() made no progress — fall back to a blocking read to force the pipe forward.
+                // skip() made no progress — read a byte to move on.
                 if (stream.read() < 0) throw new EOFException();
                 remaining--;
             }

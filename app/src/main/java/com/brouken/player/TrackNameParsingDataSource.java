@@ -11,9 +11,9 @@ import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.TeeDataSource;
 import androidx.media3.datasource.TransferListener;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,14 +21,22 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Wraps an upstream {@link DataSource} and, on the first read of a media item (offset 0), tees the
- * bytes the player reads into a background parser ({@link ContainerMetadataReader}) that recovers
- * per-track container names. Uses only public Media3 API ({@link TeeDataSource} + {@link DataSink}),
- * so it works against the locally-built ExoPlayer AAR without touching its internals.
+ * bytes the player reads into a buffer that {@link ContainerMetadataReader} then parses for per-track
+ * container names and the frame rate. Uses only public Media3 API ({@link TeeDataSource} +
+ * {@link DataSink}), so it works against the locally-built ExoPlayer AAR without touching its
+ * internals.
  *
  * <p>Because it only tees the read that starts at offset 0, it captures metadata that the player
  * reads from the front of the stream (faststart MP4, Matroska headers). A {@code moov} at the end of
  * the file is fetched by the player via a separate seek/reopen and is therefore not seen here — the
  * caller degrades to the language name in that case.
+ *
+ * <p>The header is held and parsed once rather than streamed to a reader running alongside. The
+ * player has to read a file's header past this tee before it can prepare it, so the bytes do arrive —
+ * what used to lose them was the teardown: the reader ran on its own thread behind a pipe that
+ * {@code close()} shut while it was still walking. Holding the bytes instead means the parse happens
+ * when the collecting stops rather than racing it. For Matroska that close is the normal path, not an
+ * edge case: its extractor seeks away to read the cues as soon as it has the tracks.
  */
 final class TrackNameParsingDataSource implements DataSource {
 
@@ -40,10 +48,15 @@ final class TrackNameParsingDataSource implements DataSource {
      */
     static final AtomicLong bytesRead = new AtomicLong();
 
-    /** Receives parsed track metadata (on a background thread) and reports whether it already has it. */
+    /** Receives parsed track metadata (on a load thread) and reports whether it already has it. */
     interface Listener {
-        void onMetadataParsed(List<TrackMetadata> tracks);
-        boolean isMetadataParsed();
+        /**
+         * Called with the tracks read from {@code originalUri}'s header. Keyed by URI because the player
+         * opens the next item of a playlist while the current one is still playing: metadata that is
+         * merely "the most recent" belongs to whichever item won that race.
+         */
+        void onMetadataParsed(Uri originalUri, List<TrackMetadata> tracks);
+        boolean isMetadataParsed(Uri originalUri);
 
         /**
          * Called (on a load thread) with the length the upstream reported for a whole media item, keyed
@@ -70,16 +83,9 @@ final class TrackNameParsingDataSource implements DataSource {
         void onResolverNotReady(Uri originalUri);
     }
 
-    // 64 KB in-RAM pipe — a standard IO chunk; keeps memory bounded and provides backpressure.
-    private static final int PIPE_BUFFER_SIZE = 64 * 1024;
-    // Upper bound on bytes fed to the parser. A large faststart moov can be tens of MB (the sample
-    // tables of a multi-hour 4K file), so this is generous; a non-faststart file bails on the first
-    // mdat instead of streaming this far.
-    private static final int MAX_BYTES_TO_PARSE = 128 * 1024 * 1024;
-
     private final DataSource upstream;
     private final Listener listener;
-    private final PipeSink pipeSink = new PipeSink();
+    private final HeaderSink headerSink = new HeaderSink();
 
     private TeeDataSource teeDataSource;
 
@@ -91,8 +97,8 @@ final class TrackNameParsingDataSource implements DataSource {
     @Override
     public long open(DataSpec dataSpec) throws IOException {
         final long length;
-        if (dataSpec.position == 0 && !listener.isMetadataParsed()) {
-            teeDataSource = new TeeDataSource(upstream, pipeSink);
+        if (dataSpec.position == 0 && !listener.isMetadataParsed(dataSpec.uri)) {
+            teeDataSource = new TeeDataSource(upstream, headerSink);
             length = teeDataSource.open(dataSpec);
         } else {
             teeDataSource = null;
@@ -244,7 +250,9 @@ final class TrackNameParsingDataSource implements DataSource {
                 upstream.close();
             }
         } finally {
-            pipeSink.stopParsing();
+            // TeeDataSource.close() already closed the sink; this covers the no-tee branch and frees the
+            // buffered header either way. Idempotent — the second call finds nothing left to parse.
+            headerSink.close();
             teeDataSource = null;
         }
     }
@@ -259,93 +267,107 @@ final class TrackNameParsingDataSource implements DataSource {
         return upstream.getResponseHeaders();
     }
 
-    private final class PipeSink implements DataSink {
-        private PipedOutputStream pipedOut;
-        private Thread parsingThread;
-        private long totalBytesWritten;
-        private volatile boolean parsingActive;
+    /**
+     * Collects the front of the stream as the player reads it and parses it exactly once.
+     *
+     * <p>Every method here runs on an ExoPlayer load thread, inside {@link DataSource#read} and
+     * {@link DataSource#close}. Anything thrown from there becomes a playback error, and an
+     * {@link Error} — an unbounded allocation from a corrupt header, say — takes the process with it.
+     * Recovering a track name is never worth a failed playback, so both entry points swallow
+     * everything and simply stop collecting. The parser this replaced had the same property by
+     * accident, being on a thread of its own.
+     */
+    private final class HeaderSink implements DataSink {
+        private final byte[] signature = new byte[ContainerMetadataReader.SIGNATURE_BYTES];
+        private int signatureLength;
+        /** The bytes collected so far, or null while there is nothing worth collecting. */
+        private ByteArrayOutputStream header;
+        /** Bytes worth collecting for this container; 0 until the signature has been read. */
+        private int budget;
+        private boolean done;
+        private Uri uri;
 
         @Override
         public void open(DataSpec dataSpec) {
-            if (dataSpec.position != 0 || listener.isMetadataParsed()) {
-                return;
-            }
-            closePipes();
-            totalBytesWritten = 0;
-            parsingActive = true;
-
-            final PipedInputStream pipedIn;
-            try {
-                pipedOut = new PipedOutputStream();
-                pipedIn = new PipedInputStream(pipedOut, PIPE_BUFFER_SIZE);
-            } catch (IOException e) {
-                parsingActive = false;
-                pipedOut = null;
-                return;
-            }
-
-            parsingThread = new Thread(() -> {
-                try {
-                    final List<TrackMetadata> tracks = ContainerMetadataReader.parse(pipedIn);
-                    if (!tracks.isEmpty()) {
-                        listener.onMetadataParsed(tracks);
-                    }
-                } catch (Exception ignored) {
-                    // Pipe closed / interrupted — normal termination.
-                } finally {
-                    parsingActive = false;
-                    try {
-                        pipedIn.close();
-                    } catch (IOException ignored) {
-                    }
-                }
-            }, "TrackNameParser");
-            parsingThread.setDaemon(true);
-            parsingThread.start();
+            // open() already gated on position 0; the sink is unreachable otherwise.
+            uri = dataSpec.uri;
+            signatureLength = 0;
+            header = null;
+            budget = 0;
+            done = listener.isMetadataParsed(uri);
         }
 
         @Override
         public void write(byte[] buffer, int offset, int length) {
-            if (!parsingActive) {
-                return;
-            }
-            if (totalBytesWritten >= MAX_BYTES_TO_PARSE) {
-                stopParsing();
-                return;
-            }
             try {
-                // Blocks once the 64 KB pipe fills until the parser drains it (backpressure).
-                pipedOut.write(buffer, offset, length);
-                totalBytesWritten += length;
-            } catch (IOException e) {
-                // "Pipe closed"/"Pipe broken" — the parser finished.
-                stopParsing();
+                collect(buffer, offset, length);
+            } catch (Throwable t) {
+                discard();
             }
         }
 
         @Override
         public void close() {
-            stopParsing();
+            try {
+                // Less than the budget arrived: a short file, or the player closed the source early —
+                // which is the normal path for Matroska, whose extractor seeks away to read the cues.
+                // What is here is all there will be, so parse it instead of dropping it.
+                parseHeader();
+            } catch (Throwable t) {
+                discard();
+            }
         }
 
-        void stopParsing() {
-            if (parsingActive) {
-                parsingActive = false;
-                if (parsingThread != null) {
-                    parsingThread.interrupt();
+        private void collect(byte[] buffer, int offset, int length) {
+            if (done) {
+                return;
+            }
+            if (budget == 0) {
+                final int taken = Math.min(length, signature.length - signatureLength);
+                System.arraycopy(buffer, offset, signature, signatureLength, taken);
+                signatureLength += taken;
+                if (signatureLength < signature.length) {
+                    return;
+                }
+                budget = ContainerMetadataReader.headerBudget(signature);
+                if (budget == 0) {
+                    // Nothing here any parser reads — an HLS manifest, an MPEG-TS segment. Every segment
+                    // of a streaming playback opens at offset 0, and this is what keeps them free: the
+                    // signature lands in a field, so a stream we do not parse allocates nothing at all.
+                    discard();
+                    return;
+                }
+                header = new ByteArrayOutputStream(Math.min(budget, 64 * 1024));
+                header.write(signature, 0, signature.length);
+                offset += taken;
+                length -= taken;
+                if (length == 0) {
+                    return;
                 }
             }
-            closePipes();
+            header.write(buffer, offset, length);
+            if (header.size() >= budget) {
+                parseHeader();
+            }
         }
 
-        private void closePipes() {
-            if (pipedOut != null) {
-                try {
-                    pipedOut.close();
-                } catch (IOException ignored) {
-                }
-                pipedOut = null;
+        private void parseHeader() {
+            if (done || header == null) {
+                return;
             }
+            final byte[] bytes = header.toByteArray();
+            discard();
+            final List<TrackMetadata> tracks = ContainerMetadataReader.parse(new ByteArrayInputStream(bytes));
+            if (!tracks.isEmpty()) {
+                listener.onMetadataParsed(uri, tracks);
+            }
+        }
+
+        /** Stops collecting and lets the buffer go; nothing more will be parsed for this open. */
+        private void discard() {
+            done = true;
+            header = null;
+            signatureLength = 0;
         }
     }
 

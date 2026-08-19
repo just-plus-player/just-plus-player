@@ -43,8 +43,9 @@ import java.util.Map;
  * 63 the enhancement layer. Media3 assembles neither, and a device decoder only switches the HDMI
  * pipeline into Dolby Vision for the single-layer profiles (5 and 8.1) — so the picture comes out as
  * plain HDR10 even when the vendor's {@code video/dolby-vision} decoder was the one that opened.
- * Rewriting the RPU into its profile 8.1 form produces a stream a profile 8 decoder takes, which is what
- * Kodi, Vimu and Dune do on the same hardware. Nothing is re-encoded; only metadata is touched.
+ * Rewriting the RPU into its profile 8.1 form and dropping the enhancement layer produces the single-layer
+ * stream a profile 8 decoder takes, which is what Kodi, Vimu and Dune do on the same hardware. Nothing is
+ * re-encoded; only metadata is touched.
  *
  * <p>The rewriting itself, and the native libdovi it needs, come from ExoplayerHdrUtils. What that
  * library does not do is read Matroska {@code BlockAdditional}: in a dual-layer remux — the common UHD
@@ -52,7 +53,9 @@ import java.util.Map;
  * {@link MatroskaExtractor} discards them, so a converter downstream never sees an RPU at all. That hook
  * is what this class adds, alongside the codec string rewrite ({@code dvhe.07…} → {@code dvhe.08…}) that
  * routes the track to the profile 8 decoder — Media3 reads the profile out of {@link Format#codecs}, not
- * out of the bitstream.
+ * out of the bitstream. The library also touches the RPU and nothing else, so an enhancement layer that
+ * arrived in band rather than in a block addition would survive into a stream the codec string calls
+ * single-layer; dropping it is this class's job too.
  *
  * <p>Failure model: the codec string is rewritten only <em>after</em> a frame has actually been
  * converted, and no sample byte reaches the player before that decision is final. Anything unexpected —
@@ -66,6 +69,8 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
     private static final int BLOCK_ADDITIONAL_ID_VP9_ITU_T_35 = 4;
     /** HEVC NAL unit type carrying the Dolby Vision RPU. */
     private static final int NAL_UNIT_TYPE_RPU = 62;
+    /** HEVC NAL unit type carrying the Dolby Vision enhancement layer picture. */
+    private static final int NAL_UNIT_TYPE_ENHANCEMENT_LAYER = 63;
     /** Four-byte Annex-B start code, the framing Media3's extractors emit HEVC samples in. */
     private static final byte[] NAL_START_CODE = {0, 0, 0, 1};
     /** Sanity bound on one {@code BlockAdditional}, so a malformed file cannot size a buffer for us. */
@@ -279,6 +284,8 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
         private int runCount;
 
         private byte[] transfer = new byte[0];
+        /** True while {@link #transfer} holds this sample's main bytes as they arrived, before the rewrite. */
+        private boolean mainSnapshot;
         private byte[] pendingRpu = new byte[0];
         private int pendingRpuLength;
 
@@ -418,31 +425,50 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                 return;
             }
             if (rpuLength > 0) {
-                // The RPU belongs at the end of the access unit, after the picture's own NAL units.
+                // The RPU belongs at the end of the access unit, after the picture's own NAL units. It is
+                // appended without recording a run: these bytes are this class's own, not the sample's, so
+                // a bail-out still replays exactly what the extractor wrote.
                 if (!claim(SAMPLE_DATA_PART_MAIN, rpuLength)) {
                     replayBuffered();
                     giveUp("profile 7, unchanged (sample larger than this can rewrite)");
                     delegate.sampleMetadata(timeUs, flags, size, offset, cryptoData);
                     return;
                 }
-                store(SAMPLE_DATA_PART_MAIN, pendingRpu, 0, rpuLength);
+                frame.put(pendingRpu, 0, rpuLength);
             }
             final ByteBuffer buffer = frame;
             final int length = buffer.position();
+            // Dropping the enhancement layer and libdovi both rewrite the buffer in place, so the sample is
+            // taken out of it verbatim first and every bail-out below replays it from that copy.
+            ((Buffer) buffer).position(0);
+            copyFrameOut(length);
+            mainSnapshot = true;
+            ((Buffer) buffer).clear();
+            final int base = copyWithoutEnhancementLayer(transfer, length, buffer);
+            if (base < 0) {
+                // No RPU anywhere in the access unit, so there is no profile 7 metadata here to rewrite.
+                // libdovi would not have said so: with no RPU to parse it settles on "no transform needed"
+                // and hands the frame back at its original size, which on its own is indistinguishable from
+                // a conversion.
+                replayBuffered();
+                giveUp("profile 7, unchanged (no Dolby Vision RPU in the stream)");
+                delegate.sampleMetadata(timeUs, flags, size, offset, cryptoData);
+                return;
+            }
             final int converted;
             try {
-                ((Buffer) buffer).limit(length).position(0);
-                converted = transformer.transformFrame(buffer, length);
+                ((Buffer) buffer).limit(base).position(0);
+                converted = transformer.transformFrame(buffer, base);
                 ((Buffer) buffer).limit(buffer.capacity());
                 if (converted <= 0 || converted > buffer.capacity()) {
                     throw new IllegalStateException("dolby vision rewrite returned " + converted);
                 }
             } catch (RuntimeException | LinkageError e) {
-                // libdovi could not make sense of the frame, most often because there is no RPU in it. The
-                // sample is replayed as it came in and the track goes back to what it was.
-                ((Buffer) buffer).limit(buffer.capacity()).position(length);
+                // libdovi could not make sense of the frame. The sample is replayed as it came in and the
+                // track goes back to what it was.
+                ((Buffer) buffer).limit(buffer.capacity());
                 replayBuffered();
-                giveUp("profile 7, unchanged (no Dolby Vision RPU in the stream)");
+                giveUp("profile 7, unchanged (the Dolby Vision rewrite refused the frame)");
                 delegate.sampleMetadata(timeUs, flags, size, offset, cryptoData);
                 return;
             }
@@ -454,9 +480,9 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                     delegate.format(publishedFormat.buildUpon()
                             .setCodecs(toProfile8(publishedFormat.codecs)).build());
                 }
-                owner.status = dualLayer
-                        ? "profile 7 → 8.1 (RPU from the enhancement layer)"
-                        : "profile 7 → 8.1 (in-band RPU)";
+                owner.status = "profile 7 → 8.1 ("
+                        + (dualLayer ? "RPU from the enhancement layer" : "in-band RPU")
+                        + (length > base ? ", enhancement layer dropped" : "") + ")";
             }
             ((Buffer) buffer).position(0);
             copyFrameOut(converted);
@@ -537,7 +563,8 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                 resetBuffers();
                 return;
             }
-            final int mainLength = frame == null ? 0 : frame.position();
+            // transfer already holds the sample's main bytes when the rewrite took its copy of them.
+            final int mainLength = mainSnapshot || frame == null ? 0 : frame.position();
             if (mainLength > 0) {
                 ((Buffer) frame).limit(frame.capacity()).position(0);
                 copyFrameOut(mainLength);
@@ -574,6 +601,7 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
             }
             sideLength = 0;
             runCount = 0;
+            mainSnapshot = false;
         }
 
         /** Stops converting for good and says why, unless a conversion has already been advertised. */
@@ -639,6 +667,60 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
     /** {@code dvhe.07.06} → {@code dvhe.08.06}, leaving the level and the sample entry prefix alone. */
     private static String toProfile8(String codecs) {
         return codecs.substring(0, 5) + "08" + codecs.substring(7);
+    }
+
+    /**
+     * Copies an Annex-B access unit into {@code target} with the Dolby Vision enhancement layer left out.
+     *
+     * <p>libdovi rewrites the RPU and nothing else, so an enhancement layer that arrived in band — which is
+     * how a remux carries it when it is not in a Matroska block addition — would survive into a stream the
+     * codec string calls profile 8.1. That profile is single-layer by definition, and a device handed a
+     * dual-layer stream under its name keeps it out of the Dolby Vision pipeline and shows HDR10: the very
+     * symptom this class exists to fix. Losing what the enhancement layer carried is what a profile 7 → 8.1
+     * conversion is; the base layer and the rewritten RPU are the picture.
+     *
+     * @return the number of bytes written, or -1 if this is not Annex-B framing it can walk, or the access
+     *     unit carries no RPU at all — nothing here to convert, so the caller must leave the track alone.
+     */
+    static int copyWithoutEnhancementLayer(byte[] source, int length, ByteBuffer target) {
+        int unit = startCodeAt(source, 0, length);
+        if (unit != 0) {
+            return -1;
+        }
+        boolean rpuSeen = false;
+        int written = 0;
+        while (unit < length) {
+            final int payload = unit + (source[unit + 2] == 1 ? 3 : 4);
+            if (payload >= length) {
+                // A start code with no unit behind it. Not something to interpret; kept as it came.
+                target.put(source, unit, length - unit);
+                written += length - unit;
+                break;
+            }
+            final int next = startCodeAt(source, payload, length);
+            final int type = (source[payload] >> 1) & 0x3F;
+            if (type != NAL_UNIT_TYPE_ENHANCEMENT_LAYER) {
+                target.put(source, unit, next - unit);
+                written += next - unit;
+                rpuSeen |= type == NAL_UNIT_TYPE_RPU;
+            }
+            unit = next;
+        }
+        return rpuSeen ? written : -1;
+    }
+
+    /**
+     * Offset of the Annex-B start code at or after {@code from}, or {@code limit} if there is none. A fourth
+     * leading zero byte counts as part of the start code, which is the form Media3's extractors emit;
+     * three-byte codes are walked all the same.
+     */
+    private static int startCodeAt(byte[] data, int from, int limit) {
+        for (int i = from; i + 2 < limit; i++) {
+            if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) {
+                return i > from && data[i - 1] == 0 ? i - 1 : i;
+            }
+        }
+        return limit;
     }
 
     /**

@@ -719,11 +719,13 @@ class Utils {
         activity.runOnUiThread(() -> {
             boolean switchingModes = false;
 
-            if (frameRate > 0) {
-                Display display = activity.getWindow().getDecorView().getDisplay();
-                if (display == null) {
-                    return;
-                }
+            // A detached decor view answers null. Falling through to playIfCan rather than returning:
+            // the caller has already told the player a switch is pending, so bailing out here left the
+            // file on its first frame with no spinner and no error. Unreachable until the rate started
+            // coming from Format — before that a stream had no rate at all and never entered this block.
+            final Display display = frameRate > 0
+                    ? activity.getWindow().getDecorView().getDisplay() : null;
+            if (display != null) {
                 Display.Mode[] supportedModes = display.getSupportedModes();
                 Display.Mode activeMode = display.getMode();
 
@@ -752,7 +754,17 @@ class Utils {
                         Display.Mode modeBest = null;
 
                         for (Display.Mode mode : modesHigh) {
-                            if (normRate(mode.getRefreshRate()) % normRate(frameRate) <= 0.0001f) {
+                            // A whole multiple of the content rate, judged on the *relative* error. The
+                            // centi-Hz remainder this replaces could not match 23.976 at all, since
+                            // normRate truncates it to 2397, which divides neither 4795 (47.952 Hz) nor
+                            // 11988 (119.88 Hz). But the tolerance has to stay under the 1/1001 that
+                            // separates an NTSC rate from its integer neighbour, or 120 Hz also "matches"
+                            // 23.976 content and, being the higher rate, beats the 119.88 mode that is the
+                            // exact one. 2e-4 sits between the float noise on these values (~5e-6) and
+                            // that 1e-3 gap.
+                            final float ratio = mode.getRefreshRate() / frameRate;
+                            final int multiple = Math.round(ratio);
+                            if (multiple >= 1 && Math.abs(ratio - multiple) < multiple * 0.0002f) {
                                 if (modeBest == null || normRate(mode.getRefreshRate()) > normRate(modeBest.getRefreshRate())) {
                                     modeBest = mode;
                                 }

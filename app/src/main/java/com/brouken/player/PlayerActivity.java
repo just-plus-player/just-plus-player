@@ -7880,7 +7880,17 @@ public class PlayerActivity extends Activity {
                             }
                             displayManager.registerDisplayListener(displayListener, null);
                         }
-                        switched = Utils.switchFrameRate(PlayerActivity.this, mPrefs.mediaUri);
+                        // The rate the stats panel prints is the rate the display needs, and by now the app
+                        // usually has it. Measuring it again through a second MediaExtractor costs seconds
+                        // and cannot open HLS at all, which is why online sources never switched.
+                        final float rate = videoFrameRate();
+                        if (rate > 0) {
+                            Utils.handleFrameRate(PlayerActivity.this, rate);
+                            switched = true;
+                        } else {
+                            // Nothing published a rate — a container neither Media3 nor our parser reads.
+                            switched = Utils.switchFrameRate(PlayerActivity.this, currentMediaUri());
+                        }
                     }
                     if (!switched) {
                         if (displayManager != null) {

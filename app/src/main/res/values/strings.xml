@@ -133,6 +133,9 @@
     <string name="pref_show_clock">Show clock</string>
     <string name="pref_show_clock_on">Clock stays in the top-right corner over the video</string>
     <string name="pref_show_clock_off">Clock shows only with the player controls</string>
+    <string name="pref_time_remaining">Show remaining time</string>
+    <string name="pref_time_remaining_on">Bottom bar counts down the time left</string>
+    <string name="pref_time_remaining_off">Bottom bar shows the total duration</string>
     <string name="pref_system_volume">System volume</string>
     <string name="pref_system_volume_on">Volume gestures and buttons change the device media volume</string>
     <string name="pref_system_volume_off">Volume gestures and buttons change only this player and leave the device volume alone</string>

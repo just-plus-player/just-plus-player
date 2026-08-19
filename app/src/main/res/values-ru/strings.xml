@@ -131,6 +131,9 @@
     <string name="pref_show_clock">Показывать часы</string>
     <string name="pref_show_clock_on">Часы всегда в правом верхнем углу поверх видео</string>
     <string name="pref_show_clock_off">Часы показываются только с элементами управления</string>
+    <string name="pref_time_remaining">Показывать оставшееся время</string>
+    <string name="pref_time_remaining_on">Нижняя панель отсчитывает время до конца</string>
+    <string name="pref_time_remaining_off">Нижняя панель показывает общую длительность</string>
     <string name="pref_system_volume">Системная громкость</string>
     <string name="pref_system_volume_on">Жесты и кнопки громкости меняют громкость медиа на устройстве</string>
     <string name="pref_system_volume_off">Жесты и кнопки громкости меняют только этот плеер и не затрагивают громкость устройства</string>

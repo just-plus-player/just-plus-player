@@ -384,22 +384,25 @@ public class SettingsActivity extends AppCompatActivity
             if (savedInstanceState == null && getArguments() == null) {
                 final String key = requireActivity().getIntent().getStringExtra(EXTRA_SCROLL_TO);
                 if (key != null) {
-                    scrollToPreference(key);
-                    focusPreference(key, 3);
+                    openAtPreference(key, 3);
                 }
             }
         }
 
         /**
-         * Scrolling alone leaves a remote's focus on the first row, and the first D-pad press yanks
-         * the list straight back to the top — so the row the deep link asked for takes the focus too.
-         * The holder can still be missing on the first pre-draw (androidx scrolls again once the
-         * adapter settles), hence the few attempts. On a phone requestFocus is a no-op in touch mode.
+         * Opens the list on one row: scrolled so the section header above it is still on screen, and
+         * with the row itself focused. scrollToPreference alone scrolls the row barely into view — at
+         * the bottom edge, inside a TV's overscan — and leaves a remote's focus on the first row, so
+         * the first D-pad press yanks the list straight back to the top.
+         *
+         * The holder can be missing on the first pre-draw, hence the few attempts. On a phone the
+         * focus request is a no-op: a preference row is not focusable in touch mode.
          */
-        private void focusPreference(final String key, final int attemptsLeft) {
+        private void openAtPreference(final String key, final int attemptsLeft) {
             final RecyclerView list = getListView();
             final RecyclerView.Adapter<?> adapter = list == null ? null : list.getAdapter();
-            if (attemptsLeft <= 0 || !(adapter instanceof PreferenceGroup.PreferencePositionCallback)) {
+            if (attemptsLeft <= 0 || !(adapter instanceof PreferenceGroup.PreferencePositionCallback)
+                    || !(list.getLayoutManager() instanceof LinearLayoutManager)) {
                 return;
             }
             final int position = ((PreferenceGroup.PreferencePositionCallback) adapter)
@@ -407,13 +410,19 @@ public class SettingsActivity extends AppCompatActivity
             if (position == RecyclerView.NO_POSITION) {
                 return;
             }
+            final LinearLayoutManager manager = (LinearLayoutManager) list.getLayoutManager();
+            manager.scrollToPositionWithOffset(Math.max(0, position - 1), 0);
             OneShotPreDrawListener.add(list, () -> {
                 final RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(position);
-                if (holder != null) {
-                    holder.itemView.requestFocus();
-                } else {
-                    focusPreference(key, attemptsLeft - 1);
+                if (holder == null) {
+                    openAtPreference(key, attemptsLeft - 1);
+                    return;
                 }
+                holder.itemView.requestFocus();
+                // Taking the focus makes RecyclerView scroll the row just barely into view, which
+                // parks it against the bottom edge — inside a TV's overscan. Put the list back where
+                // it belongs afterwards: one row before the target, so its category header shows.
+                list.post(() -> manager.scrollToPositionWithOffset(Math.max(0, position - 1), 0));
             });
         }
 

@@ -5607,11 +5607,29 @@ public class PlayerActivity extends Activity {
         if (missedAt != null && System.currentTimeMillis() - missedAt < SUBTITLE_MISS_TTL_MS) {
             return;
         }
+        final int index = player.getCurrentMediaItemIndex();
+        final String cacheName = "subs." + id.key().replaceAll("[^A-Za-z0-9]", "-");
+
+        // A copy kept from an earlier watch answers the same question for nothing — no request, no
+        // quota, no waiting. This is why the file is named after the title and language rather than
+        // after whichever release the source happened to hand over.
+        for (String language : wanted) {
+            final java.io.File cached = new java.io.File(getCacheDir(),
+                    cacheName + "." + language + ".srt");
+            if (cached.isFile() && cached.length() > 0) {
+                // Touched so the twenty-file trim treats "watched again" as recently used.
+                cached.setLastModified(System.currentTimeMillis());
+                cancelSubtitleSearch();
+                subtitleSearchStarted = key;
+                attachSearchedSubtitle(subtitleSearchGeneration, index,
+                        Uri.fromFile(cached), language);
+                return;
+            }
+        }
+
         cancelSubtitleSearch();
         subtitleSearchStarted = key;
         final int generation = subtitleSearchGeneration;
-        final int index = player.getCurrentMediaItemIndex();
-        final String cacheName = "subs." + id.key().replaceAll("[^A-Za-z0-9]", "-");
 
         final Thread worker = new Thread(() -> {
             final AtomicBoolean answered = new AtomicBoolean();

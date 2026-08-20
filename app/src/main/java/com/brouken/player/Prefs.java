@@ -3,7 +3,9 @@ package com.brouken.player;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.net.Uri;
+import android.view.accessibility.CaptioningManager;
 
 import com.brouken.player.together.AliasGenerator;
 import android.preference.PreferenceManager;
@@ -12,6 +14,7 @@ import android.text.TextUtils;
 
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
+import androidx.media3.ui.CaptionStyleCompat;
 
 import com.brouken.player.update.UpdateInfo;
 
@@ -23,6 +26,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -61,8 +65,13 @@ class Prefs {
     private static final String PREF_KEY_DECODER_PRIORITY = "decoderPriority";
     private static final String PREF_KEY_MAP_DV7 = "mapDV7ToHevc";
     private static final String PREF_KEY_LANGUAGE_AUDIO = "languageAudio";
+    private static final String PREF_KEY_LANGUAGE_SUBTITLE = "languageSubtitle";
     private static final String PREF_KEY_SUBTITLE_STYLE_EMBEDDED = "subtitleStyleEmbedded";
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
+    private static final String PREF_KEY_SUBTITLE_SCALE = "subtitleScale";
+    private static final String PREF_KEY_SUBTITLE_TEXT_COLOR = "subtitleTextColor";
+    private static final String PREF_KEY_SUBTITLE_BACKGROUND = "subtitleBackground";
+    private static final String PREF_KEY_SUBTITLE_EDGE = "subtitleEdge";
     private static final String PREF_KEY_SKIP_ENABLED = "skipEnabled";
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
     private static final String PREF_KEY_SKIP_MODE_CREDITS = "skipModeCredits";
@@ -149,8 +158,18 @@ class Prefs {
     // Preferred audio languages, most wanted first: comma-separated ISO-639-2/T codes ("ukr,eng").
     // Empty means no preference at all, i.e. whatever the media itself puts first.
     public String languageAudio = "";
+    // Preferred subtitle languages, same shape as languageAudio. Empty means no preference, which is
+    // what every install starts from: unlike audio, a subtitle nobody asked for is in the way.
+    public String languageSubtitle = "";
     public boolean subtitleStyleEmbedded = true;
     public boolean subtitleStyleBold = false;
+    // How subtitles look. Owned here since the app stopped reading the system captioning screen: it
+    // named a language too, and one language belongs in one place (see getLanguageSubtitle).
+    // The scale keeps the five steps that screen had, so normalizeFontScale still does the mapping.
+    public float subtitleScale = 1.0f;
+    public int subtitleTextColor = Color.WHITE;
+    public int subtitleBackgroundColor = Color.TRANSPARENT;
+    public int subtitleEdgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE;
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BRIEF;
     public String skipModeCredits = SKIP_MODE_BRIEF;
@@ -274,8 +293,13 @@ class Prefs {
         decoderPriority = Integer.parseInt(mSharedPreferences.getString(PREF_KEY_DECODER_PRIORITY, String.valueOf(decoderPriority)));
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);
         languageAudio = getLanguageAudio(mContext);
+        languageSubtitle = getLanguageSubtitle(mContext);
         subtitleStyleEmbedded = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_EMBEDDED, subtitleStyleEmbedded);
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
+        subtitleScale = Float.parseFloat(mSharedPreferences.getString(PREF_KEY_SUBTITLE_SCALE, String.valueOf(subtitleScale)));
+        subtitleTextColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_TEXT_COLOR, "#FFFFFFFF"));
+        subtitleBackgroundColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_BACKGROUND, "#00000000"));
+        subtitleEdgeType = Integer.parseInt(mSharedPreferences.getString(PREF_KEY_SUBTITLE_EDGE, String.valueOf(subtitleEdgeType)));
         skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
         skipModeCredits = mSharedPreferences.getString(PREF_KEY_SKIP_MODE_CREDITS, skipModeCredits);
@@ -344,6 +368,32 @@ class Prefs {
     public static void setLanguageAudio(final Context context, final String languages) {
         PreferenceManager.getDefaultSharedPreferences(context).edit()
                 .putString(PREF_KEY_LANGUAGE_AUDIO, languages).apply();
+    }
+
+    /**
+     * The subtitle language is picked here and nowhere else. The system captioning screen (still
+     * offered, for size and style) also names a language, and that used to be what selected the
+     * subtitle track — so a fresh key inherits it once, and from then on this list is the only thing
+     * that decides. Empty means no preference at all, like the audio list.
+     */
+    public static String getLanguageSubtitle(final Context context) {
+        final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        final String stored = preferences.getString(PREF_KEY_LANGUAGE_SUBTITLE, null);
+        if (stored != null) {
+            return stored;
+        }
+        final CaptioningManager captioningManager =
+                (CaptioningManager) context.getSystemService(Context.CAPTIONING_SERVICE);
+        final Locale locale = captioningManager == null ? null : captioningManager.getLocale();
+        final String inherited = locale == null ? "" : Utils.toIso3Language(locale.getLanguage());
+        final String seeded = inherited == null ? "" : inherited;
+        preferences.edit().putString(PREF_KEY_LANGUAGE_SUBTITLE, seeded).apply();
+        return seeded;
+    }
+
+    public static void setLanguageSubtitle(final Context context, final String languages) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(PREF_KEY_LANGUAGE_SUBTITLE, languages).apply();
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {

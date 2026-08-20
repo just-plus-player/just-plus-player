@@ -1,7 +1,14 @@
 package com.brouken.player;
 
 import android.content.res.Configuration;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ImageSpan;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -19,6 +26,7 @@ import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceScreen;
 import androidx.preference.SwitchPreferenceCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -37,10 +45,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.MissingResourceException;
 
-public class SettingsActivity extends AppCompatActivity {
+public class SettingsActivity extends AppCompatActivity
+        implements PreferenceFragmentCompat.OnPreferenceStartScreenCallback {
 
     /** ISO-639-2/T codes of the audio tracks in the clip the player has open, if any. */
     public static final String EXTRA_MEDIA_LANGUAGES = "mediaLanguages";
+
+    /** Key of the preference to open on: the screen scrolls to it instead of starting at the top. */
+    public static final String EXTRA_SCROLL_TO = "scrollTo";
 
     static RecyclerView recyclerView;
 
@@ -78,6 +90,13 @@ public class SettingsActivity extends AppCompatActivity {
             actionBar.setDisplayHomeAsUpEnabled(true);
         }
 
+        final CharSequence rootTitle = getTitle();
+        getSupportFragmentManager().addOnBackStackChangedListener(() -> {
+            if (getSupportFragmentManager().getBackStackEntryCount() == 0) {
+                setTitle(rootTitle);
+            }
+        });
+
         if (Build.VERSION.SDK_INT >= 29) {
             LinearLayout layout = findViewById(R.id.settings_layout);
             layout.setOnApplyWindowInsetsListener((view, windowInsets) -> {
@@ -92,6 +111,32 @@ public class SettingsActivity extends AppCompatActivity {
                 return windowInsets;
             });
         }
+    }
+
+    /** Up from a sub-screen goes back one level, not out of the settings altogether. */
+    @Override
+    public boolean onSupportNavigateUp() {
+        return getSupportFragmentManager().popBackStackImmediate() || super.onSupportNavigateUp();
+    }
+
+    /**
+     * A nested <PreferenceScreen> opens as the same fragment rooted at its key, which is how the
+     * subtitle look stays one button instead of six rows on an already long screen.
+     */
+    @Override
+    public boolean onPreferenceStartScreen(@NonNull PreferenceFragmentCompat caller,
+                                           @NonNull PreferenceScreen screen) {
+        final SettingsFragment fragment = new SettingsFragment();
+        final Bundle arguments = new Bundle();
+        arguments.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, screen.getKey());
+        fragment.setArguments(arguments);
+        getSupportFragmentManager()
+                .beginTransaction()
+                .replace(R.id.settings, fragment)
+                .addToBackStack(null)
+                .commit();
+        setTitle(screen.getTitle());
+        return true;
     }
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
@@ -172,15 +217,6 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
-            // Fire OS and some TV boxes ship no system captioning screen, and the preference
-            // launches its intent itself — an unhandled one takes the app down.
-            Preference preferenceCaptioning = findPreference("captioningPreferences");
-            if (preferenceCaptioning != null && (preferenceCaptioning.getIntent() == null
-                    || preferenceCaptioning.getIntent().resolveActivity(
-                            getContext().getPackageManager()) == null)) {
-                preferenceCaptioning.setVisible(false);
-            }
-
             Preference preferenceSystemVolume = findPreference("systemVolume");
             if (preferenceSystemVolume != null && Utils.isTvBox(getContext())) {
                 // TV remotes route volume to the panel or receiver over CEC, where only the system
@@ -216,19 +252,59 @@ public class SettingsActivity extends AppCompatActivity {
             }
 
             Preference preferenceLanguageAudio = findPreference("languageAudio");
-            if (preferenceLanguageAudio != null) {
+            Preference preferenceLanguageSubtitle = findPreference("languageSubtitle");
+            if (preferenceLanguageAudio != null || preferenceLanguageSubtitle != null) {
+                // Several hundred locales, resolved and sorted once for both lists.
                 final LinkedHashMap<String, String> languages = getLanguages();
-                updateLanguageSummary(preferenceLanguageAudio, languages);
-                preferenceLanguageAudio.setOnPreferenceClickListener(preference -> {
-                    AudioLanguagePriorityDialog.show(requireContext(),
-                            getString(R.string.pref_language_audio),
-                            Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
-                            languages, pinnedLanguages(), picked -> {
-                                Prefs.setLanguageAudio(requireContext(), TextUtils.join(",", picked));
-                                updateLanguageSummary(preference, languages);
-                            });
-                    return true;
-                });
+                if (preferenceLanguageAudio != null) {
+                    updateLanguageSummary(preferenceLanguageAudio, languages,
+                            Prefs.getLanguageAudio(requireContext()),
+                            R.string.pref_language_audio_none);
+                    preferenceLanguageAudio.setOnPreferenceClickListener(preference -> {
+                        LanguagePriorityDialog.show(requireContext(),
+                                getString(R.string.pref_language_audio),
+                                R.string.pref_language_audio_none,
+                                Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
+                                languages, pinnedLanguages(), picked -> {
+                                    final String stored = TextUtils.join(",", picked);
+                                    Prefs.setLanguageAudio(requireContext(), stored);
+                                    updateLanguageSummary(preference, languages, stored,
+                                            R.string.pref_language_audio_none);
+                                });
+                        return true;
+                    });
+                }
+                if (preferenceLanguageSubtitle != null) {
+                    updateLanguageSummary(preferenceLanguageSubtitle, languages,
+                            Prefs.getLanguageSubtitle(requireContext()),
+                            R.string.pref_language_subtitle_none);
+                    preferenceLanguageSubtitle.setOnPreferenceClickListener(preference -> {
+                        LanguagePriorityDialog.show(requireContext(),
+                                getString(R.string.pref_language_subtitle),
+                                R.string.pref_language_subtitle_none,
+                                Utils.splitLanguages(Prefs.getLanguageSubtitle(requireContext())),
+                                languages, pinnedLanguages(), picked -> {
+                                    final String stored = TextUtils.join(",", picked);
+                                    Prefs.setLanguageSubtitle(requireContext(), stored);
+                                    updateLanguageSummary(preference, languages, stored,
+                                            R.string.pref_language_subtitle_none);
+                                });
+                        return true;
+                    });
+                }
+            }
+
+            final ListPreference textColor = findPreference("subtitleTextColor");
+            final ListPreference background = findPreference("subtitleBackground");
+            if (textColor != null && background != null) {
+                showColorChips(textColor);
+                showColorChips(background);
+                // Text in the colour of its own box is invisible subtitles, and the two lists are far
+                // enough apart that nobody would connect the cause. Refuse the pick instead.
+                textColor.setOnPreferenceChangeListener((preference, value) ->
+                        allowColor((String) value, background.getValue()));
+                background.setOnPreferenceChangeListener((preference, value) ->
+                        allowColor(textColor.getValue(), (String) value));
             }
 
             Preference resetAudioWorkarounds = findPreference("resetRevokedAudioMimes");
@@ -300,14 +376,101 @@ public class SettingsActivity extends AppCompatActivity {
             if (Build.VERSION.SDK_INT >= 29) {
                 recyclerView = getListView();
             }
+            // Long-pressing a player button lands on the section that button is about, the way a
+            // quick-settings tile opens its own page. Only on the way in: coming back from a
+            // sub-screen must not yank the list somewhere the user did not ask for.
+            if (savedInstanceState == null && getArguments() == null) {
+                final String key = requireActivity().getIntent().getStringExtra(EXTRA_SCROLL_TO);
+                if (key != null) {
+                    scrollToPreference(key);
+                }
+            }
+        }
+
+        /**
+         * Puts a chip of the actual colour in front of every label, in the list and in the summary —
+         * a colour is recognised, a colour name is recalled. Outlined, or white would be a blank gap
+         * on a light row and the transparent entry would show nothing at all.
+         */
+        private void showColorChips(final ListPreference preference) {
+            final CharSequence[] entries = preference.getEntries();
+            final CharSequence[] values = preference.getEntryValues();
+            final CharSequence[] chipped = new CharSequence[entries.length];
+            for (int i = 0; i < entries.length; i++) {
+                final GradientDrawable chip = new GradientDrawable();
+                chip.setShape(GradientDrawable.OVAL);
+                chip.setColor(Color.parseColor(values[i].toString()));
+                chip.setStroke(Math.max(1, Utils.dpToPx(1)), 0x80808080);
+                // The span replaces its one character with the chip's own width, so the space after it
+                // is the whole gap — no guessing how wide two blanks come out in the current font.
+                final SpannableStringBuilder label =
+                        new SpannableStringBuilder("   ").append(entries[i]);
+                label.setSpan(new ChipSpan(chip), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                chipped[i] = label;
+            }
+            preference.setEntries(chipped);
+        }
+
+        /**
+         * Sits the chip on the optical middle of the text. ImageSpan's own alignments are baseline and
+         * line-bottom, both of which hang a round chip visibly low, and ALIGN_CENTER is API 29+.
+         */
+        private static class ChipSpan extends ImageSpan {
+            ChipSpan(final Drawable drawable) {
+                super(drawable);
+            }
+
+            @Override
+            public int getSize(@NonNull Paint paint, CharSequence text, int start, int end,
+                               @Nullable Paint.FontMetricsInt fontMetrics) {
+                resize(paint);
+                return super.getSize(paint, text, start, end, fontMetrics);
+            }
+
+            /**
+             * The chip is sized off the text beside it rather than a fixed dp, so it holds its
+             * proportion on a TV row (larger type than a phone's) and at any system font size.
+             */
+            private void resize(final Paint paint) {
+                final int size = Math.round(paint.getTextSize() * 0.7f);
+                final Drawable chip = getDrawable();
+                if (chip.getBounds().height() != size) {
+                    chip.setBounds(0, 0, size, size);
+                }
+            }
+
+            @Override
+            public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float x,
+                             int top, int y, int bottom, @NonNull Paint paint) {
+                resize(paint);
+                final Drawable chip = getDrawable();
+                final Paint.FontMetricsInt metrics = paint.getFontMetricsInt();
+                // y is the baseline; ascent is negative, so this lands mid-glyph rather than mid-line.
+                final float middle = y + (metrics.ascent + metrics.descent) / 2f;
+                canvas.save();
+                canvas.translate(x, middle - chip.getBounds().height() / 2f);
+                chip.draw(canvas);
+                canvas.restore();
+            }
+        }
+
+        /** @return false to reject the pick, which is what a preference change listener does. */
+        private boolean allowColor(final String textColor, final String backgroundColor) {
+            if (textColor == null || backgroundColor == null
+                    || Color.parseColor(textColor) != Color.parseColor(backgroundColor)) {
+                return true;
+            }
+            Toast.makeText(getContext(), R.string.pref_subtitle_color_clash, Toast.LENGTH_SHORT).show();
+            return false;
         }
 
         /** The chosen languages, in order, or a note that nothing is preferred. */
         private void updateLanguageSummary(final Preference preference,
-                                           final LinkedHashMap<String, String> languages) {
-            final List<String> chosen = Utils.splitLanguages(Prefs.getLanguageAudio(requireContext()));
+                                           final LinkedHashMap<String, String> languages,
+                                           final String stored, final int emptyRes) {
+            final List<String> chosen = Utils.splitLanguages(stored);
             if (chosen.isEmpty()) {
-                preference.setSummary(R.string.pref_language_audio_none);
+                preference.setSummary(emptyRes);
                 return;
             }
             final List<String> labels = new ArrayList<>();

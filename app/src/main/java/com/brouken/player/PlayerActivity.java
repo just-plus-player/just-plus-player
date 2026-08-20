@@ -72,7 +72,6 @@ import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -480,7 +479,6 @@ public class PlayerActivity extends Activity {
     private static final int REQUEST_CHOOSER_VIDEO_MEDIASTORE = 20;
     private static final int REQUEST_CHOOSER_SUBTITLE_MEDIASTORE = 21;
     private static final int REQUEST_SETTINGS = 100;
-    private static final int REQUEST_SYSTEM_CAPTIONS = 200;
     public static final int CONTROLLER_TIMEOUT = 3500;
     // Media3's own DURATION_FOR_HIDING_ANIMATION_MS — see fadeChrome, which has to match it.
     private static final int CHROME_FADE_MS = 250;
@@ -1819,8 +1817,7 @@ public class PlayerActivity extends Activity {
         exoSubtitle.setOnClickListener(v -> showSubtitleDialog());
 
         exoSubtitle.setOnLongClickListener(v -> {
-            enableRotation();
-            safelyStartActivityForResult(new Intent(Settings.ACTION_CAPTIONING_SETTINGS), REQUEST_SYSTEM_CAPTIONS);
+            openSettings("languageSubtitle");
             return true;
         });
 
@@ -2110,9 +2107,7 @@ public class PlayerActivity extends Activity {
     public void onStart() {
         super.onStart();
         alive = true;
-        if (!(isTvBox && Build.VERSION.SDK_INT >= 31)) {
-            updateSubtitleStyle(this);
-        }
+        updateSubtitleStyle(this);
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
             Utils.toggleSystemUi(this, playerView, true);
@@ -2165,9 +2160,6 @@ public class PlayerActivity extends Activity {
         // Back in front, so nothing we launched can still need the device's auto-rotate. onActivityResult
         // normally beats us to this; it does not run for a picker that finishes without handing back a result.
         restoreRotationLock();
-        if (isTvBox && Build.VERSION.SDK_INT >= 31) {
-            updateSubtitleStyle(this);
-        }
     }
 
     @Override
@@ -5421,6 +5413,24 @@ public class PlayerActivity extends Activity {
         );
     }
 
+    /**
+     * Same ordered fallback chain as the audio list, for subtitles. The system captioning language is
+     * deliberately not consulted here — it seeds this list once (see Prefs.getLanguageSubtitle) and
+     * the list is the only place the language is chosen afterwards. An empty list prefers nothing.
+     */
+    private void applyPreferredTextLanguages() {
+        if (trackSelector == null) {
+            return;
+        }
+        final List<String> languages = Utils.splitLanguages(mPrefs.languageSubtitle);
+        if (languages.isEmpty()) {
+            return;
+        }
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setPreferredTextLanguages(languages.toArray(new String[0]))
+        );
+    }
+
     // ExoPlayer invents an empty CEA-608 track for every HLS stream whose playlist declares no closed
     // captions at all (DefaultHlsExtractorFactory.exposeCea608WhenMissingDeclarations, on by default
     // and not reachable through the final DefaultMediaSourceFactory). Almost no such stream actually
@@ -6969,18 +6979,13 @@ public class PlayerActivity extends Activity {
         // Ordered fallback chain: the selector walks the list and takes the first language the media
         // actually carries. An empty list leaves the media's own order alone.
         applyPreferredAudioLanguages();
-        final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
-        if (!captioningManager.isEnabled()) {
-            trackSelector.setParameters(trackSelector.buildUponParameters()
-                    .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-            );
-        }
-        Locale locale = captioningManager.getLocale();
-        if (locale != null) {
-            trackSelector.setParameters(trackSelector.buildUponParameters()
-                    .setPreferredTextLanguage(locale.getISO3Language())
-            );
-        }
+        // A subtitle nobody asked for is in the way, so the file marking one as default is not enough
+        // on its own: subtitles come on when the preferred-language list below matches, or by hand.
+        // This used to depend on the system captioning toggle, which is no longer read anywhere.
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+        );
+        applyPreferredTextLanguages();
         // Set rather than left to the default so Dv7Converter can hand the very same instance to the
         // Matroska extractor it re-creates — subtitle parsing is a constructor argument there, and
         // matching it by construction beats matching Media3's defaults from memory.
@@ -7344,8 +7349,16 @@ public class PlayerActivity extends Activity {
      * the new state with itself.
      */
     void openSettings() {
+        openSettings(null);
+    }
+
+    /** @param scrollToKey preference to open the screen on, or null to start at the top. */
+    void openSettings(final String scrollToKey) {
         settingsBefore = mPrefs.snapshot();
         final Intent intent = new Intent(this, SettingsActivity.class);
+        if (scrollToKey != null) {
+            intent.putExtra(SettingsActivity.EXTRA_SCROLL_TO, scrollToKey);
+        }
         // Lets the audio language picker put the languages of the clip on screen right now on top,
         // instead of burying them somewhere in the device's several hundred locales.
         final List<String> languages = new ArrayList<>();
@@ -9258,21 +9271,25 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /**
+     * The whole look comes from this app's own settings. The system captioning screen used to supply
+     * it — and a language with it, which is why it is no longer read or offered anywhere.
+     */
     void updateSubtitleStyle(final Context context) {
-        final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
         final SubtitleView subtitleView = playerView.getSubtitleView();
         final boolean isTablet = Utils.isTablet(context);
-        subtitlesScale = SubtitleUtils.normalizeFontScale(captioningManager.getFontScale(), isTvBox || isTablet);
+        subtitlesScale = SubtitleUtils.normalizeFontScale(mPrefs.subtitleScale, isTvBox || isTablet);
         if (subtitleView != null) {
-            final CaptioningManager.CaptionStyle userStyle = captioningManager.getUserStyle();
-            final CaptionStyleCompat userStyleCompat = CaptionStyleCompat.createFromCaptionStyle(userStyle);
+            // A window behind the text is a captioning concept nobody asks for, so it stays off. The
+            // outline needs no knob either, it just has to contrast: black around every colour except
+            // black text, which only reads against a light outline.
             final CaptionStyleCompat captionStyle = new CaptionStyleCompat(
-                    userStyle.hasForegroundColor() ? userStyleCompat.foregroundColor : Color.WHITE,
-                    userStyle.hasBackgroundColor() ? userStyleCompat.backgroundColor : Color.TRANSPARENT,
-                    userStyle.hasWindowColor() ? userStyleCompat.windowColor : Color.TRANSPARENT,
-                    userStyle.hasEdgeType() ? userStyleCompat.edgeType : CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                    userStyle.hasEdgeColor() ? userStyleCompat.edgeColor : Color.BLACK,
-                    Typeface.create(userStyleCompat.typeface != null ? userStyleCompat.typeface : Typeface.DEFAULT,
+                    mPrefs.subtitleTextColor,
+                    mPrefs.subtitleBackgroundColor,
+                    Color.TRANSPARENT,
+                    mPrefs.subtitleEdgeType,
+                    mPrefs.subtitleTextColor == Color.BLACK ? Color.WHITE : Color.BLACK,
+                    Typeface.create(Typeface.DEFAULT,
                             mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL));
             subtitleView.setStyle(captionStyle);
             subtitleView.setApplyEmbeddedStyles(mPrefs.subtitleStyleEmbedded);

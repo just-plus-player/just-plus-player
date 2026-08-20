@@ -52,4 +52,74 @@
     <item>off</item>
   </string-array>
 
+  <!-- The five steps the system captioning screen offered; normalizeFontScale maps them to the
+       actual on-screen size, phones one notch bigger than TVs and tablets. -->
+  <string-array name="subtitle_scale_entries">
+    <item>@string/pref_subtitle_scale_smallest</item>
+    <item>@string/pref_subtitle_scale_small</item>
+    <item>@string/pref_subtitle_scale_normal</item>
+    <item>@string/pref_subtitle_scale_large</item>
+    <item>@string/pref_subtitle_scale_largest</item>
+  </string-array>
+
+  <string-array name="subtitle_scale_values">
+    <item>0.25</item>
+    <item>0.5</item>
+    <item>1.0</item>
+    <item>1.5</item>
+    <item>2.0</item>
+  </string-array>
+
+  <!-- White, yellow, cyan and green are the four the BBC subtitle guidelines recommend: picked for
+       the distance between their luminances, not their hues. Soft white is there because plain white
+       haloes on dark scenes. Red, blue and magenta exist in the broadcast palette and are left out —
+       too dark to read over video. -->
+  <string-array name="subtitle_text_color_entries">
+    <item>@string/pref_subtitle_color_white</item>
+    <item>@string/pref_subtitle_color_soft_white</item>
+    <item>@string/pref_subtitle_color_yellow</item>
+    <item>@string/pref_subtitle_color_cyan</item>
+    <item>@string/pref_subtitle_color_green</item>
+    <item>@string/pref_subtitle_color_black</item>
+  </string-array>
+
+  <string-array name="subtitle_text_color_values">
+    <item>#FFFFFFFF</item>
+    <item>#FFCCCCCC</item>
+    <item>#FFFFFF00</item>
+    <item>#FF00FFFF</item>
+    <item>#FF00FF00</item>
+    <item>#FF000000</item>
+  </string-array>
+
+  <string-array name="subtitle_background_entries">
+    <item>@string/pref_subtitle_none</item>
+    <item>@string/pref_subtitle_background_translucent</item>
+    <item>@string/pref_subtitle_color_black</item>
+    <item>@string/pref_subtitle_color_white</item>
+    <item>@string/pref_subtitle_color_blue</item>
+  </string-array>
+
+  <!-- Black, white and blue are the colours the system captioning presets used, so white on black,
+       black on white, yellow on black and yellow on blue can all be set here. -->
+  <string-array name="subtitle_background_values">
+    <item>#00000000</item>
+    <item>#80000000</item>
+    <item>#FF000000</item>
+    <item>#FFFFFFFF</item>
+    <item>#FF0000FF</item>
+  </string-array>
+
+  <!-- CaptionStyleCompat.EDGE_TYPE_* -->
+  <string-array name="subtitle_edge_entries">
+    <item>@string/pref_subtitle_edge_outline</item>
+    <item>@string/pref_subtitle_edge_shadow</item>
+    <item>@string/pref_subtitle_none</item>
+  </string-array>
+
+  <string-array name="subtitle_edge_values">
+    <item>1</item>
+    <item>2</item>
+    <item>0</item>
+  </string-array>
 </resources>

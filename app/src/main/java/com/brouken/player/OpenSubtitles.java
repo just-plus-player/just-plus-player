@@ -50,9 +50,10 @@ final class OpenSubtitles {
     private static final String API = "https://api.opensubtitles.com/api/v1";
 
     /**
-     * Consumer key shipped with the app. Unlike an account or translation key this one is safe to
-     * bundle: the 100 downloads a day are counted per client, so one heavy user cannot drain a pool
-     * everybody else draws from. A user with their own key or account overrides it in settings.
+     * Consumer key shipped with the app. The 100 downloads a day are counted per client rather than
+     * pooled, so one heavy user cannot drain everybody else's — but it is still a shared resource:
+     * abuse gets it revoked for every install at once. Hence this source is asked last, and only for
+     * what the keyless ones could not produce.
      */
     private static final String KEY = "IxrxupVBKx7dhBkAAtW7QbwnhDMgOdEO";
 
@@ -92,7 +93,7 @@ final class OpenSubtitles {
      * @param languages ISO 639-1 codes, most wanted first
      * @return every usable candidate, unordered; empty when nothing matched or the call failed
      */
-    static List<Candidate> search(MediaId id, List<String> languages, String apiKey, String token) {
+    static List<Candidate> search(MediaId id, List<String> languages) {
         if (id == null || id.isEmpty() || languages.isEmpty()) {
             return Collections.emptyList();
         }
@@ -120,7 +121,7 @@ final class OpenSubtitles {
             url.append(param.getKey()).append('=').append(Uri.encode(param.getValue(), ","));
         }
 
-        final String body = get(url.toString(), apiKey, token);
+        final String body = get(url.toString());
         if (body == null) {
             return Collections.emptyList();
         }
@@ -196,10 +197,10 @@ final class OpenSubtitles {
      *
      * @return the link, or null on any failure
      */
-    static String link(long fileId, String apiKey, String token) {
+    static String link(long fileId) {
         final Request request = auth(new Request.Builder()
                 .url(API + "/download")
-                .post(RequestBody.create("{\"file_id\":" + fileId + "}", JSON)), apiKey, token).build();
+                .post(RequestBody.create("{\"file_id\":" + fileId + "}", JSON))).build();
         final String body = execute(request);
         if (body == null) {
             return null;
@@ -213,35 +214,6 @@ final class OpenSubtitles {
             return link;
         } catch (Exception e) {
             Utils.log("OpenSubtitles: " + e);
-            return null;
-        }
-    }
-
-    /**
-     * Exchanges an account for a bearer token. Only a logged-in user gets their own quota — a VIP
-     * account's thousand a day rather than the bundled key's hundred — which is the whole reason the
-     * credential fields exist.
-     *
-     * @return the token, or null when the credentials are wrong or the call failed
-     */
-    static String login(String username, String password, String apiKey) {
-        final JSONObject payload = new JSONObject();
-        try {
-            payload.put("username", username);
-            payload.put("password", password);
-        } catch (Exception e) {
-            return null;
-        }
-        final Request request = auth(new Request.Builder()
-                .url(API + "/login")
-                .post(RequestBody.create(payload.toString(), JSON)), apiKey, null).build();
-        final String body = execute(request);
-        if (body == null) {
-            return null;
-        }
-        try {
-            return new JSONObject(body).optString("token", null);
-        } catch (Exception e) {
             return null;
         }
     }
@@ -275,18 +247,14 @@ final class OpenSubtitles {
         return null;
     }
 
-    private static String get(String url, String apiKey, String token) {
-        return execute(auth(new Request.Builder().url(url), apiKey, token).build());
+    private static String get(String url) {
+        return execute(auth(new Request.Builder().url(url)).build());
     }
 
-    private static Request.Builder auth(Request.Builder builder, String apiKey, String token) {
-        builder.header("Api-Key", TextUtils.isEmpty(apiKey) ? KEY : apiKey)
+    private static Request.Builder auth(Request.Builder builder) {
+        return builder.header("Api-Key", KEY)
                 .header("User-Agent", UA)
                 .header("Accept", "application/json");
-        if (!TextUtils.isEmpty(token)) {
-            builder.header("Authorization", "Bearer " + token);
-        }
-        return builder;
     }
 
     private static String execute(Request request) {

@@ -70,9 +70,6 @@ class Prefs {
     // settings screen: what they do is decided entirely by the list edited there.
     private static final String PREF_KEY_SUBTITLE_SEARCH = "subtitleSearch";
     private static final String PREF_KEY_SUBTITLE_SEARCH_STRICT = "subtitleSearchStrict";
-    private static final String PREF_KEY_OPENSUBTITLES_KEY = "openSubtitlesKey";
-    private static final String PREF_KEY_OPENSUBTITLES_USER = "openSubtitlesUser";
-    private static final String PREF_KEY_OPENSUBTITLES_PASSWORD = "openSubtitlesPassword";
     // One per source, so a single one can be exercised on its own when something looks wrong.
     private static final String PREF_KEY_SOURCE_OPENSUBTITLES = "subtitleSourceOpenSubtitles";
     private static final String PREF_KEY_SOURCE_SHEGU = "subtitleSourceShegu";
@@ -179,9 +176,6 @@ class Prefs {
     // false: search whenever the top language is missing, walking down the list. true: only when the
     // media carries none of the preferred languages at all.
     public boolean subtitleSearchStrict = false;
-    public String openSubtitlesKey = "";
-    public String openSubtitlesUser = "";
-    public String openSubtitlesPassword = "";
     // Tried in this order until one has the wanted language; see SubtitleSearch.
     public boolean subtitleSourceOpenSubtitles = true;
     public boolean subtitleSourceShegu = true;
@@ -322,9 +316,6 @@ class Prefs {
         languageSubtitle = getLanguageSubtitle(mContext);
         subtitleSearch = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH, subtitleSearch);
         subtitleSearchStrict = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, subtitleSearchStrict);
-        openSubtitlesKey = mSharedPreferences.getString(PREF_KEY_OPENSUBTITLES_KEY, openSubtitlesKey);
-        openSubtitlesUser = mSharedPreferences.getString(PREF_KEY_OPENSUBTITLES_USER, openSubtitlesUser);
-        openSubtitlesPassword = mSharedPreferences.getString(PREF_KEY_OPENSUBTITLES_PASSWORD, openSubtitlesPassword);
         subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
         subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
         subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);

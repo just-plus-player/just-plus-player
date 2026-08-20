@@ -8,7 +8,14 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 
 import com.brouken.player.skip.SegmentFinder;
@@ -104,39 +111,59 @@ final class SubtitleSearch {
      *
      * @param preferred ISO 639-2/T codes, most wanted first — already cut to the languages worth
      *                  searching for by the caller
+     * @param answered set when at least one source replied at all, whatever it replied. "Nobody has
+     *                 this" and "there was no way to ask" are the same empty result otherwise, and
+     *                 remembering the second as the first keeps a title unsearchable long after the
+     *                 network came back.
      * @return the hit that was downloaded, or null when no enabled source could deliver one
      */
-    static Result find(MediaId identifier, List<String> preferred, Prefs prefs, Sink sink) {
+    static Result find(MediaId identifier, List<String> preferred, Prefs prefs, Sink sink,
+                       AtomicBoolean answered) {
         if (identifier == null || identifier.isEmpty() || preferred.isEmpty()) {
             return null;
         }
-        // Every source below takes one id and not the other, so whichever is missing is resolved once,
-        // up front, from the one we have. Without this a launcher that sends only a tmdb id leaves
-        // three of the five unable to run at all — and they look broken rather than unasked.
+        // A series whose episode number never arrived would be searched as "any episode of this
+        // season", and every source answers that with some other episode's file. Subtitles for the
+        // wrong episode are worse than none: they read as a broken player, not as a missing file.
+        if (!identifier.isMovie() && identifier.episode < 1) {
+            Utils.log("subtitles: no episode number, not searching");
+            return null;
+        }
+        // Every source takes one id and not the other, so whichever is missing is resolved once, up
+        // front, from the one we have. Without this a launcher that sends only a tmdb id leaves two
+        // sources unable to run at all — and they look broken rather than unasked.
         final MediaId id = enrich(identifier);
+        if (cancelled()) {
+            return null;
+        }
         Utils.log("subtitles: " + id.imdb + " / " + id.tmdb
                 + " s" + id.season + "e" + id.episode + " want=" + preferred);
 
+        // The three keyless indexes are asked at once: none of them costs anything, they disagree
+        // about which files exist, and asking them in turn means waiting out each one's timeout
+        // before the next gets a chance. Results are still taken in source order, not in whichever
+        // order they happen to answer.
+        final List<Callable<Result>> keyless = new ArrayList<>(3);
         if (prefs.subtitleSourceRest) {
-            final Result result = best(SOURCE_REST, restOpenSubtitles(id, preferred), preferred);
-            if (delivered(result, sink)) {
-                return result;
-            }
+            keyless.add(() -> best(SOURCE_REST,
+                    restOpenSubtitles(id, preferred, answered), preferred));
         }
         if (prefs.subtitleSourceStremio) {
-            final Result result = best(SOURCE_STREMIO, stremio(id), preferred);
-            if (delivered(result, sink)) {
-                return result;
-            }
-        }
-        if (prefs.subtitleSourceOpenSubtitles) {
-            final Result result = fromOpenSubtitles(id, preferred, prefs);
-            if (delivered(result, sink)) {
-                return result;
-            }
+            keyless.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred));
         }
         if (prefs.subtitleSourceShegu) {
-            final Result result = best(SOURCE_SHEGU, shegu(id), preferred);
+            keyless.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred));
+        }
+        for (Result result : inParallel(keyless)) {
+            if (delivered(result, sink)) {
+                return result;
+            }
+        }
+        // Only now the metered one. It is the fullest index, but its download call is the single
+        // thing here that spends one of a hundred a day — so it is asked only for what the free
+        // sources could not produce.
+        if (!cancelled() && prefs.subtitleSourceOpenSubtitles) {
+            final Result result = fromOpenSubtitles(id, preferred);
             if (delivered(result, sink)) {
                 return result;
             }
@@ -144,8 +171,50 @@ final class SubtitleSearch {
         return null;
     }
 
+    /** How long all the keyless sources together get before the search moves on without them. */
+    private static final int PARALLEL_TIMEOUT_SEC = 15;
+
+    /**
+     * Runs the searches at once and returns what they found, in the order the tasks were given —
+     * source order is a preference, so it must survive the race. A source that times out, throws or
+     * finds nothing contributes nothing and holds nobody up.
+     */
+    private static List<Result> inParallel(List<Callable<Result>> tasks) {
+        final List<Result> results = new ArrayList<>(tasks.size());
+        if (tasks.isEmpty()) {
+            return results;
+        }
+        final ExecutorService pool = Executors.newFixedThreadPool(tasks.size(), runnable -> {
+            final Thread thread = new Thread(runnable, "SubtitleSource");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            for (Future<Result> future : pool.invokeAll(tasks, PARALLEL_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+                try {
+                    final Result result = future.isCancelled() ? null : future.get();
+                    if (result != null) {
+                        results.add(result);
+                    }
+                } catch (Exception e) {
+                    Utils.log("subtitles: source failed " + e);
+                }
+            }
+        } catch (InterruptedException e) {
+            // The player is gone or the item changed; leave the flag set so the caller stops too.
+            Thread.currentThread().interrupt();
+        } finally {
+            pool.shutdownNow();
+        }
+        return results;
+    }
+
+    private static boolean cancelled() {
+        return Thread.currentThread().isInterrupted();
+    }
+
     private static boolean delivered(Result result, Sink sink) {
-        if (result == null) {
+        if (result == null || cancelled()) {
             return false;
         }
         if (sink.accept(result)) {
@@ -180,18 +249,22 @@ final class SubtitleSearch {
     }
 
     /**
-     * The metered source, kept apart because minting its links costs quota: the winner is resolved and
-     * nothing else is, so a search that finds twelve files still spends exactly one download.
+     * The metered source, kept apart because minting its link costs quota: only the winner is
+     * resolved, so a search that finds twelve files still spends exactly one download. The link is
+     * minted last, once nothing has cancelled the search, because a unit is spent even when the
+     * answer arrives to a player that no longer exists.
      */
-    private static Result fromOpenSubtitles(MediaId id, List<String> preferred, Prefs prefs) {
-        final String token = bearer(prefs);
+    private static Result fromOpenSubtitles(MediaId id, List<String> preferred) {
         final List<String> codes = OpenSubtitles.toIso639_1(preferred);
-        final OpenSubtitles.Candidate best = OpenSubtitles.pick(
-                OpenSubtitles.search(id, codes, prefs.openSubtitlesKey, token), codes);
-        if (best == null) {
+        if (codes.isEmpty()) {
             return null;
         }
-        final String link = OpenSubtitles.link(best.fileId, prefs.openSubtitlesKey, token);
+        final OpenSubtitles.Candidate best =
+                OpenSubtitles.pick(OpenSubtitles.search(id, codes), codes);
+        if (best == null || cancelled()) {
+            return null;
+        }
+        final String link = OpenSubtitles.link(best.fileId);
         if (link == null) {
             return null;
         }
@@ -199,21 +272,12 @@ final class SubtitleSearch {
                 Collections.singletonList(link));
     }
 
-    /** Logs in only when the user filled in an account; see OpenSubtitles#login for why not cached. */
-    private static String bearer(Prefs prefs) {
-        if (prefs.openSubtitlesUser.isEmpty() || prefs.openSubtitlesPassword.isEmpty()) {
-            return null;
-        }
-        return OpenSubtitles.login(prefs.openSubtitlesUser, prefs.openSubtitlesPassword,
-                prefs.openSubtitlesKey);
-    }
-
     /**
      * shegu.st: tmdb only, and it ignores every language parameter it is offered
      * ({@code language}, {@code lang}, {@code languages} all leave the result identical), so the whole
      * index — a hundred-odd entries — comes back and is sifted here.
      */
-    private static List<Candidate> shegu(MediaId id) {
+    private static List<Candidate> shegu(MediaId id, AtomicBoolean answered) {
         if (id.tmdb == null) {
             return Collections.emptyList();
         }
@@ -227,7 +291,7 @@ final class SubtitleSearch {
         }
         final List<Candidate> candidates = new ArrayList<>();
         try {
-            final JSONArray subtitles = json(url.toString()).optJSONArray("subtitles");
+            final JSONArray subtitles = json(url.toString(), answered).optJSONArray("subtitles");
             if (subtitles == null) {
                 return candidates;
             }
@@ -246,7 +310,7 @@ final class SubtitleSearch {
     }
 
     /** Stremio's OpenSubtitles addon: imdb only, no filtering, three-letter bibliographic codes. */
-    private static List<Candidate> stremio(MediaId id) {
+    private static List<Candidate> stremio(MediaId id, AtomicBoolean answered) {
         if (id.imdb == null) {
             return Collections.emptyList();
         }
@@ -257,7 +321,7 @@ final class SubtitleSearch {
         final List<Candidate> candidates = new ArrayList<>();
         try {
             final JSONArray subtitles =
-                    json("https://opensubtitles-v3.strem.io/subtitles/" + path + ".json")
+                    json("https://opensubtitles-v3.strem.io/subtitles/" + path + ".json", answered)
                             .optJSONArray("subtitles");
             if (subtitles == null) {
                 return candidates;
@@ -282,12 +346,16 @@ final class SubtitleSearch {
      * one language per request — {@code sublanguageid-ukr,rus} is a 400 — so the priority list is
      * walked one entry at a time and the first hit wins.
      */
-    private static List<Candidate> restOpenSubtitles(MediaId id, List<String> preferred) {
+    private static List<Candidate> restOpenSubtitles(MediaId id, List<String> preferred,
+                                                     AtomicBoolean answered) {
         if (id.imdb == null) {
             return Collections.emptyList();
         }
         final String imdb = id.imdbNumeric();
         for (String language : preferred) {
+            if (cancelled()) {
+                break;
+            }
             final StringBuilder url = new StringBuilder("https://rest.opensubtitles.org/search/");
             if (!id.isMovie() && id.episode > 0) {
                 url.append("episode-").append(id.episode).append('/');
@@ -296,11 +364,11 @@ final class SubtitleSearch {
             if (!id.isMovie()) {
                 url.append("season-").append(id.season).append('/');
             }
-            url.append("sublanguageid-").append(language);
+            url.append("sublanguageid-").append(bibliographic(language));
 
             final List<Candidate> candidates = new ArrayList<>();
             try {
-                final String body = get(url.toString());
+                final String body = get(url.toString(), answered);
                 if (body == null) {
                     continue;
                 }
@@ -322,6 +390,31 @@ final class SubtitleSearch {
             }
         }
         return Collections.emptyList();
+    }
+
+    /**
+     * ISO 639-2/T to 639-2/B, for the one source that speaks the bibliographic form. Twenty codes
+     * differ between the two lists and the rest are identical, so only those twenty are here. Getting
+     * this wrong is invisible in testing with Ukrainian, Russian or English — they are spelled the
+     * same either way — and silently finds nothing for German, French, Czech and seventeen others.
+     */
+    private static final Map<String, String> BIBLIOGRAPHIC = new HashMap<>();
+
+    static {
+        final String[][] codes = {
+                {"sqi", "alb"}, {"hye", "arm"}, {"eus", "baq"}, {"mya", "bur"}, {"zho", "chi"},
+                {"ces", "cze"}, {"nld", "dut"}, {"fas", "per"}, {"fra", "fre"}, {"kat", "geo"},
+                {"deu", "ger"}, {"ell", "gre"}, {"isl", "ice"}, {"mkd", "mac"}, {"mri", "mao"},
+                {"msa", "may"}, {"ron", "rum"}, {"slk", "slo"}, {"bod", "tib"}, {"cym", "wel"},
+        };
+        for (String[] pair : codes) {
+            BIBLIOGRAPHIC.put(pair[0], pair[1]);
+        }
+    }
+
+    private static String bibliographic(String iso639_2t) {
+        final String biblio = BIBLIOGRAPHIC.get(iso639_2t);
+        return biblio != null ? biblio : iso639_2t;
     }
 
     /**
@@ -373,17 +466,19 @@ final class SubtitleSearch {
         }
     }
 
-    private static JSONObject json(String url) throws Exception {
-        final String body = get(url);
+    private static JSONObject json(String url, AtomicBoolean answered) throws Exception {
+        final String body = get(url, answered);
         return body == null ? new JSONObject() : new JSONObject(body);
     }
 
-    private static String get(String url) {
+    private static String get(String url, AtomicBoolean answered) {
         final Request request = new Request.Builder().url(url)
                 .header("User-Agent", UA)
                 .header("Accept", "application/json")
                 .build();
         try (Response response = CLIENT.newCall(request).execute()) {
+            // Even a 404 proves the host is up and the device has a way out, which is all this records.
+            answered.set(true);
             final ResponseBody body = response.body();
             if (!response.isSuccessful() || body == null) {
                 Utils.log("subtitles: " + response.code() + " " + request.url().host());

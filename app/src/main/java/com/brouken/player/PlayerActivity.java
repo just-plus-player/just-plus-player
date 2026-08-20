@@ -187,6 +187,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -831,6 +832,10 @@ public class PlayerActivity extends Activity {
     // once per item — a sideloaded subtitle is itself a track change — and every extra pass would be a
     // request nobody asked for.
     private String subtitleSearchStarted;
+    // The search is cancelled the way the segment finder is, and for a sharper reason: `player` is
+    // static, so a worker outliving its session would hand its subtitle to whatever is playing by then.
+    private Thread subtitleSearchThread;
+    private volatile int subtitleSearchGeneration;
     // Automatic-skip undo: where the jump started, where it landed, and — once the user undid it — the
     // position up to which auto-skip stays disarmed so the same stretch is not skipped straight again.
     private long skipUndoFromMs = C.TIME_UNSET;
@@ -2933,6 +2938,7 @@ public class PlayerActivity extends Activity {
         skipNextPrefetched = false;
         clearSkipUndo();
         cancelSegmentFinder();
+        cancelSubtitleSearch();
         hideSkipButton();
         // Skip offset is session-scoped: a new media session resets it and hides its control.
         skipOffsetSec = 0;
@@ -5538,8 +5544,12 @@ public class PlayerActivity extends Activity {
     // Online subtitle search: when the media carries nothing in the language the priority list asks
     // for, fetch it rather than leave the viewer with no subtitles and no way to get any.
 
-    /** How long a title that turned up nothing stays written off. */
-    private static final long SUBTITLE_MISS_TTL_MS = 12 * 60 * 60 * 1000L;
+    /**
+     * How long a title that turned up nothing stays written off. Short on purpose: "nothing found" can
+     * also mean the sources were having a bad minute, and an evening is far too long to hold that
+     * against a title the user is still sitting in front of.
+     */
+    private static final long SUBTITLE_MISS_TTL_MS = 30 * 60 * 1000L;
 
     /**
      * Titles already searched without a hit, so restarting an episode or rewatching it does not spend
@@ -5556,15 +5566,28 @@ public class PlayerActivity extends Activity {
      * <p>Does nothing at all when the priority list is empty, which is what a fresh install has — with
      * no preferred language there is nothing to go looking for, and the player stays off the network.
      */
-    private void maybeSearchSubtitlesOnline() {
-        if (player == null || !mPrefs.subtitleSearch) {
+    private void cancelSubtitleSearch() {
+        subtitleSearchGeneration++;
+        subtitleSearchStarted = null;
+        if (subtitleSearchThread != null) {
+            subtitleSearchThread.interrupt();
+            subtitleSearchThread = null;
+        }
+    }
+
+    private void maybeSearchSubtitlesOnline(Tracks tracks) {
+        // An empty track list is not "this media has no subtitles" — it is Media3 reporting that it
+        // does not know yet, which it does on every prepare and before an HLS or DASH manifest has been
+        // read. Searching then asks the internet for subtitles the file is about to expose by itself.
+        if (player == null || !mPrefs.subtitleSearch || tracks.getGroups().isEmpty()
+                || player.getPlaybackState() == Player.STATE_IDLE) {
             return;
         }
         final List<String> preferred = Utils.splitLanguages(mPrefs.languageSubtitle);
         if (preferred.isEmpty()) {
             return;
         }
-        final List<String> wanted = subtitleLanguagesToSearch(preferred);
+        final List<String> wanted = subtitleLanguagesToSearch(tracks, preferred);
         if (wanted.isEmpty()) {
             return;
         }
@@ -5584,40 +5607,71 @@ public class PlayerActivity extends Activity {
         if (missedAt != null && System.currentTimeMillis() - missedAt < SUBTITLE_MISS_TTL_MS) {
             return;
         }
+        cancelSubtitleSearch();
         subtitleSearchStarted = key;
+        final int generation = subtitleSearchGeneration;
+        final int index = player.getCurrentMediaItemIndex();
+        final String cacheName = "subs." + id.key().replaceAll("[^A-Za-z0-9]", "-");
 
-        new Thread(() -> {
-            final SubtitleSearch.Result found = SubtitleSearch.find(id, wanted, mPrefs, result -> {
-                // Still the item this search was started for? A skipped-to episode has its own.
-                if (player == null) {
-                    return false;
-                }
-                final List<Uri> urls = new ArrayList<>();
-                for (String url : result.urls) {
-                    urls.add(Uri.parse(url));
-                }
-                // The language goes in the file name because that is where it is read back from: a
-                // track whose language is unknown is not the one setPreferredTextLanguages selects, so
-                // an aggregator's opaque URL would arrive as an unnamed track nobody switched on.
-                final String name = "subs." + id.key().replaceAll("[^A-Za-z0-9]", "-")
-                        + "." + result.language + ".srt";
-                return new SubtitleFetcher(this, urls, name,
-                        getString(R.string.subtitle_search_found, displayLanguage(result.language)))
-                        .fetchNow();
-            });
-            if (found == null) {
-                subtitleSearchMisses.put(key, System.currentTimeMillis());
-                return;
+        final Thread worker = new Thread(() -> {
+            final AtomicBoolean answered = new AtomicBoolean();
+            SubtitleSearch.Result found = null;
+            try {
+                found = SubtitleSearch.find(id, wanted, mPrefs, result -> {
+                    if (generation != subtitleSearchGeneration) {
+                        return false;
+                    }
+                    final List<Uri> urls = new ArrayList<>(result.urls.size());
+                    for (String url : result.urls) {
+                        urls.add(Uri.parse(url));
+                    }
+                    // The language goes in the file name because that is where it is read back from: a
+                    // track whose language is unknown is not the one setPreferredTextLanguages picks,
+                    // so an aggregator's opaque URL arrives as an unnamed track nobody switched on.
+                    final Uri file = new SubtitleFetcher(this, urls,
+                            cacheName + "." + result.language + ".srt").fetchNow();
+                    if (file == null) {
+                        return false;
+                    }
+                    runOnUiThread(() -> attachSearchedSubtitle(generation, index, file, result.language));
+                    return true;
+                }, answered);
+            } catch (Throwable t) {
+                // Playback is not part of this. Whatever went wrong looking for a subtitle, it must not
+                // be what takes the player down.
+                Utils.log("subtitles: search failed " + t);
             }
-        }).start();
+            // Only a search that actually reached the sources proves anything about this title. A
+            // cancelled one proves nothing, and neither does one that ran with no way out to the
+            // network — writing either off would keep the title unsearchable long after the cause.
+            if (found == null && answered.get() && !Thread.currentThread().isInterrupted()) {
+                subtitleSearchMisses.put(key, System.currentTimeMillis());
+            }
+        }, "SubtitleSearch");
+        worker.setDaemon(true);
+        subtitleSearchThread = worker;
+        worker.start();
+    }
+
+    /** Attaches a downloaded subtitle, but only to the item it was actually searched for. */
+    private void attachSearchedSubtitle(int generation, int index, Uri file, String language) {
+        if (generation != subtitleSearchGeneration || player == null
+                || player.getCurrentMediaItemIndex() != index) {
+            return;
+        }
+        mPrefs.updateSubtitle(file);
+        if (addSubtitleTrack(file)) {
+            Toast.makeText(this, getString(R.string.subtitle_search_found, displayLanguage(language)),
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** The enabled sources, in order, as part of what a search result is an answer to. */
     private String enabledSubtitleSources() {
         return (mPrefs.subtitleSourceRest ? "1" : "")
                 + (mPrefs.subtitleSourceStremio ? "2" : "")
-                + (mPrefs.subtitleSourceOpenSubtitles ? "3" : "")
-                + (mPrefs.subtitleSourceShegu ? "4" : "");
+                + (mPrefs.subtitleSourceShegu ? "3" : "")
+                + (mPrefs.subtitleSourceOpenSubtitles ? "4" : "");
     }
 
     /** An ISO 639-2/T code as something to show a person: "ukr" becomes "українська". */
@@ -5634,9 +5688,9 @@ public class PlayerActivity extends Activity {
      * <p>In strict mode it is all-or-nothing instead: any preferred language present at all means no
      * search. An empty result either way means leave the media alone.
      */
-    private List<String> subtitleLanguagesToSearch(List<String> preferred) {
+    private List<String> subtitleLanguagesToSearch(Tracks tracks, List<String> preferred) {
         final Set<String> present = new HashSet<>();
-        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+        for (Tracks.Group group : tracks.getGroups()) {
             if (group.getType() != C.TRACK_TYPE_TEXT) {
                 continue;
             }
@@ -7785,6 +7839,7 @@ public class PlayerActivity extends Activity {
         }
         stopSkipPolling();
         cancelSegmentFinder();
+        cancelSubtitleSearch();
         hideSkipPill();
         skipBuilt = false;
         if (timeBar != null) {
@@ -7929,6 +7984,14 @@ public class PlayerActivity extends Activity {
                     }
                 }
             }
+            // The remembered external subtitle belonged to the item that just ended: it was downloaded
+            // or picked for that episode, and the next rebuild would put it back — minutes out of sync
+            // with what is playing now. PLAYLIST_CHANGED is excluded because that is the transition
+            // addSubtitleTrack() itself causes, and clearing there would undo the attach that raised it.
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                mPrefs.updateSubtitle(null);
+                cancelSubtitleSearch();
+            }
             // The new item opens its own audio output; a restart latched on the old one must not tear it down.
             // The armer goes with it: a stall at the end of an episode would otherwise land on the next one's
             // opening track, which is exactly how a stream ends up silent from the first second. Clearing
@@ -8005,7 +8068,7 @@ public class PlayerActivity extends Activity {
             }
             // The track list is what decides whether anything is missing, so this is the first moment
             // the question can be asked at all.
-            maybeSearchSubtitlesOnline();
+            maybeSearchSubtitlesOnline(tracks);
             // Apply a sticky quality choice to a freshly auto-advanced episode once its variants are known.
             // Posted so the reinitialisation never runs while listeners are being dispatched.
             if (playerView != null) {

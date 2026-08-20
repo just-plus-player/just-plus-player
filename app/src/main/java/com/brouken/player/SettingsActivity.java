@@ -6,7 +6,6 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ImageSpan;
@@ -24,7 +23,6 @@ import android.widget.Toast;
 import androidx.appcompat.app.ActionBar;
 import androidx.core.view.OneShotPreDrawListener;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
@@ -253,14 +251,6 @@ public class SettingsActivity extends AppCompatActivity
                 }
                 listPreferenceFileAccess.setEntries(entries.toArray(new String[0]));
                 listPreferenceFileAccess.setEntryValues(values.toArray(new String[0]));
-            }
-
-            final EditTextPreference openSubtitlesPassword = findPreference("openSubtitlesPassword");
-            if (openSubtitlesPassword != null) {
-                // Otherwise the password is typed in the clear, which on a TV is typed in the clear at
-                // whatever size the living room is.
-                openSubtitlesPassword.setOnBindEditTextListener(editText -> editText.setInputType(
-                        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD));
             }
 
             Preference preferenceLanguageAudio = findPreference("languageAudio");

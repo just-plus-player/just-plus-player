@@ -1,7 +1,6 @@
 package com.brouken.player;
 
 import android.net.Uri;
-import android.widget.Toast;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,10 +28,11 @@ class SubtitleFetcher {
     private final PlayerActivity activity;
     private final List<Uri> urls;
     private final String cacheName;
-    private final String announcement;
 
-    private static final int CONNECT_TIMEOUT_SEC = 15;
+    private static final int CONNECT_TIMEOUT_SEC = 10;
     private static final int READ_TIMEOUT_SEC = 20;
+    /** Whole-list budget, so a dozen dead guesses cost one wait rather than a dozen. */
+    private static final long TOTAL_BUDGET_MS = 40_000;
 
     /**
      * The same client the search uses, so a download reuses the connection the search just opened
@@ -47,53 +47,70 @@ class SubtitleFetcher {
     private static final long MAX_BYTES = 2_000_000;
 
     public SubtitleFetcher(PlayerActivity activity, List<Uri> urls) {
-        this(activity, urls, null, null);
+        this(activity, urls, null);
     }
 
     /**
-     * @param cacheName    what to call the downloaded copy; null takes the name from the URL
-     * @param announcement shown once the track is actually attached, not when the file is merely
-     *                     located — announcing a find and then making the viewer wait for the
-     *                     download reads as a stall, or as a lie when the download then fails
+     * @param cacheName what to call the downloaded copy; null takes the name from the URL. A subtitle
+     *                  found online has no useful name in its URL — often just an id — while the caller
+     *                  knows the language, and the name is where the language is read back from.
      */
-    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls, String cacheName,
-                           String announcement) {
+    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls, String cacheName) {
         this.activity = activity;
         this.urls = urls;
         this.cacheName = cacheName;
-        this.announcement = announcement;
     }
 
+    /** Fire and forget: download in the background and attach whatever turns up. */
     public void start() {
-        new Thread(this::fetchNow).start();
+        final Thread thread = new Thread(() -> {
+            final Uri file = fetchNow();
+            if (file == null) {
+                return;
+            }
+            activity.runOnUiThread(() -> {
+                activity.mPrefs.updateSubtitle(file);
+                activity.addSubtitleTrack(file);
+            });
+        }, "SubtitleFetcher");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     /**
      * Downloads on the calling thread. The online search runs on one already and needs the answer:
      * a source whose file will not come down has to give way to the next source, not end the search.
      *
-     * @return true once a file has been downloaded and handed to the player
+     * @return the local copy, or null when none of the candidates produced a usable file
      */
-    boolean fetchNow() {
+    Uri fetchNow() {
+        final long deadline = System.currentTimeMillis() + TOTAL_BUDGET_MS;
         for (Uri url : urls) {
-            if (fetch(CLIENT, url)) {
-                return true;
+            // The sidecar lookup hands over a dozen guessed file names, most of which do not exist.
+            // One timeout each against an unreachable host would hold this thread for minutes, so the
+            // list as a whole gets a budget rather than every entry getting its own patience.
+            if (Thread.currentThread().isInterrupted() || System.currentTimeMillis() > deadline) {
+                return null;
+            }
+            final Uri file = fetch(CLIENT, url);
+            if (file != null) {
+                return file;
             }
         }
-        return false;
+        return null;
     }
 
-    /** @return true once a subtitle has been downloaded and handed over; false to try the next URL. */
-    private boolean fetch(OkHttpClient client, Uri url) {
+    /** @return the local copy, or null to try the next candidate. */
+    private Uri fetch(OkHttpClient client, Uri url) {
         // Prevents IllegalArgumentException in okhttp3.Request.Builder.
         if (HttpUrl.parse(url.toString()) == null) {
-            return false;
+            return null;
         }
         final Request request = new Request.Builder().url(url.toString()).build();
         try (Response response = client.newCall(request).execute()) {
             final ResponseBody body = response.body();
             if (!response.isSuccessful() || body == null || body.contentLength() > MAX_BYTES) {
-                return false;
+                return null;
             }
             InputStream stream = body.byteStream();
             // The legacy OpenSubtitles API hands back a gzipped file rather than a gzipped response,
@@ -101,20 +118,10 @@ class SubtitleFetcher {
             if (url.getPath() != null && url.getPath().endsWith(".gz")) {
                 stream = new GZIPInputStream(stream);
             }
-            final Uri subtitleUri = Utils.convertInputStreamToUTF(activity, url, stream, cacheName);
-            if (subtitleUri == null) {
-                return false;
-            }
-            activity.runOnUiThread(() -> {
-                activity.mPrefs.updateSubtitle(subtitleUri);
-                if (activity.addSubtitleTrack(subtitleUri) && announcement != null) {
-                    Toast.makeText(activity, announcement, Toast.LENGTH_SHORT).show();
-                }
-            });
-            return true;
+            return Utils.convertInputStreamToUTF(activity, url, stream, cacheName);
         } catch (IOException e) {
             Utils.log("subtitle download: " + e);
-            return false;
+            return null;
         }
     }
 }

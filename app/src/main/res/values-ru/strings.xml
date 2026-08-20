@@ -246,13 +246,8 @@
     <string name="pref_subtitle_search">Искать онлайн, если нет</string>
     <string name="pref_subtitle_search_strict">Только когда нет ни одного из языков выше</string>
     <string name="subtitle_search_found">Найдены субтитры: %1$s</string>
-    <string name="pref_opensubtitles">Учётная запись OpenSubtitles</string>
-    <string name="pref_opensubtitles_summary">Необязательно. Свой ключ или аккаунт вместо встроенного</string>
-    <string name="pref_opensubtitles_key">API-ключ</string>
-    <string name="pref_opensubtitles_user">Пользователь</string>
-    <string name="pref_opensubtitles_password">Пароль</string>
     <string name="pref_subtitle_sources">Источники субтитров</string>
-    <string name="pref_subtitle_sources_summary">Перебираются сверху вниз, пока один не даст нужный язык</string>
+    <string name="pref_subtitle_sources_summary">Перебираются сверху вниз, пока одно не даст нужный язык; последний ограничен 100 загрузками в сутки</string>
     <string name="pref_subtitle_source_opensubtitles">OpenSubtitles.com</string>
     <string name="pref_subtitle_source_opensubtitles_summary">Самый полный каталог. 100 загрузок в сутки</string>
     <string name="pref_subtitle_source_shegu">shegu.st</string>

@@ -61,31 +61,6 @@
             app:key="languageSubtitle"
             app:title="@string/pref_language_subtitle" />
 
-        <!-- Only for someone who has an account of their own; the online search works out of the box
-             on the key built into the app. A logged-in user searches against their own quota, which is
-             the point of filling these in at all. -->
-        <PreferenceScreen
-            app:key="openSubtitles"
-            app:summary="@string/pref_opensubtitles_summary"
-            app:title="@string/pref_opensubtitles">
-
-            <EditTextPreference
-                app:key="openSubtitlesKey"
-                app:title="@string/pref_opensubtitles_key"
-                app:useSimpleSummaryProvider="true" />
-
-            <EditTextPreference
-                app:key="openSubtitlesUser"
-                app:title="@string/pref_opensubtitles_user"
-                app:useSimpleSummaryProvider="true" />
-
-            <!-- No summary provider here: it would print the password on the settings screen. -->
-            <EditTextPreference
-                app:key="openSubtitlesPassword"
-                app:title="@string/pref_opensubtitles_password" />
-
-        </PreferenceScreen>
-
         <!-- Tried top to bottom until one has the wanted language. Individually switchable so a single
              source can be exercised on its own when a result looks wrong. -->
         <PreferenceScreen
@@ -106,16 +81,16 @@
                 app:title="@string/pref_subtitle_source_stremio" />
 
             <SwitchPreferenceCompat
-                app:key="subtitleSourceOpenSubtitles"
-                app:defaultValue="true"
-                app:summary="@string/pref_subtitle_source_opensubtitles_summary"
-                app:title="@string/pref_subtitle_source_opensubtitles" />
-
-            <SwitchPreferenceCompat
                 app:key="subtitleSourceShegu"
                 app:defaultValue="true"
                 app:summary="@string/pref_subtitle_source_shegu_summary"
                 app:title="@string/pref_subtitle_source_shegu" />
+
+            <SwitchPreferenceCompat
+                app:key="subtitleSourceOpenSubtitles"
+                app:defaultValue="true"
+                app:summary="@string/pref_subtitle_source_opensubtitles_summary"
+                app:title="@string/pref_subtitle_source_opensubtitles" />
 
         </PreferenceScreen>
 

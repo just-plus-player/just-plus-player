@@ -21,11 +21,13 @@ import android.app.Activity;
 import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
+import androidx.core.view.OneShotPreDrawListener;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceScreen;
 import androidx.preference.SwitchPreferenceCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -383,8 +385,36 @@ public class SettingsActivity extends AppCompatActivity
                 final String key = requireActivity().getIntent().getStringExtra(EXTRA_SCROLL_TO);
                 if (key != null) {
                     scrollToPreference(key);
+                    focusPreference(key, 3);
                 }
             }
+        }
+
+        /**
+         * Scrolling alone leaves a remote's focus on the first row, and the first D-pad press yanks
+         * the list straight back to the top — so the row the deep link asked for takes the focus too.
+         * The holder can still be missing on the first pre-draw (androidx scrolls again once the
+         * adapter settles), hence the few attempts. On a phone requestFocus is a no-op in touch mode.
+         */
+        private void focusPreference(final String key, final int attemptsLeft) {
+            final RecyclerView list = getListView();
+            final RecyclerView.Adapter<?> adapter = list == null ? null : list.getAdapter();
+            if (attemptsLeft <= 0 || !(adapter instanceof PreferenceGroup.PreferencePositionCallback)) {
+                return;
+            }
+            final int position = ((PreferenceGroup.PreferencePositionCallback) adapter)
+                    .getPreferenceAdapterPosition(key);
+            if (position == RecyclerView.NO_POSITION) {
+                return;
+            }
+            OneShotPreDrawListener.add(list, () -> {
+                final RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(position);
+                if (holder != null) {
+                    holder.itemView.requestFocus();
+                } else {
+                    focusPreference(key, attemptsLeft - 1);
+                }
+            });
         }
 
         /**

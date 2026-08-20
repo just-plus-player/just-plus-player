@@ -879,39 +879,103 @@ class Utils {
     }
 
     public static Uri convertInputStreamToUTF(Context context, Uri subtitleUri, InputStream inputStream) {
+        return convertInputStreamToUTF(context, subtitleUri, inputStream, null);
+    }
+
+    /**
+     * @param preferredName what to call the cached copy, or null to take the name from the URI. A
+     *                      subtitle found online has no useful name in its URL — often none at all,
+     *                      just an id — while the caller knows the language, and the name is where
+     *                      both the language and the label are read back from.
+     */
+    public static Uri convertInputStreamToUTF(Context context, Uri subtitleUri, InputStream inputStream,
+                                              String preferredName) {
         try {
             DecodedInputStreamReader decodedInputStreamReader = Chardet.decode(inputStream, StandardCharsets.UTF_8);
             Charset charset = decodedInputStreamReader.charset();
-            if (!StandardCharsets.UTF_8.equals(charset)) {
-                String filename = subtitleUri.getPath();
-                filename = filename.substring(filename.lastIndexOf("/") + 1);
-                final File file = new File(context.getCacheDir(), filename);
-                final BufferedReader bufferedReader = new BufferedReader(decodedInputStreamReader);
-                final BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
-                char[] buffer = new char[512];
-                int num;
-                int pass = 0;
-                boolean success = true;
-                while ((num = bufferedReader.read(buffer)) != -1) {
-                    bufferedWriter.write(buffer, 0, num);
-                    pass++;
-                    if (pass * 512 > 2_000_000) {
-                        success = false;
-                        break;
-                    }
+            // A subtitle pulled off the network is copied even when it needs no re-encoding. The URI is
+            // remembered (Prefs.subtitleUri) and re-read whenever the player is rebuilt — returning from
+            // the settings screen does exactly that — and by then a temporary download link may be gone.
+            // fileExists() settles it anyway: it answers false for any http URI, so a remembered network
+            // subtitle was simply dropped and the track vanished. A local copy is a real file to both.
+            final boolean remote = isSupportedNetworkUri(subtitleUri);
+            if (!StandardCharsets.UTF_8.equals(charset) || remote) {
+                String filename = preferredName;
+                if (filename == null) {
+                    filename = subtitleUri.getPath();
+                    filename = filename.substring(filename.lastIndexOf("/") + 1);
                 }
-                bufferedWriter.close();
-                bufferedReader.close();
+                // The name carries the format and often the language, which is how both are recovered
+                // later. The copy is unpacked and re-encoded, so the wrapper extension has to go, and
+                // proxied URLs end in an opaque id instead — give those something to parse.
+                if (filename.endsWith(".gz")) {
+                    filename = filename.substring(0, filename.length() - 3);
+                }
+                if (!filename.contains(".")) {
+                    filename = (filename.isEmpty() ? "subtitle" : filename) + ".srt";
+                }
+                final File file = new File(context.getCacheDir(), filename);
+                boolean success = true;
+                try {
+                    final BufferedReader bufferedReader = new BufferedReader(decodedInputStreamReader);
+                    final BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
+                    char[] buffer = new char[512];
+                    int num;
+                    int pass = 0;
+                    while ((num = bufferedReader.read(buffer)) != -1) {
+                        bufferedWriter.write(buffer, 0, num);
+                        pass++;
+                        if (pass * 512 > 2_000_000) {
+                            success = false;
+                            break;
+                        }
+                    }
+                    bufferedWriter.close();
+                    bufferedReader.close();
+                } catch (IOException e) {
+                    // Out of space, most likely. Half a subtitle is worse than none: delete it and
+                    // hand back the URL it came from, which still plays for as long as this player
+                    // instance lives.
+                    success = false;
+                    e.printStackTrace();
+                }
                 if (success) {
+                    trimSubtitleCache(context.getCacheDir());
                     subtitleUri = Uri.fromFile(file);
                 } else {
-                    subtitleUri = null;
+                    file.delete();
+                    if (!remote) {
+                        subtitleUri = null;
+                    }
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
         return subtitleUri;
+    }
+
+    /** How many downloaded subtitles are kept. Roughly a season at 30-60 KB each. */
+    private static final int SUBTITLE_CACHE_KEEP = 20;
+
+    /**
+     * Keeps the downloaded-subtitle copies to a fixed number, oldest deleted first.
+     *
+     * Nothing else bounds them: they are named per title and language, so re-watching overwrites, but
+     * every new episode leaves another file behind and nothing ever expires. The system does clear an
+     * app's cache under storage pressure, and {@link SubtitleUtils#clearCache} empties it on several
+     * unrelated occasions — neither is a plan, and neither runs before the disk is already tight.
+     */
+    private static void trimSubtitleCache(File cacheDir) {
+        final File[] files = cacheDir.listFiles((dir, name) ->
+                name.startsWith("subs.") && name.endsWith(".srt"));
+        if (files == null || files.length <= SUBTITLE_CACHE_KEEP) {
+            return;
+        }
+        java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        for (int i = 0; i < files.length - SUBTITLE_CACHE_KEEP; i++) {
+            files[i].delete();
+        }
     }
 
     public static boolean isPiPSupported(Context context) {

@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ImageSpan;
@@ -23,6 +24,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.ActionBar;
 import androidx.core.view.OneShotPreDrawListener;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
@@ -253,6 +255,14 @@ public class SettingsActivity extends AppCompatActivity
                 listPreferenceFileAccess.setEntryValues(values.toArray(new String[0]));
             }
 
+            final EditTextPreference openSubtitlesPassword = findPreference("openSubtitlesPassword");
+            if (openSubtitlesPassword != null) {
+                // Otherwise the password is typed in the clear, which on a TV is typed in the clear at
+                // whatever size the living room is.
+                openSubtitlesPassword.setOnBindEditTextListener(editText -> editText.setInputType(
+                        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            }
+
             Preference preferenceLanguageAudio = findPreference("languageAudio");
             Preference preferenceLanguageSubtitle = findPreference("languageSubtitle");
             if (preferenceLanguageAudio != null || preferenceLanguageSubtitle != null) {
@@ -267,7 +277,7 @@ public class SettingsActivity extends AppCompatActivity
                                 getString(R.string.pref_language_audio),
                                 R.string.pref_language_audio_none,
                                 Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
-                                languages, pinnedLanguages(), picked -> {
+                                languages, pinnedLanguages(), false, picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageAudio(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,
@@ -285,7 +295,7 @@ public class SettingsActivity extends AppCompatActivity
                                 getString(R.string.pref_language_subtitle),
                                 R.string.pref_language_subtitle_none,
                                 Utils.splitLanguages(Prefs.getLanguageSubtitle(requireContext())),
-                                languages, pinnedLanguages(), picked -> {
+                                languages, pinnedLanguages(), true, picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageSubtitle(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,

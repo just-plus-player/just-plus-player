@@ -66,6 +66,15 @@ class Prefs {
     private static final String PREF_KEY_MAP_DV7 = "mapDV7ToHevc";
     private static final String PREF_KEY_LANGUAGE_AUDIO = "languageAudio";
     private static final String PREF_KEY_LANGUAGE_SUBTITLE = "languageSubtitle";
+    // Online subtitle search. The two switches sit in the language-priority dialog rather than on the
+    // settings screen: what they do is decided entirely by the list edited there.
+    private static final String PREF_KEY_SUBTITLE_SEARCH = "subtitleSearch";
+    private static final String PREF_KEY_SUBTITLE_SEARCH_STRICT = "subtitleSearchStrict";
+    // One per source, so a single one can be exercised on its own when something looks wrong.
+    private static final String PREF_KEY_SOURCE_OPENSUBTITLES = "subtitleSourceOpenSubtitles";
+    private static final String PREF_KEY_SOURCE_SHEGU = "subtitleSourceShegu";
+    private static final String PREF_KEY_SOURCE_STREMIO = "subtitleSourceStremio";
+    private static final String PREF_KEY_SOURCE_REST = "subtitleSourceRest";
     private static final String PREF_KEY_SUBTITLE_STYLE_EMBEDDED = "subtitleStyleEmbedded";
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
     private static final String PREF_KEY_SUBTITLE_SCALE = "subtitleScale";
@@ -161,6 +170,17 @@ class Prefs {
     // Preferred subtitle languages, same shape as languageAudio. Empty means no preference, which is
     // what every install starts from: unlike audio, a subtitle nobody asked for is in the way.
     public String languageSubtitle = "";
+    // Look for a missing subtitle language online. Off by default: it sends what is being watched,
+    // by id, to third-party services, which is not something to start doing on a user's behalf.
+    public boolean subtitleSearch = false;
+    // false: search whenever the top language is missing, walking down the list. true: only when the
+    // media carries none of the preferred languages at all.
+    public boolean subtitleSearchStrict = false;
+    // Tried in this order until one has the wanted language; see SubtitleSearch.
+    public boolean subtitleSourceOpenSubtitles = true;
+    public boolean subtitleSourceShegu = true;
+    public boolean subtitleSourceStremio = true;
+    public boolean subtitleSourceRest = true;
     public boolean subtitleStyleEmbedded = true;
     public boolean subtitleStyleBold = false;
     // How subtitles look. Owned here since the app stopped reading the system captioning screen: it
@@ -294,6 +314,12 @@ class Prefs {
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);
         languageAudio = getLanguageAudio(mContext);
         languageSubtitle = getLanguageSubtitle(mContext);
+        subtitleSearch = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH, subtitleSearch);
+        subtitleSearchStrict = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, subtitleSearchStrict);
+        subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
+        subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
+        subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);
+        subtitleSourceRest = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_REST, subtitleSourceRest);
         subtitleStyleEmbedded = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_EMBEDDED, subtitleStyleEmbedded);
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         subtitleScale = Float.parseFloat(mSharedPreferences.getString(PREF_KEY_SUBTITLE_SCALE, String.valueOf(subtitleScale)));
@@ -394,6 +420,22 @@ class Prefs {
     public static void setLanguageSubtitle(final Context context, final String languages) {
         PreferenceManager.getDefaultSharedPreferences(context).edit()
                 .putString(PREF_KEY_LANGUAGE_SUBTITLE, languages).apply();
+    }
+
+    public static boolean getSubtitleSearch(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_KEY_SUBTITLE_SEARCH, false);
+    }
+
+    public static boolean getSubtitleSearchStrict(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, false);
+    }
+
+    public static void setSubtitleSearch(final Context context, final boolean enabled, final boolean strict) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean(PREF_KEY_SUBTITLE_SEARCH, enabled)
+                .putBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, strict).apply();
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {

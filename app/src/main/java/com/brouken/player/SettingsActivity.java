@@ -267,7 +267,7 @@ public class SettingsActivity extends AppCompatActivity
                                 getString(R.string.pref_language_audio),
                                 R.string.pref_language_audio_none,
                                 Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
-                                languages, pinnedLanguages(), picked -> {
+                                languages, pinnedLanguages(), false, picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageAudio(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,
@@ -285,7 +285,7 @@ public class SettingsActivity extends AppCompatActivity
                                 getString(R.string.pref_language_subtitle),
                                 R.string.pref_language_subtitle_none,
                                 Utils.splitLanguages(Prefs.getLanguageSubtitle(requireContext())),
-                                languages, pinnedLanguages(), picked -> {
+                                languages, pinnedLanguages(), true, picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageSubtitle(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,

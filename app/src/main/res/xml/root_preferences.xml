@@ -61,6 +61,40 @@
             app:key="languageSubtitle"
             app:title="@string/pref_language_subtitle" />
 
+        <!-- Tried top to bottom until one has the wanted language. Individually switchable so a single
+             source can be exercised on its own when a result looks wrong. -->
+        <PreferenceScreen
+            app:key="subtitleSources"
+            app:summary="@string/pref_subtitle_sources_summary"
+            app:title="@string/pref_subtitle_sources">
+
+            <SwitchPreferenceCompat
+                app:key="subtitleSourceRest"
+                app:defaultValue="true"
+                app:summary="@string/pref_subtitle_source_rest_summary"
+                app:title="@string/pref_subtitle_source_rest" />
+
+            <SwitchPreferenceCompat
+                app:key="subtitleSourceStremio"
+                app:defaultValue="true"
+                app:summary="@string/pref_subtitle_source_stremio_summary"
+                app:title="@string/pref_subtitle_source_stremio" />
+
+            <SwitchPreferenceCompat
+                app:key="subtitleSourceShegu"
+                app:defaultValue="true"
+                app:summary="@string/pref_subtitle_source_shegu_summary"
+                app:title="@string/pref_subtitle_source_shegu" />
+
+            <SwitchPreferenceCompat
+                app:key="subtitleSourceOpenSubtitles"
+                app:defaultValue="true"
+                app:summary="@string/pref_subtitle_source_opensubtitles_summary"
+                app:title="@string/pref_subtitle_source_opensubtitles" />
+
+        </PreferenceScreen>
+
+
         <PreferenceScreen
             app:key="subtitleAppearance"
             app:summary="@string/pref_subtitle_appearance_summary"

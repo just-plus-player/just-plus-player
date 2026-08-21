@@ -29,10 +29,26 @@ class SubtitleUtils {
         }
     }
 
+    /** Extensions a subtitle can arrive with. The format is read back off the name, so this is
+     *  also the list of names {@link #getSubtitleLanguage} and the cache are willing to recognise. */
+    static final String[] EXTENSIONS = { ".srt", ".ass", ".ssa", ".vtt", ".ttml" };
+
+    /** Whether a file name ends in one of {@link #EXTENSIONS}. */
+    static boolean hasSubtitleExtension(final String name) {
+        for (final String extension : EXTENSIONS) {
+            if (name.endsWith(extension)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String getSubtitleLanguage(Uri uri) {
         final String path = uri.getPath().toLowerCase();
 
-        if (path.endsWith(".srt")) {
+        // Any subtitle extension, not only .srt: a downloaded copy is named after what it turned out
+        // to be, and the language sits in the same place whatever that was.
+        if (hasSubtitleExtension(path)) {
             int last = path.lastIndexOf(".");
             int prev = last;
 
@@ -220,9 +236,7 @@ class SubtitleUtils {
     public static boolean isSubtitleFile(DocumentFile file) {
         if (!file.isFile())
             return false;
-        final String name = file.getName().toLowerCase();
-        return name.endsWith(".srt") || name.endsWith(".ssa") || name.endsWith(".ass")
-                || name.endsWith(".vtt") || name.endsWith(".ttml");
+        return hasSubtitleExtension(file.getName().toLowerCase());
     }
 
     public static boolean isSubtitle(Uri uri, String mimeType) {

@@ -61,6 +61,14 @@
             app:key="languageSubtitle"
             app:title="@string/pref_language_subtitle" />
 
+        <!-- The manual search normally just uses the list above. This turns that list into a step that
+             can be edited for one search, which is what a one-off in another language wants. -->
+        <SwitchPreferenceCompat
+            app:key="subtitleSearchLanguage"
+            app:defaultValue="false"
+            app:summary="@string/pref_subtitle_search_language_summary"
+            app:title="@string/pref_subtitle_search_language" />
+
         <!-- Tried top to bottom until one has the wanted language. Individually switchable so a single
              source can be exercised on its own when a result looks wrong. -->
         <PreferenceScreen

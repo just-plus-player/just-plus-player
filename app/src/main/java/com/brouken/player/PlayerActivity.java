@@ -728,6 +728,32 @@ public class PlayerActivity extends Activity {
     final List<String> apiPlaylistNames = new ArrayList<>();
     final List<String> apiPlaylistImdbIds = new ArrayList<>();
     final List<String> apiPlaylistTmdbIds = new ArrayList<>();
+    // The title picked by hand in the subtitle search, overriding whatever the launcher sent. Session
+    // scoped and deliberately the title only, never the episode: the next item of the same playlist is
+    // the same series, and its episode number still comes from its own name.
+    private String manualTmdbId;
+    // Whether that title is a film. MediaId reads movie-vs-series off the season number alone, so the
+    // type TMDB reported has to arrive as a season — otherwise a series nobody could parse an episode
+    // out of is asked about as a film, which is the one case this whole dialog exists for.
+    private boolean manualMovie;
+    // The episode picked along with it, and the playlist item it was picked for. The title outlives that
+    // item and the episode does not: the next file of the same series is the same title and a different
+    // episode, which its own name (or, failing that, the whole-season query) answers better than this.
+    private int manualSeason = -1;
+    private int manualEpisode = -1;
+    private int manualIndex = -1;
+    // The aired run of that series in the numbering the sources use, and where in it the pick landed.
+    // Kept so the rest of the playlist can be lined up against it without having to know which
+    // numbering the launcher wrote its own season and episode numbers in.
+    private List<TitleSearch.Episode> manualEpisodes;
+    private int manualAbsolute = -1;
+
+    /** Characters before the live title search starts asking; below this every name matches. */
+    private static final int TITLE_QUERY_MIN = 3;
+    /** Long enough that typing a name is one request rather than one per letter. */
+    private static final long TITLE_QUERY_DEBOUNCE_MS = 400;
+    /** Bumped on every keystroke so a slow reply cannot land on a query nobody is looking at. */
+    private int titleSearchGeneration;
     // Manual quality selection (LAMPA quality-switching port). Per-episode label->url maps aligned by
     // index with apiMediaItems; apiSingleQuality holds the top-level map for a single (non-playlist) video.
     // Maps are empty when the sender supplied no quality variants.
@@ -2936,6 +2962,13 @@ public class PlayerActivity extends Activity {
         apiEpisode = -1;
         apiImdbId = null;
         apiTmdbId = null;
+        manualTmdbId = null;
+        manualMovie = false;
+        manualSeason = -1;
+        manualEpisode = -1;
+        manualIndex = -1;
+        manualEpisodes = null;
+        manualAbsolute = -1;
         apiPlaylistSeasons.clear();
         apiPlaylistEpisodes.clear();
         apiPlaylistNames.clear();
@@ -3185,8 +3218,13 @@ public class PlayerActivity extends Activity {
      * subtitles for the next one.
      */
     private MediaId mediaIdAt(int index) {
-        final String imdb = stringAt(apiPlaylistImdbIds, index, apiImdbId);
-        final String tmdb = stringAt(apiPlaylistTmdbIds, index, apiTmdbId);
+        // A hand-picked title wins outright, and takes the launcher's imdb id down with it: the sources
+        // that only speak imdb would otherwise keep answering about the wrong title, which is the very
+        // thing the person went looking for a title to fix. SubtitleSearch.enrich() derives the right
+        // imdb id from the tmdb one anyway.
+        final String imdb = manualTmdbId != null ? null : stringAt(apiPlaylistImdbIds, index, apiImdbId);
+        final String tmdb = manualTmdbId != null
+                ? manualTmdbId : stringAt(apiPlaylistTmdbIds, index, apiTmdbId);
         int season = valueAt(apiPlaylistSeasons, index, apiSeason);
         int episode = valueAt(apiPlaylistEpisodes, index, apiEpisode);
         // Last resort, and for at least one launcher the only one that works: LAMPA sends every
@@ -3200,7 +3238,52 @@ public class PlayerActivity extends Activity {
                 episode = fromName[1];
             }
         }
+        // A hand-picked title overrules both. For a film that means no season at all, even when the
+        // release name carries something that reads like one. For a series the picked episode applies to
+        // the item it was picked for, and every other item falls back to its own name — or, when the
+        // name says nothing, to the whole season, which every source treats as an answerable question.
+        if (manualTmdbId != null) {
+            if (manualMovie) {
+                season = -1;
+                episode = -1;
+            } else if (index == manualIndex) {
+                season = manualSeason;
+                episode = manualEpisode;
+            } else {
+                final int[] lined = lineUpWithPick(index, season, episode);
+                season = lined[0];
+                episode = lined[1];
+            }
+        }
         return new MediaId(imdb, tmdb, season, episode);
+    }
+
+    /**
+     * A playlist item other than the one a title was picked for, as {season, episode} in the numbering
+     * the sources use.
+     *
+     * <p>Self-checking rather than trusting either side: a coordinate the episode list actually
+     * contains is already in the right numbering and is left alone, and only one it does not know is
+     * lined up by position from the pick. That is what makes this safe without knowing which numbering
+     * the launcher used — TMDB folds an anime's seasons together, so {@code S01E13} exists there and
+     * nowhere else, while {@code S01E05} means the same episode either way.
+     */
+    private int[] lineUpWithPick(int index, int season, int episode) {
+        if (manualEpisodes == null || manualAbsolute < 0) {
+            // Nothing to line up against. A season with no episode still asks an answerable question.
+            return new int[] { season < 1 ? 1 : season, episode };
+        }
+        for (TitleSearch.Episode known : manualEpisodes) {
+            if (known.season == season && known.number == episode) {
+                return new int[] { season, episode };
+            }
+        }
+        final int position = manualAbsolute + (index - manualIndex);
+        if (position < 0 || position >= manualEpisodes.size()) {
+            return new int[] { season < 1 ? 1 : season, episode };
+        }
+        final TitleSearch.Episode lined = manualEpisodes.get(position);
+        return new int[] { lined.season, lined.number };
     }
 
     /** {@code S01E05} or {@code 1x05} anywhere in the text, as {season, episode}; null if absent. */
@@ -5198,6 +5281,16 @@ public class PlayerActivity extends Activity {
 
     // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
     private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
+        showSideMenu(menuTitle, items, 34, 48);
+    }
+
+    /**
+     * @param posterWDp poster size for rows that carry artwork. The default is a thumbnail beside a
+     *                  name that already says everything; a list where the poster is what tells the
+     *                  rows apart — search results for a name typed from across the room — asks for
+     *                  bigger, and nothing else about the panel changes.
+     */
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
         if (items == null || items.isEmpty()) {
             return;
         }
@@ -5264,7 +5357,7 @@ public class PlayerActivity extends Activity {
                     }
                 });
                 final LinearLayout.LayoutParams artLp =
-                        new LinearLayout.LayoutParams(ui.dpS(34), ui.dpS(48));
+                        new LinearLayout.LayoutParams(ui.dpS(posterWDp), ui.dpS(posterHDp));
                 artLp.setMarginEnd(Utils.dpToPx(16));
                 art.setLayoutParams(artLp);
                 row.addView(art);
@@ -5702,21 +5795,47 @@ public class PlayerActivity extends Activity {
     }
 
     private void maybeSearchSubtitlesOnline(Tracks tracks) {
+        maybeSearchSubtitlesOnline(tracks, false, null);
+    }
+
+    /**
+     * @param manual    the viewer asked for this by name. That changes what the guards are for: the
+     *                  feature switch, a language the media already carries, and an earlier "nothing
+     *                  found" are all good reasons not to go looking unprompted, and none of them is a
+     *                  reason to refuse.
+     * @param languages for this search only, in place of the stored priority list; null to use it.
+     */
+    private void maybeSearchSubtitlesOnline(Tracks tracks, boolean manual, List<String> languages) {
         // An empty track list is not "this media has no subtitles" — it is Media3 reporting that it
         // does not know yet, which it does on every prepare and before an HLS or DASH manifest has been
         // read. Searching then asks the internet for subtitles the file is about to expose by itself.
-        if (player == null || !mPrefs.subtitleSearch || tracks.getGroups().isEmpty()
+        if (player == null || (!mPrefs.subtitleSearch && !manual) || tracks.getGroups().isEmpty()
                 || player.getPlaybackState() == Player.STATE_IDLE) {
             return;
         }
-        final List<String> preferred = Utils.splitLanguages(mPrefs.languageSubtitle);
+        List<String> preferred = languages != null && !languages.isEmpty()
+                ? languages : Utils.splitLanguages(mPrefs.languageSubtitle);
         if (preferred.isEmpty()) {
-            return;
+            if (!manual) {
+                return;
+            }
+            // A fresh install has no priority list, and somebody who has just typed in a title should
+            // not be sent to the settings screen to discover that. The device's language is the guess.
+            final String device = Utils.toIso3Language(Locale.getDefault().getLanguage());
+            if (device == null) {
+                return;
+            }
+            preferred = Collections.singletonList(device);
         }
-        final List<String> wanted = subtitleLanguagesToSearch(tracks, preferred);
-        if (wanted.isEmpty()) {
-            return;
+        List<String> missing = subtitleLanguagesToSearch(tracks, preferred);
+        if (missing.isEmpty()) {
+            if (!manual) {
+                return;
+            }
+            // Asked for regardless: whatever track outranked the list is evidently not doing the job.
+            missing = preferred;
         }
+        final List<String> wanted = missing;
         final MediaId id = mediaIdAt(player.getCurrentMediaItemIndex());
         if (id.isEmpty()) {
             return;
@@ -5726,12 +5845,18 @@ public class PlayerActivity extends Activity {
         // an earlier "nothing found" is no longer an answer to it — without this, changing a switch
         // appears to do nothing at all.
         final String key = id.key() + "|" + wanted + "|" + enabledSubtitleSources();
-        if (key.equals(subtitleSearchStarted)) {
-            return;
-        }
-        final Long missedAt = subtitleSearchMisses.get(key);
-        if (missedAt != null && System.currentTimeMillis() - missedAt < SUBTITLE_MISS_TTL_MS) {
-            return;
+        if (manual) {
+            // Both of these answer "that has been asked already" — true, and beside the point. Somebody
+            // pressing the row is asking for the question to be put again, so it is put again.
+            subtitleSearchMisses.remove(key);
+        } else {
+            if (key.equals(subtitleSearchStarted)) {
+                return;
+            }
+            final Long missedAt = subtitleSearchMisses.get(key);
+            if (missedAt != null && System.currentTimeMillis() - missedAt < SUBTITLE_MISS_TTL_MS) {
+                return;
+            }
         }
         final int index = player.getCurrentMediaItemIndex();
         final String cacheName = "subs." + id.key().replaceAll("[^A-Za-z0-9]", "-");
@@ -5740,16 +5865,20 @@ public class PlayerActivity extends Activity {
         // quota, no waiting. This is why the file is named after the title and language rather than
         // after whichever release the source happened to hand over.
         for (String language : wanted) {
-            final java.io.File cached = new java.io.File(getCacheDir(),
-                    cacheName + "." + language + ".srt");
-            if (cached.isFile() && cached.length() > 0) {
-                // Touched so the twenty-file trim treats "watched again" as recently used.
-                cached.setLastModified(System.currentTimeMillis());
-                cancelSubtitleSearch();
-                subtitleSearchStarted = key;
-                attachSearchedSubtitle(subtitleSearchGeneration, index,
-                        Uri.fromFile(cached), language);
-                return;
+            // Any extension: the copy was named after what it turned out to be, so looking only for
+            // .srt would miss an ASS one and pay for it again on every replay.
+            for (String extension : SubtitleUtils.EXTENSIONS) {
+                final java.io.File cached = new java.io.File(getCacheDir(),
+                        cacheName + "." + language + extension);
+                if (cached.isFile() && cached.length() > 0) {
+                    // Touched so the twenty-file trim treats "watched again" as recently used.
+                    cached.setLastModified(System.currentTimeMillis());
+                    cancelSubtitleSearch();
+                    subtitleSearchStarted = key;
+                    attachSearchedSubtitle(subtitleSearchGeneration, index,
+                            Uri.fromFile(cached), language);
+                    return;
+                }
             }
         }
 
@@ -5941,7 +6070,393 @@ public class PlayerActivity extends Activity {
                         () -> applySubtitle(trackGroup, index)));
             }
         }
+        // Last, and with no tick: it is an action rather than a track. Offered whatever the automatic
+        // search's switch says — pressing it is the consent that switch stands in for.
+        items.add(new MenuItem(getString(R.string.subtitle_search_manual), null, false,
+                this::showSubtitleSearchDialog));
         showSideMenu(getString(R.string.subtitle_title), items);
+    }
+
+    /**
+     * Looks for subtitles by a name rather than by whatever the launcher said this is. The way in when
+     * the automatic search has nothing to go on — a stream whose URL is a hash, or a launcher that sent
+     * the wrong id — since every source is keyed by the title and none of them can be told a filename.
+     *
+     * <p>Results arrive while the name is still being typed, from the third character on: nobody
+     * recalls a title exactly, and the point of the posters is to be recognised rather than remembered.
+     */
+    private void showSubtitleSearchDialog() {
+        final EditText query = new EditText(this);
+        query.setInputType(InputType.TYPE_CLASS_TEXT);
+        query.setSingleLine(true);
+        query.setHint(R.string.subtitle_search_hint);
+        // Deliberately not prefilled from the file name: reaching this dialog means the name is already
+        // what failed, and clearing a line of release noise with a remote costs more than typing.
+
+        final LinearLayout results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(results);
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(query);
+        // Capped rather than free: the list has to leave the field and the keyboard on screen, because
+        // the next thing typed is what narrows it down. Half the window is the ceiling because the
+        // player is landscape — a fixed height that fits a phone upright pushes the field off it.
+        final int listHeight = Math.min(ui.dpS(260),
+                getResources().getDisplayMetrics().heightPixels / 2);
+        fields.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_manual)
+                .setView(fields)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final Runnable[] pending = new Runnable[1];
+        query.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (pending[0] != null) {
+                    handler.removeCallbacks(pending[0]);
+                }
+                final String text = s.toString().trim();
+                // Every keystroke invalidates the answer to the last one, whether or not a new request
+                // goes out — otherwise a slow reply for "Sil" lands on top of the results for "Silo".
+                titleSearchGeneration++;
+                if (text.length() < TITLE_QUERY_MIN) {
+                    results.removeAllViews();
+                    return;
+                }
+                final int generation = titleSearchGeneration;
+                pending[0] = () -> searchTitles(text, generation, results, dialog);
+                handler.postDelayed(pending[0], TITLE_QUERY_DEBOUNCE_MS);
+            }
+        });
+        dialog.show();
+    }
+
+    /** Asks TMDB what the typed name could be, then fills the list in place. */
+    private void searchTitles(String query, int generation, LinearLayout results, AlertDialog dialog) {
+        final Thread worker = new Thread(() -> {
+            final List<TitleSearch.Title> titles = TitleSearch.search(query);
+            runOnUiThread(() -> {
+                if (isFinishing() || generation != titleSearchGeneration) {
+                    return;
+                }
+                results.removeAllViews();
+                if (titles.isEmpty()) {
+                    results.addView(searchNote(getString(R.string.subtitle_search_none)));
+                    return;
+                }
+                for (final TitleSearch.Title title : titles) {
+                    // Movie or series is not decoration: the sources are asked a different question for
+                    // each, and an adaptation sharing its name and year with the film is told apart by
+                    // nothing else.
+                    final String kind = getString(title.movie
+                            ? R.string.subtitle_search_movie : R.string.subtitle_search_series);
+                    results.addView(searchRow(title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
+                            title.year == null ? kind : title.year + " · " + kind, () -> {
+                        dialog.dismiss();
+                        if (title.movie) {
+                            applyManualTitle(title, -1, -1, null);
+                        } else {
+                            chooseSeason(title);
+                        }
+                    }));
+                }
+            });
+        }, "TitleSearch");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Which season, then which episode. Asked rather than guessed: the episode number is the half of
+     * the question the sources answer most literally, and a file whose name never carried one is
+     * exactly the case this dialog gets reached from.
+     *
+     * <p>The whole series arrives in one request, so picking a season costs nothing after this and the
+     * numbering cannot drift between the two steps.
+     */
+    private void chooseSeason(TitleSearch.Title title) {
+        final Thread worker = new Thread(() -> {
+            // Cinemeta is keyed by imdb and the search gave a tmdb id, so one hop first. The resolver
+            // is the one the automatic search already uses for the same reason.
+            String imdb = null;
+            try {
+                imdb = SegmentFinder.tmdbExternalImdb(Long.parseLong(title.tmdb), false);
+            } catch (Exception e) {
+                Utils.log("titles: imdb lookup " + e);
+            }
+            final List<TitleSearch.Episode> episodes = TitleSearch.episodes(imdb, title.tmdb);
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                // Nothing came back. Rather than quietly guess the first season, hand over the numbers:
+                // a title no catalogue lists is exactly when somebody knows them and we do not.
+                if (episodes.isEmpty()) {
+                    askSeasonEpisode(title, episodes);
+                    return;
+                }
+                final List<Integer> seasons = new ArrayList<>();
+                for (TitleSearch.Episode episode : episodes) {
+                    if (!seasons.contains(episode.season)) {
+                        seasons.add(episode.season);
+                    }
+                }
+                if (seasons.size() == 1) {
+                    chooseEpisode(title, episodes, seasons.get(0));
+                    return;
+                }
+                final List<MenuItem> items = new ArrayList<>(seasons.size() + 1);
+                items.add(typeNumbersRow(title, episodes));
+                for (final int season : seasons) {
+                    items.add(new MenuItem(getString(season == 0
+                                    ? R.string.subtitle_search_specials
+                                    : R.string.subtitle_search_season, season),
+                            null, false, () -> chooseEpisode(title, episodes, season)));
+                }
+                showSideMenu(title.name, items);
+            });
+        }, "TitleEpisodes");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** No request of its own — the season's episodes are already in hand. */
+    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season) {
+        final List<MenuItem> items = new ArrayList<>();
+        for (final TitleSearch.Episode episode : episodes) {
+            if (episode.season != season) {
+                continue;
+            }
+            final String number = getString(R.string.subtitle_search_episode, episode.number);
+            items.add(new MenuItem(0, episode.stillUrl,
+                    episode.name != null ? episode.name : number,
+                    episode.name != null ? number : null, false,
+                    () -> applyManualTitle(title, season, episode.number, episodes)));
+        }
+        if (items.isEmpty()) {
+            applyManualTitle(title, season, -1, episodes);
+            return;
+        }
+        // Here as well as on the season list: a series with one season skips that step entirely, and
+        // typing the numbers must not end up being something only multi-season shows offer.
+        items.add(0, typeNumbersRow(title, episodes));
+        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster.
+        showSideMenu(title.name, items, 72, 41);
+    }
+
+    /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */
+    private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        return new MenuItem(getString(R.string.subtitle_search_type), null, false,
+                () -> askSeasonEpisode(title, episodes));
+    }
+
+    /**
+     * Season and episode by hand. The catalogues disagree often enough that a list can be wrong or
+     * simply not have the thing playing, and then the numbers somebody read off the file are better
+     * than anything on offer here.
+     *
+     * <p>Prefilled with what is currently believed, so correcting one digit is one digit of typing.
+     * A blank season means the first, and a blank episode means the whole season — which every source
+     * reads as an answerable question.
+     */
+    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
+
+        final EditText season = new EditText(this);
+        season.setInputType(InputType.TYPE_CLASS_NUMBER);
+        season.setSingleLine(true);
+        season.setHint(R.string.subtitle_search_season_label);
+        if (current != null && current.season >= 0) {
+            season.setText(String.valueOf(current.season));
+        }
+
+        final EditText episode = new EditText(this);
+        episode.setInputType(InputType.TYPE_CLASS_NUMBER);
+        episode.setSingleLine(true);
+        episode.setHint(R.string.subtitle_search_episode_label);
+        if (current != null && current.episode >= 1) {
+            episode.setText(String.valueOf(current.episode));
+        }
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(season);
+        fields.addView(episode);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_type)
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
+                        number(season.getText().toString(), 1),
+                        number(episode.getText().toString(), -1), episodes))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** A typed number, or {@code fallback} for anything that is not one. */
+    private static int number(String text, int fallback) {
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Adopts the hand-picked title and puts the search question again with it. The episode list is
+     * kept so the rest of the playlist can be lined up against it — see {@link #mediaIdAt(int)}.
+     */
+    private void applyManualTitle(TitleSearch.Title title, int season, int episode,
+                                  List<TitleSearch.Episode> episodes) {
+        manualTmdbId = title.tmdb;
+        manualMovie = title.movie;
+        manualSeason = season;
+        manualEpisode = episode;
+        // Pinned to the item it was chosen for: the title carries over to the rest of the playlist —
+        // the next file is the same series — but the episode number does not.
+        manualIndex = player != null ? player.getCurrentMediaItemIndex() : -1;
+        manualEpisodes = null;
+        manualAbsolute = -1;
+        if (episodes != null) {
+            // Specials are left out: they are not part of the aired run a playlist walks through, so
+            // counting them would shift every position after the first one.
+            final List<TitleSearch.Episode> run = new ArrayList<>(episodes.size());
+            for (TitleSearch.Episode item : episodes) {
+                if (item.season > 0) {
+                    run.add(item);
+                }
+            }
+            manualEpisodes = run;
+            for (int i = 0; i < run.size(); i++) {
+                if (run.get(i).season == season && run.get(i).number == episode) {
+                    manualAbsolute = i;
+                    break;
+                }
+            }
+        }
+        if (player == null) {
+            return;
+        }
+        if (!mPrefs.subtitleSearchLanguage) {
+            maybeSearchSubtitlesOnline(player.getCurrentTracks(), true, null);
+            return;
+        }
+        // Seeded from the priority list every time and never written back: the list is the standing
+        // answer, and this is one search that wants a different one. Confirming it costs a press.
+        LanguagePriorityDialog.show(this, getString(R.string.subtitle_search_language_title),
+                R.string.pref_language_subtitle_none,
+                Utils.splitLanguages(mPrefs.languageSubtitle),
+                Utils.allLanguages(), pinnedLanguages(), false, picked -> {
+                    if (player != null) {
+                        maybeSearchSubtitlesOnline(player.getCurrentTracks(), true, picked);
+                    }
+                });
+    }
+
+    /**
+     * Languages worth offering first: the device's own, then those the clip carries. Without them the
+     * one being looked for is buried somewhere in several hundred locales.
+     */
+    private List<String> pinnedLanguages() {
+        final List<String> pinned = new ArrayList<>(Arrays.asList(Utils.getDeviceLanguages()));
+        for (final AudioChoice choice : buildAudioChoices()) {
+            if (choice.language != null && !pinned.contains(choice.language)) {
+                pinned.add(choice.language);
+            }
+        }
+        return pinned;
+    }
+
+    /** A line of plain text where a row would go, for "nothing found". */
+    private TextView searchNote(CharSequence text) {
+        final TextView note = new TextView(this);
+        note.setText(text);
+        note.setTextColor(0x99FFFFFF);
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+        note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+        return note;
+    }
+
+    /**
+     * A result row: artwork, name, and a line of detail under it. The side panels get theirs from
+     * {@link #showSideMenu}, but this list is rebuilt on every keystroke inside a dialog that has to
+     * keep both the keyboard and the field it belongs to, so it builds its own.
+     */
+    private View searchRow(String imageUrl, int imageW, int imageH, CharSequence name,
+                           CharSequence detail, Runnable action) {
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Utils.dpToPx(6), 0, Utils.dpToPx(6));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setMinimumHeight(ui.rowMinHeight());
+        final GradientDrawable content = new GradientDrawable();
+        content.setCornerRadius(Utils.dpToPx(8));
+        content.setColor(Color.TRANSPARENT);
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(Utils.dpToPx(8));
+        mask.setColor(Color.WHITE);
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), content, mask));
+
+        final ImageView art = new ImageView(this);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setBackgroundColor(0xFF333333);
+        final int corner = Utils.dpToPx(4);
+        art.setClipToOutline(true);
+        art.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), corner);
+            }
+        });
+        final LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(imageW, imageH);
+        artLp.setMarginEnd(Utils.dpToPx(12));
+        art.setLayoutParams(artLp);
+        row.addView(art);
+        if (imageUrl != null) {
+            Glide.with(this).load(imageUrl).into(art);
+        }
+
+        final LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final TextView titleView = new TextView(this);
+        titleView.setText(name);
+        titleView.setTextColor(0xFFDDDDDD);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+        textBlock.addView(titleView);
+        TextView detailView = null;
+        if (detail != null && detail.length() > 0) {
+            detailView = new TextView(this);
+            detailView.setText(detail);
+            detailView.setTextColor(0x99FFFFFF);
+            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+            textBlock.addView(detailView);
+        }
+        row.addView(textBlock);
+        fitLongText(row, titleView, detailView);
+        row.setOnClickListener(v -> action.run());
+        return row;
     }
 
     /** Nothing is painted from a file any more: the renderer's own cues get through again. */
@@ -6352,6 +6867,13 @@ public class PlayerActivity extends Activity {
                     getString(R.string.subtitle_offset_title),
                     subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec),
                     false, this::showSubtitleOffsetDialog));
+        }
+        // Here as well as in the subtitle panel: the panel is where somebody who has looked for
+        // subtitles ends up, and this menu is where they look when the panel had nothing to offer.
+        if (player != null) {
+            items.add(new MenuItem(R.drawable.ic_search_24dp,
+                    getString(R.string.subtitle_search_manual), null, false,
+                    this::showSubtitleSearchDialog));
         }
         // Only for network media: a room syncs one shared URL, and there is nothing to share about a
         // file that lives on this device alone.

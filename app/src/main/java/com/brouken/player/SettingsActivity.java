@@ -39,13 +39,10 @@ import com.brouken.player.together.Room;
 import com.brouken.player.update.Updater;
 import com.brouken.player.update.UpdateUi;
 
-import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.MissingResourceException;
 
 public class SettingsActivity extends AppCompatActivity
         implements PreferenceFragmentCompat.OnPreferenceStartScreenCallback {
@@ -257,7 +254,7 @@ public class SettingsActivity extends AppCompatActivity
             Preference preferenceLanguageSubtitle = findPreference("languageSubtitle");
             if (preferenceLanguageAudio != null || preferenceLanguageSubtitle != null) {
                 // Several hundred locales, resolved and sorted once for both lists.
-                final LinkedHashMap<String, String> languages = getLanguages();
+                final LinkedHashMap<String, String> languages = Utils.allLanguages();
                 if (preferenceLanguageAudio != null) {
                     updateLanguageSummary(preferenceLanguageAudio, languages,
                             Prefs.getLanguageAudio(requireContext()),
@@ -535,33 +532,5 @@ public class SettingsActivity extends AppCompatActivity
             return pinned;
         }
 
-        LinkedHashMap<String, String> getLanguages() {
-            LinkedHashMap<String, String> languages = new LinkedHashMap<>();
-            for (Locale locale : Locale.getAvailableLocales()) {
-                try {
-                    // MissingResourceException: Couldn't find 3-letter language code for zz
-                    String key = locale.getISO3Language();
-                    if (languages.containsKey(key)) {
-                        // Hundreds of locales collapse onto the same language here, and the display
-                        // name never depends on region or script — resolving it again only burns
-                        // main-thread time while Settings opens.
-                        continue;
-                    }
-                    String language = locale.getDisplayLanguage();
-                    int length = language.offsetByCodePoints(0, 1);
-                    if (!language.isEmpty()) {
-                        language = language.substring(0, length).toUpperCase(locale) + language.substring(length);
-                    }
-                    String value = language + " [" + key + "]";
-                    languages.put(key, value);
-                } catch (MissingResourceException e) {
-                    e.printStackTrace();
-                }
-            }
-            Collator collator = Collator.getInstance();
-            collator.setStrength(Collator.PRIMARY);
-            Utils.orderByValue(languages, collator::compare);
-            return languages;
         }
-    }
 }

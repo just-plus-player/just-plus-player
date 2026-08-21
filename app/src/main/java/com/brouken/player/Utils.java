@@ -67,6 +67,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.text.Collator;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -914,21 +915,28 @@ class Utils {
                 if (!filename.contains(".")) {
                     filename = (filename.isEmpty() ? "subtitle" : filename) + ".srt";
                 }
-                final File file = new File(context.getCacheDir(), filename);
+                File file = null;
                 boolean success = true;
                 try {
                     final BufferedReader bufferedReader = new BufferedReader(decodedInputStreamReader);
+                    final char[] buffer = new char[512];
+                    // The head decides the name. An index is free to hand over ASS or WebVTT under a
+                    // name the caller invented, and since the format is read back off that name, a
+                    // mislabelled copy goes to the wrong parser and shows nothing at all — which reads
+                    // as a subtitle that was found, switched on, and simply is not there.
+                    int num = fill(bufferedReader, buffer);
+                    final String head = new String(buffer, 0, num);
+                    file = new File(context.getCacheDir(), nameByFormat(filename, head));
                     final BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
-                    char[] buffer = new char[512];
-                    int num;
                     int pass = 0;
-                    while ((num = bufferedReader.read(buffer)) != -1) {
+                    while (num > 0) {
                         bufferedWriter.write(buffer, 0, num);
                         pass++;
-                        if (pass * 512 > 2_000_000) {
+                        if (pass * buffer.length > 2_000_000) {
                             success = false;
                             break;
                         }
+                        num = fill(bufferedReader, buffer);
                     }
                     bufferedWriter.close();
                     bufferedReader.close();
@@ -939,11 +947,13 @@ class Utils {
                     success = false;
                     e.printStackTrace();
                 }
-                if (success) {
+                if (success && file != null) {
                     trimSubtitleCache(context.getCacheDir());
                     subtitleUri = Uri.fromFile(file);
                 } else {
-                    file.delete();
+                    if (file != null) {
+                        file.delete();
+                    }
                     if (!remote) {
                         subtitleUri = null;
                     }
@@ -953,6 +963,47 @@ class Utils {
             e.printStackTrace();
         }
         return subtitleUri;
+    }
+
+    /**
+     * Reads until {@code buffer} is full or the stream ends, and answers how much of it is filled —
+     * 0 at the end. {@link java.io.Reader#read(char[])} may hand back fewer characters than asked for
+     * and over a decoded network stream routinely hands back one, which is too little to recognise a
+     * format header by and makes a count of reads a useless stand-in for a count of characters.
+     */
+    private static int fill(final BufferedReader reader, final char[] buffer) throws IOException {
+        int total = 0;
+        while (total < buffer.length) {
+            final int read = reader.read(buffer, total, buffer.length - total);
+            if (read == -1) {
+                break;
+            }
+            total += read;
+        }
+        return total;
+    }
+
+    /**
+     * The extension the content asks for, replacing whatever the name arrived with. Left alone when
+     * the head says nothing recognisable: SubRip has no header to go by, so an unremarkable file is
+     * taken at its name.
+     */
+    private static String nameByFormat(final String filename, final String head) {
+        final String extension;
+        if (head.contains("[Script Info]")) {
+            extension = ".ass";
+        } else if (head.contains("WEBVTT")) {
+            extension = ".vtt";
+        } else if (head.contains("<tt ") || head.contains("<tt\n") || head.contains("<?xml")) {
+            extension = ".ttml";
+        } else {
+            return filename;
+        }
+        if (filename.endsWith(extension)) {
+            return filename;
+        }
+        final int dot = filename.lastIndexOf('.');
+        return (dot > 0 ? filename.substring(0, dot) : filename) + extension;
     }
 
     /** How many downloaded subtitles are kept. Roughly a season at 30-60 KB each. */
@@ -967,8 +1018,10 @@ class Utils {
      * unrelated occasions — neither is a plan, and neither runs before the disk is already tight.
      */
     private static void trimSubtitleCache(File cacheDir) {
+        // Every extension, not only .srt: the copy is named after what it turned out to be, and one
+        // the trim does not recognise would sit in the cache for good.
         final File[] files = cacheDir.listFiles((dir, name) ->
-                name.startsWith("subs.") && name.endsWith(".srt"));
+                name.startsWith("subs.") && SubtitleUtils.hasSubtitleExtension(name));
         if (files == null || files.length <= SUBTITLE_CACHE_KEEP) {
             return;
         }
@@ -1055,6 +1108,40 @@ class Utils {
         } catch (MissingResourceException e) {
             return null;
         }
+    }
+
+    /**
+     * Every language that can be preferred, code to label ("Ukrainian [ukr]"), collated by label.
+     *
+     * <p>Walks a few hundred locales, so it is worth calling once per screen rather than per row —
+     * both the settings priority lists and the manual subtitle search ask for the same map.
+     */
+    public static LinkedHashMap<String, String> allLanguages() {
+        final LinkedHashMap<String, String> languages = new LinkedHashMap<>();
+        for (final Locale locale : Locale.getAvailableLocales()) {
+            try {
+                // MissingResourceException: Couldn't find 3-letter language code for zz
+                final String key = locale.getISO3Language();
+                if (languages.containsKey(key)) {
+                    // Hundreds of locales collapse onto the same language here, and the display name
+                    // never depends on region or script — resolving it again only burns main-thread
+                    // time while the screen opens.
+                    continue;
+                }
+                String language = locale.getDisplayLanguage();
+                final int length = language.offsetByCodePoints(0, 1);
+                if (!language.isEmpty()) {
+                    language = language.substring(0, length).toUpperCase(locale) + language.substring(length);
+                }
+                languages.put(key, language + " [" + key + "]");
+            } catch (MissingResourceException e) {
+                e.printStackTrace();
+            }
+        }
+        final Collator collator = Collator.getInstance();
+        collator.setStrength(Collator.PRIMARY);
+        orderByValue(languages, collator::compare);
+        return languages;
     }
 
     /** The stored audio priority list ("ukr,eng") as a mutable list, blanks dropped. */

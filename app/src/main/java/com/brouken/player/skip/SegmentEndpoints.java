@@ -5,7 +5,7 @@ package com.brouken.player.skip;
  * endpoint / rotated key is a single-file change (see FIND_INTO.MD). All are public, imdb/tmdb-keyed
  * APIs; no user credentials are involved.
  */
-final class SegmentEndpoints {
+public final class SegmentEndpoints {
 
     private SegmentEndpoints() {}
 
@@ -35,6 +35,6 @@ final class SegmentEndpoints {
     /** imdb → tmdb id. Called lazily, only inside the TheIntroDB step. */
     static final String TMDB_FIND = "https://api.themoviedb.org/3/find/";
     /** TMDB v3 base; used to resolve tmdb → imdb via {movie,tv}/{id}/external_ids. */
-    static final String TMDB_BASE = "https://api.themoviedb.org/3";
-    static final String TMDB_KEY = "875965c1ae50e299f1c13c8c00c54af8";
+    public static final String TMDB_BASE = "https://api.themoviedb.org/3";
+    public static final String TMDB_KEY = "875965c1ae50e299f1c13c8c00c54af8";
 }

@@ -186,6 +186,7 @@
     <string name="audio_title">Audio track</string>
     <string name="subtitle_title">Subtitles</string>
     <string name="subtitle_off">Off</string>
+    <string name="subtitle_offset_title">Subtitle offset</string>
     <string name="speed_title">Playback speed</string>
     <string name="speed_normal">Normal</string>
     <string name="audio_track_number">Track %1$d</string>

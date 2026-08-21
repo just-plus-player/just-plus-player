@@ -43,6 +43,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
@@ -132,6 +133,7 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
@@ -519,6 +521,7 @@ public class PlayerActivity extends Activity {
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
+    private android.app.Dialog subtitleOffsetDialog;
     private android.app.Dialog sleepTimerDialog;
     private android.app.Dialog menuDialog;
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
@@ -742,8 +745,17 @@ public class PlayerActivity extends Activity {
     // True once any skip segment has appeared this session; keeps the offset button available
     // afterwards even on an item that itself has no segments.
     private boolean skipSeenThisSession;
-    private static final double SKIP_OFFSET_MAX_SEC = 30;   // ± range of the offset slider
-    private static final double SKIP_OFFSET_STEP_SEC = 0.25; // fine step (± buttons / D-pad)
+    // Shared by the skip and the subtitle offset panel — one shape, one range.
+    private static final double OFFSET_MAX_SEC = 30;   // ± range of the offset slider
+    private static final double OFFSET_STEP_SEC = 0.25; // fine step (± buttons / D-pad)
+    // Subtitle timing offset (seconds, positive = subtitles later) — session-only like the skip offset
+    // above. Applied by SubtitleOffsetRenderer, which is rebuilt with the player and re-seeded from here.
+    private double subtitleOffsetSec = 0;
+    private SubtitleOffset subtitleOffset;
+    // The external subtitle file taken over from the renderer, and which URI it was read from. Parsed
+    // once per track choice on a worker; kept across player rebuilds, dropped with the media session.
+    private SubtitleTimeline subtitleTimeline;
+    private Uri subtitleTimelineUri;
     // Set before a reinitialisation that must not auto-play — a SOURCE switch, or any rebuild caused by
     // returning to the foreground (initializePlayer otherwise force-plays under apiAccess or at position
     // zero). Consumed once inside initializePlayer.
@@ -2947,6 +2959,16 @@ public class PlayerActivity extends Activity {
             skipOffsetDialog.dismiss();
         }
         updateSkipOffsetButton();
+        // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
+        applySubtitleOffset(0);
+        subtitleTimeline = null;
+        subtitleTimelineUri = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+        if (subtitleOffsetDialog != null && subtitleOffsetDialog.isShowing()) {
+            subtitleOffsetDialog.dismiss();
+        }
         if (timeBar != null) {
             timeBar.clearSkipHighlights();
         }
@@ -3043,9 +3065,31 @@ public class PlayerActivity extends Activity {
         skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
                 brandColor(),   // coral, matches the skip timeline highlight
                 getString(R.string.skip_offset_title),
-                SKIP_OFFSET_MAX_SEC, SKIP_OFFSET_STEP_SEC, skipOffsetSec,
+                OFFSET_MAX_SEC, OFFSET_STEP_SEC, skipOffsetSec,
                 this::applySkipOffset);
         showPickerDialog(skipOffsetDialog);
+    }
+
+    /** Apply a new subtitle offset to the live text renderer (no reload, no reselection). */
+    private void applySubtitleOffset(double sec) {
+        subtitleOffsetSec = sec;
+        if (subtitleOffset != null) {
+            subtitleOffset.setOffsetSec(sec);
+        }
+    }
+
+    /** Session-only subtitle-offset panel — the same {@link OffsetPanel}, bound to the text renderer. */
+    private void showSubtitleOffsetDialog() {
+        if (player == null) {
+            return;
+        }
+        if (subtitleOffsetDialog != null) {
+            subtitleOffsetDialog.dismiss();
+        }
+        subtitleOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout, brandColor(),
+                getString(R.string.subtitle_offset_title),
+                OFFSET_MAX_SEC, OFFSET_STEP_SEC, subtitleOffsetSec, this::applySubtitleOffset);
+        showPickerDialog(subtitleOffsetDialog);
     }
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
@@ -5805,6 +5849,95 @@ public class PlayerActivity extends Activity {
         showSideMenu(getString(R.string.subtitle_title), items);
     }
 
+    /**
+     * Hands the selected subtitle over to {@link SubtitleTimeline} when it is a file the app sideloaded,
+     * and back to the renderer when it is not (an embedded track, or subtitles off). Runs on every track
+     * change, so it has to be cheap when nothing moved — the file is read once per choice, on a worker.
+     */
+    private void updateSubtitleTimeline(Tracks tracks) {
+        final MediaItem.SubtitleConfiguration selected = selectedSideloadedSubtitle(tracks);
+        if (selected == null) {
+            subtitleTimeline = null;
+            subtitleTimelineUri = null;
+            if (subtitleOffset != null) {
+                subtitleOffset.setTimeline(null);
+            }
+            return;
+        }
+        if (selected.uri.equals(subtitleTimelineUri)) {
+            // Already read, or being read. A player rebuild brings a new SubtitleOffset, so re-hand it.
+            if (subtitleOffset != null && subtitleTimeline != null) {
+                subtitleOffset.setTimeline(subtitleTimeline);
+            }
+            return;
+        }
+        subtitleTimelineUri = selected.uri;
+        subtitleTimeline = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+        final Uri uri = selected.uri;
+        final String mimeType = selected.mimeType;
+        final Thread worker = new Thread(() -> {
+            final SubtitleTimeline loaded = SubtitleTimeline.load(this, uri, mimeType);
+            runOnUiThread(() -> {
+                // Another track (or another media) was chosen while this was being read.
+                if (!uri.equals(subtitleTimelineUri)) {
+                    return;
+                }
+                subtitleTimeline = loaded;
+                if (subtitleOffset != null) {
+                    subtitleOffset.setTimeline(loaded);
+                }
+            });
+        }, "SubtitleTimeline");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** The sideloaded subtitle currently selected, matched by the URI its track carries as its id. */
+    private MediaItem.SubtitleConfiguration selectedSideloadedSubtitle(Tracks tracks) {
+        if (player == null) {
+            return null;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item == null || item.localConfiguration == null
+                || item.localConfiguration.subtitleConfigurations.isEmpty()) {
+            return null;
+        }
+        for (final Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSelected(i)) {
+                    continue;
+                }
+                final String id = group.getTrackFormat(i).id;
+                for (final MediaItem.SubtitleConfiguration config : item.localConfiguration.subtitleConfigurations) {
+                    if (config.mimeType != null && carriesUri(id, config.uri)) {
+                        return config;
+                    }
+                }
+                return null; // selected, but embedded — the renderer keeps it
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a track id is the one the app gave this sideloaded subtitle. The id it set is the URI
+     * (SubtitleUtils.buildSubtitle), but Media3 hands the track out prefixed with the index its source
+     * has in the merge — "1:file:///…" — so the URI is the tail of the id, not all of it.
+     */
+    private static boolean carriesUri(String formatId, Uri uri) {
+        if (formatId == null) {
+            return false;
+        }
+        final String text = uri.toString();
+        return formatId.equals(text) || formatId.endsWith(":" + text);
+    }
+
     private void disableSubtitles() {
         if (player == null) {
             return;
@@ -6059,7 +6192,16 @@ public class PlayerActivity extends Activity {
             }
         }
         if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
-            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
+                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
+                    false, this::showSkipOffsetDialog));
+        }
+        // Right below its twin. Only with subtitles on: there is nothing to shift otherwise.
+        if (player != null && player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT)) {
+            items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
+                    getString(R.string.subtitle_offset_title),
+                    subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec),
+                    false, this::showSubtitleOffsetDialog));
         }
         // Only for network media: a room syncs one shared URL, and there is nothing to share about a
         // file that lives on this device alone.
@@ -7354,6 +7496,34 @@ public class PlayerActivity extends Activity {
                 audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes);
                 return audioSink;
             }
+
+            @Override
+            protected void buildTextRenderers(Context context, TextOutput output, Looper outputLooper,
+                                              int extensionRendererMode, ArrayList<Renderer> out) {
+                // The subtitle offset wraps the text renderer on both sides — its cue output and its
+                // clock (see SubtitleOffset). The list the base class appends to already holds the
+                // video/audio renderers, hence the index.
+                final SubtitleOffset offset = new SubtitleOffset(output, outputLooper,
+                        new SubtitleOffset.Position() {
+                            @Override
+                            public long currentMs() {
+                                return player == null ? C.TIME_UNSET : player.getCurrentPosition();
+                            }
+
+                            @Override
+                            public boolean playing() {
+                                return player != null && player.isPlaying();
+                            }
+                        });
+                offset.setOffsetSec(subtitleOffsetSec);
+                offset.setTimeline(subtitleTimeline);
+                subtitleOffset = offset;
+                final int first = out.size();
+                super.buildTextRenderers(context, offset, outputLooper, extensionRendererMode, out);
+                for (int i = first; i < out.size(); i++) {
+                    out.set(i, offset.wrap(out.get(i)));
+                }
+            }
         };
         @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = baseRenderersFactory
                 .setExtensionRendererMode(mPrefs.decoderPriority)
@@ -7883,6 +8053,10 @@ public class PlayerActivity extends Activity {
             skipOffsetDialog.dismiss();
             skipOffsetDialog = null;
         }
+        if (subtitleOffsetDialog != null) {
+            subtitleOffsetDialog.dismiss();
+            subtitleOffsetDialog = null;
+        }
         // Only the panel goes: this runs on a quality switch too, and an armed timer has to ride across that.
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
@@ -7955,6 +8129,10 @@ public class PlayerActivity extends Activity {
             // each skipped silence, and on internal live-window updates.
             if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
                 playerStartPositionMs = currentPeriodPositionMs();
+            }
+            // A delayed cue still waiting to be shown belongs to the moment it was read at, not to this one.
+            if (subtitleOffset != null) {
+                subtitleOffset.clear();
             }
             // The seek flushed the audio output, so the bitstream may need re-locking (see
             // audioRestartPending). Latched, not run here. Within one item only.
@@ -8084,6 +8262,7 @@ public class PlayerActivity extends Activity {
             if (playerView != null) {
                 playerView.post(PlayerActivity.this::updateSubtitleButton);
             }
+            updateSubtitleTimeline(tracks);
             // The track list is what decides whether anything is missing, so this is the first moment
             // the question can be asked at all.
             maybeSearchSubtitlesOnline(tracks);
@@ -8127,6 +8306,10 @@ public class PlayerActivity extends Activity {
         // playWhenReady survives both, and a latch armed there would be spent on whatever output comes next.
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
+            // Subtitles are painted off the media position, which only moves while this is true.
+            if (subtitleOffset != null) {
+                subtitleOffset.wake();
+            }
             if (isPlaying) {
                 playerView.removeCallbacks(rebufferArmRunnable);
                 audioRestartSettling = false;
@@ -9261,7 +9444,7 @@ public class PlayerActivity extends Activity {
 
     private void dismissOpenPickers() {
         final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog,
-                sleepTimerDialog, menuDialog };
+                subtitleOffsetDialog, sleepTimerDialog, menuDialog };
         for (final android.app.Dialog d : pickers) {
             if (d != null && d.isShowing()) {
                 d.dismiss();

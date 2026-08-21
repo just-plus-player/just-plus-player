@@ -1,6 +1,7 @@
 package com.brouken.player;
 
 import android.net.Uri;
+import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -17,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import com.brouken.player.skip.SegmentFinder;
 
@@ -152,7 +154,7 @@ final class SubtitleSearch {
         // The three keyless indexes are asked at once: none of them costs anything, they disagree
         // about which files exist, and asking them in turn means waiting out each one's timeout
         // before the next gets a chance. Results are still taken in source order, not in whichever
-        // order they happen to answer.
+        // order they happen to answer — but only the ones ahead of a hit are waited for.
         // Whether a machine translation may be taken at all is one answer for every source that says
         // so — the setting is about the class of file, not about who is offering it.
         final boolean allowMachine = prefs.subtitleTranslate;
@@ -167,10 +169,9 @@ final class SubtitleSearch {
         if (prefs.subtitleSourceShegu) {
             keyless.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred));
         }
-        for (Result result : inParallel(keyless)) {
-            if (delivered(result, sink)) {
-                return result;
-            }
+        final Result keylessHit = firstDelivered(keyless, sink, preferred);
+        if (keylessHit != null) {
+            return keylessHit;
         }
         // Only now the metered one. It is the fullest index, but its download call is the single
         // thing here that spends one of a hundred a day — so it is asked only for what the free
@@ -188,14 +189,31 @@ final class SubtitleSearch {
     private static final int PARALLEL_TIMEOUT_SEC = 15;
 
     /**
-     * Runs the searches at once and returns what they found, in the order the tasks were given —
-     * source order is a preference, so it must survive the race. A source that times out, throws or
-     * finds nothing contributes nothing and holds nobody up.
+     * Runs the searches at once and hands over the best file that arrives: the wanted language first,
+     * and only then the order the sources were given in.
+     *
+     * <p>Language has to outrank source, because the two preferences are not worth the same. Taking a
+     * lesser language from an earlier source is not a smaller win — it ends the search with a file that
+     * then has to be machine-translated, five seconds of it, into a worse rendering of the language a
+     * source further down was offering outright. So the top language ends the search the moment it
+     * arrives, and anything below it is held until the sources that might still beat it have answered.
+     *
+     *
+     * <p>The results are collected one source at a time on purpose. Waiting for all three before
+     * looking at any of them made every search as slow as its slowest source: rest.opensubtitles.org
+     * answers a search in about 0.2 s and shegu.st, which is one small origin behind Cloudflare with
+     * nothing cached ({@code cf-cache-status: DYNAMIC}) and no language filter, takes 0.3 s warm and
+     * several times that cold — and the whole search sat waiting for it even when the answer had been
+     * in hand from the start. Now a slow source only delays the sources <em>after</em> it, and once
+     * one of them delivers the rest are abandoned mid-flight.
+     *
+     * <p>The budget is shared: {@link #PARALLEL_TIMEOUT_SEC} covers all of them together, so one host
+     * that hangs cannot spend everybody's patience one timeout at a time.
      */
-    private static List<Result> inParallel(List<Callable<Result>> tasks) {
-        final List<Result> results = new ArrayList<>(tasks.size());
+    private static Result firstDelivered(List<Callable<Result>> tasks, Sink sink,
+                                         List<String> preferred) {
         if (tasks.isEmpty()) {
-            return results;
+            return null;
         }
         final ExecutorService pool = Executors.newFixedThreadPool(tasks.size(), runnable -> {
             final Thread thread = new Thread(runnable, "SubtitleSource");
@@ -203,23 +221,56 @@ final class SubtitleSearch {
             return thread;
         });
         try {
-            for (Future<Result> future : pool.invokeAll(tasks, PARALLEL_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+            final List<Future<Result>> futures = new ArrayList<>(tasks.size());
+            for (Callable<Result> task : tasks) {
+                futures.add(pool.submit(task));
+            }
+            final long deadline = System.currentTimeMillis() + PARALLEL_TIMEOUT_SEC * 1000L;
+            // Hits in a language below the top one, kept unfetched: whether any of them is worth
+            // downloading is not known until every source has spoken.
+            final List<Result> lesser = new ArrayList<>(tasks.size());
+            for (Future<Result> future : futures) {
+                if (cancelled()) {
+                    return null;
+                }
                 try {
-                    final Result result = future.isCancelled() ? null : future.get();
-                    if (result != null) {
-                        results.add(result);
+                    final long left = Math.max(deadline - System.currentTimeMillis(), 0);
+                    final Result result = future.get(left, TimeUnit.MILLISECONDS);
+                    if (result == null) {
+                        continue;
                     }
+                    if (preferred.get(0).equals(result.language)) {
+                        if (delivered(result, sink)) {
+                            return result;
+                        }
+                    } else {
+                        lesser.add(result);
+                    }
+                } catch (InterruptedException e) {
+                    // The player is gone or the item changed; leave the flag set so the caller stops too.
+                    Thread.currentThread().interrupt();
+                    return null;
                 } catch (Exception e) {
                     Utils.log("subtitles: source failed " + e);
                 }
             }
-        } catch (InterruptedException e) {
-            // The player is gone or the item changed; leave the flag set so the caller stops too.
-            Thread.currentThread().interrupt();
+            // A stable sort, so within one language the sources keep the order they were asked in.
+            Collections.sort(lesser, (a, b) -> Integer.compare(
+                    preferred.indexOf(a.language), preferred.indexOf(b.language)));
+            for (Result result : lesser) {
+                if (cancelled()) {
+                    return null;
+                }
+                if (delivered(result, sink)) {
+                    return result;
+                }
+            }
         } finally {
+            // Whatever is still in flight is of no use now: either something was delivered or the
+            // budget is gone.
             pool.shutdownNow();
         }
-        return results;
+        return null;
     }
 
     private static boolean cancelled() {
@@ -312,14 +363,50 @@ final class SubtitleSearch {
                 final JSONObject entry = subtitles.getJSONObject(i);
                 final String language = Utils.toIso3Language(entry.optString("language"));
                 final String link = entry.optString("url", null);
-                if (language != null && link != null) {
-                    candidates.add(new Candidate(language, 0, link, false));
+                // Its display name is the real file name for the entries it holds itself. The ones it
+                // re-exports from the Stremio addon carry a placeholder instead — "Serbian (9797923)" —
+                // but those are the very files that source already offered, where the name arrives with
+                // the download.
+                if (language != null && link != null && !forcedName(entry.optString("display"))) {
+                    final String direct = origin(link);
+                    candidates.add(new Candidate(language, 0, direct != null ? direct : link, false));
                 }
             }
         } catch (Exception e) {
             Utils.log("shegu.st: " + e);
         }
         return candidates;
+    }
+
+    /**
+     * The file's own address, out of the base64url tail of a shegu.st link.
+     *
+     * <p>Worth the decode: their proxy fetches the origin itself when it has not got the file, so the
+     * same 144 KB measured <b>2.2–4.4 s</b> through {@code /sub/<blob>} against <b>0.32 s</b> straight
+     * from the origin on 2026-08-21. It is also the difference between having the uploader's file name
+     * and not: the proxy strips {@code Content-Disposition}, and for the entries shegu re-exports from
+     * the Stremio addon that header is the only place the name exists at all.
+     *
+     * <p>Every one of 612 entries across four titles decoded to an https URL, on two hosts
+     * ({@code images.chuaxin.com} and {@code subs5.strem.io}). Anything else keeps the proxy link:
+     * a scheme we did not expect is not something to go fetching on the strength of a hobby index.
+     * A dead origin is not worth a second attempt through the proxy either — the next candidate of
+     * the same language is right behind it.
+     *
+     * @return the origin URL, or null to leave the proxy link alone
+     */
+    private static String origin(String proxied) {
+        final int slash = proxied.lastIndexOf('/');
+        if (slash < 0 || slash + 1 >= proxied.length()) {
+            return null;
+        }
+        try {
+            final String decoded = new String(
+                    Base64.decode(proxied.substring(slash + 1), Base64.URL_SAFE), "UTF-8");
+            return decoded.startsWith("https://") ? decoded : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Stremio's OpenSubtitles addon: imdb only, no filtering, three-letter bibliographic codes. */
@@ -396,8 +483,12 @@ final class SubtitleSearch {
                     // This index says as much about a file as the metered API does, and both of these
                     // matter more than popularity: the Russian "forced" track for Avatar had twenty
                     // times the downloads of the real one, so sorting on downloads alone handed over a
-                    // 4 KB file of Na'vi subtitles and called the search a success.
-                    if ("1".equals(entry.optString("SubForeignPartsOnly"))) {
+                    // 4 KB file of Na'vi subtitles and called the search a success. The flag alone
+                    // does not settle it either: it is set per upload rather than per file, and that
+                    // very track — avatar-dvdscr-rus-navi.srt, 5858 bytes, 25 701 downloads — carries a
+                    // SubForeignPartsOnly of 0. Hence the name is read as well.
+                    if ("1".equals(entry.optString("SubForeignPartsOnly"))
+                            || forcedName(entry.optString("SubFileName"))) {
                         continue;
                     }
                     final boolean machine = "1".equals(entry.optString("SubAutoTranslation"));
@@ -440,6 +531,31 @@ final class SubtitleSearch {
     private static String bibliographic(String iso639_2t) {
         final String biblio = BIBLIOGRAPHIC.get(iso639_2t);
         return biblio != null ? biblio : iso639_2t;
+    }
+
+    /**
+     * What a forced track is called. The two aggregators carry no field for one — the Stremio addon
+     * answers six fields and not one of them says so, shegu.st has none either — so the file name is
+     * all that is left, and it is where the uploaders do write it.
+     *
+     * <p>Measured against 4059 names out of the legacy index: it matches 86, of which 70 are
+     * confirmed forced by {@code SubForeignPartsOnly} while 15 of the remaining 16 are forced tracks
+     * the flag missed ({@code FORZADOS.srt}, {@code castellano forzado.srt},
+     * {@code Avatar Extended_navi_rus.srt}) — so it corrects the flag rather than repeating it.
+     * The boundaries are letters on purpose: {@code signs} and {@code alien} are film titles
+     * ({@code Star Wars … ( Alien Only )}) and are deliberately absent, and {@code na.?vi} does not
+     * fire inside {@code Navidad}. What it costs is the forced track that is worth keeping — a
+     * multilingual film's, where forced <em>is</em> the wanted one — which is two names of the 4059,
+     * and both titles offer half a dozen other candidates for the fall-through to reach.
+     */
+    private static final Pattern FORCED_NAME = Pattern.compile(
+            "(^|[^a-z])(forced|forc[eé]s?|forzados?|erzwungene?"
+                    + "|foreign.?parts?|parts?.?only|na.?vi)([^a-z]|$)",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /** @param name a subtitle file name, or null where the source did not hand one over */
+    static boolean forcedName(String name) {
+        return name != null && FORCED_NAME.matcher(name).find();
     }
 
     /**

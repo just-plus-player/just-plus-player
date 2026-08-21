@@ -5865,16 +5865,20 @@ public class PlayerActivity extends Activity {
         // quota, no waiting. This is why the file is named after the title and language rather than
         // after whichever release the source happened to hand over.
         for (String language : wanted) {
-            final java.io.File cached = new java.io.File(getCacheDir(),
-                    cacheName + "." + language + ".srt");
-            if (cached.isFile() && cached.length() > 0) {
-                // Touched so the twenty-file trim treats "watched again" as recently used.
-                cached.setLastModified(System.currentTimeMillis());
-                cancelSubtitleSearch();
-                subtitleSearchStarted = key;
-                attachSearchedSubtitle(subtitleSearchGeneration, index,
-                        Uri.fromFile(cached), language);
-                return;
+            // Any extension: the copy was named after what it turned out to be, so looking only for
+            // .srt would miss an ASS one and pay for it again on every replay.
+            for (String extension : SubtitleUtils.EXTENSIONS) {
+                final java.io.File cached = new java.io.File(getCacheDir(),
+                        cacheName + "." + language + extension);
+                if (cached.isFile() && cached.length() > 0) {
+                    // Touched so the twenty-file trim treats "watched again" as recently used.
+                    cached.setLastModified(System.currentTimeMillis());
+                    cancelSubtitleSearch();
+                    subtitleSearchStarted = key;
+                    attachSearchedSubtitle(subtitleSearchGeneration, index,
+                            Uri.fromFile(cached), language);
+                    return;
+                }
             }
         }
 

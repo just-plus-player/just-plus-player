@@ -4312,10 +4312,7 @@ public class PlayerActivity extends Activity {
         // Same shape as the track list: <label or container name or language> [<codec> <channels> <bitrate>k] (<lang>)
         final String language = languageDisplayName(audio.language);
         // Rich release label: Media3's Format.label first, then the name read from the container.
-        String metaName = audio.label;
-        if ((metaName == null || metaName.isEmpty()) && audio.id != null) {
-            metaName = resolvedTrackNames.get(audio.id);
-        }
+        final String metaName = trackName(audio);
         final String title = (metaName != null && !metaName.isEmpty()) ? metaName : language;
         final StringBuilder b = new StringBuilder();
         if (title != null && !title.isEmpty()) {
@@ -4341,6 +4338,14 @@ public class PlayerActivity extends Activity {
         containerTracksUri = uri;
         resolveTrackNames();
         updateMediaInfo();
+        // Matroska names reach us here rather than through Format.label, and this can land after
+        // onTracksChanged — so a language that lives in a name is only now readable. A track turned on
+        // by one is also the answer to whatever the search was started for, which is why that question
+        // is put again: the file has what it was going to download.
+        if (selectSubtitleByName()) {
+            cancelSubtitleSearch();
+            maybeSearchSubtitlesOnline(player.getCurrentTracks());
+        }
     }
 
     /** {@link #containerTracks}, but only when they belong to the item playing now. */
@@ -5759,6 +5764,73 @@ public class PlayerActivity extends Activity {
         );
     }
 
+    /**
+     * Turns on a subtitle track whose language only its name gives away. The selector reads
+     * {@link Format#language} and nothing else, so a track tagged "und" but named "rus" — which is how
+     * plenty of releases are muxed — is invisible to the priority list, and the viewer is left with no
+     * subtitles next to a file that has them.
+     *
+     * <p>Only ever makes a selection nothing else made: a track the selector did match, a choice made by
+     * hand, a remembered one and a deliberate "off" all outrank a name. That leaves a tagged track the
+     * selector matched holding the selection even when a name ranks better — reaching past its choice is
+     * where fighting the selector starts.
+     *
+     * <p>A forced track loses to every full one, whatever the priority list says: it carries the signs
+     * and the foreign lines only, so full subtitles in a language ranked lower are still the better
+     * answer. It is picked only when nothing else matched at all.
+     *
+     * @return whether a track was turned on
+     */
+    private boolean selectSubtitleByName() {
+        if (player == null || paintedSubtitleUri != null || mPrefs.subtitleTrackId != null
+                || hasOverrideType(C.TRACK_TYPE_TEXT)
+                || player.getTrackSelectionParameters().disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            return false;
+        }
+        final Tracks tracks = player.getCurrentTracks();
+        if (tracks.isTypeSelected(C.TRACK_TYPE_TEXT)) {
+            return false;
+        }
+        final List<String> preferred = Utils.splitLanguages(mPrefs.languageSubtitle);
+        if (preferred.isEmpty()) {
+            return false;
+        }
+        int best = preferred.size();
+        boolean bestForced = true;
+        TrackGroup bestGroup = null;
+        int bestIndex = 0;
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                final Format format = group.getTrackFormat(i);
+                // A tagged track is the selector's business, and it has already had its say on it.
+                if (!group.isTrackSupported(i) || isPhantomClosedCaption(format)
+                        || Utils.toIso3Language(format.language) != null) {
+                    continue;
+                }
+                final int rank = preferred.indexOf(
+                        Utils.languageInName(trackName(format), preferred));
+                if (rank < 0) {
+                    continue;
+                }
+                final boolean forced = (format.selectionFlags & C.SELECTION_FLAG_FORCED) != 0;
+                if ((bestForced && !forced) || (bestForced == forced && rank < best)) {
+                    best = rank;
+                    bestForced = forced;
+                    bestGroup = group.getMediaTrackGroup();
+                    bestIndex = i;
+                }
+            }
+        }
+        if (bestGroup == null) {
+            return false;
+        }
+        applySubtitle(bestGroup, bestIndex);
+        return true;
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Online subtitle search: when the media carries nothing in the language the priority list asks
     // for, fetch it rather than leave the viewer with no subtitles and no way to get any.
@@ -6055,9 +6127,13 @@ public class PlayerActivity extends Activity {
                 if (isPhantomClosedCaption(format)) {
                     continue;
                 }
-                // An untagged track ("und", or nothing at all) is not evidence of any language, so it
-                // counts as absence — the alternative is a file full of Polish passing for Ukrainian.
-                final String language = Utils.toIso3Language(format.language);
+                // An untagged track ("und", or nothing at all) is evidence of a language only where its
+                // name spells one out; anything else counts as absence, the alternative being a file full
+                // of Polish passing for Ukrainian.
+                String language = Utils.toIso3Language(format.language);
+                if (language == null) {
+                    language = Utils.languageInName(trackName(format), preferred);
+                }
                 if (language != null) {
                     present.add(language);
                 }
@@ -6090,12 +6166,17 @@ public class PlayerActivity extends Activity {
                 && format.accessibilityChannel == Format.NO_VALUE;
     }
 
+    /** What a track is called: Media3's own label, else the name read from the container. */
+    private String trackName(Format format) {
+        if (format.label != null && !format.label.isEmpty()) {
+            return format.label;
+        }
+        return format.id != null ? resolvedTrackNames.get(format.id) : null;
+    }
+
     private String buildSubtitleInfo(Format text) {
         final String language = languageDisplayName(text.language);
-        String name = text.label;
-        if ((name == null || name.isEmpty()) && text.id != null) {
-            name = resolvedTrackNames.get(text.id);
-        }
+        final String name = trackName(text);
         final StringBuilder b = new StringBuilder();
         final String title = (name != null && !name.isEmpty()) ? name : language;
         if (title != null && !title.isEmpty()) {
@@ -9042,6 +9123,9 @@ public class PlayerActivity extends Activity {
                 playerView.post(PlayerActivity.this::updateSubtitleButton);
             }
             updateSubtitleTimeline(tracks);
+            // Before the search: a track whose name gives its language away answers what the search
+            // would otherwise go looking for.
+            selectSubtitleByName();
             // The track list is what decides whether anything is missing, so this is the first moment
             // the question can be asked at all.
             maybeSearchSubtitlesOnline(tracks);

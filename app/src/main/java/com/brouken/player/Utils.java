@@ -67,6 +67,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.text.Collator;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -1055,6 +1056,40 @@ class Utils {
         } catch (MissingResourceException e) {
             return null;
         }
+    }
+
+    /**
+     * Every language that can be preferred, code to label ("Ukrainian [ukr]"), collated by label.
+     *
+     * <p>Walks a few hundred locales, so it is worth calling once per screen rather than per row —
+     * both the settings priority lists and the manual subtitle search ask for the same map.
+     */
+    public static LinkedHashMap<String, String> allLanguages() {
+        final LinkedHashMap<String, String> languages = new LinkedHashMap<>();
+        for (final Locale locale : Locale.getAvailableLocales()) {
+            try {
+                // MissingResourceException: Couldn't find 3-letter language code for zz
+                final String key = locale.getISO3Language();
+                if (languages.containsKey(key)) {
+                    // Hundreds of locales collapse onto the same language here, and the display name
+                    // never depends on region or script — resolving it again only burns main-thread
+                    // time while the screen opens.
+                    continue;
+                }
+                String language = locale.getDisplayLanguage();
+                final int length = language.offsetByCodePoints(0, 1);
+                if (!language.isEmpty()) {
+                    language = language.substring(0, length).toUpperCase(locale) + language.substring(length);
+                }
+                languages.put(key, language + " [" + key + "]");
+            } catch (MissingResourceException e) {
+                e.printStackTrace();
+            }
+        }
+        final Collator collator = Collator.getInstance();
+        collator.setStrength(Collator.PRIMARY);
+        orderByValue(languages, collator::compare);
+        return languages;
     }
 
     /** The stored audio priority list ("ukr,eng") as a mutable list, blanks dropped. */

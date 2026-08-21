@@ -1,0 +1,147 @@
+package com.brouken.player;
+
+import android.content.Context;
+import android.net.Uri;
+
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.text.Cue;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSourceUtil;
+import androidx.media3.datasource.DataSpec;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.extractor.text.CuesWithTiming;
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
+import androidx.media3.extractor.text.SubtitleParser;
+
+import com.google.common.collect.ImmutableList;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Every cue of one external subtitle file, held in memory and addressable by time.
+ * <p>
+ * This is what lets the subtitle offset work in both directions and survive a seek. The player's text
+ * renderer reads its stream strictly forward and drops each cue once it has been shown, so it can never
+ * answer for a moment that has already gone by — and a delay is precisely a question about the past.
+ * A jump forward is the same problem: the lines between the new position and the delay behind it were
+ * skipped, and nothing can hand them back. With the file itself in memory, any moment is one lookup
+ * away and the offset is applied by simply looking somewhere else.
+ * <p>
+ * Only sideloaded files can be held this way (a subtitle the app added itself, whose track carries its
+ * URI as the format id — see {@link SubtitleUtils#buildSubtitle}). Tracks embedded in the media stay on
+ * the renderer, where {@link SubtitleOffset} still delays their cues as best it can.
+ * <p>
+ * The bytes are read through the same data source and parsed by the same Media3 parser the player would
+ * have used, so what ends up on screen is what the renderer would have produced, only re-timed. The app
+ * has already re-encoded anything that was not UTF-8 by the time the track exists (Utils.convertInputStreamToUTF).
+ */
+final class SubtitleTimeline {
+
+    private static final int[] NONE = new int[0];
+    /** Shown for this long when a cue carries no duration and nothing follows it. */
+    private static final long OPEN_ENDED_US = 5 * C.MICROS_PER_SECOND;
+
+    private final long[] startUs;
+    private final long[] endUs;
+    private final List<ImmutableList<Cue>> cues;
+
+    private SubtitleTimeline(long[] startUs, long[] endUs, List<ImmutableList<Cue>> cues) {
+        this.startUs = startUs;
+        this.endUs = endUs;
+        this.cues = cues;
+    }
+
+    /**
+     * Reads and parses the whole file. Null when Media3 has no parser for it, when it holds no cue, or
+     * when reading fails — the caller then leaves the track to the renderer.
+     */
+    static SubtitleTimeline load(Context context, Uri uri, String mimeType) {
+        try {
+            final Format format = new Format.Builder().setSampleMimeType(mimeType).build();
+            final SubtitleParser.Factory factory = new DefaultSubtitleParserFactory();
+            if (!factory.supportsFormat(format)) {
+                return null;
+            }
+            final DataSource source = new DefaultDataSource.Factory(context).createDataSource();
+            final byte[] data;
+            try {
+                source.open(new DataSpec(uri));
+                data = DataSourceUtil.readToEnd(source);
+            } finally {
+                DataSourceUtil.closeQuietly(source);
+            }
+            final List<CuesWithTiming> blocks = new ArrayList<>();
+            factory.create(format).parse(data, SubtitleParser.OutputOptions.allCues(), blocks::add);
+            final List<CuesWithTiming> ordered = new ArrayList<>(blocks.size());
+            for (final CuesWithTiming block : blocks) {
+                if (block.startTimeUs != C.TIME_UNSET && !block.cues.isEmpty()) {
+                    ordered.add(block);
+                }
+            }
+            if (ordered.isEmpty()) {
+                return null;
+            }
+            // ASS dialogue lines are not required to be in order, and the lookup below counts on it.
+            Collections.sort(ordered, (a, b) -> Long.compare(a.startTimeUs, b.startTimeUs));
+            final int count = ordered.size();
+            final long[] startUs = new long[count];
+            final long[] endUs = new long[count];
+            final List<ImmutableList<Cue>> cues = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                final CuesWithTiming block = ordered.get(i);
+                startUs[i] = block.startTimeUs;
+                endUs[i] = block.durationUs != C.TIME_UNSET && block.durationUs > 0
+                        ? block.startTimeUs + block.durationUs
+                        : (i + 1 < count ? ordered.get(i + 1).startTimeUs : block.startTimeUs + OPEN_ENDED_US);
+                cues.add(block.cues);
+            }
+            return new SubtitleTimeline(startUs, endUs, cues);
+        } catch (Throwable t) {
+            // A subtitle is not worth a broken playback: the renderer keeps the track either way.
+            Utils.log("subtitles: timeline failed " + t);
+            return null;
+        }
+    }
+
+    /** Indices of the blocks on screen at this moment, ascending; empty when there is nothing to show. */
+    int[] visibleAt(long timeUs) {
+        int count = 0;
+        int[] found = null;
+        // ponytail: a plain scan that stops at the first cue starting later. A two-hour file is a few
+        // thousand entries and this runs a few times a second — a binary search is worth it only if that
+        // ever shows up in a profile.
+        for (int i = 0; i < startUs.length && startUs[i] <= timeUs; i++) {
+            if (timeUs < endUs[i]) {
+                if (found == null) {
+                    found = new int[4];
+                } else if (count == found.length) {
+                    found = Arrays.copyOf(found, count * 2);
+                }
+                found[count++] = i;
+            }
+        }
+        if (count == 0) {
+            return NONE;
+        }
+        return count == found.length ? found : Arrays.copyOf(found, count);
+    }
+
+    /** The cues of those blocks, in file order — overlapping lines (ASS) all show, as they should. */
+    ImmutableList<Cue> cuesOf(int[] indices) {
+        if (indices.length == 0) {
+            return ImmutableList.of();
+        }
+        if (indices.length == 1) {
+            return cues.get(indices[0]);
+        }
+        final ImmutableList.Builder<Cue> all = ImmutableList.builder();
+        for (final int index : indices) {
+            all.addAll(cues.get(index));
+        }
+        return all.build();
+    }
+}

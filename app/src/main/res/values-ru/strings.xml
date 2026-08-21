@@ -163,6 +163,7 @@
     <string name="audio_title">Аудиодорожка</string>
     <string name="subtitle_title">Субтитры</string>
     <string name="subtitle_off">Выключены</string>
+    <string name="subtitle_offset_title">Смещение субтитров</string>
     <string name="speed_title">Скорость воспроизведения</string>
     <string name="speed_normal">Обычная</string>
     <string name="audio_track_number">Дорожка %1$d</string>

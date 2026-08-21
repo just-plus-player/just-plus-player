@@ -756,6 +756,13 @@ public class PlayerActivity extends Activity {
     // once per track choice on a worker; kept across player rebuilds, dropped with the media session.
     private SubtitleTimeline subtitleTimeline;
     private Uri subtitleTimelineUri;
+    // A subtitle shown without a track of its own, painted from the file by SubtitleOffset: attaching it
+    // as a track means re-preparing the player, which on an HTTP stream costs a re-open of the media and
+    // seconds of re-buffering — for a file the app found by itself, unasked, mid-playback.
+    // ponytail: switch a painted subtitle off and a later search that hits the disk cache can paint it
+    // again. Remembering "the viewer said no to this file" needs a second field; not worth it until
+    // someone hits it (subtitleSearchStarted and the miss TTL cover it in practice).
+    private Uri paintedSubtitleUri;
     // Set before a reinitialisation that must not auto-play — a SOURCE switch, or any rebuild caused by
     // returning to the foreground (initializePlayer otherwise force-plays under apiAccess or at position
     // zero). Consumed once inside initializePlayer.
@@ -2961,11 +2968,7 @@ public class PlayerActivity extends Activity {
         updateSkipOffsetButton();
         // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
         applySubtitleOffset(0);
-        subtitleTimeline = null;
-        subtitleTimelineUri = null;
-        if (subtitleOffset != null) {
-            subtitleOffset.setTimeline(null);
-        }
+        clearSubtitleTimeline();
         if (subtitleOffsetDialog != null && subtitleOffsetDialog.isShowing()) {
             subtitleOffsetDialog.dismiss();
         }
@@ -5409,17 +5412,17 @@ public class PlayerActivity extends Activity {
     // Media3 keeps the subtitle button visible-but-disabled while loading; we instead hide it entirely
     // until the media actually exposes subtitle tracks, matching the audio/quality buttons.
     /**
-     * Sideloads an external subtitle onto the item playing now, keeping the playlist and the position.
+     * Shows an external subtitle on the item playing now, without interrupting it. The file is parsed
+     * into a {@link SubtitleTimeline} and painted by {@link SubtitleOffset} straight to the player's text
+     * output — which is where a selected sideloaded subtitle already ends up for the offset to work — so
+     * the player never re-prepares: no re-open, no re-buffer, no gap in the sound, no reset progress bar.
+     * The track itself turns up on the next player rebuild, from {@code mPrefs.subtitleUri} (see
+     * {@link #rememberedSubtitle()}), so this state heals by itself.
      *
-     * <p>The timeline is rebuilt rather than the item replaced. With the media URI unchanged
-     * {@code replaceMediaItem} updates the item in place and never re-instantiates the source, so an
-     * added subtitle configuration is accepted and then silently ignored — the player reports no new
-     * text track at all. It is the same trap {@link #recoverFromContainerError()} documents for the mime
-     * type. {@code setMediaItems} with the whole list is what re-creates the merged source, and unlike
-     * {@code setMediaItem} it keeps the other episodes, their arrows and their remembered positions.
+     * <p>It also breaks a loop at its root: painting raises no track change, so the finder is not sent
+     * looking again by the very subtitle it just found.
      *
-     * <p>Doing nothing when the subtitle is already attached is what stops this from looping: the
-     * re-prepare produces another track change, which sends the finder looking again.
+     * @return whether this was a new subtitle, i.e. whether it is worth telling the viewer about
      */
     boolean addSubtitleTrack(Uri subtitleUri) {
         if (player == null || subtitleUri == null) {
@@ -5430,14 +5433,88 @@ public class PlayerActivity extends Activity {
         if (index < 0 || index >= count) {
             return false;
         }
+        // Already on screen: no second read of the file, and no second toast for it — a re-search that
+        // hits the cache asks for the same one again.
+        if (subtitleUri.equals(paintedSubtitleUri)) {
+            return false;
+        }
         final MediaItem current = player.getMediaItemAt(index);
         if (current.localConfiguration != null) {
             for (MediaItem.SubtitleConfiguration existing : current.localConfiguration.subtitleConfigurations) {
                 if (existing.uri.equals(subtitleUri)) {
-                    return false;
+                    return false; // a real track carries it: the renderer and the picker have it already
                 }
             }
-        } else {
+        }
+        paintSubtitle(subtitleUri);
+        return true;
+    }
+
+    /** Reads the file on a worker and hands it to {@link SubtitleOffset}; re-prepares only if it cannot. */
+    private void paintSubtitle(Uri uri) {
+        paintedSubtitleUri = uri;
+        subtitleTimelineUri = uri;
+        subtitleTimeline = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+        final String mimeType = SubtitleUtils.getSubtitleMime(uri);
+        final Thread worker = new Thread(() -> {
+            final SubtitleTimeline loaded = SubtitleTimeline.load(this, uri, mimeType);
+            runOnUiThread(() -> {
+                if (!uri.equals(paintedSubtitleUri)) {
+                    return; // another file, another episode, or a rebuild got there first
+                }
+                if (loaded == null) {
+                    // Nothing to paint: no parser, no cue, or the read failed. Only the renderer can
+                    // show it now, and that costs the re-prepare this exists to avoid.
+                    paintedSubtitleUri = null;
+                    subtitleTimelineUri = null;
+                    attachSubtitleTrack(uri);
+                    return;
+                }
+                subtitleTimeline = loaded;
+                if (subtitleOffset != null) {
+                    subtitleOffset.setTimeline(loaded);
+                }
+                updateSubtitleButton(); // no track moved, so nothing else would
+            });
+        }, "SubtitleTimeline");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Sideloads an external subtitle as a real track, keeping the playlist and the position. The
+     * fallback for a file {@link SubtitleTimeline} cannot parse — everything else is painted instead
+     * (see {@link #addSubtitleTrack}), because this re-opens the media.
+     *
+     * <p>The timeline is rebuilt rather than the item replaced. With the media URI unchanged
+     * {@code replaceMediaItem} updates the item in place and never re-instantiates the source, so an
+     * added subtitle configuration is accepted and then silently ignored — the player reports no new
+     * text track at all. It is the same trap {@link #recoverFromContainerError()} documents for the mime
+     * type. {@code setMediaItems} with the whole list is what re-creates the merged source, and unlike
+     * {@code setMediaItem} it keeps the other episodes, their arrows and their remembered positions.
+     */
+    private void attachSubtitleTrack(Uri subtitleUri) {
+        if (player == null) {
+            return;
+        }
+        // Re-read rather than passed in: this runs a whole file read after the decision to attach.
+        final int index = player.getCurrentMediaItemIndex();
+        final int count = player.getMediaItemCount();
+        if (index < 0 || index >= count) {
+            return;
+        }
+        final MediaItem current = player.getMediaItemAt(index);
+        if (current.localConfiguration != null) {
+            for (MediaItem.SubtitleConfiguration existing : current.localConfiguration.subtitleConfigurations) {
+                if (existing.uri.equals(subtitleUri)) {
+                    // Doing nothing when it is already attached is what stops this from looping: the
+                    // re-prepare produces another track change, which sends the finder looking again.
+                    return;
+                }
+            }
         }
         final MediaItem updated =
                 withSubtitle(current, SubtitleUtils.buildSubtitle(this, subtitleUri, null, true));
@@ -5449,7 +5526,6 @@ public class PlayerActivity extends Activity {
         }
         player.setMediaItems(items, index, position);
         player.prepare();
-        return true;
     }
 
     /** The external subtitle remembered for this media, or null when there is nothing to restore. */
@@ -5474,8 +5550,9 @@ public class PlayerActivity extends Activity {
         if (exoSubtitle == null) {
             return;
         }
-        boolean hasSubtitles = false;
-        boolean textSelected = false;
+        // Seeded from a subtitle painted without a track of its own; the loop below can only add.
+        boolean hasSubtitles = subtitleWithoutTrack() != null;
+        boolean textSelected = paintedSubtitleUri != null;
         if (player != null) {
             for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
                 if (group.getType() == C.TRACK_TYPE_TEXT
@@ -5489,6 +5566,11 @@ public class PlayerActivity extends Activity {
             }
         }
         exoSubtitle.setVisibility(hasSubtitles ? View.VISIBLE : View.GONE);
+        // Media3 owns this button too (it keeps the id it found) and disables it whenever the player
+        // reports no text track — which is exactly the case for a subtitle painted from its file. It
+        // dims the icon with the same alpha this helper applies, so setEnabled alone would leave a
+        // working button that still looks dead. The deferred post() this runs from gives us last word.
+        Utils.setButtonEnabled(this, exoSubtitle, hasSubtitles);
         // Light the CC icon coral while a subtitle track is actually showing.
         exoSubtitle.setSelected(textSelected);
     }
@@ -5820,8 +5902,19 @@ public class PlayerActivity extends Activity {
             return;
         }
         final boolean textEnabled = player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT);
+        // A subtitle painted from its file has no track here, so it needs a row of its own — otherwise
+        // it could never be switched off, and "off" would read as the choice while it is on screen.
+        final Uri fileOnly = subtitleWithoutTrack();
+        final boolean painting = paintedSubtitleUri != null;
         final List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled, this::disableSubtitles));
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled && !painting,
+                this::disableSubtitles));
+        if (fileOnly != null) {
+            // addSubtitleTrack rather than paintSubtitle: it carries the already-on-screen guard, so
+            // tapping the ticked row costs nothing and tapping it after "off" puts the subtitle back.
+            items.add(new MenuItem(subtitleFileLabel(fileOnly), null, painting,
+                    () -> addSubtitleTrack(fileOnly)));
+        }
         int number = 0;
         for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
             if (group.getType() != C.TRACK_TYPE_TEXT) {
@@ -5842,11 +5935,32 @@ public class PlayerActivity extends Activity {
                     label = getString(R.string.audio_track_number, number);
                 }
                 final int index = i;
-                items.add(new MenuItem(label, null, textEnabled && group.isTrackSelected(i),
+                // !painting: an embedded track can stay selected while the file is painted over it
+                // (SubtitleOffset drops the renderer's cues), and two ticked rows is a lie.
+                items.add(new MenuItem(label, null, textEnabled && !painting && group.isTrackSelected(i),
                         () -> applySubtitle(trackGroup, index)));
             }
         }
         showSideMenu(getString(R.string.subtitle_title), items);
+    }
+
+    /** Nothing is painted from a file any more: the renderer's own cues get through again. */
+    private void clearSubtitleTimeline() {
+        paintedSubtitleUri = null;
+        subtitleTimeline = null;
+        subtitleTimelineUri = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+    }
+
+    /** Drops a subtitle that had no track of its own — the viewer just picked something else, or off. */
+    private void clearPaintedSubtitle() {
+        if (paintedSubtitleUri == null) {
+            return;
+        }
+        clearSubtitleTimeline();
+        updateSubtitleButton(); // no track moved, so nothing else would
     }
 
     /**
@@ -5857,10 +5971,11 @@ public class PlayerActivity extends Activity {
     private void updateSubtitleTimeline(Tracks tracks) {
         final MediaItem.SubtitleConfiguration selected = selectedSideloadedSubtitle(tracks);
         if (selected == null) {
-            subtitleTimeline = null;
-            subtitleTimelineUri = null;
-            if (subtitleOffset != null) {
-                subtitleOffset.setTimeline(null);
+            // A painted subtitle has no track to be "selected", and this runs on every track change —
+            // an audio pick, an HLS variant switch. Reading that absence as "nothing to show" is what
+            // would wipe it off the screen.
+            if (paintedSubtitleUri == null) {
+                clearSubtitleTimeline();
             }
             return;
         }
@@ -5938,10 +6053,40 @@ public class PlayerActivity extends Activity {
         return formatId.equals(text) || formatId.endsWith(":" + text);
     }
 
+    /**
+     * The remembered external subtitle when the player carries no track for it — the one that is
+     * painted, or can be. This is what keeps it in the picker after the viewer switches it off: without
+     * a track of its own it would otherwise take the CC button with it and become unreachable.
+     */
+    private Uri subtitleWithoutTrack() {
+        final Uri uri = mPrefs.subtitleUri;
+        if (uri == null || player == null) {
+            return null;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item != null && item.localConfiguration != null) {
+            for (final MediaItem.SubtitleConfiguration config : item.localConfiguration.subtitleConfigurations) {
+                if (config.uri.equals(uri)) {
+                    return null; // the item carries it, so the renderer and the picker do too
+                }
+            }
+        }
+        return uri;
+    }
+
+    /** What a file with no track is called in the picker — the name its track would have carried. */
+    private String subtitleFileLabel(Uri uri) {
+        // Media3 normalises a track language before it reaches Format.language; a file name is raw.
+        final String language =
+                languageDisplayName(Util.normalizeLanguageCode(SubtitleUtils.getSubtitleLanguage(uri)));
+        return language != null ? language : Utils.getFileName(this, uri);
+    }
+
     private void disableSubtitles() {
         if (player == null) {
             return;
         }
+        clearPaintedSubtitle();
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -5952,6 +6097,9 @@ public class PlayerActivity extends Activity {
         if (player == null || group == null) {
             return;
         }
+        // Without this the picked track would show nothing: SubtitleOffset drops the renderer's cues
+        // for as long as a file is painted.
+        clearPaintedSubtitle();
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -6196,8 +6344,10 @@ public class PlayerActivity extends Activity {
                     skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
                     false, this::showSkipOffsetDialog));
         }
-        // Right below its twin. Only with subtitles on: there is nothing to shift otherwise.
-        if (player != null && player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT)) {
+        // Right below its twin. Only with subtitles on: there is nothing to shift otherwise. A painted
+        // file counts — it is the case SubtitleTimeline was built for — and selects no track.
+        if (player != null && (player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT)
+                || paintedSubtitleUri != null)) {
             items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
                     getString(R.string.subtitle_offset_title),
                     subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec),
@@ -7901,7 +8051,11 @@ public class PlayerActivity extends Activity {
                     rememberEpisodePosition(player.getCurrentMediaItemIndex(), position);
                 }
                 mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
-                        getSelectedTrack(C.TRACK_TYPE_TEXT),
+                        // A painted subtitle is on screen with no track selected, so getSelectedTrack
+                        // answers "#none" — which reads back as "the viewer chose off" and disables the
+                        // very track the next rebuild restores from mPrefs.subtitleUri. Null means no
+                        // choice recorded, letting that track's DEFAULT flag select it as a fresh open does.
+                        paintedSubtitleUri != null ? null : getSelectedTrack(C.TRACK_TYPE_TEXT),
                         playerView.getResizeMode(),
                         playerView.getVideoSurfaceView().getScaleX(),
                         currentAspectRatio,
@@ -8028,6 +8182,12 @@ public class PlayerActivity extends Activity {
         stopSkipPolling();
         cancelSegmentFinder();
         cancelSubtitleSearch();
+        // The paint had no track behind it; the rebuild puts the file back as a real one
+        // (rememberedSubtitle). Deliberately not clearSubtitleTimeline(): the parsed timeline has to
+        // survive so initializePlayer can seed the new SubtitleOffset with it, and updateSubtitleTimeline
+        // recognises it by subtitleTimelineUri and re-hands the same object — no re-read, no blank gap.
+        // After the savePlayer() above, which still needs to see the flag.
+        paintedSubtitleUri = null;
         hideSkipPill();
         skipBuilt = false;
         if (timeBar != null) {
@@ -8183,9 +8343,12 @@ public class PlayerActivity extends Activity {
             // The remembered external subtitle belonged to the item that just ended: it was downloaded
             // or picked for that episode, and the next rebuild would put it back — minutes out of sync
             // with what is playing now. PLAYLIST_CHANGED is excluded because that is the transition
-            // addSubtitleTrack() itself causes, and clearing there would undo the attach that raised it.
+            // attachSubtitleTrack() itself causes, and clearing there would undo the attach that raised it.
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                 mPrefs.updateSubtitle(null);
+                // Painting is not tied to a track, so nothing else would stop the previous episode's
+                // subtitles from being drawn over this one.
+                clearSubtitleTimeline();
                 cancelSubtitleSearch();
             }
             // The new item opens its own audio output; a restart latched on the old one must not tear it down.

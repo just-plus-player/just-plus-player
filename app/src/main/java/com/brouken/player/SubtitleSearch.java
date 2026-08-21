@@ -78,11 +78,18 @@ final class SubtitleSearch {
         /** ISO 639-2/T, the form the priority list is written in. */
         final String language;
         final List<String> urls;
+        /**
+         * Somebody else's machine translation. Both OpenSubtitles indexes say so, the legacy one in
+         * {@code SubAutoTranslation}; the Stremio addon and shegu.st carry no such field, so a false
+         * here means "not known to be", not "human".
+         */
+        final boolean machine;
 
-        Result(String source, String language, List<String> urls) {
+        Result(String source, String language, List<String> urls, boolean machine) {
             this.source = source;
             this.language = language;
             this.urls = urls;
+            this.machine = machine;
         }
     }
 
@@ -91,11 +98,14 @@ final class SubtitleSearch {
         final String language;  // ISO 639-2/T
         final int downloads;
         final String url;
+        /** Machine-translated, where the source says so. False also means "does not say". */
+        final boolean machine;
 
-        Candidate(String language, int downloads, String url) {
+        Candidate(String language, int downloads, String url, boolean machine) {
             this.language = language;
             this.downloads = downloads;
             this.url = url;
+            this.machine = machine;
         }
     }
 
@@ -143,10 +153,13 @@ final class SubtitleSearch {
         // about which files exist, and asking them in turn means waiting out each one's timeout
         // before the next gets a chance. Results are still taken in source order, not in whichever
         // order they happen to answer.
+        // Whether a machine translation may be taken at all is one answer for every source that says
+        // so — the setting is about the class of file, not about who is offering it.
+        final boolean allowMachine = prefs.subtitleTranslate;
         final List<Callable<Result>> keyless = new ArrayList<>(3);
         if (prefs.subtitleSourceRest) {
             keyless.add(() -> best(SOURCE_REST,
-                    restOpenSubtitles(id, preferred, answered), preferred));
+                    restOpenSubtitles(id, preferred, answered, allowMachine), preferred));
         }
         if (prefs.subtitleSourceStremio) {
             keyless.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred));
@@ -163,7 +176,7 @@ final class SubtitleSearch {
         // thing here that spends one of a hundred a day — so it is asked only for what the free
         // sources could not produce.
         if (!cancelled() && prefs.subtitleSourceOpenSubtitles) {
-            final Result result = fromOpenSubtitles(id, preferred);
+            final Result result = fromOpenSubtitles(id, preferred, allowMachine);
             if (delivered(result, sink)) {
                 return result;
             }
@@ -254,13 +267,13 @@ final class SubtitleSearch {
      * minted last, once nothing has cancelled the search, because a unit is spent even when the
      * answer arrives to a player that no longer exists.
      */
-    private static Result fromOpenSubtitles(MediaId id, List<String> preferred) {
+    private static Result fromOpenSubtitles(MediaId id, List<String> preferred, boolean allowMachine) {
         final List<String> codes = OpenSubtitles.toIso639_1(preferred);
         if (codes.isEmpty()) {
             return null;
         }
         final OpenSubtitles.Candidate best =
-                OpenSubtitles.pick(OpenSubtitles.search(id, codes), codes);
+                OpenSubtitles.pick(OpenSubtitles.search(id, codes), codes, allowMachine);
         if (best == null || cancelled()) {
             return null;
         }
@@ -269,7 +282,7 @@ final class SubtitleSearch {
             return null;
         }
         return new Result(SOURCE_OPENSUBTITLES, Utils.toIso3Language(best.language),
-                Collections.singletonList(link));
+                Collections.singletonList(link), best.machine);
     }
 
     /**
@@ -300,7 +313,7 @@ final class SubtitleSearch {
                 final String language = Utils.toIso3Language(entry.optString("language"));
                 final String link = entry.optString("url", null);
                 if (language != null && link != null) {
-                    candidates.add(new Candidate(language, 0, link));
+                    candidates.add(new Candidate(language, 0, link, false));
                 }
             }
         } catch (Exception e) {
@@ -331,7 +344,7 @@ final class SubtitleSearch {
                 final String language = Utils.toIso3Language(entry.optString("lang"));
                 final String link = entry.optString("url", null);
                 if (language != null && link != null) {
-                    candidates.add(new Candidate(language, 0, link));
+                    candidates.add(new Candidate(language, 0, link, false));
                 }
             }
         } catch (Exception e) {
@@ -347,7 +360,7 @@ final class SubtitleSearch {
      * walked one entry at a time and the first hit wins.
      */
     private static List<Candidate> restOpenSubtitles(MediaId id, List<String> preferred,
-                                                     AtomicBoolean answered) {
+                                                     AtomicBoolean answered, boolean allowMachine) {
         if (id.imdb == null) {
             return Collections.emptyList();
         }
@@ -377,10 +390,22 @@ final class SubtitleSearch {
                     final JSONObject entry = entries.getJSONObject(i);
                     final String link = entry.optString("SubDownloadLink", null);
                     final String found = Utils.toIso3Language(entry.optString("SubLanguageID"));
-                    if (link != null && found != null) {
-                        candidates.add(new Candidate(found,
-                                parseInt(entry.optString("SubDownloadsCnt")), link));
+                    if (link == null || found == null) {
+                        continue;
                     }
+                    // This index says as much about a file as the metered API does, and both of these
+                    // matter more than popularity: the Russian "forced" track for Avatar had twenty
+                    // times the downloads of the real one, so sorting on downloads alone handed over a
+                    // 4 KB file of Na'vi subtitles and called the search a success.
+                    if ("1".equals(entry.optString("SubForeignPartsOnly"))) {
+                        continue;
+                    }
+                    final boolean machine = "1".equals(entry.optString("SubAutoTranslation"));
+                    if (machine && !allowMachine) {
+                        continue;
+                    }
+                    candidates.add(new Candidate(found,
+                            parseInt(entry.optString("SubDownloadsCnt")), link, machine));
                 }
             } catch (Exception e) {
                 Utils.log("rest.opensubtitles.org: " + e);
@@ -418,8 +443,13 @@ final class SubtitleSearch {
     }
 
     /**
-     * The most wanted language present, and within it the most downloaded files. Language order beats
-     * popularity: a rarely downloaded track in the language asked for is still the one asked for.
+     * The most wanted language present, within it a human translation over a machine one, and within
+     * that the most downloaded files. Language order beats everything — a rarely downloaded track in the
+     * language asked for is still the one asked for — and popularity comes last rather than second,
+     * because the files that are worse than the alternative are exactly the ones that outnumber it.
+     *
+     * <p>The whole list handed on is of one kind, human or machine, so the label the viewer ends up
+     * seeing still describes the file that arrives when the first link turns out to be dead.
      */
     private static Result best(String source, List<Candidate> candidates, List<String> preferred) {
         String language = null;
@@ -445,17 +475,20 @@ final class SubtitleSearch {
                 inLanguage.add(candidate);
             }
         }
-        Collections.sort(inLanguage, (a, b) -> Integer.compare(b.downloads, a.downloads));
+        Collections.sort(inLanguage, (a, b) -> a.machine != b.machine
+                ? Boolean.compare(a.machine, b.machine)
+                : Integer.compare(b.downloads, a.downloads));
+        final boolean machine = inLanguage.get(0).machine;
         final List<String> urls = new ArrayList<>();
         for (Candidate candidate : inLanguage) {
-            if (urls.size() >= MAX_URLS) {
+            if (urls.size() >= MAX_URLS || candidate.machine != machine) {
                 break;
             }
             urls.add(candidate.url);
         }
         Utils.log("subtitles: " + source + " has " + urls.size() + " " + language
-                + " of " + candidates.size());
-        return new Result(source, language, urls);
+                + (machine ? " machine-translated" : "") + " of " + candidates.size());
+        return new Result(source, language, urls, machine);
     }
 
     private static int parseInt(String value) {

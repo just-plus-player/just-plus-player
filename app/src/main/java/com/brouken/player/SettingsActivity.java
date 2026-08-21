@@ -41,6 +41,7 @@ import com.brouken.player.update.UpdateUi;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -146,6 +147,11 @@ public class SettingsActivity extends AppCompatActivity
             boolean hadAllowSystemFrameRateKey =
                     androidx.preference.PreferenceManager.getDefaultSharedPreferences(getContext())
                             .contains("allowSystemFrameRate");
+
+            // Before inflation: the list preference below reads this key, and the value may still be
+            // living in the switch pair it replaced.
+            Prefs.getSubtitleSearchMode(requireContext());
+            Prefs.getSubtitleTranslateMode(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
@@ -262,9 +268,9 @@ public class SettingsActivity extends AppCompatActivity
                     preferenceLanguageAudio.setOnPreferenceClickListener(preference -> {
                         LanguagePriorityDialog.show(requireContext(),
                                 getString(R.string.pref_language_audio),
-                                R.string.pref_language_audio_none,
+                                R.string.pref_language_audio_none, R.string.pref_language_audio_add,
                                 Utils.splitLanguages(Prefs.getLanguageAudio(requireContext())),
-                                languages, pinnedLanguages(), false, picked -> {
+                                languages, pinnedLanguages(), picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageAudio(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,
@@ -280,9 +286,9 @@ public class SettingsActivity extends AppCompatActivity
                     preferenceLanguageSubtitle.setOnPreferenceClickListener(preference -> {
                         LanguagePriorityDialog.show(requireContext(),
                                 getString(R.string.pref_language_subtitle),
-                                R.string.pref_language_subtitle_none,
+                                R.string.pref_language_subtitle_none, R.string.pref_language_audio_add,
                                 Utils.splitLanguages(Prefs.getLanguageSubtitle(requireContext())),
-                                languages, pinnedLanguages(), true, picked -> {
+                                languages, pinnedLanguages(), picked -> {
                                     final String stored = TextUtils.join(",", picked);
                                     Prefs.setLanguageSubtitle(requireContext(), stored);
                                     updateLanguageSummary(preference, languages, stored,
@@ -291,6 +297,53 @@ public class SettingsActivity extends AppCompatActivity
                         return true;
                     });
                 }
+            }
+
+            // The search lives behind its own row, so its state has to read from the outside: without
+            // this the row says nothing and the whole feature is a tap away from being discovered.
+            final ListPreference searchMode = findPreference("subtitleSearchMode");
+            final ListPreference translateMode = findPreference("subtitleTranslateMode");
+            if (searchMode != null) {
+                applySearchMode(searchMode, searchMode.getValue(), translateMode);
+                searchMode.setOnPreferenceChangeListener((preference, value) -> {
+                    applySearchMode(searchMode, (String) value, translateMode);
+                    return true;
+                });
+            }
+            if (translateMode != null) {
+                applyTranslateMode(translateMode, translateMode.getValue(), searchMode);
+                translateMode.setOnPreferenceChangeListener((preference, value) -> {
+                    applyTranslateMode(translateMode, (String) value, searchMode);
+                    // A translation cached under the previous choice would keep being served for
+                    // everything watched recently, so the new choice would look like it did nothing.
+                    SubtitleUtils.clearTranslatedCache(requireContext());
+                    return true;
+                });
+            }
+
+            final Preference translateBackends = findPreference("subtitleTranslateBackends");
+            if (translateBackends != null) {
+                final LinkedHashMap<String, String> services = SubtitleTranslate.backends();
+                updateLanguageSummary(translateBackends, services,
+                        Prefs.getSubtitleTranslateBackends(requireContext()),
+                        R.string.pref_subtitle_translate_backends_none);
+                translateBackends.setOnPreferenceClickListener(preference -> {
+                    LanguagePriorityDialog.show(requireContext(),
+                            getString(R.string.pref_subtitle_translate_backends),
+                            R.string.pref_subtitle_translate_backends_none,
+                            R.string.pref_subtitle_translate_backends_add,
+                            Utils.splitLanguages(Prefs.getSubtitleTranslateBackends(requireContext())),
+                            services, Collections.emptyList(), picked -> {
+                                final String stored = TextUtils.join(",", picked);
+                                Prefs.setSubtitleTranslateBackends(requireContext(), stored);
+                                updateLanguageSummary(preference, services, stored,
+                                        R.string.pref_subtitle_translate_backends_none);
+                                // The endpoints changed, so what they produced is no longer what this
+                                // setting says would be produced.
+                                SubtitleUtils.clearTranslatedCache(requireContext());
+                            });
+                    return true;
+                });
             }
 
             final ListPreference textColor = findPreference("subtitleTextColor");
@@ -501,6 +554,64 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /** The chosen languages, in order, or a note that nothing is preferred. */
+        /** Everything the search screen holds besides the mode itself. */
+        private static final String[] SEARCH_DEPENDENTS = {
+                "subtitleTranslateMode", "subtitleTranslateBackends", "subtitleSearchLanguage",
+                "subtitleSourceRest", "subtitleSourceStremio", "subtitleSourceShegu",
+                "subtitleSourceOpenSubtitles",
+        };
+
+        /**
+         * Reflects the chosen mode: the row that leads here reports it, and with no search running the
+         * rows that configure one are greyed out rather than left live and inert. This is by hand
+         * because app:dependency watches a parent's enablement, not its value.
+         */
+        private void applySearchMode(final ListPreference searchMode, final String mode,
+                                     final ListPreference translateMode) {
+            final boolean searching = !Prefs.SEARCH_OFF.equals(mode);
+            for (final String key : SEARCH_DEPENDENTS) {
+                final Preference dependent = findPreference(key);
+                if (dependent != null) {
+                    dependent.setEnabled(searching);
+                }
+            }
+            // The endpoint list answers to both: no search means no translation either, and the list is
+            // meaningless while translation itself is off.
+            enableTranslateBackends(searching, translateMode == null ? null : translateMode.getValue());
+            // Null while the fragment is rooted at the search screen: the row lives one level up.
+            final Preference screen = findPreference("subtitleSearchScreen");
+            final int index = searchMode.findIndexOfValue(mode);
+            if (screen != null && index >= 0) {
+                screen.setSummary(searchMode.getEntries()[index]);
+            }
+        }
+
+        /**
+         * The chosen entry as the summary, and with it who the text is handed to — a machine
+         * translation is somebody else's service, and that belongs next to the switch that turns it on
+         * rather than in a changelog.
+         */
+        private void applyTranslateMode(final ListPreference translateMode, final String mode,
+                                        final ListPreference searchMode) {
+            enableTranslateBackends(searchMode == null
+                    || !Prefs.SEARCH_OFF.equals(searchMode.getValue()), mode);
+            final int index = translateMode.findIndexOfValue(mode);
+            if (index < 0) {
+                return;
+            }
+            final CharSequence entry = translateMode.getEntries()[index];
+            translateMode.setSummary(Prefs.TRANSLATE_OFF.equals(mode)
+                    ? entry : getString(R.string.pref_subtitle_translate_summary, entry));
+        }
+
+        /** The endpoint list is live only while a search runs and translation is on. */
+        private void enableTranslateBackends(final boolean searching, final String translateMode) {
+            final Preference backends = findPreference("subtitleTranslateBackends");
+            if (backends != null) {
+                backends.setEnabled(searching && !Prefs.TRANSLATE_OFF.equals(translateMode));
+            }
+        }
+
         private void updateLanguageSummary(final Preference preference,
                                            final LinkedHashMap<String, String> languages,
                                            final String stored, final int emptyRes) {

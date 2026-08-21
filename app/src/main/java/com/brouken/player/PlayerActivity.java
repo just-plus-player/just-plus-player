@@ -5771,6 +5771,17 @@ public class PlayerActivity extends Activity {
     private static final long SUBTITLE_MISS_TTL_MS = 30 * 60 * 1000L;
 
     /**
+     * Stands where the plain dot would in a cached subtitle's name, marking the file as translated by a
+     * machine — either by this app or by whoever uploaded it. The name is the only place such a mark
+     * survives a restart, and it sits before the language rather than after it so the language is still
+     * read back from between the last two dots.
+     */
+    private static final String MACHINE_TRANSLATED = ".auto.";
+
+    /** Both spellings of a cached subtitle's name, human first. */
+    private static final String[] SUBTITLE_CACHE_PREFIXES = { ".", MACHINE_TRANSLATED };
+
+    /**
      * Titles already searched without a hit, so restarting an episode or rewatching it does not spend
      * the daily download budget re-learning the same nothing. Process-lifetime and keyed per episode:
      * the next episode of the same series is a different key and is looked up on its own.
@@ -5835,7 +5846,26 @@ public class PlayerActivity extends Activity {
             // Asked for regardless: whatever track outranked the list is evidently not doing the job.
             missing = preferred;
         }
-        final List<String> wanted = missing;
+        final List<String> targets = missing;
+        final String target = targets.get(0);
+        // Which languages those are follows from the target rather than from a setting — see
+        // SubtitleTranslate.sourcesFor. Note that a language further down the viewer's own list is
+        // included: ranking a language second says it is readable, not that it is what was wanted. The
+        // top of the list is what was wanted, and a machine rendering of it is nearer to that than a
+        // human file in the next language down. Without this the feature would never fire for a list
+        // like "ukr, rus, eng", where Russian is always found and always ends the search.
+        final List<String> translateFrom = mPrefs.subtitleTranslate
+                ? SubtitleTranslate.sourcesFor(target)
+                : Collections.<String>emptyList();
+        final String translateTo = translateFrom.isEmpty() ? null : target;
+        // Searched for as well, so a language only worth translating is still found — after everything
+        // actually wanted, so it can never be preferred over a real hit.
+        final List<String> wanted = new ArrayList<>(targets);
+        for (String source : translateFrom) {
+            if (!wanted.contains(source)) {
+                wanted.add(source);
+            }
+        }
         final MediaId id = mediaIdAt(player.getCurrentMediaItemIndex());
         if (id.isEmpty()) {
             return;
@@ -5864,20 +5894,29 @@ public class PlayerActivity extends Activity {
         // A copy kept from an earlier watch answers the same question for nothing — no request, no
         // quota, no waiting. This is why the file is named after the title and language rather than
         // after whichever release the source happened to hand over.
-        for (String language : wanted) {
-            // Any extension: the copy was named after what it turned out to be, so looking only for
-            // .srt would miss an ASS one and pay for it again on every replay.
-            for (String extension : SubtitleUtils.EXTENSIONS) {
-                final java.io.File cached = new java.io.File(getCacheDir(),
-                        cacheName + "." + language + extension);
-                if (cached.isFile() && cached.length() > 0) {
-                    // Touched so the twenty-file trim treats "watched again" as recently used.
-                    cached.setLastModified(System.currentTimeMillis());
-                    cancelSubtitleSearch();
-                    subtitleSearchStarted = key;
-                    attachSearchedSubtitle(subtitleSearchGeneration, index,
-                            Uri.fromFile(cached), language);
-                    return;
+        // Never a language being translated from: a cached Russian copy is the raw material for this
+        // search, not its answer, and probing for it would hand back the very file the translation was
+        // meant to replace — on every replay, for good. What the translation produced is cached in its
+        // own right, under the marked name, and that is what answers here from the second watch on.
+        for (String language : targets) {
+            if (translateFrom.contains(language)) {
+                continue;
+            }
+            for (String prefix : SUBTITLE_CACHE_PREFIXES) {
+                // Any extension: the copy was named after what it turned out to be, so looking only for
+                // .srt would miss an ASS one and pay for it again on every replay.
+                for (String extension : SubtitleUtils.EXTENSIONS) {
+                    final java.io.File cached = new java.io.File(getCacheDir(),
+                            cacheName + prefix + language + extension);
+                    if (cached.isFile() && cached.length() > 0) {
+                        // Touched so the twenty-file trim treats "watched again" as recently used.
+                        cached.setLastModified(System.currentTimeMillis());
+                        cancelSubtitleSearch();
+                        subtitleSearchStarted = key;
+                        attachSearchedSubtitle(subtitleSearchGeneration, index,
+                                Uri.fromFile(cached), language);
+                        return;
+                    }
                 }
             }
         }
@@ -5901,12 +5940,33 @@ public class PlayerActivity extends Activity {
                     // The language goes in the file name because that is where it is read back from: a
                     // track whose language is unknown is not the one setPreferredTextLanguages picks,
                     // so an aggregator's opaque URL arrives as an unnamed track nobody switched on.
-                    final Uri file = new SubtitleFetcher(this, urls,
-                            cacheName + "." + result.language + ".srt").fetchNow();
+                    // MACHINE_TRANSLATED goes in the same place for the same reason — it is the only
+                    // marker that survives a restart, and it is what keeps the label honest.
+                    final Uri file = new SubtitleFetcher(this, urls, cacheName
+                            + (result.machine ? MACHINE_TRANSLATED : ".")
+                            + result.language + ".srt").fetchNow();
                     if (file == null) {
                         return false;
                     }
-                    runOnUiThread(() -> attachSearchedSubtitle(generation, index, file, result.language));
+                    Uri show = file;
+                    String shown = result.language;
+                    if (translateTo != null && translateFrom.contains(result.language)) {
+                        final Uri translated = SubtitleTranslate.translate(this, file, result.language,
+                                translateTo, new java.io.File(getCacheDir(),
+                                        cacheName + MACHINE_TRANSLATED + translateTo + ".srt"),
+                                mPrefs.subtitleTranslateOriginal, mPrefs.subtitleTranslateBackends);
+                        if (translated != null) {
+                            show = translated;
+                            shown = translateTo;
+                        }
+                        // Not translated: show it as it came. It is still a subtitle in a language the
+                        // viewer ranked, and it is what the player would have shown before it could
+                        // translate at all — failing the search instead would turn an outage at the
+                        // translation endpoint into no subtitles.
+                    }
+                    final Uri attach = show;
+                    final String language = shown;
+                    runOnUiThread(() -> attachSearchedSubtitle(generation, index, attach, language));
                     return true;
                 }, answered);
             } catch (Throwable t) {
@@ -5934,9 +5994,18 @@ public class PlayerActivity extends Activity {
         }
         mPrefs.updateSubtitle(file);
         if (addSubtitleTrack(file)) {
-            Toast.makeText(this, getString(R.string.subtitle_search_found, displayLanguage(language)),
-                    Toast.LENGTH_SHORT).show();
+            String message = getString(R.string.subtitle_search_found, displayLanguage(language));
+            if (isMachineTranslated(file)) {
+                message = getString(R.string.subtitle_machine_translated, message);
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Translated by a machine — by this app, or by whoever uploaded it. See {@link #MACHINE_TRANSLATED}. */
+    private static boolean isMachineTranslated(Uri uri) {
+        final String path = uri.getPath();
+        return path != null && path.contains(MACHINE_TRANSLATED);
     }
 
     /** The enabled sources, in order, as part of what a search result is an answer to. */
@@ -6362,9 +6431,9 @@ public class PlayerActivity extends Activity {
         // Seeded from the priority list every time and never written back: the list is the standing
         // answer, and this is one search that wants a different one. Confirming it costs a press.
         LanguagePriorityDialog.show(this, getString(R.string.subtitle_search_language_title),
-                R.string.pref_language_subtitle_none,
+                R.string.pref_language_subtitle_none, R.string.pref_language_audio_add,
                 Utils.splitLanguages(mPrefs.languageSubtitle),
-                Utils.allLanguages(), pinnedLanguages(), false, picked -> {
+                Utils.allLanguages(), pinnedLanguages(), picked -> {
                     if (player != null) {
                         maybeSearchSubtitlesOnline(player.getCurrentTracks(), true, picked);
                     }
@@ -6594,7 +6663,10 @@ public class PlayerActivity extends Activity {
         // Media3 normalises a track language before it reaches Format.language; a file name is raw.
         final String language =
                 languageDisplayName(Util.normalizeLanguageCode(SubtitleUtils.getSubtitleLanguage(uri)));
-        return language != null ? language : Utils.getFileName(this, uri);
+        final String label = language != null ? language : Utils.getFileName(this, uri);
+        // A machine translation that reads like a human one in the picker is the feature lying about
+        // itself: the first odd line then looks like a broken player rather than what was agreed to.
+        return isMachineTranslated(uri) ? getString(R.string.subtitle_machine_translated, label) : label;
     }
 
     private void disableSubtitles() {

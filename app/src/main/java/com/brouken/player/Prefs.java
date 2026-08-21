@@ -66,11 +66,18 @@ class Prefs {
     private static final String PREF_KEY_MAP_DV7 = "mapDV7ToHevc";
     private static final String PREF_KEY_LANGUAGE_AUDIO = "languageAudio";
     private static final String PREF_KEY_LANGUAGE_SUBTITLE = "languageSubtitle";
-    // Online subtitle search. The two switches sit in the language-priority dialog rather than on the
-    // settings screen: what they do is decided entirely by the list edited there.
+    // Online subtitle search, all of it behind one row on the settings screen. These used to be
+    // checkboxes inside the language-priority dialog, which hid the feature behind a row that never
+    // mentions it while leaving its lesser options in plain sight.
+    private static final String PREF_KEY_SUBTITLE_SEARCH_MODE = "subtitleSearchMode";
+    // Replaced by the mode above; still read once, to carry an existing choice over.
     private static final String PREF_KEY_SUBTITLE_SEARCH = "subtitleSearch";
     private static final String PREF_KEY_SUBTITLE_SEARCH_STRICT = "subtitleSearchStrict";
     private static final String PREF_KEY_SUBTITLE_SEARCH_LANGUAGE = "subtitleSearchLanguage";
+    private static final String PREF_KEY_SUBTITLE_TRANSLATE_MODE = "subtitleTranslateMode";
+    private static final String PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS = "subtitleTranslateBackends";
+    // Replaced by the mode above; still read once, to carry an existing choice over.
+    private static final String PREF_KEY_SUBTITLE_TRANSLATE = "subtitleTranslate";
     // One per source, so a single one can be exercised on its own when something looks wrong.
     private static final String PREF_KEY_SOURCE_OPENSUBTITLES = "subtitleSourceOpenSubtitles";
     private static final String PREF_KEY_SOURCE_SHEGU = "subtitleSourceShegu";
@@ -113,6 +120,18 @@ class Prefs {
     public static final String SKIP_MODE_AUTO = "auto";
 
     // Which skips offer the "go back" pill afterwards.
+    // When the online subtitle search runs. One choice, because the two switches this replaced were
+    // not independent: the second meant nothing while the first was off.
+    public static final String SEARCH_OFF = "off";
+    public static final String SEARCH_FIRST = "first";
+    public static final String SEARCH_NONE = "none";
+
+    // Machine translation, and whether the source line stays under it. One choice for the same reason:
+    // keeping the original means nothing when nothing is being translated.
+    public static final String TRANSLATE_OFF = "off";
+    public static final String TRANSLATE_ONLY = "only";
+    public static final String TRANSLATE_BOTH = "both";
+
     public static final String SKIP_UNDO_ALL = "all";
     public static final String SKIP_UNDO_MANUAL = "manual";
     public static final String SKIP_UNDO_AUTO = "auto";
@@ -180,6 +199,15 @@ class Prefs {
     // Ask which language a manual search is for, seeded from the list above. Off by default: the
     // priority list is already the answer, and a step that only ever gets confirmed is a step.
     public boolean subtitleSearchLanguage = false;
+    // Machine-translate into the wanted language when no track exists in it. Which language it is
+    // translated from is not a setting: it follows from the wanted one (SubtitleTranslate.sourcesFor).
+    public boolean subtitleTranslate = true;
+    // Keep the source line under the translated one. The only way a viewer can judge a machine
+    // rendering at all, so it is worth the two lines of screen it costs.
+    public boolean subtitleTranslateOriginal = false;
+    // Translation endpoints to try, in order: comma-separated ids from SubtitleTranslate. Editable
+    // because they are strangers' free services and three of five died within a fortnight.
+    public String subtitleTranslateBackends = SubtitleTranslate.DEFAULT_BACKENDS;
     // Tried in this order until one has the wanted language; see SubtitleSearch.
     public boolean subtitleSourceOpenSubtitles = true;
     public boolean subtitleSourceShegu = true;
@@ -318,9 +346,14 @@ class Prefs {
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);
         languageAudio = getLanguageAudio(mContext);
         languageSubtitle = getLanguageSubtitle(mContext);
-        subtitleSearch = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH, subtitleSearch);
-        subtitleSearchStrict = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, subtitleSearchStrict);
+        final String searchMode = getSubtitleSearchMode(mContext);
+        subtitleSearch = !SEARCH_OFF.equals(searchMode);
+        subtitleSearchStrict = SEARCH_NONE.equals(searchMode);
         subtitleSearchLanguage = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_LANGUAGE, subtitleSearchLanguage);
+        final String translateMode = getSubtitleTranslateMode(mContext);
+        subtitleTranslate = !TRANSLATE_OFF.equals(translateMode);
+        subtitleTranslateOriginal = TRANSLATE_BOTH.equals(translateMode);
+        subtitleTranslateBackends = getSubtitleTranslateBackends(mContext);
         subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
         subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
         subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);
@@ -422,25 +455,65 @@ class Prefs {
         return seeded;
     }
 
+    /**
+     * When the online search runs, migrated once from the switch pair it replaced. Called before the
+     * settings screen inflates as well as on playback, so the key exists by the time the list
+     * preference reads it — otherwise a viewer who had the search on would be shown "never".
+     */
+    public static String getSubtitleSearchMode(final Context context) {
+        final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        final String stored = preferences.getString(PREF_KEY_SUBTITLE_SEARCH_MODE, null);
+        if (stored != null) {
+            return stored;
+        }
+        final String migrated;
+        if (!preferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH, false)) {
+            migrated = SEARCH_OFF;
+        } else {
+            migrated = preferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, false)
+                    ? SEARCH_NONE : SEARCH_FIRST;
+        }
+        preferences.edit().putString(PREF_KEY_SUBTITLE_SEARCH_MODE, migrated)
+                .remove(PREF_KEY_SUBTITLE_SEARCH)
+                .remove(PREF_KEY_SUBTITLE_SEARCH_STRICT)
+                .apply();
+        return migrated;
+    }
+
+    /**
+     * Whether subtitles are machine-translated, and whether the source line is kept under the result.
+     * Migrated once from the switch this replaced, and read before the settings screen inflates for the
+     * same reason {@link #getSubtitleSearchMode} is.
+     */
+    public static String getSubtitleTranslateMode(final Context context) {
+        final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        final String stored = preferences.getString(PREF_KEY_SUBTITLE_TRANSLATE_MODE, null);
+        if (stored != null) {
+            return stored;
+        }
+        final String migrated = preferences.getBoolean(PREF_KEY_SUBTITLE_TRANSLATE, true)
+                ? TRANSLATE_ONLY : TRANSLATE_OFF;
+        preferences.edit().putString(PREF_KEY_SUBTITLE_TRANSLATE_MODE, migrated)
+                .remove(PREF_KEY_SUBTITLE_TRANSLATE)
+                .apply();
+        return migrated;
+    }
+
+    /** Translation endpoints to try, in order. Unset means the two that were answering when shipped. */
+    public static String getSubtitleTranslateBackends(final Context context) {
+        final String stored = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS, null);
+        return stored != null ? stored : SubtitleTranslate.DEFAULT_BACKENDS;
+    }
+
+    public static void setSubtitleTranslateBackends(final Context context, final String backends) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS, backends).apply();
+    }
+
     public static void setLanguageSubtitle(final Context context, final String languages) {
         PreferenceManager.getDefaultSharedPreferences(context).edit()
                 .putString(PREF_KEY_LANGUAGE_SUBTITLE, languages).apply();
-    }
-
-    public static boolean getSubtitleSearch(final Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean(PREF_KEY_SUBTITLE_SEARCH, false);
-    }
-
-    public static boolean getSubtitleSearchStrict(final Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, false);
-    }
-
-    public static void setSubtitleSearch(final Context context, final boolean enabled, final boolean strict) {
-        PreferenceManager.getDefaultSharedPreferences(context).edit()
-                .putBoolean(PREF_KEY_SUBTITLE_SEARCH, enabled)
-                .putBoolean(PREF_KEY_SUBTITLE_SEARCH_STRICT, strict).apply();
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {

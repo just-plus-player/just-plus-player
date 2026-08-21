@@ -6,7 +6,6 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CheckBox;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -21,9 +20,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * Editor for an ordered list of preferred languages: the player walks it top to bottom and takes the
- * first language the media actually carries. Shared by the audio and the subtitle priority list —
- * only the title and the "nothing preferred" line differ between the two.
+ * Editor for an ordered list picked out of a known set — which is at once "preferred languages, best
+ * first" and "these translation services, in this order": enabled is membership, priority is position.
+ * The player walks such a list top to bottom. Shared by the audio and the subtitle priority list —
+ * only the title and the "nothing preferred" line differ between the two, and nothing else belongs in
+ * here: the online-search switches lived at the bottom of this dialog for a while, which is how the
+ * whole search feature ended up invisible behind a row named after something else.
  *
  * Reordering is done with per-row up/down buttons rather than by dragging. Dragging on Android TV is
  * "focus the handle, press OK, hold a direction, press OK again", which is worse than two buttons for
@@ -44,17 +46,19 @@ final class LanguagePriorityDialog {
 
     private final Context context;
     private final int emptyRes;
+    private final int addRes;
     private final LinkedHashMap<String, String> allLanguages;
     private final List<String> pinned;
     private final List<String> languages;
     private final LinearLayout list;
 
-    private LanguagePriorityDialog(final Context context, final int emptyRes,
+    private LanguagePriorityDialog(final Context context, final int emptyRes, final int addRes,
                                    final List<String> initial,
                                    final LinkedHashMap<String, String> allLanguages,
                                    final List<String> pinned) {
         this.context = context;
         this.emptyRes = emptyRes;
+        this.addRes = addRes;
         this.allLanguages = allLanguages;
         this.pinned = pinned;
         this.languages = new ArrayList<>(initial);
@@ -67,39 +71,18 @@ final class LanguagePriorityDialog {
      * @param emptyRes     stands in for the list while no language is preferred
      * @param allLanguages every selectable code mapped to its label, in the order the picker lists them
      * @param pinned       codes worth offering first (device languages, languages of the open media)
-     * @param withSearch   append the online-search switches; subtitles only, since what they search for
-     *                     is precisely the list edited above them — which is why they live here rather
-     *                     than as two more entries on the settings screen
+     * @param addRes       label for the row that opens the picker. A parameter because this editor is
+     *                     not only about languages any more: an ordered subset of a known set is also
+     *                     exactly what "these translation services, in this order" is
      */
-    static void show(final Context context, final String title, final int emptyRes,
+    static void show(final Context context, final String title, final int emptyRes, final int addRes,
                      final List<String> initial, final LinkedHashMap<String, String> allLanguages,
-                     final List<String> pinned, final boolean withSearch, final Listener listener) {
+                     final List<String> pinned, final Listener listener) {
         final LanguagePriorityDialog editor =
-                new LanguagePriorityDialog(context, emptyRes, initial, allLanguages, pinned);
-
-        // The rows are rebuilt on every reorder, so anything that must survive that sits beside the
-        // list rather than inside it.
-        final LinearLayout container = new LinearLayout(context);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.addView(editor.list);
-
-        final CheckBox search;
-        final CheckBox strict;
-        if (withSearch) {
-            search = editor.checkBox(R.string.pref_subtitle_search, Prefs.getSubtitleSearch(context));
-            strict = editor.checkBox(R.string.pref_subtitle_search_strict,
-                    Prefs.getSubtitleSearchStrict(context));
-            strict.setEnabled(search.isChecked());
-            search.setOnCheckedChangeListener((button, checked) -> strict.setEnabled(checked));
-            container.addView(search);
-            container.addView(strict);
-        } else {
-            search = null;
-            strict = null;
-        }
+                new LanguagePriorityDialog(context, emptyRes, addRes, initial, allLanguages, pinned);
 
         final ScrollView scroll = new ScrollView(context);
-        scroll.addView(container);
+        scroll.addView(editor.list);
 
         editor.rebuild(-1, 0);
 
@@ -107,22 +90,9 @@ final class LanguagePriorityDialog {
                 .setTitle(title)
                 .setView(scroll)
                 .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                    if (search != null) {
-                        Prefs.setSubtitleSearch(context, search.isChecked(), strict.isChecked());
-                    }
-                    listener.onLanguagesPicked(editor.languages);
-                })
+                .setPositiveButton(android.R.string.ok,
+                        (dialog, which) -> listener.onLanguagesPicked(editor.languages))
                 .show();
-    }
-
-    private CheckBox checkBox(final int textRes, final boolean checked) {
-        final CheckBox box = new CheckBox(context);
-        box.setText(textRes);
-        box.setChecked(checked);
-        box.setPadding(Utils.dpToPx(16) + box.getPaddingLeft(), Utils.dpToPx(4),
-                Utils.dpToPx(16), Utils.dpToPx(4));
-        return box;
     }
 
     /**
@@ -185,7 +155,7 @@ final class LanguagePriorityDialog {
         }
 
         final TextView add = new TextView(context);
-        add.setText(R.string.pref_language_audio_add);
+        add.setText(addRes);
         add.setGravity(Gravity.CENTER_VERTICAL);
         add.setClickable(true);
         add.setFocusable(true);
@@ -243,7 +213,7 @@ final class LanguagePriorityDialog {
             labels[i] = label(allLanguages, codes.get(i));
         }
         new AlertDialog.Builder(context)
-                .setTitle(R.string.pref_language_audio_add)
+                .setTitle(addRes)
                 .setItems(labels, (dialog, which) -> {
                     languages.add(codes.get(which));
                     rebuild(languages.size() - 1, UP);

@@ -76,12 +76,15 @@ final class OpenSubtitles {
         final long fileId;
         final int downloads;
         final String release;
+        /** Somebody else's machine translation. Offered, but only once no human wrote one. */
+        final boolean machine;
 
-        Candidate(String language, long fileId, int downloads, String release) {
+        Candidate(String language, long fileId, int downloads, String release, boolean machine) {
             this.language = language;
             this.fileId = fileId;
             this.downloads = downloads;
             this.release = release;
+            this.machine = machine;
         }
     }
 
@@ -137,14 +140,17 @@ final class OpenSubtitles {
                     continue;
                 }
                 // A forced track is a handful of cues for foreign dialogue; selected as the only
-                // subtitle it reads as a broken feature. Machine and AI translations are the class
-                // this player deliberately does not offer, whoever produced them — and they are not
-                // rare leftovers: the most downloaded Russian file for the test episode is one.
-                if (attributes.optBoolean("foreign_parts_only")
-                        || attributes.optBoolean("machine_translated")
-                        || attributes.optBoolean("ai_translated")) {
+                // subtitle it reads as a broken feature, and nothing else here would ever want one.
+                if (attributes.optBoolean("foreign_parts_only")) {
                     continue;
                 }
+                // A machine translation is kept but marked, and pick() puts every human file ahead of
+                // it. These are not rare leftovers — the most downloaded Russian file for the test
+                // episode is one — and dropping them threw away the answer to the question this whole
+                // feature asks: for a language nobody translates into, a machine rendering is what
+                // there is, and one somebody already made costs no request and no waiting.
+                final boolean machine = attributes.optBoolean("machine_translated")
+                        || attributes.optBoolean("ai_translated");
                 final JSONArray files = attributes.optJSONArray("files");
                 if (files == null || files.length() == 0) {
                     continue;
@@ -157,7 +163,7 @@ final class OpenSubtitles {
                 final int downloads =
                         attributes.optInt("new_download_count", attributes.optInt("download_count"));
                 candidates.add(new Candidate(attributes.optString("language"), fileId, downloads,
-                        attributes.optString("release")));
+                        attributes.optString("release"), machine));
             }
         } catch (Exception e) {
             Utils.log("OpenSubtitles: " + e);
@@ -167,27 +173,42 @@ final class OpenSubtitles {
     }
 
     /**
-     * The best candidate: the most wanted language that turned up at all, and within it the most
-     * downloaded file. Language order beats popularity — a rarely downloaded track in the language
-     * the user asked for is still the language they asked for.
+     * The best candidate: the most wanted language that turned up at all, within it a human translation
+     * over a machine one, and within that the most downloaded file. Language order beats everything — a
+     * rarely downloaded track in the language the user asked for is still the language they asked for —
+     * and popularity is the last word rather than the second, because a machine translation is the one
+     * kind of file that outnumbers the human ones it is worse than.
+     *
+     * @param allowMachine whether somebody else's machine translation may be taken at all. Off means
+     *                     the viewer emptied the translate-from list, i.e. asked for no machine
+     *                     translation — and a stranger's is still one, however little it cost us.
      */
-    static Candidate pick(List<Candidate> candidates, List<String> languages) {
+    static Candidate pick(List<Candidate> candidates, List<String> languages, boolean allowMachine) {
         Candidate best = null;
-        int bestRank = Integer.MAX_VALUE;
         for (Candidate candidate : candidates) {
-            if (candidate.language == null) {
+            if (candidate.language == null || (candidate.machine && !allowMachine)) {
                 continue;
             }
-            final int rank = languages.indexOf(candidate.language.toLowerCase(Locale.US));
-            if (rank < 0) {
+            if (languages.indexOf(candidate.language.toLowerCase(Locale.US)) < 0) {
                 continue;
             }
-            if (rank < bestRank || (rank == bestRank && candidate.downloads > best.downloads)) {
+            if (best == null || better(candidate, best, languages)) {
                 best = candidate;
-                bestRank = rank;
             }
         }
         return best;
+    }
+
+    private static boolean better(Candidate candidate, Candidate than, List<String> languages) {
+        final int rank = languages.indexOf(candidate.language.toLowerCase(Locale.US));
+        final int rankThan = languages.indexOf(than.language.toLowerCase(Locale.US));
+        if (rank != rankThan) {
+            return rank < rankThan;
+        }
+        if (candidate.machine != than.machine) {
+            return than.machine;
+        }
+        return candidate.downloads > than.downloads;
     }
 
     /**

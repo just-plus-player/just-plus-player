@@ -5913,7 +5913,7 @@ public class PlayerActivity extends Activity {
                         cached.setLastModified(System.currentTimeMillis());
                         cancelSubtitleSearch();
                         subtitleSearchStarted = key;
-                        attachSearchedSubtitle(subtitleSearchGeneration, index,
+                        attachSearchedSubtitle(subtitleSearchGeneration, index, mPrefs.mediaUri,
                                 Uri.fromFile(cached), language);
                         return;
                     }
@@ -5924,6 +5924,9 @@ public class PlayerActivity extends Activity {
         cancelSubtitleSearch();
         subtitleSearchStarted = key;
         final int generation = subtitleSearchGeneration;
+        // What is playing right now, so a result that lands after the player was rebuilt can be
+        // checked against it rather than thrown away in advance.
+        final Uri media = mPrefs.mediaUri;
 
         final Thread worker = new Thread(() -> {
             final AtomicBoolean answered = new AtomicBoolean();
@@ -5966,7 +5969,8 @@ public class PlayerActivity extends Activity {
                     }
                     final Uri attach = show;
                     final String language = shown;
-                    runOnUiThread(() -> attachSearchedSubtitle(generation, index, attach, language));
+                    runOnUiThread(() ->
+                            attachSearchedSubtitle(generation, index, media, attach, language));
                     return true;
                 }, answered);
             } catch (Throwable t) {
@@ -5986,10 +5990,20 @@ public class PlayerActivity extends Activity {
         worker.start();
     }
 
-    /** Attaches a downloaded subtitle, but only to the item it was actually searched for. */
-    private void attachSearchedSubtitle(int generation, int index, Uri file, String language) {
+    /**
+     * Attaches a downloaded subtitle, but only to the item it was actually searched for.
+     *
+     * <p>Four conditions, and {@code media} is the one that lets a search outlive the player it was
+     * started under: the playlist index alone does not tell two films apart, because skipToNext puts
+     * the next one at the same index in a freshly built player. Comparing what is actually loaded
+     * means a result that arrives late is either still wanted or quietly dropped — never attached to
+     * the wrong film.
+     */
+    private void attachSearchedSubtitle(int generation, int index, Uri media, Uri file,
+                                        String language) {
         if (generation != subtitleSearchGeneration || player == null
-                || player.getCurrentMediaItemIndex() != index) {
+                || player.getCurrentMediaItemIndex() != index
+                || !java.util.Objects.equals(media, mPrefs.mediaUri)) {
             return;
         }
         mPrefs.updateSubtitle(file);
@@ -8775,7 +8789,15 @@ public class PlayerActivity extends Activity {
         }
         stopSkipPolling();
         cancelSegmentFinder();
-        cancelSubtitleSearch();
+        // Deliberately not cancelSubtitleSearch(). A rebuild is not a change of mind: opening the
+        // settings screen, rotating, or switching the decoder all pass through here and used to
+        // throw away a search or a translation that was seconds from finishing — and the next
+        // attempt started from nothing, so on a slow endpoint it could never finish at all. The
+        // search now outlives the player: attachSearchedSubtitle checks the generation, the index
+        // and the loaded media before it attaches anything, and a result that arrives while there
+        // is no player still lands in the cache, where the search after the rebuild finds it at
+        // once. What genuinely invalidates a search still cancels it: a new item (the media item
+        // transition), a new session, and a search for a different key.
         // The paint had no track behind it; the rebuild puts the file back as a real one
         // (rememberedSubtitle). Deliberately not clearSubtitleTimeline(): the parsed timeline has to
         // survive so initializePlayer can seed the new SubtitleOffset with it, and updateSubtitleTimeline

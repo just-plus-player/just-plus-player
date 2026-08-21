@@ -503,7 +503,10 @@ class Prefs {
     public static String getSubtitleTranslateBackends(final Context context) {
         final String stored = PreferenceManager.getDefaultSharedPreferences(context)
                 .getString(PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS, null);
-        return stored != null ? stored : SubtitleTranslate.DEFAULT_BACKENDS;
+        // Folded onto the ids that exist now, so a setting written when every Mozhi host was its
+        // own entry still means Mozhi rather than nothing.
+        return SubtitleTranslate.normalize(
+                stored != null ? stored : SubtitleTranslate.DEFAULT_BACKENDS);
     }
 
     public static void setSubtitleTranslateBackends(final Context context, final String backends) {

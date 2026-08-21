@@ -20,7 +20,12 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
@@ -59,51 +64,64 @@ final class SubtitleTranslate {
     private SubtitleTranslate() {}
 
     /**
-     * One keyless endpoint.
+     * One keyless endpoint. Two shapes only: Google, which takes the text as a form field beside
+     * query parameters and answers a nested array, and a Mozhi host, which takes every parameter in
+     * the body and answers {@code translated-text}.
      *
-     * <p>Two of these differ by a single character and the symptom of confusing them looks exactly like
-     * a dead host: Mozhi and ProjectSegfau answer {@code translated-text}, SimplyTranslate
-     * {@code translated_text}.
+     * <p>The GET transport is gone with SimplyTranslate, the only endpoint that needed it — see
+     * FINDINGS 4.12 for what it cost and why nothing uses it now.
      */
     private static final class Backend {
         /** Stored in the setting, so it must outlive display-name changes. */
         final String id;
         final String label;
-        /**
-         * Format for a GET: source language, target language, encoded text. Null for the one endpoint
-         * that takes POST, which is also the only one with no length ceiling.
-         */
-        final String get;
+        /** Where to post. Null for Google, whose URL carries the languages and whose answer differs. */
+        final String url;
         /** JSON field holding the result; null for Google, whose answer is a nested array. */
         final String field;
-        /** Encoded characters of text per request, ignored for POST. */
+        /** Characters of text per request. */
         final int maxChars;
 
-        Backend(String id, String label, String get, String field, int maxChars) {
+        Backend(String id, String label, String url, String field, int maxChars) {
             this.id = id;
             this.label = label;
-            this.get = get;
+            this.url = url;
             this.field = field;
             this.maxChars = maxChars;
         }
     }
 
     /**
-     * Encoded characters of text per request. SimplyTranslate answered a 2781-character URL and refused
-     * a 4140-character one with 431 on 2026-08-21; this is the text alone, so the host and parameters
-     * still have to fit in front of it — hence the margin rather than the measured edge.
-     *
-     * <p>A ceiling in characters and not in lines because that is what the hosts enforce, and the two
-     * are not proportional: one Cyrillic character encodes to six, so nine Russian lines fill what
-     * thirty English ones would.
-     */
-    private static final int GET_MAX_CHARS = 2400;
-
-    /**
      * A sanity bound for the POST endpoint rather than a measured ceiling — no ceiling was found. An
      * anime season pack on a bad mobile link is better split than timed out.
+     *
+     * <p>High enough that a film is one request, because splitting one costs more than it saves.
+     * What the endpoint charges is mostly per request and barely per line: a 1937-line film measured
+     * 2026-08-21 took <b>6.7 s</b> as the 1500 + 437 this bound used to force (4.4–8.9 s over three
+     * runs) against <b>4.7 s</b> in one request (3.1–5.6 s over five), on cold text every time — the
+     * same text twice comes out of Google's cache in under a second and measures nothing. The old
+     * 1500 was not chosen against this; it predates the measurement.
+     *
+     * <p>Sending it concurrently instead is worth a further 1.3–1.4x and no more: three chunks at
+     * once averaged 3.3 s, four averaged 6.0 s, because the endpoint throttles per client and the
+     * chunks queue behind each other. Not worth a thread pool and four times the requests to a free
+     * service.
      */
-    private static final int POST_MAX_LINES = 1500;
+    private static final int POST_MAX_LINES = 4000;
+
+    /**
+     * Characters of text Mozhi takes in one POST. Measured 2026-08-21 on mozhi.bloat.cat: 4327
+     * answered and aligned, 5004 came back with an empty {@code translated-text} — and empty on 200
+     * is why {@link #request} treats it as a failure. The ceiling is in characters, not lines: twelve
+     * lines of 5004 characters failed where 200 lines of 4327 went through, which is what a forwarded
+     * GET to Google looks like from the outside.
+     *
+     * <p>Its GET route refuses 200 lines outright with a 414, so it was costing one request per nine
+     * to sixteen lines — 180 of them for a film, minutes of it. At this size a film is thirteen
+     * requests. All eight shipped hosts accept the POST and return aligned text.
+     */
+    private static final int MOZHI_MAX_CHARS = 4000;
+
 
     /**
      * The endpoints offered. Only the two that were verified answering on 2026-08-21, and both remain a
@@ -118,6 +136,14 @@ final class SubtitleTranslate {
      * interchangeable — all five returned byte-identical output — and listing them separately is what
      * makes the redundancy visible and reorderable instead of hidden in here. All eight that answered on
      * 2026-08-21 returned byte-identical output.
+     *
+     * <p>{@code azaka.fun} was added 2026-08-21 after the two published instance lists turned out to be
+     * stale — every other host on them either has no DNS record or answers 500 (§4.13a). It sits behind
+     * privacyredirect and ahead of canine on purpose: measured 1.1–2.9 s, byte-identical output to
+     * bloat.cat on 109 lines, and a ceiling above 5000 characters where bloat.cat empties out at 5004 —
+     * but no history across sessions yet, so it goes after the hosts that have some. Note also that it is
+     * the one host here behind Cloudflare, which is where an interstitial would come from; the first-byte
+     * guard in {@link #request} is what that costs.
      *
      * <p>Ordered by median latency over two rounds of five consecutive requests each — the only thing
      * measurable in one sitting, and a poor proxy for reliability: the same host moved between 0.95s and
@@ -159,15 +185,14 @@ final class SubtitleTranslate {
             mozhi("pussthecat", "pussthecat.org", "mozhi.pussthecat.org"),
             mozhi("adminforge", "adminforge.de", "mozhi.adminforge.de"),
             mozhi("privacyredirect", "privacyredirect.com", "translate.privacyredirect.com"),
+            mozhi("azaka", "azaka.fun", "translate.azaka.fun"),
             mozhi("canine", "canine.tools", "mozhi.canine.tools"),
-            // Last of the Mozhi hosts, and not on latency — by that it would sit third. It is served
-            // from Russia, and the language this whole feature exists to produce is Ukrainian; it is
-            // here at the project owner's explicit decision, as late as keeping the Mozhi hosts in one
-            // group allows. Do not re-sort this group by the measured timings.
+            // Served from Russia, while the language this whole feature exists to produce is
+            // Ukrainian. It used to sit last of the group as a compromise; with viaPool asking every
+            // host at once there is no last any more, so the only two positions are in this array or
+            // out of it. It stays in at the project owner's explicit decision — deleting the line is
+            // now the only way to change that.
             mozhi("dc09", "dc09.xyz", "mzh.dc09.xyz"),
-            new Backend("simply", "SimplyTranslate",
-                    "https://simplytranslate.org/api/translate/?engine=google&from=%s&to=%s&text=%s",
-                    "translated_text", GET_MAX_CHARS),
     };
 
     /**
@@ -176,32 +201,65 @@ final class SubtitleTranslate {
      * looks exactly like a dead host, which is why the two are built in different places.
      */
     private static Backend mozhi(String id, String label, String host) {
-        return new Backend("mozhi-" + id, "Mozhi · " + label,
-                "https://" + host + "/api/translate?engine=google&from=%s&to=%s&text=%s",
-                "translated-text", GET_MAX_CHARS);
+        return new Backend(MOZHI + "-" + id, "Mozhi · " + label,
+                "https://" + host + "/api/translate", "translated-text", MOZHI_MAX_CHARS);
     }
 
-    /** What a fresh install uses: everything that was answering when this was written, in that order. */
-    static final String DEFAULT_BACKENDS = "google,mozhi-bloat,mozhi-catsarch,mozhi-ducks,"
-            + "mozhi-pussthecat,mozhi-adminforge,mozhi-privacyredirect,mozhi-canine,mozhi-dc09,simply";
+    /**
+     * The one id the Mozhi hosts are chosen and ordered by. They are interchangeable — byte-identical
+     * output, and {@link #viaPool} asks them all at once anyway — so offering nine switches was
+     * offering nine ways to say the same thing. One entry, expanded in {@link #chain}.
+     */
+    private static final String MOZHI = "mozhi";
 
-    /** Every endpoint by id, for the editor that picks and orders them. */
+    /**
+     * What a fresh install uses. Mozhi first: the group spread over its hosts translated a 2049-line
+     * film in 2.4 s against Google's 4.7 s (FINDINGS 4.12), because each host reaches the engine from
+     * its own address. It costs more requests — eight or thirteen against one — and those go to
+     * volunteer machines, which is the trade the order makes deliberately.
+     */
+    static final String DEFAULT_BACKENDS = MOZHI + ",google";
+
+    /** What the editor offers, in the order it offers it. */
     static LinkedHashMap<String, String> backends() {
         final LinkedHashMap<String, String> all = new LinkedHashMap<>();
+        all.put(MOZHI, "Mozhi");
         for (final Backend backend : BACKENDS) {
-            all.put(backend.id, backend.label);
+            if (!backend.id.startsWith(MOZHI)) {
+                all.put(backend.id, backend.label);
+            }
         }
         return all;
     }
 
-    /** The enabled endpoints, in the stored order. Unknown ids are ignored, so a removed one is not a crash. */
+    /**
+     * A stored setting folded onto the ids that exist now: every {@code mozhi-<host>} written by an
+     * older build becomes the one {@code mozhi} entry, ids that no longer exist are dropped, and the
+     * order the viewer chose is kept. Without this a device that had the nine hosts listed would read
+     * as having no endpoint at all.
+     */
+    static String normalize(String stored) {
+        final LinkedHashMap<String, String> known = backends();
+        final List<String> out = new ArrayList<>();
+        for (final String id : Utils.splitLanguages(stored)) {
+            final String folded = id.startsWith(MOZHI) ? MOZHI : id;
+            if (known.containsKey(folded) && !out.contains(folded)) {
+                out.add(folded);
+            }
+        }
+        return TextUtils.join(",", out);
+    }
+
+    /**
+     * The enabled endpoints, in the stored order, with {@code mozhi} standing for all of its hosts.
+     * Unknown ids are ignored, so a removed one is not a crash.
+     */
     private static List<Backend> chain(String enabled) {
         final List<Backend> chain = new ArrayList<>();
-        for (final String id : Utils.splitLanguages(enabled)) {
+        for (final String id : Utils.splitLanguages(normalize(enabled))) {
             for (final Backend backend : BACKENDS) {
-                if (backend.id.equals(id)) {
+                if (MOZHI.equals(id) ? backend.id.startsWith(MOZHI) : backend.id.equals(id)) {
                     chain.add(backend);
-                    break;
                 }
             }
         }
@@ -211,6 +269,10 @@ final class SubtitleTranslate {
     /**
      * How many requests one file may cost across the whole chain. A runaway guard, not a rate policy —
      * the real count is the chunk count, which for a film on a GET endpoint is already over a hundred.
+     *
+     * <p>Counted down from several threads at once in {@link #viaPool} without a lock, so it can be a
+     * few out. That is fine for a backstop three hundred requests above anything real, and a lock
+     * here would be protecting an approximation.
      */
     private static final int MAX_REQUESTS = 400;
 
@@ -338,9 +400,29 @@ final class SubtitleTranslate {
                                          List<Backend> chain) {
         final int[] budget = {MAX_REQUESTS};
         final List<String> done = new ArrayList<>(lines.size());
+        boolean grouped = false;
         for (final Backend backend : chain) {
             if (done.size() == lines.size()) {
                 break;
+            }
+            // The proxy hosts are one interchangeable group, so they are asked as a group rather
+            // than one after another — see viaPool. Whatever it could not finish falls through to
+            // whatever is left in the chain after them.
+            if (backend.url != null) {
+                if (grouped) {
+                    continue;
+                }
+                grouped = true;
+                final List<Backend> pool = new ArrayList<>();
+                for (final Backend candidate : chain) {
+                    if (candidate.url != null) {
+                        pool.add(candidate);
+                    }
+                }
+                if (pool.size() > 1) {
+                    viaPool(pool, lines.subList(done.size(), lines.size()), sl, tl, budget, done);
+                    continue;
+                }
             }
             try {
                 viaBackend(backend, lines.subList(done.size(), lines.size()), sl, tl, budget, done);
@@ -357,6 +439,178 @@ final class SubtitleTranslate {
     }
 
     /**
+     * How many requests one proxy host may have in flight. These are volunteer machines, and two is
+     * the etiquette this project settled on — thirteen chunks spread two at a time over eight hosts
+     * is a lighter touch on each of them than thirteen in a row against one.
+     */
+    private static final int PER_HOST = 2;
+
+    /**
+     * The proxy group working on one file together: chunks handed out to whichever host is free.
+     *
+     * <p>Worth the threads. Measured 2026-08-21 on a 2049-line film, thirteen chunks of 4000
+     * characters: <b>19.4 s</b> one host after another against <b>2.4 s</b> spread over the eight,
+     * every chunk aligned either way. Faster than the direct endpoint's own 4.7 s, because each host
+     * reaches Google from its own address and so nothing throttles them together — where three
+     * chunks sent straight to Google from one address only bought 1.4x (see POST_MAX_LINES).
+     *
+     * <p>It is also what makes the fallback finish at all: a translation is cancelled whenever the
+     * player is rebuilt, and twenty seconds of it does not survive ordinary use of the app.
+     *
+     * <p>Appends the finished chunks to {@code into} in order and stops at the first one nobody
+     * managed, so the rest of the chain carries on from there exactly as it would after a single
+     * host had given up.
+     */
+    private static void viaPool(List<Backend> pool, List<String> lines, String sl, String tl,
+                                int[] budget, List<String> into) {
+        // Sized by the strictest host in the group, not the first one: a chunk cut to fit a roomier
+        // host comes back empty from a narrower one, and empty is indistinguishable from refusal.
+        Backend sizer = pool.get(0);
+        for (final Backend backend : pool) {
+            if (backend.maxChars < sizer.maxChars) {
+                sizer = backend;
+            }
+        }
+        final List<List<String>> chunks = new ArrayList<>();
+        int from = 0;
+        while (from < lines.size()) {
+            final int to = chunkEnd(sizer, lines, from);
+            chunks.add(lines.subList(from, to));
+            from = to;
+        }
+        final List<List<String>> out = new ArrayList<>(Collections.nCopies(chunks.size(),
+                (List<String>) null));
+        // One counter per host. A host that is simply down costs the connect timeout on every chunk
+        // it is handed, so after two refusals it is left alone rather than allowed to keep taking
+        // work off the queue and stalling it — which is the difference between one slow chunk and
+        // thirteen.
+        final AtomicInteger[] refusals = new AtomicInteger[pool.size()];
+        for (int i = 0; i < refusals.length; i++) {
+            refusals[i] = new AtomicInteger();
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            if (pass > 0 && !pause()) {
+                break;
+            }
+            final AtomicInteger cursor = new AtomicInteger();
+            final List<Callable<Void>> workers = new ArrayList<>(pool.size() * PER_HOST);
+            for (int host = 0; host < pool.size(); host++) {
+                final Backend backend = pool.get(host);
+                final AtomicInteger refused = refusals[host];
+                for (int slot = 0; slot < PER_HOST; slot++) {
+                    workers.add(() -> {
+                        while (refused.get() < GIVE_UP_ON_HOST
+                                && !Thread.currentThread().isInterrupted()) {
+                            final int i = cursor.getAndIncrement();
+                            if (i >= chunks.size()) {
+                                break;
+                            }
+                            if (out.get(i) != null) {
+                                continue;
+                            }
+                            try {
+                                out.set(i, aligned(backend, chunks.get(i), sl, tl, budget));
+                            } catch (IOException e) {
+                                refused.incrementAndGet();
+                                Utils.log("translate: " + backend.id + " lost chunk " + (i + 1)
+                                        + " of " + chunks.size() + " — " + e);
+                            }
+                        }
+                        return null;
+                    });
+                }
+            }
+            if (!run(workers) || complete(out)) {
+                break;
+            }
+        }
+        // A chunk nobody would take keeps its own lines. Untranslated dialogue is a worse subtitle
+        // than a translated one and a far better one than none — but only while it is the exception:
+        // past a quarter of the file this is not a translation with gaps, it is a failure wearing one,
+        // and it must not be written to the cache under the translated name. Then the prefix is handed
+        // over as it stands and the rest of the chain has its turn.
+        int missing = 0;
+        for (final List<String> chunk : out) {
+            if (chunk == null) {
+                missing++;
+            }
+        }
+        if (missing > 0 && missing * 4 > chunks.size()) {
+            Utils.log("translate: the proxy group managed " + (chunks.size() - missing)
+                    + " chunk(s) of " + chunks.size() + ", not enough to keep");
+        } else if (missing > 0) {
+            Utils.log("translate: " + missing + " chunk(s) of " + chunks.size()
+                    + " kept in the source language");
+            for (int i = 0; i < out.size(); i++) {
+                if (out.get(i) == null) {
+                    out.set(i, new ArrayList<>(chunks.get(i)));
+                }
+            }
+        }
+        for (final List<String> chunk : out) {
+            if (chunk == null) {
+                return;
+            }
+            into.addAll(chunk);
+        }
+    }
+
+    /**
+     * How many refusals before a host is left out of the rest of the file. Two, because one is what a
+     * single bad chunk looks like and three is a minute of connect timeouts.
+     */
+    private static final int GIVE_UP_ON_HOST = 2;
+
+    /**
+     * A breath before the second pass. Retrying a host in the same instant it refused mostly earns the
+     * same refusal; a second is short enough to keep the whole file inside a few seconds.
+     *
+     * @return false when the wait was cancelled, so the caller stops rather than retrying
+     */
+    private static boolean pause() {
+        try {
+            Thread.sleep(1000);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private static boolean complete(List<List<String>> out) {
+        for (final List<String> chunk : out) {
+            if (chunk == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** @return false when the work was cancelled, so the caller stops rather than retrying */
+    private static boolean run(List<Callable<Void>> workers) {
+        final ExecutorService threads = Executors.newFixedThreadPool(workers.size(), runnable -> {
+            final Thread thread = new Thread(runnable, "SubtitleTranslate");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            for (final Future<Void> future : threads.invokeAll(workers)) {
+                try {
+                    future.get();
+                } catch (Exception e) {
+                    Utils.log("translate: worker failed " + e);
+                }
+            }
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } finally {
+            threads.shutdownNow();
+        }
+    }
+
+    /**
      * One endpoint, batched to whatever it will accept, appending each finished chunk to {@code into} so
      * the work survives the endpoint failing partway.
      */
@@ -370,15 +624,15 @@ final class SubtitleTranslate {
         }
     }
 
-    /** Where this endpoint's next request has to stop: a line count for POST, an encoded length for GET. */
+    /** Where this endpoint's next request has to stop: a line count for Google, a length elsewhere. */
     private static int chunkEnd(Backend backend, List<String> lines, int from) {
-        if (backend.get == null) {
+        if (backend.url == null) {
             return Math.min(lines.size(), from + POST_MAX_LINES);
         }
         int size = 0;
         for (int i = from; i < lines.size(); i++) {
-            // +3 for the encoded newline that joins it to the previous line.
-            final int length = Uri.encode(lines.get(i)).length() + 3;
+            // +1 for the newline that joins it to the previous line.
+            final int length = lines.get(i).length() + 1;
             if (i > from && size + length > backend.maxChars) {
                 return i;
             }
@@ -426,16 +680,18 @@ final class SubtitleTranslate {
         }
         final String joined = TextUtils.join("\n", lines);
         final Request.Builder builder = new Request.Builder();
-        if (backend.get == null) {
-            // POST rather than GET: as a query string this endpoint stops at about 250 cues with a 400,
-            // and working around that is the batching the other endpoints have to do.
+        if (backend.url == null) {
+            // POST rather than GET: as a query string this endpoint stops at about 250 cues with a
+            // 400, and the languages have to be in the URL because only the text goes in the body.
             builder.url("https://translate.googleapis.com/translate_a/single"
                             + "?client=gtx&dt=t&sl=" + sl + "&tl=" + tl)
                     .post(new FormBody.Builder().add("q", joined).build());
         } else {
-            // Uri.encode and not okhttp's own: Lingva takes the text as a path segment, so the newlines
-            // and any slash in the dialogue have to be escaped rather than left to divide the path.
-            builder.url(String.format(Locale.US, backend.get, sl, tl, Uri.encode(joined)));
+            // The same parameters a Mozhi host takes in its URL, in a body instead: its GET route
+            // answers 414 at 200 lines, so this is thirteen requests for a film rather than 180.
+            builder.url(backend.url).post(new FormBody.Builder()
+                    .add("engine", "google").add("from", sl).add("to", tl)
+                    .add("text", joined).build());
         }
         final String body;
         try (Response response = CLIENT.newCall(builder.build()).execute()) {

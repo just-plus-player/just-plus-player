@@ -149,9 +149,15 @@ final class SubtitleTimeline {
      * ponytail: an explicit list of endings rather than "word dot word". The loose form matches
      * {@code report.pdf} and Russian abbreviations as readily as it matches a host, and the cost of
      * being wrong here is a deleted subtitle. Add an ending when one turns up.
+     * <p>
+     * {@code link} turned up: OpenSubtitles shortens its own notices through {@code osdb.link}, and
+     * the opening one — "Watch any video online with Open-SUBTITLES / Free Browser extension:
+     * osdb.link/ext" — carries neither a scheme nor {@code www.}, so it went straight through, while
+     * its twin over the closing credits ("Оцените данный субтитр, пожалуйста, www.osdb.link/...")
+     * was caught. Seen 2026-08-21 in a Russian track for Salt, by way of shegu.st.
      */
     private static final Pattern PROMO = Pattern.compile(
-            "https?://|www\\.|[a-z0-9][a-z0-9-]*\\.(?:app|com|net|org|io|tv|me|info|ru|ua|pl)\\b",
+            "https?://|www\\.|[a-z0-9][a-z0-9-]*\\.(?:app|com|net|org|io|tv|me|info|link|ru|ua|pl)\\b",
             Pattern.CASE_INSENSITIVE);
 
     /**

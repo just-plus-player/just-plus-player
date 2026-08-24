@@ -61,44 +61,77 @@
             app:key="languageSubtitle"
             app:title="@string/pref_language_subtitle" />
 
-        <!-- The manual search normally just uses the list above. This turns that list into a step that
-             can be edited for one search, which is what a one-off in another language wants. -->
-        <SwitchPreferenceCompat
-            app:key="subtitleSearchLanguage"
-            app:defaultValue="false"
-            app:summary="@string/pref_subtitle_search_language_summary"
-            app:title="@string/pref_subtitle_search_language" />
-
-        <!-- Tried top to bottom until one has the wanted language. Individually switchable so a single
-             source can be exercised on its own when a result looks wrong. -->
+        <!-- One door for the whole online search. Its switches used to be two checkboxes inside the
+             language dialog above, which put the feature's satellites on the settings screen and the
+             feature itself behind a row that does not mention it. The summary is filled in by
+             SettingsActivity so its state reads without a tap. -->
         <PreferenceScreen
-            app:key="subtitleSources"
-            app:summary="@string/pref_subtitle_sources_summary"
-            app:title="@string/pref_subtitle_sources">
+            app:key="subtitleSearchScreen"
+            app:title="@string/pref_subtitle_search_screen">
+
+            <ListPreference
+                app:key="subtitleSearchMode"
+                app:defaultValue="off"
+                app:entries="@array/subtitle_search_entries"
+                app:entryValues="@array/subtitle_search_values"
+                app:title="@string/pref_subtitle_search_when"
+                app:useSimpleSummaryProvider="true" />
+
+            <!-- Everything below configures a search. With none running they are live rows that do
+                 nothing, so SettingsActivity greys them out — app:dependency keys off a parent's
+                 enablement rather than off its value, so a ListPreference cannot drive it. -->
+            <!-- Summary is set by SettingsActivity: the chosen entry, plus who the text is sent to
+                 whenever anything is being sent at all. -->
+            <ListPreference
+                app:key="subtitleTranslateMode"
+                app:defaultValue="only"
+                app:entries="@array/subtitle_translate_entries"
+                app:entryValues="@array/subtitle_translate_values"
+                app:title="@string/pref_subtitle_translate" />
+
+            <!-- Enabled endpoints in the order to try them, edited in LanguagePriorityDialog; the
+                 summary lists them. No defaultValue: SubtitleTranslate owns it. -->
+            <Preference
+                app:key="subtitleTranslateBackends"
+                app:title="@string/pref_subtitle_translate_backends" />
 
             <SwitchPreferenceCompat
-                app:key="subtitleSourceRest"
-                app:defaultValue="true"
-                app:summary="@string/pref_subtitle_source_rest_summary"
-                app:title="@string/pref_subtitle_source_rest" />
+                app:key="subtitleSearchLanguage"
+                app:defaultValue="false"
+                app:summary="@string/pref_subtitle_search_language_summary"
+                app:title="@string/pref_subtitle_search_language" />
 
-            <SwitchPreferenceCompat
-                app:key="subtitleSourceStremio"
-                app:defaultValue="true"
-                app:summary="@string/pref_subtitle_source_stremio_summary"
-                app:title="@string/pref_subtitle_source_stremio" />
+            <!-- Tried top to bottom until one has the wanted language. Individually switchable so a
+                 single source can be exercised on its own when a result looks wrong — a testing
+                 affordance, which is why it sits at the bottom of a sub-screen and not on the way to
+                 anything. -->
+            <PreferenceCategory app:title="@string/pref_subtitle_sources">
 
-            <SwitchPreferenceCompat
-                app:key="subtitleSourceShegu"
-                app:defaultValue="true"
-                app:summary="@string/pref_subtitle_source_shegu_summary"
-                app:title="@string/pref_subtitle_source_shegu" />
+                <SwitchPreferenceCompat
+                    app:key="subtitleSourceRest"
+                    app:defaultValue="true"
+                    app:summary="@string/pref_subtitle_source_rest_summary"
+                    app:title="@string/pref_subtitle_source_rest" />
 
-            <SwitchPreferenceCompat
-                app:key="subtitleSourceOpenSubtitles"
-                app:defaultValue="true"
-                app:summary="@string/pref_subtitle_source_opensubtitles_summary"
-                app:title="@string/pref_subtitle_source_opensubtitles" />
+                <SwitchPreferenceCompat
+                    app:key="subtitleSourceStremio"
+                    app:defaultValue="true"
+                    app:summary="@string/pref_subtitle_source_stremio_summary"
+                    app:title="@string/pref_subtitle_source_stremio" />
+
+                <SwitchPreferenceCompat
+                    app:key="subtitleSourceShegu"
+                    app:defaultValue="true"
+                    app:summary="@string/pref_subtitle_source_shegu_summary"
+                    app:title="@string/pref_subtitle_source_shegu" />
+
+                <SwitchPreferenceCompat
+                    app:key="subtitleSourceOpenSubtitles"
+                    app:defaultValue="true"
+                    app:summary="@string/pref_subtitle_source_opensubtitles_summary"
+                    app:title="@string/pref_subtitle_source_opensubtitles" />
+
+            </PreferenceCategory>
 
         </PreferenceScreen>
 

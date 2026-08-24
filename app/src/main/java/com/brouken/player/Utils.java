@@ -1156,6 +1156,38 @@ class Utils {
         return list;
     }
 
+    /**
+     * The best-ranked of {@code wanted} that a track name gives away, or null. Muxers routinely leave a
+     * track's language tag empty and write the language into its name instead — "rus", "RUS #01 ENG #03",
+     * "rus/eng/por/spa" — where nothing that reads {@link androidx.media3.common.Format#language} can
+     * see it.
+     *
+     * <p>Matched this way round on purpose: the wanted codes are looked for in the name, rather than the
+     * name read for whatever language it might hold. Locale hands back any three-letter word as its own
+     * ISO-3 code (see {@link #toIso3Language}), so "DUB", "WEB" and "SUB" would each otherwise pass for
+     * a language of their own.
+     */
+    public static String languageInName(final String name, final List<String> wanted) {
+        if (name == null || name.isEmpty() || wanted.isEmpty()) {
+            return null;
+        }
+        int best = wanted.size();
+        // Three-letter tokens only. Two-letter codes are real languages but collide with ordinary words
+        // ("is", "no", "it"), and a release name is largely made of those; a name spelling the language
+        // out ("Russian") is not read either.
+        for (final String token : name.split("[^A-Za-z]+")) {
+            if (token.length() != 3) {
+                continue;
+            }
+            final String language = toIso3Language(token);
+            final int rank = language == null ? -1 : wanted.indexOf(language);
+            if (rank >= 0 && rank < best) {
+                best = rank;
+            }
+        }
+        return best < wanted.size() ? wanted.get(best) : null;
+    }
+
     public static ComponentName getSystemComponent(Context context, Intent intent) {
         List<ResolveInfo> resolveInfos = context.getPackageManager().queryIntentActivities(intent, 0);
         if (resolveInfos.size() < 2) {

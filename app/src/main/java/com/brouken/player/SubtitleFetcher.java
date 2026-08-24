@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 import okhttp3.HttpUrl;
@@ -45,6 +47,9 @@ class SubtitleFetcher {
 
     /** Subtitles are text; anything this size is not one, and is not worth the memory to find out. */
     private static final long MAX_BYTES = 2_000_000;
+
+    /** The name the file was uploaded under, out of {@code attachment; filename="…"}. */
+    private static final Pattern ATTACHMENT_NAME = Pattern.compile("filename[^=]*=\"?([^\";]+)");
 
     public SubtitleFetcher(PlayerActivity activity, List<Uri> urls) {
         this(activity, urls, null);
@@ -112,6 +117,16 @@ class SubtitleFetcher {
             if (!response.isSuccessful() || body == null || body.contentLength() > MAX_BYTES) {
                 return null;
             }
+            // The aggregators say nothing about forced tracks in their index — and the Stremio addon
+            // has no field that could — but the file still arrives under the name its uploader gave
+            // it, and that is where "forced" is written. A forced track is a few dozen cues for
+            // foreign dialogue: switched on as the only subtitle there is, it reads as a broken
+            // player rather than as a subtitle, so it gives way to the next candidate.
+            final String name = attachmentName(response);
+            if (SubtitleSearch.forcedName(name)) {
+                Utils.log("subtitle download: forced track, skipping " + name);
+                return null;
+            }
             InputStream stream = body.byteStream();
             // The legacy OpenSubtitles API hands back a gzipped file rather than a gzipped response,
             // so nothing below the socket unpacks it for us.
@@ -123,5 +138,15 @@ class SubtitleFetcher {
             Utils.log("subtitle download: " + e);
             return null;
         }
+    }
+
+    /** @return the uploader's own file name, which subs5.strem.io sends back, or null when none does */
+    private static String attachmentName(Response response) {
+        final String disposition = response.header("Content-Disposition");
+        if (disposition == null) {
+            return null;
+        }
+        final Matcher matcher = ATTACHMENT_NAME.matcher(disposition);
+        return matcher.find() ? matcher.group(1).trim() : null;
     }
 }

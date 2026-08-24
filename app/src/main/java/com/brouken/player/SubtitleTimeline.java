@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Every cue of one external subtitle file, held in memory and addressable by time.
@@ -87,16 +88,20 @@ final class SubtitleTimeline {
             }
             // ASS dialogue lines are not required to be in order, and the lookup below counts on it.
             Collections.sort(ordered, (a, b) -> Long.compare(a.startTimeUs, b.startTimeUs));
-            final int count = ordered.size();
+            final List<CuesWithTiming> kept = withoutPromos(ordered);
+            if (kept.isEmpty()) {
+                return null;
+            }
+            final int count = kept.size();
             final long[] startUs = new long[count];
             final long[] endUs = new long[count];
             final List<ImmutableList<Cue>> cues = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
-                final CuesWithTiming block = ordered.get(i);
+                final CuesWithTiming block = kept.get(i);
                 startUs[i] = block.startTimeUs;
                 endUs[i] = block.durationUs != C.TIME_UNSET && block.durationUs > 0
                         ? block.startTimeUs + block.durationUs
-                        : (i + 1 < count ? ordered.get(i + 1).startTimeUs : block.startTimeUs + OPEN_ENDED_US);
+                        : (i + 1 < count ? kept.get(i + 1).startTimeUs : block.startTimeUs + OPEN_ENDED_US);
                 cues.add(block.cues);
             }
             return new SubtitleTimeline(startUs, endUs, cues);
@@ -105,6 +110,86 @@ final class SubtitleTimeline {
             Utils.log("subtitles: timeline failed " + t);
             return null;
         }
+    }
+
+    // Blocks in file order, for whatever needs the whole file rather than one moment in it — see
+    // SubtitleTranslate, which reads the cues out and writes a translated copy on the same timings.
+    int size() {
+        return startUs.length;
+    }
+
+    long startUs(int index) {
+        return startUs[index];
+    }
+
+    long endUs(int index) {
+        return endUs[index];
+    }
+
+    ImmutableList<Cue> cuesAt(int index) {
+        return cues.get(index);
+    }
+
+    /**
+     * How many blocks at each end of the file may be dropped as advertising: the very first and the very
+     * last, and nothing else.
+     * <p>
+     * Do not widen this. A wider window was tried and it deleted real content — the Ukrainian subtitles
+     * for Avatar carry two helpline cards from the film's own end credits, three and four blocks from the
+     * end, and both name a website. The uploader's own notices sat at blocks 1 and 2498 of 2498, i.e. at
+     * the exact ends. Two stacked advertisements would leave the second one showing, which is the right
+     * way round: an advertisement shown is a nuisance, a line of the film deleted is a defect.
+     */
+    private static final int PROMO_WINDOW = 1;
+
+    /**
+     * A web address, which is what an inserted advertisement always carries and what a film's dialogue
+     * essentially never does.
+     * <p>
+     * ponytail: an explicit list of endings rather than "word dot word". The loose form matches
+     * {@code report.pdf} and Russian abbreviations as readily as it matches a host, and the cost of
+     * being wrong here is a deleted subtitle. Add an ending when one turns up.
+     * <p>
+     * {@code link} turned up: OpenSubtitles shortens its own notices through {@code osdb.link}, and
+     * the opening one — "Watch any video online with Open-SUBTITLES / Free Browser extension:
+     * osdb.link/ext" — carries neither a scheme nor {@code www.}, so it went straight through, while
+     * its twin over the closing credits ("Оцените данный субтитр, пожалуйста, www.osdb.link/...")
+     * was caught. Seen 2026-08-21 in a Russian track for Salt, by way of shegu.st.
+     */
+    private static final Pattern PROMO = Pattern.compile(
+            "https?://|www\\.|[a-z0-9][a-z0-9-]*\\.(?:app|com|net|org|io|tv|me|info|link|ru|ua|pl)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The file without the advertising blocks uploaders wrap it in — the notice that shows for a few
+     * seconds over the opening, and its twin over the closing credits.
+     * <p>
+     * Dropped here rather than while downloading, so it covers every file the app puts on screen itself,
+     * whatever produced it: a search result, a sidecar file beside the video, or a translation this app
+     * made — where an untouched promo would be worse still, since a machine-translated advertisement
+     * reads as one the player inserted.
+     */
+    private static List<CuesWithTiming> withoutPromos(final List<CuesWithTiming> ordered) {
+        final int count = ordered.size();
+        final List<CuesWithTiming> kept = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final CuesWithTiming block = ordered.get(i);
+            if ((i < PROMO_WINDOW || i >= count - PROMO_WINDOW) && isPromo(block)) {
+                Utils.log("subtitles: dropped an ad at block " + (i + 1) + " of " + count);
+                continue;
+            }
+            kept.add(block);
+        }
+        return kept;
+    }
+
+    private static boolean isPromo(final CuesWithTiming block) {
+        for (final Cue cue : block.cues) {
+            if (cue.text != null && PROMO.matcher(cue.text).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Indices of the blocks on screen at this moment, ascending; empty when there is nothing to show. */

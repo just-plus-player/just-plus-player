@@ -267,6 +267,22 @@ class SubtitleUtils {
         return false;
     }
 
+    /**
+     * Drops every machine-translated copy in the cache. Called when the translation setting changes:
+     * a copy made under the previous choice would keep being served for everything watched recently,
+     * so the new choice would look like it did nothing. They cost one request each to rebuild.
+     */
+    static void clearTranslatedCache(Context context) {
+        final File[] files = context.getCacheDir().listFiles((dir, name) ->
+                name.startsWith("subs.") && name.contains(".auto.") && hasSubtitleExtension(name));
+        if (files == null) {
+            return;
+        }
+        for (final File file : files) {
+            file.delete();
+        }
+    }
+
     public static void clearCache(Context context) {
         try {
             for (File file : context.getCacheDir().listFiles()) {

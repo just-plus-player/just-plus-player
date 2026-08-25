@@ -89,6 +89,7 @@ class Prefs {
     private static final String PREF_KEY_SOURCE_REST = "subtitleSourceRest";
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
     private static final String PREF_KEY_SUBTITLE_SCALE = "subtitleScale";
+    private static final String PREF_KEY_SUBTITLE_SECONDARY_MODE = "subtitleSecondaryMode";
     private static final String PREF_KEY_SUBTITLE_SECONDARY_SCALE = "subtitleSecondaryScale";
     private static final String PREF_KEY_SUBTITLE_TEXT_COLOR = "subtitleTextColor";
     private static final String PREF_KEY_SUBTITLE_BACKGROUND = "subtitleBackground";
@@ -131,6 +132,12 @@ class Prefs {
     public static final String SEARCH_OFF = "off";
     public static final String SEARCH_FIRST = "first";
     public static final String SEARCH_NONE = "none";
+
+    // When the second subtitle line is drawn. "Off" is the whole feature, not just the line: no row in
+    // the subtitle picker, nothing found for it, no band under the first line.
+    public static final String SECONDARY_OFF = "off";
+    public static final String SECONDARY_ALWAYS = "always";
+    public static final String SECONDARY_DEMAND = "demand";
 
     public static final String SKIP_UNDO_ALL = "all";
     public static final String SKIP_UNDO_MANUAL = "manual";
@@ -230,6 +237,8 @@ class Prefs {
     // screen. All three come from the same lists the main line uses, and the size defaults to matching
     // it: a hint set smaller by decree reads as harder to read rather than as secondary, and whether
     // the two lines should differ is the viewer's call, not this file's.
+    // Defaults to what the second line did before it had a mode: shown for as long as one is chosen.
+    public String subtitleSecondaryMode = SECONDARY_ALWAYS;
     public int subtitleSecondaryTextColor = 0xFFCCCCCC;
     public int subtitleSecondaryBackgroundColor = 0x80000000;
     public float subtitleSecondaryScale = 1.0f;
@@ -375,6 +384,8 @@ class Prefs {
         subtitleScale = Float.parseFloat(mSharedPreferences.getString(PREF_KEY_SUBTITLE_SCALE, String.valueOf(subtitleScale)));
         subtitleTextColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_TEXT_COLOR, "#FFFFFFFF"));
         subtitleBackgroundColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_BACKGROUND, "#00000000"));
+        subtitleSecondaryMode = mSharedPreferences.getString(
+                PREF_KEY_SUBTITLE_SECONDARY_MODE, subtitleSecondaryMode);
         subtitleSecondaryScale = Float.parseFloat(mSharedPreferences.getString(
                 PREF_KEY_SUBTITLE_SECONDARY_SCALE, String.valueOf(subtitleSecondaryScale)));
         subtitleSecondaryTextColor = Color.parseColor(

@@ -171,11 +171,16 @@
     <string name="subtitle_title">Субтитри</string>
     <string name="subtitle_off">Вимкнено</string>
     <string name="subtitle_offset_title">Зміщення субтитрів</string>
-    <string name="subtitle_offset_secondary_title">Зміщення других субтитрів</string>
     <string name="subtitle_secondary_title">Другі субтитри</string>
     <string name="subtitle_search_found_secondary">Другі субтитри: %1$s</string>
     <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати другим рядком</string>
+    <string name="subtitle_secondary_peek_hint">Торкніться позначки під субтитрами, щоб побачити цей рядок</string>
+    <string name="subtitle_secondary_peek_hint_tv">Натисніть угору, щоб побачити цей рядок</string>
     <string name="pref_subtitle_secondary_header">Другі субтитри</string>
+    <string name="pref_subtitle_secondary_mode">Коли показувати</string>
+    <string name="pref_subtitle_secondary_mode_off">Ніколи — другого рядка немає взагалі</string>
+    <string name="pref_subtitle_secondary_mode_always">Завжди — під першим рядком</string>
+    <string name="pref_subtitle_secondary_mode_demand">На вимогу — з’являється, коли попросити, і зникає</string>
     <string name="speed_title">Швидкість відтворення</string>
     <string name="speed_normal">Звичайна</string>
     <string name="audio_track_number">Доріжка %1$d</string>
@@ -287,7 +292,7 @@
     <string name="pref_subtitle_source_rest_summary">Закритий API. Ще відповідає, але може вимкнутись будь-коли</string>
     <string name="pref_language_subtitle_none">Не задано — увімкнеться лише доріжка, позначена в файлі як основна</string>
     <string name="pref_language_subtitle_secondary">Другі субтитри за замовчуванням</string>
-    <string name="pref_language_subtitle_secondary_none">Не задано — другий рядок вмикається лише вручну під час перегляду</string>
+    <string name="pref_language_subtitle_secondary_none">Не задано — другий рядок обирається лише вручну під час перегляду</string>
     <string name="pref_subtitle_style_bold">Жирний стиль</string>
     <string name="pref_subtitle_style_bold_on">Використовувати жирний шрифт замість звичайного</string>
     <string name="pref_subtitle_style_bold_off">Використовувати звичайний шрифт за замовчуванням</string>

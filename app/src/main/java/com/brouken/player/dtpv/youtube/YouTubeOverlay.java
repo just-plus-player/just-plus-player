@@ -374,7 +374,13 @@ public final class YouTubeOverlay extends ConstraintLayout implements PlayerDoub
         if (player != null && player.getCurrentPosition() >= 0L && playerView != null && playerView.getWidth() > 0) {
             if (posX >= playerView.getWidth() * 0.35 && posX <= playerView.getWidth() * 0.65) {
                 if (player.isPlaying()) {
-                    player.pause();
+                    // Through the activity rather than straight at the player: a pause the viewer asked
+                    // for is also a request for the second subtitle line. See PlayerActivity.pauseByUser.
+                    if (getContext() instanceof PlayerActivity) {
+                        ((PlayerActivity) getContext()).pauseByUser();
+                    } else {
+                        player.pause();
+                    }
                 } else {
                     player.play();
                     if (playerView.isControllerFullyVisible())

@@ -61,15 +61,66 @@
             app:key="languageSubtitle"
             app:title="@string/pref_language_subtitle" />
 
-        <!-- The second line's own list, and the whole of "start with two subtitle lines": with a
-             language in here the player looks for one and turns it on by itself. Separate from the row
-             above because the two lines want opposite things — the language being learned on the first,
-             the one already known on the second. Empty means no second line unless one is picked in the
-             player. A language in both lists belongs to the first line: the same words twice, once under
-             the other, is not a hint. -->
-        <Preference
-            app:key="languageSubtitleSecondary"
-            app:title="@string/pref_language_subtitle_secondary" />
+        <!-- Everything the second line has, behind one row. It was two halves on two screens — the
+             language here, the look inside Appearance — which is one place too few to find any of it
+             and one row too many for this category, which the rule at the top of this file caps at
+             four. The summary names the mode, so "is there a second line at all" reads without a tap. -->
+        <PreferenceScreen
+            app:key="subtitleSecondaryScreen"
+            app:title="@string/pref_subtitle_secondary_header">
+
+            <!-- Off takes the feature away rather than just the line: no row in the player's subtitle
+                 picker, nothing searched for it, no band under the first line. Always is what the second
+                 line did before it had a mode, and so the default: an absent value means no change for
+                 anyone already watching with two lines. -->
+            <ListPreference
+                app:key="subtitleSecondaryMode"
+                app:defaultValue="always"
+                app:entries="@array/subtitle_secondary_mode_entries"
+                app:entryValues="@array/subtitle_secondary_mode_values"
+                app:title="@string/pref_subtitle_secondary_mode"
+                app:useSimpleSummaryProvider="true" />
+
+            <!-- The second line's own list, and the whole of "start with two subtitle lines": with a
+                 language in here the player looks for one and turns it on by itself. Separate from the
+                 first line's list because the two want opposite things — the language being learned on
+                 the first, the one already known on the second. A language in both lists belongs to the
+                 first line: the same words twice, once under the other, is not a hint. -->
+            <Preference
+                app:key="languageSubtitleSecondary"
+                app:title="@string/pref_language_subtitle_secondary" />
+
+            <!-- Size, colour and plate of its own. Edge and weight stay inherited from the first line —
+                 nobody sets an outline for one line and not the other. The same three lists the main
+                 line uses, so the colour chips and the clash check in SettingsActivity cover these for
+                 free. The defaults are chosen so that nobody has to come here: same size as the line
+                 above, dimmed text on a translucent plate, which is what tells a hint apart from the
+                 line being read. -->
+            <ListPreference
+                app:key="subtitleSecondaryScale"
+                app:defaultValue="1.0"
+                app:entries="@array/subtitle_scale_entries"
+                app:entryValues="@array/subtitle_scale_values"
+                app:title="@string/pref_subtitle_scale"
+                app:useSimpleSummaryProvider="true" />
+
+            <ListPreference
+                app:key="subtitleSecondaryTextColor"
+                app:defaultValue="#FFCCCCCC"
+                app:entries="@array/subtitle_text_color_entries"
+                app:entryValues="@array/subtitle_text_color_values"
+                app:title="@string/pref_subtitle_text_color"
+                app:useSimpleSummaryProvider="true" />
+
+            <ListPreference
+                app:key="subtitleSecondaryBackground"
+                app:defaultValue="#80000000"
+                app:entries="@array/subtitle_background_entries"
+                app:entryValues="@array/subtitle_background_values"
+                app:title="@string/pref_subtitle_background"
+                app:useSimpleSummaryProvider="true" />
+
+        </PreferenceScreen>
 
         <!-- One door for the whole online search. Its switches used to be two checkboxes inside the
              language dialog above, which put the feature's satellites on the settings screen and the
@@ -191,42 +242,6 @@
                 android:summaryOn="@string/pref_subtitle_style_bold_on"
                 android:summaryOff="@string/pref_subtitle_style_bold_off"
                 app:title="@string/pref_subtitle_style_bold" />
-
-            <!-- The second subtitle line: size, colour and plate of its own. Edge and weight stay
-                 inherited from the rows above — nobody sets an outline for one line and not the other.
-                 The same three lists the main line uses, so the colour chips and the clash check in
-                 SettingsActivity cover these for free. The defaults are chosen so that nobody has to
-                 come here: same size as the line above, dimmed text on a translucent plate, which is
-                 what tells a hint apart from the line being read. -->
-            <PreferenceCategory app:title="@string/pref_subtitle_secondary_header">
-
-                <!-- Same five steps as the first line, and defaulting to the same one, so the two can be
-                     set equal or deliberately apart. -->
-                <ListPreference
-                    app:key="subtitleSecondaryScale"
-                    app:defaultValue="1.0"
-                    app:entries="@array/subtitle_scale_entries"
-                    app:entryValues="@array/subtitle_scale_values"
-                    app:title="@string/pref_subtitle_scale"
-                    app:useSimpleSummaryProvider="true" />
-
-                <ListPreference
-                    app:key="subtitleSecondaryTextColor"
-                    app:defaultValue="#FFCCCCCC"
-                    app:entries="@array/subtitle_text_color_entries"
-                    app:entryValues="@array/subtitle_text_color_values"
-                    app:title="@string/pref_subtitle_text_color"
-                    app:useSimpleSummaryProvider="true" />
-
-                <ListPreference
-                    app:key="subtitleSecondaryBackground"
-                    app:defaultValue="#80000000"
-                    app:entries="@array/subtitle_background_entries"
-                    app:entryValues="@array/subtitle_background_values"
-                    app:title="@string/pref_subtitle_background"
-                    app:useSimpleSummaryProvider="true" />
-
-            </PreferenceCategory>
 
         </PreferenceScreen>
 

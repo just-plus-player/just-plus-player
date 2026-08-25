@@ -2,6 +2,7 @@ package com.brouken.player;
 
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
@@ -9,6 +10,8 @@ import android.util.TypedValue;
 import android.view.View;
 import android.widget.TextView;
 
+import androidx.core.graphics.drawable.DrawableCompat;
+import androidx.media3.common.C;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
 import androidx.media3.exoplayer.text.TextOutput;
@@ -31,43 +34,169 @@ import java.util.List;
  * collapse to nothing while the hint is silent; only a {@code TextView} carries a real background
  * plate with alpha; and {@code SubtitleView} would place the cue by its own rules, when the whole
  * point of this line is that it sits in a band of its own and never moves.
+ *
+ * <p>Three states rather than a boolean, because a hint that is always there is a hint nobody reads —
+ * the native tongue wins every time it is on screen. {@link State#PEEKABLE} is the mode the line was
+ * really made for: a mark stands where the hint would be, and the hint itself arrives for the one line
+ * that did not land and leaves with it. What it shows is drawn from {@link #current}, which is kept
+ * whether or not it is on screen, so asking for it costs nothing and waits for nothing.
  */
 final class SecondarySubtitles implements TextOutput {
 
     /** Hard cap on the hint: a longer one would climb out of its band and onto the main line. */
     private static final int MAX_LINES = 2;
 
+    /**
+     * How long a line that is still standing may be, before it is taken for a leftover rather than a
+     * line — measured in the film, not on a clock.
+     *
+     * <p>It is the guard for the one case where nothing has said the line is over: a seek, which the
+     * renderer answers by replaying the cues it has in hand, and the last of those sticks. Judging by the
+     * film's own position is what tells a replayed backlog and a line that really is on screen apart. How
+     * long a line stays worth asking about once it has gone is {@link #PEEK_GONE_MS}, which is a different
+     * question and was for a while wrongly answered by this one.
+     */
+    private static final long PEEK_REACH_MS = 10_000;
+
+    /**
+     * How long a peek into a silence stays on screen. Separate from the reach above, and it has to be:
+     * the reach says how far back a line may be to be worth offering, this says how long it is worth
+     * looking at. One constant serving both left a line that had already gone hanging for ten seconds.
+     */
+    private static final long PEEK_STALE_MS = 3000;
+
+    /**
+     * How long after a line has gone a peek still answers with it — measured in the film, and from the
+     * line's own end rather than from its start.
+     *
+     * <p>The end is not a guess: the empty cue group that clears the line carries the moment it went
+     * (the renderer stamps it with the cue change time, in the same clock as the position). Judging by
+     * the start instead is what let a line that had run out three seconds ago and a scene ago answer a
+     * peek the same way — {@link #PEEK_REACH_MS} had to be long enough to cover a line's own length,
+     * and so it covered the silence after it too.
+     */
+    private static final long PEEK_GONE_MS = 2500;
+
+    /**
+     * How long a line is taken to still be on screen, counted from its own moment in the film.
+     *
+     * <p>Only for a line nothing has cleared. In the ordinary way of things the end arrives as an empty
+     * cue group and {@link #lastEndedAtMs} is exact; what is left is a line the renderer replayed into a
+     * seek and never took back, and for that there is no end to read. Held over a pause that was the
+     * whole fault: the film's position is frozen, so nothing could age it out, and a line from a scene
+     * ago sat on screen for as long as the pause lasted. Past this it is treated as a recollection
+     * instead — still worth offering while it is within reach, but shown for a moment rather than held.
+     */
+    private static final long PEEK_LIVE_MS = 7000;
+
+    // The hint lives exactly as long as the line it belongs to, and not a frame longer. Two lines that
+    // say the same thing have to leave together or they stop reading as one thing — which is also why
+    // there is no minimum time and no grace: either would put the hint on screen under a line it does
+    // not translate. A peek asked for in the last moments of a line is therefore short, and the answer
+    // to that is to ask again: with nothing on the line, a peek shows the one before it for
+    // PEEK_STALE_MS, which is the same request answered properly.
+
+    /** How often a running peek checks whether the film has moved past the line it was asked about. */
+    private static final long PEEK_WATCH_MS = 500;
+
+    /** How much of the mark's colour is left. Present enough to find, quiet enough to ignore. */
+    private static final float MARK_ALPHA = 0.55f;
+
+    enum State {
+        /** Nothing drawn: picture-in-picture, no second line chosen, or the feature switched off. */
+        HIDDEN,
+        /** The mark only — a second line is chosen and waiting to be asked for. */
+        PEEKABLE,
+        /** The hint itself, on its plate. Collapses to nothing while the line is silent. */
+        SHOWN,
+    }
+
     private final TextView view;
+    /** Run when a peek runs out on its own, so the layout it opened can close again. */
+    private final Runnable onPeekEnd;
+    private final SubtitleOffset.Position position;
+    private final Runnable peekEnd = this::endPeek;
+    /**
+     * A peek cannot rely on the next cue to end it. Before a long silence the renderer simply stops
+     * sending, with no empty group to say the line is over, so a peek waiting for one hangs until the
+     * next line — which can be a scene away. This watches the film's own position instead and ends the
+     * peek once it has carried past the line that was asked about. Paused, the position does not move,
+     * so a peek held over a still frame stays as long as the pause does.
+     */
+    private final Runnable peekWatch = new Runnable() {
+        @Override
+        public void run() {
+            if (!peeking) {
+                return;
+            }
+            final long now = position.currentMs();
+            if (now != C.TIME_UNSET && now - peekedAtMs > PEEK_REACH_MS) {
+                endPeek();
+                return;
+            }
+            view.postDelayed(this, PEEK_WATCH_MS);
+        }
+    };
 
     /**
      * The line as it stands right now, kept whether or not it is on screen. Showing the hint on
      * demand then draws what is already known instead of waiting for the next cue to come round.
      */
     private CharSequence current = "";
-    private boolean visible = true;
+    /** The last line that had anything on it, which is what a peek into a silence has to show. */
+    private CharSequence last = "";
+    private State state = State.SHOWN;
 
-    SecondarySubtitles(final TextView view) {
+    private boolean peeking;
+    /** The line this peek was asked about; when the cue moves off it, the peek is over. */
+    private CharSequence peeked = "";
+    /** Whether this peek is showing {@link #last} because the line was silent when it was asked for. */
+    private boolean stale;
+    /** The moment in the film each of them belongs to, taken from the cue group that carried it. */
+    private long currentAtMs;
+    private long lastAtMs;
+    /** When {@link #last} went off screen, off the empty group that cleared it; unset while it is up. */
+    private long lastEndedAtMs = C.TIME_UNSET;
+    /** Where in the film the line a running peek was asked about belongs. */
+    private long peekedAtMs;
+
+    // Style, kept rather than applied once: which parts of it are used depends on the state.
+    private int textColor = Color.WHITE;
+    private float textSizePx;
+    private Typeface typeface = Typeface.DEFAULT;
+    private int padHPx;
+    private int padVPx;
+    private Drawable mark;
+    private Drawable plate;
+    /** The state the view's chrome is currently set up for, so a cue change does not redo all of it. */
+    private State applied;
+
+    SecondarySubtitles(final TextView view, final Runnable onPeekEnd,
+                       final SubtitleOffset.Position position) {
         this.view = view;
+        this.onPeekEnd = onPeekEnd;
+        this.position = position;
         view.setMaxLines(MAX_LINES);
     }
 
-    /**
-     * Hides the line without forgetting it — the lock screen, picture-in-picture, and the hint being
-     * asked for rather than always shown all come through here.
-     */
-    void setVisible(final boolean visible) {
-        if (this.visible != visible) {
-            this.visible = visible;
+    void setState(final State state) {
+        if (this.state != state) {
+            this.state = state;
             render();
         }
     }
 
+    State getState() {
+        return state;
+    }
+
+    /** Whether anything is drawn at all — the band under the first line is reserved on this. */
     boolean isVisible() {
-        return visible;
+        return state != State.HIDDEN;
     }
 
     /**
-     * Colour, plate and size. Everything else about the look is the main line's to decide.
+     * Colour, plate, size and the mark. Everything else about the look is the main line's to decide.
      *
      * <p>The typeface is passed in rather than left to the view, and that is not cosmetic. The first
      * line is drawn by Media3 with {@code Typeface.DEFAULT}; a {@code TextView} left alone takes its
@@ -75,25 +204,107 @@ final class SecondarySubtitles implements TextOutput {
      * do not look the same size, and the difference reads as the size setting having failed.
      */
     void style(final int textColor, final int backgroundColor, final float textSizePx,
-               final Typeface typeface, final int cornerPx, final int padHPx, final int padVPx) {
-        view.setTextColor(textColor);
-        view.setTypeface(typeface);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx);
+               final Typeface typeface, final int cornerPx, final int padHPx, final int padVPx,
+               final Drawable mark, final int markWidthPx, final int markHeightPx) {
+        this.textColor = textColor;
+        this.textSizePx = textSizePx;
+        this.typeface = typeface;
+        this.padHPx = padHPx;
+        this.padVPx = padVPx;
         if (backgroundColor == Color.TRANSPARENT) {
-            view.setBackground(null);
+            plate = null;
         } else {
-            final GradientDrawable plate = new GradientDrawable();
-            plate.setCornerRadius(cornerPx);
-            plate.setColor(backgroundColor);
-            view.setBackground(plate);
+            final GradientDrawable drawable = new GradientDrawable();
+            drawable.setCornerRadius(cornerPx);
+            drawable.setColor(backgroundColor);
+            plate = drawable;
         }
-        // Kept whether or not there is a plate, so turning one on does not move the text.
-        view.setPadding(padHPx, padVPx, padHPx, padVPx);
+        if (mark != null) {
+            // The mark stands in for the hint, so it is the hint's own colour, quietened.
+            this.mark = DrawableCompat.wrap(mark.mutate());
+            DrawableCompat.setTint(this.mark, textColor);
+            this.mark.setBounds(0, 0, markWidthPx, markHeightPx);
+        }
+        applied = null;
+        render();
+    }
+
+    /**
+     * Forgets the line without taking anything off screen: a seek makes what was showing no longer an
+     * answer to anything, but whatever the renderer sends next is still welcome.
+     */
+    void forget() {
+        endPeek();
+        last = "";
+        lastAtMs = 0;
+        show("", 0);
     }
 
     /** Takes the line off screen and forgets what was on it. */
     void clear() {
-        show("");
+        endPeek();
+        last = "";
+        lastAtMs = 0;
+        show("", 0);
+    }
+
+    /**
+     * Asks for the hint, and reports whether there was anything to ask for. It shows the line that is
+     * running, or the one that has just gone if none is, and takes itself off again — see
+     * {@link #PEEK_STALE_MS}. Only the flags and the timers live here; whether that actually puts the
+     * hint on screen is {@link PlayerActivity}'s to decide, so that the lock screen and
+     * picture-in-picture stay the last word.
+     */
+    boolean peek(final long positionMs) {
+        final boolean silent = current.length() == 0;
+        final CharSequence answer = silent ? last : current;
+        final long belongsTo = silent ? lastAtMs : currentAtMs;
+        if (answer.length() == 0) {
+            return false; // nothing being said and nothing said before it
+        }
+        if (silent) {
+            // The line is over and it is known exactly when, so that is what freshness is measured from.
+            if (lastEndedAtMs == C.TIME_UNSET || positionMs - lastEndedAtMs > PEEK_GONE_MS) {
+                return false;
+            }
+        } else if (positionMs - belongsTo > PEEK_REACH_MS) {
+            // Still standing as far as anything here knows, but from far enough back that it is the
+            // renderer talking to itself — a backlog replayed into a seek.
+            return false;
+        }
+        // Held only while the line can still be on screen. Older than that it is a recollection, however
+        // the renderer left it — and a recollection is shown for a moment, not held.
+        view.removeCallbacks(peekEnd);
+        view.removeCallbacks(peekWatch);
+        peeking = true;
+        stale = silent || positionMs - belongsTo > PEEK_LIVE_MS;
+        peeked = answer;
+        peekedAtMs = belongsTo;
+        view.postDelayed(peekWatch, PEEK_WATCH_MS);
+        if (stale) {
+            // Nothing is coming to end this one, so it ends itself.
+            view.postDelayed(peekEnd, PEEK_STALE_MS);
+        }
+        render();
+        return true;
+    }
+
+    /** Ends a peek now, whether it was running out or not. Silent if none was. */
+    void endPeek() {
+        view.removeCallbacks(peekEnd);
+        view.removeCallbacks(peekWatch);
+        if (!peeking) {
+            return;
+        }
+        peeking = false;
+        stale = false;
+        peeked = "";
+        render();
+        onPeekEnd.run();
+    }
+
+    boolean isPeeking() {
+        return peeking;
     }
 
     @Override
@@ -112,7 +323,7 @@ final class SecondarySubtitles implements TextOutput {
             }
             text.append(trimmed(cue.text));
         }
-        show(text);
+        show(text, cueGroup.presentationTimeUs / 1000);
     }
 
     @Override
@@ -134,19 +345,87 @@ final class SecondarySubtitles implements TextOutput {
         return start == 0 && end == text.length() ? text : text.subSequence(start, end);
     }
 
-    private void show(final CharSequence text) {
+    private void show(final CharSequence text, final long atMs) {
         if (TextUtils.equals(current, text)) {
             return;
         }
+        final boolean wasSaying = current.length() > 0;
         current = text;
+        currentAtMs = atMs;
+        if (text.length() > 0) {
+            last = text;
+            lastAtMs = atMs;
+            lastEndedAtMs = C.TIME_UNSET; // it is on screen; nothing has ended it yet
+        } else if (wasSaying) {
+            // The moment the line went, which is the empty group's whole content.
+            lastEndedAtMs = atMs;
+        }
+        if (peeking && !TextUtils.equals(text, peeked)) {
+            // The line this peek was asked about has passed, so the hint goes with it. Posted rather
+            // than called straight from here: this runs inside the cue callback, and ending a peek
+            // re-enters the layout pass that decides what the hint is allowed to draw.
+            stale = false;
+            view.removeCallbacks(peekEnd);
+            view.post(peekEnd);
+        }
         render();
     }
 
+    /**
+     * What the hint draws right now — and while a peek is running that is the line it was asked about,
+     * whatever has come along since.
+     *
+     * <p>It used to hand over to the next line as soon as one arrived, which made the grace worse than
+     * no grace at all: the hint offered a translation of a line still on screen and then took it away a
+     * second into reading it. A peek answers one question. It finishes answering it and goes.
+     */
+    private CharSequence displayed() {
+        return peeking ? peeked : current;
+    }
+
     private void render() {
-        final boolean empty = current.length() == 0;
-        view.setText(current);
+        if (state == State.HIDDEN) {
+            applied = state;
+            view.setVisibility(View.GONE);
+            return;
+        }
+        if (applied != state) {
+            applied = state;
+            applyChrome();
+        }
+        if (state == State.PEEKABLE) {
+            view.setVisibility(mark == null ? View.GONE : View.VISIBLE);
+            return;
+        }
+        final CharSequence text = displayed();
+        view.setText(text);
         // GONE rather than INVISIBLE: the band above it is reserved by the main line's padding, so a
         // silent hint has to give its height back or it props the layout open for nothing.
-        view.setVisibility(visible && !empty ? View.VISIBLE : View.GONE);
+        view.setVisibility(text.length() == 0 ? View.GONE : View.VISIBLE);
+    }
+
+    /**
+     * Everything about the view that follows from the state rather than from the text. Kept out of the
+     * per-cue path: swapping a compound drawable in and out asks for a layout whether it changed or
+     * not, and a line of dialogue arrives every few seconds.
+     */
+    private void applyChrome() {
+        if (state == State.PEEKABLE) {
+            // No plate under the mark: the plate is what says "there is a line here to read", and there
+            // is not one yet. Padding is kept so the touch target does not move with the state.
+            view.setText("");
+            view.setBackground(null);
+            view.setAlpha(MARK_ALPHA);
+            view.setCompoundDrawables(mark, null, null, null);
+        } else {
+            view.setCompoundDrawables(null, null, null, null);
+            view.setAlpha(1f);
+            // Kept whether or not there is a plate, so turning one on does not move the text.
+            view.setBackground(plate);
+        }
+        view.setPadding(padHPx, padVPx, padHPx, padVPx);
+        view.setTextColor(textColor);
+        view.setTypeface(typeface);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx);
     }
 }

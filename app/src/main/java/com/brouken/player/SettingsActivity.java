@@ -272,6 +272,18 @@ public class SettingsActivity extends AppCompatActivity
                     Prefs.getLanguageSubtitleSecondary(requireContext()),
                     Prefs::setLanguageSubtitleSecondary);
 
+            // The second line lives behind its own row, and Off there means the whole feature rather
+            // than just the line — so the rows that would configure one are greyed out rather than left
+            // live and inert.
+            final ListPreference secondaryMode = findPreference("subtitleSecondaryMode");
+            if (secondaryMode != null) {
+                applySecondaryMode(secondaryMode, secondaryMode.getValue());
+                secondaryMode.setOnPreferenceChangeListener((preference, value) -> {
+                    applySecondaryMode(secondaryMode, (String) value);
+                    return true;
+                });
+            }
+
             // The search lives behind its own row, so its state has to read from the outside: without
             // this the row says nothing and the whole feature is a tap away from being discovered.
             final ListPreference searchMode = findPreference("subtitleSearchMode");
@@ -570,6 +582,33 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /** The chosen languages, in order, or a note that nothing is preferred. */
+        /** Everything the second line's screen holds besides the mode itself. */
+        private static final String[] SECONDARY_DEPENDENTS = {
+                "languageSubtitleSecondary", "subtitleSecondaryScale", "subtitleSecondaryTextColor",
+                "subtitleSecondaryBackground",
+        };
+
+        /**
+         * Reflects the chosen mode, the same way {@link #applySearchMode} does for the search: the row
+         * that leads here reports it, and with the second line off the rows that dress one are greyed
+         * out. By hand for the same reason — app:dependency watches a parent's enablement, not its value.
+         */
+        private void applySecondaryMode(final ListPreference secondaryMode, final String mode) {
+            final boolean enabled = !Prefs.SECONDARY_OFF.equals(mode);
+            for (final String key : SECONDARY_DEPENDENTS) {
+                final Preference dependent = findPreference(key);
+                if (dependent != null) {
+                    dependent.setEnabled(enabled);
+                }
+            }
+            // Null while the fragment is rooted at the second line's screen: the row lives one level up.
+            final Preference screen = findPreference("subtitleSecondaryScreen");
+            final int index = secondaryMode.findIndexOfValue(mode);
+            if (screen != null && index >= 0) {
+                screen.setSummary(secondaryMode.getEntries()[index]);
+            }
+        }
+
         /** Everything the search screen holds besides the mode itself. */
         private static final String[] SEARCH_DEPENDENTS = {
                 "subtitleTranslateOn", "subtitleTranslateBackends", "subtitleSearchLanguage",

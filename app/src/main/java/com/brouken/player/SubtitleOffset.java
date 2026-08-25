@@ -158,7 +158,11 @@ final class SubtitleOffset implements TextOutput {
         // cue, and passing it straight through keeps that timing exactly as it resolved it.
         final long dueBy = (offsetSec <= 0 || nowMs == C.TIME_UNSET) ? Long.MAX_VALUE : nowMs;
         while (next < groups.size() && dueMs(groups.get(next)) <= dueBy) {
-            emit(groups.get(next++));
+            // Re-stamped with the moment it actually reaches the screen rather than the moment the
+            // renderer resolved it for: an offset moves both, and downstream the stamp is read as "when
+            // this line was up". The painted half already emits at the true position, so the two agree.
+            final CueGroup group = groups.get(next++);
+            emit(new CueGroup(group.cues, dueMs(group) * 1000));
         }
         if (next < groups.size()) {
             handler.postDelayed(release, TICK_MS);

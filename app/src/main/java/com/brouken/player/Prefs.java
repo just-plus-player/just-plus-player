@@ -43,6 +43,7 @@ class Prefs {
     private static final String PREF_KEY_VOLUME_PERCENT = "volumePercent";
     private static final String PREF_KEY_FIRST_RUN = "firstRun";
     private static final String PREF_KEY_SUBTITLE_URI = "subtitleUri";
+    private static final String PREF_KEY_SUBTITLE_SECONDARY_URI = "subtitleSecondaryUri";
 
     private static final String PREF_KEY_AUDIO_TRACK_ID = "audioTrackId";
     private static final String PREF_KEY_SUBTITLE_TRACK_ID = "subtitleTrackId";
@@ -66,6 +67,7 @@ class Prefs {
     private static final String PREF_KEY_MAP_DV7 = "mapDV7ToHevc";
     private static final String PREF_KEY_LANGUAGE_AUDIO = "languageAudio";
     private static final String PREF_KEY_LANGUAGE_SUBTITLE = "languageSubtitle";
+    private static final String PREF_KEY_LANGUAGE_SUBTITLE_SECONDARY = "languageSubtitleSecondary";
     // Online subtitle search, all of it behind one row on the settings screen. These used to be
     // checkboxes inside the language-priority dialog, which hid the feature behind a row that never
     // mentions it while leaving its lesser options in plain sight.
@@ -74,20 +76,24 @@ class Prefs {
     private static final String PREF_KEY_SUBTITLE_SEARCH = "subtitleSearch";
     private static final String PREF_KEY_SUBTITLE_SEARCH_STRICT = "subtitleSearchStrict";
     private static final String PREF_KEY_SUBTITLE_SEARCH_LANGUAGE = "subtitleSearchLanguage";
-    private static final String PREF_KEY_SUBTITLE_TRANSLATE_MODE = "subtitleTranslateMode";
+    private static final String PREF_KEY_SUBTITLE_TRANSLATE_ON = "subtitleTranslateOn";
     private static final String PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS = "subtitleTranslateBackends";
-    // Replaced by the mode above; still read once, to carry an existing choice over.
+    // Both shapes the setting had before the switch above; each is read once by getSubtitleTranslate
+    // to carry an existing choice over, then removed.
+    private static final String PREF_KEY_SUBTITLE_TRANSLATE_MODE = "subtitleTranslateMode";
     private static final String PREF_KEY_SUBTITLE_TRANSLATE = "subtitleTranslate";
     // One per source, so a single one can be exercised on its own when something looks wrong.
     private static final String PREF_KEY_SOURCE_OPENSUBTITLES = "subtitleSourceOpenSubtitles";
     private static final String PREF_KEY_SOURCE_SHEGU = "subtitleSourceShegu";
     private static final String PREF_KEY_SOURCE_STREMIO = "subtitleSourceStremio";
     private static final String PREF_KEY_SOURCE_REST = "subtitleSourceRest";
-    private static final String PREF_KEY_SUBTITLE_STYLE_EMBEDDED = "subtitleStyleEmbedded";
     private static final String PREF_KEY_SUBTITLE_STYLE_BOLD = "subtitleStyleBold";
     private static final String PREF_KEY_SUBTITLE_SCALE = "subtitleScale";
+    private static final String PREF_KEY_SUBTITLE_SECONDARY_SCALE = "subtitleSecondaryScale";
     private static final String PREF_KEY_SUBTITLE_TEXT_COLOR = "subtitleTextColor";
     private static final String PREF_KEY_SUBTITLE_BACKGROUND = "subtitleBackground";
+    private static final String PREF_KEY_SUBTITLE_SECONDARY_TEXT_COLOR = "subtitleSecondaryTextColor";
+    private static final String PREF_KEY_SUBTITLE_SECONDARY_BACKGROUND = "subtitleSecondaryBackground";
     private static final String PREF_KEY_SUBTITLE_EDGE = "subtitleEdge";
     private static final String PREF_KEY_SKIP_ENABLED = "skipEnabled";
     private static final String PREF_KEY_SKIP_MODE = "skipMode";
@@ -126,12 +132,6 @@ class Prefs {
     public static final String SEARCH_FIRST = "first";
     public static final String SEARCH_NONE = "none";
 
-    // Machine translation, and whether the source line stays under it. One choice for the same reason:
-    // keeping the original means nothing when nothing is being translated.
-    public static final String TRANSLATE_OFF = "off";
-    public static final String TRANSLATE_ONLY = "only";
-    public static final String TRANSLATE_BOTH = "both";
-
     public static final String SKIP_UNDO_ALL = "all";
     public static final String SKIP_UNDO_MANUAL = "manual";
     public static final String SKIP_UNDO_AUTO = "auto";
@@ -150,6 +150,9 @@ class Prefs {
     // itself. Cleared by updateMedia, i.e. as soon as any media is actually opened.
     public boolean suppressResume;
     public Uri subtitleUri;
+    // The second line's file. Remembered next to the first one and cleared with it when the media
+    // changes: a hint belongs to the film it was chosen for.
+    public Uri subtitleSecondaryUri;
     public Uri scopeUri;
     public String mediaType;
     public int resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT;
@@ -190,6 +193,10 @@ class Prefs {
     // Preferred subtitle languages, same shape as languageAudio. Empty means no preference, which is
     // what every install starts from: unlike audio, a subtitle nobody asked for is in the way.
     public String languageSubtitle = "";
+    // The same list again, for the second line. Its own, because the two lines want opposite things:
+    // the first is the language being learned, the second the one already known. Empty — the default —
+    // means no second line unless one is picked by hand.
+    public String languageSubtitleSecondary = "";
     // Look for a missing subtitle language online. Off by default: it sends what is being watched,
     // by id, to third-party services, which is not something to start doing on a user's behalf.
     public boolean subtitleSearch = false;
@@ -202,9 +209,6 @@ class Prefs {
     // Machine-translate into the wanted language when no track exists in it. Which language it is
     // translated from is not a setting: it follows from the wanted one (SubtitleTranslate.sourcesFor).
     public boolean subtitleTranslate = true;
-    // Keep the source line under the translated one. The only way a viewer can judge a machine
-    // rendering at all, so it is worth the two lines of screen it costs.
-    public boolean subtitleTranslateOriginal = false;
     // Translation endpoints to try, in order: comma-separated ids from SubtitleTranslate. Editable
     // because they are strangers' free services and three of five died within a fortnight.
     public String subtitleTranslateBackends = SubtitleTranslate.DEFAULT_BACKENDS;
@@ -213,7 +217,6 @@ class Prefs {
     public boolean subtitleSourceShegu = true;
     public boolean subtitleSourceStremio = true;
     public boolean subtitleSourceRest = true;
-    public boolean subtitleStyleEmbedded = true;
     public boolean subtitleStyleBold = false;
     // How subtitles look. Owned here since the app stopped reading the system captioning screen: it
     // named a language too, and one language belongs in one place (see getLanguageSubtitle).
@@ -222,6 +225,14 @@ class Prefs {
     public int subtitleTextColor = Color.WHITE;
     public int subtitleBackgroundColor = Color.TRANSPARENT;
     public int subtitleEdgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE;
+    // The second line's own three. Dimmed text on a translucent plate is what tells a hint apart from
+    // the line being read, so the defaults are the whole setting for anyone who never opens this
+    // screen. All three come from the same lists the main line uses, and the size defaults to matching
+    // it: a hint set smaller by decree reads as harder to read rather than as secondary, and whether
+    // the two lines should differ is the viewer's call, not this file's.
+    public int subtitleSecondaryTextColor = 0xFFCCCCCC;
+    public int subtitleSecondaryBackgroundColor = 0x80000000;
+    public float subtitleSecondaryScale = 1.0f;
     public boolean skipEnabled = true;
     public String skipMode = SKIP_MODE_BRIEF;
     public String skipModeCredits = SKIP_MODE_BRIEF;
@@ -307,6 +318,9 @@ class Prefs {
         firstRun = mSharedPreferences.getBoolean(PREF_KEY_FIRST_RUN, firstRun);
         if (mSharedPreferences.contains(PREF_KEY_SUBTITLE_URI))
             subtitleUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SUBTITLE_URI, null));
+        if (mSharedPreferences.contains(PREF_KEY_SUBTITLE_SECONDARY_URI))
+            subtitleSecondaryUri = Uri.parse(
+                    mSharedPreferences.getString(PREF_KEY_SUBTITLE_SECONDARY_URI, null));
         if (mSharedPreferences.contains(PREF_KEY_AUDIO_TRACK_ID))
             audioTrackId = mSharedPreferences.getString(PREF_KEY_AUDIO_TRACK_ID, audioTrackId);
         if (mSharedPreferences.contains(PREF_KEY_SUBTITLE_TRACK_ID))
@@ -346,23 +360,27 @@ class Prefs {
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);
         languageAudio = getLanguageAudio(mContext);
         languageSubtitle = getLanguageSubtitle(mContext);
+        languageSubtitleSecondary = getLanguageSubtitleSecondary(mContext);
         final String searchMode = getSubtitleSearchMode(mContext);
         subtitleSearch = !SEARCH_OFF.equals(searchMode);
         subtitleSearchStrict = SEARCH_NONE.equals(searchMode);
         subtitleSearchLanguage = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_LANGUAGE, subtitleSearchLanguage);
-        final String translateMode = getSubtitleTranslateMode(mContext);
-        subtitleTranslate = !TRANSLATE_OFF.equals(translateMode);
-        subtitleTranslateOriginal = TRANSLATE_BOTH.equals(translateMode);
+        subtitleTranslate = getSubtitleTranslate(mContext);
         subtitleTranslateBackends = getSubtitleTranslateBackends(mContext);
         subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
         subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
         subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);
         subtitleSourceRest = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_REST, subtitleSourceRest);
-        subtitleStyleEmbedded = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_EMBEDDED, subtitleStyleEmbedded);
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         subtitleScale = Float.parseFloat(mSharedPreferences.getString(PREF_KEY_SUBTITLE_SCALE, String.valueOf(subtitleScale)));
         subtitleTextColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_TEXT_COLOR, "#FFFFFFFF"));
         subtitleBackgroundColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_BACKGROUND, "#00000000"));
+        subtitleSecondaryScale = Float.parseFloat(mSharedPreferences.getString(
+                PREF_KEY_SUBTITLE_SECONDARY_SCALE, String.valueOf(subtitleSecondaryScale)));
+        subtitleSecondaryTextColor = Color.parseColor(
+                mSharedPreferences.getString(PREF_KEY_SUBTITLE_SECONDARY_TEXT_COLOR, "#FFCCCCCC"));
+        subtitleSecondaryBackgroundColor = Color.parseColor(
+                mSharedPreferences.getString(PREF_KEY_SUBTITLE_SECONDARY_BACKGROUND, "#80000000"));
         subtitleEdgeType = Integer.parseInt(mSharedPreferences.getString(PREF_KEY_SUBTITLE_EDGE, String.valueOf(subtitleEdgeType)));
         skipEnabled = mSharedPreferences.getBoolean(PREF_KEY_SKIP_ENABLED, skipEnabled);
         skipMode = mSharedPreferences.getString(PREF_KEY_SKIP_MODE, skipMode);
@@ -456,6 +474,20 @@ class Prefs {
     }
 
     /**
+     * The second line's language list. Nothing seeds it: an empty list is what says the viewer does not
+     * want a second line, and inheriting one from anywhere would turn the feature on for everybody.
+     */
+    public static String getLanguageSubtitleSecondary(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(PREF_KEY_LANGUAGE_SUBTITLE_SECONDARY, "");
+    }
+
+    public static void setLanguageSubtitleSecondary(final Context context, final String languages) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(PREF_KEY_LANGUAGE_SUBTITLE_SECONDARY, languages).apply();
+    }
+
+    /**
      * When the online search runs, migrated once from the switch pair it replaced. Called before the
      * settings screen inflates as well as on playback, so the key exists by the time the list
      * preference reads it — otherwise a viewer who had the search on would be shown "never".
@@ -481,19 +513,26 @@ class Prefs {
     }
 
     /**
-     * Whether subtitles are machine-translated, and whether the source line is kept under the result.
-     * Migrated once from the switch this replaced, and read before the settings screen inflates for the
-     * same reason {@link #getSubtitleSearchMode} is.
+     * Whether subtitles are machine-translated. Read before the settings screen inflates for the same
+     * reason {@link #getSubtitleSearchMode} is.
+     *
+     * <p>Two hops of history collapse here. The setting began as a switch, became a three-way list
+     * whose third choice kept the source line under the translation, and is a switch again now that a
+     * second subtitle track does that job properly. Both old keys are read once and dropped; the list
+     * value has to be read out of {@code getAll} rather than with {@code getString}, because either of
+     * the two shapes may be what is stored.
      */
-    public static String getSubtitleTranslateMode(final Context context) {
+    public static boolean getSubtitleTranslate(final Context context) {
         final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-        final String stored = preferences.getString(PREF_KEY_SUBTITLE_TRANSLATE_MODE, null);
-        if (stored != null) {
-            return stored;
+        if (preferences.contains(PREF_KEY_SUBTITLE_TRANSLATE_ON)) {
+            return preferences.getBoolean(PREF_KEY_SUBTITLE_TRANSLATE_ON, true);
         }
-        final String migrated = preferences.getBoolean(PREF_KEY_SUBTITLE_TRANSLATE, true)
-                ? TRANSLATE_ONLY : TRANSLATE_OFF;
-        preferences.edit().putString(PREF_KEY_SUBTITLE_TRANSLATE_MODE, migrated)
+        final Object mode = preferences.getAll().get(PREF_KEY_SUBTITLE_TRANSLATE_MODE);
+        final boolean migrated = mode instanceof String
+                ? !"off".equals(mode)
+                : preferences.getBoolean(PREF_KEY_SUBTITLE_TRANSLATE, true);
+        preferences.edit().putBoolean(PREF_KEY_SUBTITLE_TRANSLATE_ON, migrated)
+                .remove(PREF_KEY_SUBTITLE_TRANSLATE_MODE)
                 .remove(PREF_KEY_SUBTITLE_TRANSLATE)
                 .apply();
         return migrated;
@@ -524,6 +563,7 @@ class Prefs {
         mediaType = type;
         suppressResume = false;
         updateSubtitle(null);
+        updateSecondarySubtitle(null);
         updateMeta(null, null, AspectRatioFrameLayout.RESIZE_MODE_FIT, 1.f, 0f, 1.f);
         // Opening something else drops the in-memory position with the rest of the meta. It is not keyed by
         // uri (see getPosition), so left behind it becomes the start position of the new media: a sender
@@ -552,6 +592,19 @@ class Prefs {
             else
                 sharedPreferencesEditor.putString(PREF_KEY_MEDIA_TYPE, mediaType);
             sharedPreferencesEditor.apply();
+        }
+    }
+
+    /** The second line's file, remembered the same way the first one is. */
+    public void updateSecondarySubtitle(final Uri uri) {
+        subtitleSecondaryUri = uri;
+        if (persistentMode) {
+            final SharedPreferences.Editor editor = mSharedPreferences.edit();
+            if (uri == null)
+                editor.remove(PREF_KEY_SUBTITLE_SECONDARY_URI);
+            else
+                editor.putString(PREF_KEY_SUBTITLE_SECONDARY_URI, uri.toString());
+            editor.apply();
         }
     }
 

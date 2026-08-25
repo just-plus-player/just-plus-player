@@ -49,6 +49,20 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
+    <!-- The second subtitle line. Sits in the band the main line's bottom padding reserves while it is
+         on, hugs its own text so the plate does not run edge to edge, and collapses to nothing when the
+         hint is silent. Bottom margin, colours and size are set in code — see SecondarySubtitles. -->
+    <TextView android:id="@+id/subtitle_secondary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="2"
+        android:visibility="gone"/>
+
     <FrameLayout android:id="@id/exo_ad_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>

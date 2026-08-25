@@ -158,9 +158,7 @@ final class SubtitleOffset implements TextOutput {
         // cue, and passing it straight through keeps that timing exactly as it resolved it.
         final long dueBy = (offsetSec <= 0 || nowMs == C.TIME_UNSET) ? Long.MAX_VALUE : nowMs;
         while (next < groups.size() && dueMs(groups.get(next)) <= dueBy) {
-            final CueGroup group = groups.get(next++);
-            output.onCues(group.cues);
-            output.onCues(group);
+            emit(groups.get(next++));
         }
         if (next < groups.size()) {
             handler.postDelayed(release, TICK_MS);
@@ -182,9 +180,19 @@ final class SubtitleOffset implements TextOutput {
             return;
         }
         painted = visible;
-        final CueGroup group = new CueGroup(timeline.cuesOf(visible), nowUs);
-        output.onCues(group.cues);
-        output.onCues(group);
+        emit(new CueGroup(timeline.cuesOf(visible), nowUs));
+    }
+
+    /**
+     * The one way out of here, and where the file's own presentation is taken off. Both halves pass
+     * through it — cues held back from the renderer and cues painted from a file — so every subtitle
+     * reaching the screen has had the same thing done to it. See
+     * {@link SubtitleUtils#withoutEmbeddedLook}.
+     */
+    private void emit(CueGroup group) {
+        final CueGroup uniform = SubtitleUtils.withoutEmbeddedLook(group);
+        output.onCues(uniform.cues);
+        output.onCues(uniform);
     }
 
     private long dueMs(CueGroup group) {

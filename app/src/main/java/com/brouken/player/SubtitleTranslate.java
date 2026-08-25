@@ -57,7 +57,7 @@ import okhttp3.ResponseBody;
  *
  * <p>Markup needs no handling here. The file is parsed by Media3, which has already turned
  * {@code <i>}, {@code {\an8}} and the rest into spans, so the plain text that gets sent carries none of
- * it. The only markup written back out is the italics around a kept source line.
+ * it. Nothing is written back out either: the result is plain text on the original timings.
  */
 final class SubtitleTranslate {
 
@@ -315,15 +315,11 @@ final class SubtitleTranslate {
      *                 left to detect it themselves, they read a two-word cue as the wrong language
      * @param toIso3   language to translate into, ISO 639-2/T
      * @param target   file to write; deleted again unless the whole file came back
-     * @param withOriginal keep the source line under the translated one, in italics. Whether a machine
-     *                     rendering is any good is the one thing a viewer cannot otherwise check; with
-     *                     the original in view a mangled line reads as a mangled line rather than as a
-     *                     broken player
      * @param enabledBackends comma-separated endpoint ids, in the order to try them
      * @return {@code target} as a URI, or null when nothing usable arrived
      */
     static Uri translate(Context context, Uri source, String fromIso3, String toIso3, File target,
-                         boolean withOriginal, String enabledBackends) {
+                         String enabledBackends) {
         final String sl = twoLetter(fromIso3);
         final String tl = twoLetter(toIso3);
         final List<Backend> chain = chain(enabledBackends);
@@ -385,7 +381,7 @@ final class SubtitleTranslate {
         for (final String line : lines) {
             merged.add(hasLetter(line) ? translated.get(next++) : line);
         }
-        return write(timeline, linesPerBlock, merged, withOriginal ? lines : null, target);
+        return write(timeline, linesPerBlock, merged, target);
     }
 
     /**
@@ -739,13 +735,9 @@ final class SubtitleTranslate {
         return text.toString();
     }
 
-    /**
-     * Rebuilds the file with the original timings — the one thing never touched.
-     *
-     * @param originals the source lines to keep under the translated ones, or null for translation only
-     */
+    /** Rebuilds the file with the original timings — the one thing never touched. */
     private static Uri write(SubtitleTimeline timeline, int[] linesPerBlock, List<String> translated,
-                            List<String> originals, File target) {
+                            File target) {
         int number = 0;
         try (Writer writer = new OutputStreamWriter(new FileOutputStream(target),
                 StandardCharsets.UTF_8)) {
@@ -761,13 +753,6 @@ final class SubtitleTranslate {
                         text.append('\n');
                     }
                     text.append(translated.get(line + i));
-                }
-                // Whole block under whole block, not line by line: a two-speaker cue interleaved with
-                // its own source is unreadable, while translation above original keeps both readable.
-                if (originals != null) {
-                    for (int i = 0; i < count; i++) {
-                        text.append("\n<i>").append(originals.get(line + i)).append("</i>");
-                    }
                 }
                 line += count;
                 writer.write(++number + "\n"

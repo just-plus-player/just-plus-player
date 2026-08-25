@@ -52,20 +52,6 @@
     <item>none</item>
   </string-array>
 
-  <!-- Machine translation, and whether the source line stays under it. One choice: showing the
-       original means nothing when nothing is being translated. -->
-  <string-array name="subtitle_translate_entries">
-    <item>@string/pref_subtitle_translate_never</item>
-    <item>@string/pref_subtitle_translate_only</item>
-    <item>@string/pref_subtitle_translate_both</item>
-  </string-array>
-
-  <string-array name="subtitle_translate_values">
-    <item>off</item>
-    <item>only</item>
-    <item>both</item>
-  </string-array>
-
   <string-array name="skip_undo_entries">
     <item>@string/pref_skip_undo_all</item>
     <item>@string/pref_skip_undo_manual</item>

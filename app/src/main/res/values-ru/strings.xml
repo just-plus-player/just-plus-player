@@ -164,6 +164,10 @@
     <string name="subtitle_title">Субтитры</string>
     <string name="subtitle_off">Выключены</string>
     <string name="subtitle_offset_title">Смещение субтитров</string>
+    <string name="subtitle_offset_secondary_title">Смещение вторых субтитров</string>
+    <string name="subtitle_secondary_title">Вторые субтитры</string>
+    <string name="subtitle_search_found_secondary">Вторые субтитры: %1$s</string>
+    <string name="pref_subtitle_secondary_header">Вторые субтитры</string>
     <string name="speed_title">Скорость воспроизведения</string>
     <string name="speed_normal">Обычная</string>
     <string name="audio_track_number">Дорожка %1$d</string>
@@ -265,10 +269,8 @@
     <string name="subtitle_search_season">Сезон %1$d</string>
     <string name="subtitle_search_episode">Эпизод %1$d</string>
     <string name="pref_subtitle_translate">Машинный перевод</string>
-    <string name="pref_subtitle_translate_never">Никогда</string>
-    <string name="pref_subtitle_translate_only">Только перевод</string>
-    <string name="pref_subtitle_translate_both">Перевод и оригинал</string>
-    <string name="pref_subtitle_translate_summary">%1$s. Текст отправляется в Google Переводчик</string>
+    <string name="pref_subtitle_translate_on">Текст отправляется в Google Переводчик</string>
+    <string name="pref_subtitle_translate_off">Субтитры показываются на том языке, на котором найдены</string>
     <string name="pref_subtitle_translate_backends">Сервисы перевода</string>
     <string name="pref_subtitle_translate_backends_none">Не задано — субтитры не переводятся</string>
     <string name="pref_subtitle_translate_backends_add">Добавить сервис</string>
@@ -283,9 +285,8 @@
     <string name="pref_subtitle_source_rest">OpenSubtitles.org</string>
     <string name="pref_subtitle_source_rest_summary">Закрытый API. Пока отвечает, но может отключиться в любой момент</string>
     <string name="pref_language_subtitle_none">Не задано — включится лишь дорожка, помеченная в файле как основная</string>
-    <string name="pref_subtitle_style_embedded">Встроенные стили</string>
-    <string name="pref_subtitle_style_embedded_on">Применить встроенные стили субтитров</string>
-    <string name="pref_subtitle_style_embedded_off">Не применять встроенные стили субтитров</string>
+    <string name="pref_language_subtitle_secondary">Вторые субтитры по умолчанию</string>
+    <string name="pref_language_subtitle_secondary_none">Не задано — вторая строка появится, только если выбрать её во время просмотра</string>
     <string name="pref_subtitle_style_bold">Полужирный стиль</string>
     <string name="pref_subtitle_style_bold_on">Использовать полужирный шрифт как обычный</string>
     <string name="pref_subtitle_style_bold_off">Использовать стандартный шрифт по умолчанию</string>

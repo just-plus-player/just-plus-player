@@ -190,6 +190,7 @@
     <string name="subtitle_offset_secondary_title">Second subtitle offset</string>
     <string name="subtitle_secondary_title">Second subtitles</string>
     <string name="subtitle_search_found_secondary">Second subtitles: %1$s</string>
+    <string name="subtitle_secondary_unavailable">This track cannot be shown as a second line</string>
     <string name="pref_subtitle_secondary_header">Second subtitles</string>
     <string name="speed_title">Playback speed</string>
     <string name="speed_normal">Normal</string>

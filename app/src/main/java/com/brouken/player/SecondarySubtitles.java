@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.View;
 import android.widget.TextView;
@@ -47,6 +48,7 @@ final class SecondarySubtitles implements TextOutput {
 
     SecondarySubtitles(final TextView view) {
         this.view = view;
+        view.setMaxLines(MAX_LINES);
     }
 
     /**
@@ -133,7 +135,7 @@ final class SecondarySubtitles implements TextOutput {
     }
 
     private void show(final CharSequence text) {
-        if (current.toString().equals(text.toString())) {
+        if (TextUtils.equals(current, text)) {
             return;
         }
         current = text;
@@ -143,7 +145,6 @@ final class SecondarySubtitles implements TextOutput {
     private void render() {
         final boolean empty = current.length() == 0;
         view.setText(current);
-        view.setMaxLines(MAX_LINES);
         // GONE rather than INVISIBLE: the band above it is reserved by the main line's padding, so a
         // silent hint has to give its height back or it props the layout open for nothing.
         view.setVisibility(visible && !empty ? View.VISIBLE : View.GONE);

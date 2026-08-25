@@ -802,6 +802,9 @@ public class PlayerActivity extends Activity {
     // The media whose second line has already been decided — by the language list or by hand. Auto-fill
     // runs once per film and never again: a viewer who switched the hint off means it to stay off.
     private Uri secondaryChoiceMedia;
+    // A track has just been given to the second line and the selector has not been asked yet whether
+    // its renderer could take it. See verifySecondaryTrackReached.
+    private boolean secondaryTrackPending;
     // Which line the manual subtitle search was opened from. A field because the title search is one
     // modal run — dialog, season, episode — and threading a flag through all of it would have three
     // methods carrying an argument they only pass on.
@@ -5731,8 +5734,14 @@ public class PlayerActivity extends Activity {
             return;
         }
         // Seeded from a subtitle painted without a track of its own; the loop below can only add.
-        boolean hasSubtitles = subtitleWithoutTrack() != null;
-        boolean textSelected = paintedSubtitleUri != null || mainLineTrackSelected();
+        // The second line counts for both, and for two separate reasons. The icon says "subtitles are
+        // on screen", and a hint is on screen — a dark icon over a line of text reads as the player
+        // having lost track of itself. And the button is the only door to the picker that can switch
+        // the hint off again: a film with no text track of its own and a downloaded hint would
+        // otherwise hide the button while the hint plays, with no way back to Off.
+        boolean hasSubtitles = subtitleWithoutTrack() != null || secondaryActive();
+        boolean textSelected =
+                paintedSubtitleUri != null || mainLineTrackSelected() || secondaryActive();
         if (player != null) {
             for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
                 if (group.getType() == C.TRACK_TYPE_TEXT
@@ -5748,7 +5757,7 @@ public class PlayerActivity extends Activity {
         // dims the icon with the same alpha this helper applies, so setEnabled alone would leave a
         // working button that still looks dead. The deferred post() this runs from gives us last word.
         Utils.setButtonEnabled(this, exoSubtitle, hasSubtitles);
-        // Light the CC icon coral while a subtitle track is actually showing.
+        // Light the CC icon coral while either line is actually showing something.
         exoSubtitle.setSelected(textSelected);
     }
 
@@ -5862,12 +5871,14 @@ public class PlayerActivity extends Activity {
      */
     private boolean selectSubtitleByName() {
         if (player == null || paintedSubtitleUri != null || mPrefs.subtitleTrackId != null
-                || hasOverrideType(C.TRACK_TYPE_TEXT)
-                || player.getTrackSelectionParameters().disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+                || hasOverrideType(C.TRACK_TYPE_TEXT) || mainLineDisabled()) {
             return false;
         }
         final Tracks tracks = player.getCurrentTracks();
-        if (tracks.isTypeSelected(C.TRACK_TYPE_TEXT)) {
+        // The first line's own track, not any text track: the second line has one of those whenever a
+        // hint is playing, and reading it as "subtitles are already on" is what stopped this line from
+        // ever being filled by name while a hint was up.
+        if (mainLineTrackSelected()) {
             return false;
         }
         final List<String> preferred = Utils.splitLanguages(mPrefs.languageSubtitle);
@@ -6267,7 +6278,7 @@ public class PlayerActivity extends Activity {
                                         String language, boolean secondary) {
         if (generation != subtitleSearchGeneration || player == null
                 || player.getCurrentMediaItemIndex() != index
-                || !java.util.Objects.equals(media, mPrefs.mediaUri)) {
+                || !Objects.equals(media, mPrefs.mediaUri)) {
             return;
         }
         // Which line asked for it is known by the pass that found it, not guessed from the language
@@ -6310,14 +6321,6 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * The languages worth searching for: everything the priority list ranks above the best one the media
-     * already carries. A file with English on a {@code uk, ru, en} list is searched for Ukrainian and
-     * Russian and no further — the English already there is as good as anything downloaded.
-     *
-     * <p>In strict mode it is all-or-nothing instead: any preferred language present at all means no
-     * search. An empty result either way means leave the media alone.
-     */
-    /**
      * The one language the second line wants and has no file for, or nothing.
      *
      * <p>Deliberately not {@link #subtitleLanguagesToSearch}: that answers "is there a better track
@@ -6350,6 +6353,14 @@ public class PlayerActivity extends Activity {
         return Collections.emptyList();
     }
 
+    /**
+     * The languages worth searching for: everything the priority list ranks above the best one the media
+     * already carries. A file with English on a {@code uk, ru, en} list is searched for Ukrainian and
+     * Russian and no further — the English already there is as good as anything downloaded.
+     *
+     * <p>In strict mode it is all-or-nothing instead: any preferred language present at all means no
+     * search. An empty result either way means leave the media alone.
+     */
     private List<String> subtitleLanguagesToSearch(Tracks tracks, List<String> preferred) {
         final Set<String> present = new HashSet<>();
         for (Tracks.Group group : tracks.getGroups()) {
@@ -6640,10 +6651,9 @@ public class PlayerActivity extends Activity {
      *
      * <p>Results arrive while the name is still being typed, from the third character on: nobody
      * recalls a title exactly, and the point of the posters is to be recognised rather than remembered.
-     */
-    /**
-     * The manual title search. {@code forSecondary} is which line opened it: the same dialog serves
-     * both pickers, and what it finds has to go back where it was asked from.
+     *
+     * <p>{@code forSecondary} is which line opened it: the same dialog serves both pickers, and what it
+     * finds has to go back where it was asked from.
      */
     private void showSubtitleSearchDialog(final boolean forSecondary) {
         subtitleSearchForSecondary = forSecondary;
@@ -7166,6 +7176,44 @@ public class PlayerActivity extends Activity {
         return isMachineTranslated(uri) ? getString(R.string.subtitle_machine_translated, label) : label;
     }
 
+    /**
+     * Which renderer draws which subtitle line. The order the two were built in is the whole of it (see
+     * {@link SecondaryTextTrack}) and it is fixed, so this needs no mapping and can be asked before the
+     * first selection has run.
+     *
+     * @param ordinal 1 for the first line's renderer, 2 for the second line's
+     * @return the renderer index, or -1 when there is no player or no such renderer
+     */
+    private int textRendererIndex(final int ordinal) {
+        if (player == null) {
+            return -1;
+        }
+        int seen = 0;
+        for (int i = 0; i < player.getRendererCount(); i++) {
+            if (player.getRendererType(i) == C.TRACK_TYPE_TEXT && ++seen == ordinal) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether the first line has been switched off. Its renderer carries that now rather than the track
+     * type (see {@link #disableSubtitles}); the type flag is still read, because a build before this one
+     * may have left it set on this install.
+     */
+    private boolean mainLineDisabled() {
+        if (player == null) {
+            return false;
+        }
+        if (player.getTrackSelectionParameters().disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            return true;
+        }
+        final int primary = textRendererIndex(1);
+        return trackSelector != null && primary >= 0
+                && trackSelector.getParameters().getRendererDisabled(primary);
+    }
+
     private void disableSubtitles() {
         if (player == null) {
             return;
@@ -7174,10 +7222,24 @@ public class PlayerActivity extends Activity {
         // subtitles off would leave a lone hint floating at the bottom of a subtitle-free picture.
         chooseSecondarySubtitle(null);
         clearPaintedSubtitle();
-        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .build());
+        // Off is this line's renderer, not the whole track type. setTrackTypeDisabled(TEXT) is the
+        // selector's last word — applyRendererDisableOverrides runs after every override it applies —
+        // so it takes the second line's track down with the first one, and the hint then shows as
+        // chosen, holds its band open, and never draws a word. The type flag is still cleared here,
+        // since a build before this one may have left it set.
+        final int primary = trackSelector == null ? -1 : textRendererIndex(1);
+        if (primary < 0) {
+            player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build());
+            return;
+        }
+        final DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
+        builder.clearOverridesOfType(C.TRACK_TYPE_TEXT);
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false);
+        builder.setRendererDisabled(primary, true);
+        trackSelector.setParameters(builder);
     }
 
     /**
@@ -7329,6 +7391,17 @@ public class PlayerActivity extends Activity {
         if (secondarySubtitles == null) {
             return;
         }
+        // Already this file, read or being read. Reaching for it again would blank the line for as long
+        // as the read takes, and a rebuild of the player comes through here on every return from the
+        // background.
+        if (uri != null && uri.equals(secondarySubtitleUri)) {
+            if (secondarySubtitleOffset != null) {
+                // A rebuild brings a new offset with it, so hand it what has already been read.
+                secondarySubtitleOffset.setTimeline(secondarySubtitleTimeline);
+                secondarySubtitleOffset.setOffsetSec(secondarySubtitleOffsetSec);
+            }
+            return;
+        }
         mPrefs.updateSecondarySubtitle(uri);
         // A file and a track are the two ways this line can be filled, and it can only be filled one
         // way at a time — including "no way", which is what Off is.
@@ -7365,9 +7438,11 @@ public class PlayerActivity extends Activity {
                 }
                 if (loaded == null) {
                     // Nothing to paint, and the band reserved for it has to go back or the first line
-                    // stays shifted up over a hint that never arrived.
+                    // stays shifted up over a hint that never arrived. The icon goes with it: nothing
+                    // is showing on this line after all.
                     secondarySubtitleUri = null;
                     updateSubtitleLayout();
+                    updateSubtitleButton();
                     return;
                 }
                 secondarySubtitleTimeline = loaded;
@@ -7387,10 +7462,13 @@ public class PlayerActivity extends Activity {
      * (see {@link #applySecondaryTrackSelection}).
      */
     private void setSecondaryTrack(Format format) {
-        if (java.util.Objects.equals(secondaryTextTrack.get(), format)) {
+        if (Objects.equals(secondaryTextTrack.get(), format)) {
             return;
         }
         secondaryTextTrack.set(format);
+        // Answered by verifySecondaryTrackReached on the next track change, which is the first moment
+        // the new mapping exists.
+        secondaryTrackPending = format != null;
         if (format == null) {
             secondaryTrackGroup = null;
         }
@@ -7416,12 +7494,6 @@ public class PlayerActivity extends Activity {
         setSecondaryTrack(format);
     }
 
-    /**
-     * Turns the second line's renderer on once the selector has mapped its track to it. Two steps
-     * rather than one because the mapping is what {@code invalidate()} produces: only afterwards is
-     * there a renderer index and a group to point an override at. Cheap to call with nothing to do,
-     * and called on every track change, so a player rebuild heals itself.
-     */
     /**
      * Turns the second line's track on, with a per-renderer override.
      *
@@ -7453,18 +7525,7 @@ public class PlayerActivity extends Activity {
         if (trackSelector == null) {
             return;
         }
-        final MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
-        if (info == null) {
-            return;
-        }
-        int renderer = -1;
-        int seen = 0;
-        for (int i = 0; i < info.getRendererCount(); i++) {
-            if (info.getRendererType(i) == C.TRACK_TYPE_TEXT && ++seen == 2) {
-                renderer = i;
-                break;
-            }
-        }
+        final int renderer = textRendererIndex(2);
         if (renderer < 0) {
             return;
         }
@@ -7479,6 +7540,33 @@ public class PlayerActivity extends Activity {
         trackSelector.setParameters(builder);
     }
 
+    /**
+     * Whether the second line's renderer was actually handed the track it was given — asked once per
+     * choice, and only from a track change, which is the first moment the new mapping exists.
+     *
+     * <p>Not a formality. A {@code TrackGroup} carrying more than one text format cannot be split at
+     * all: {@code findRenderer} scores a group by the <em>best</em> support any of its formats gets, so
+     * both renderers answer alike and the group goes to the first of them. The second line would then
+     * show that track as chosen, hold its band open under the first line, and never draw a word. Saying
+     * so and going back to Off is the honest end.
+     */
+    private void verifySecondaryTrackReached() {
+        if (!secondaryTrackPending || trackSelector == null || secondaryTextTrack.get() == null) {
+            return;
+        }
+        final MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+        final int renderer = textRendererIndex(2);
+        if (info == null || renderer < 0 || renderer >= info.getRendererCount()) {
+            return; // no mapping yet; the next track change asks again
+        }
+        secondaryTrackPending = false;
+        if (info.getTrackGroups(renderer).length > 0) {
+            return;
+        }
+        setSecondaryTrack(null);
+        Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
+    }
+
     private void applySubtitle(TrackGroup group, int index) {
         if (player == null || group == null) {
             return;
@@ -7486,6 +7574,14 @@ public class PlayerActivity extends Activity {
         // Without this the picked track would show nothing: SubtitleOffset drops the renderer's cues
         // for as long as a file is painted.
         clearPaintedSubtitle();
+        // Off disables this line's renderer rather than the whole track type (see disableSubtitles), so
+        // putting a track back on the line has to lift that first.
+        final int primary = trackSelector == null ? -1 : textRendererIndex(1);
+        if (primary >= 0) {
+            final DefaultTrackSelector.Parameters.Builder enable = trackSelector.buildUponParameters();
+            enable.setRendererDisabled(primary, false);
+            trackSelector.setParameters(enable);
+        }
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -7732,8 +7828,7 @@ public class PlayerActivity extends Activity {
         }
         // Right below its twin. Only with subtitles on: there is nothing to shift otherwise. A painted
         // file counts — it is the case SubtitleTimeline was built for — and selects no track.
-        if (player != null && (player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT)
-                || paintedSubtitleUri != null)) {
+        if (mainLineTrackSelected() || paintedSubtitleUri != null) {
             items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
                     getString(R.string.subtitle_offset_title),
                     subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec),
@@ -9340,10 +9435,23 @@ public class PlayerActivity extends Activity {
         }
         player.prepare();
 
-        // The second line is view-scoped and survives this rebuild, so this only has work to do the
-        // first time round or after the media changed — setSecondarySubtitle is a no-op on the file it
-        // is already painting.
-        setSecondarySubtitle(mPrefs.subtitleSecondaryUri);
+        // The second line is view-scoped and survives this rebuild. A track of the media cannot be
+        // remembered in the preferences — a Format is not a Uri — so it lives in fields that outlive
+        // the player, and this is where they are kept or dropped: kept for a rebuild of the same film,
+        // where applySecondaryTrackSelection puts the override back on the next track change; dropped
+        // when the film changed, and only then is the remembered file put back.
+        if (secondaryTextTrack.get() != null && mPrefs.mediaUri != null
+                && mPrefs.mediaUri.equals(secondaryChoiceMedia)) {
+            if (secondarySubtitles != null) {
+                // The line on screen belongs to the player that has just gone.
+                secondarySubtitles.clear();
+            }
+            // New player, new mapping: ask again whether its second text renderer can take the track.
+            secondaryTrackPending = true;
+        } else {
+            setSecondaryTrack(null);
+            setSecondarySubtitle(mPrefs.subtitleSecondaryUri);
+        }
 
         // Only while the activity is up: a recovery rebuild posted from onPlayerError can land after the user
         // has already left, and resuming there would play in the background.
@@ -9857,6 +9965,8 @@ public class PlayerActivity extends Activity {
             // mapping it needs is what the re-selection produces, so it exists only by now. Also heals
             // a player rebuild, which starts with no overrides at all.
             applySecondaryTrackSelection();
+            // The mapping this change carries is the answer to the last track the second line was given.
+            verifySecondaryTrackReached();
             // A file the second line wants may have arrived with this very change — the search attaches
             // one as a track. Before the search, so a file already here is used instead of fetched.
             autoFillSecondarySubtitle();

@@ -174,6 +174,7 @@
     <string name="subtitle_offset_secondary_title">Зміщення других субтитрів</string>
     <string name="subtitle_secondary_title">Другі субтитри</string>
     <string name="subtitle_search_found_secondary">Другі субтитри: %1$s</string>
+    <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати другим рядком</string>
     <string name="pref_subtitle_secondary_header">Другі субтитри</string>
     <string name="speed_title">Швидкість відтворення</string>
     <string name="speed_normal">Звичайна</string>

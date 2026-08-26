@@ -20,8 +20,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * Editor for an ordered list of preferred languages: the player walks it top to bottom and plays the
- * first language the media actually carries.
+ * Editor for an ordered list picked out of a known set — which is at once "preferred languages, best
+ * first" and "these translation services, in this order": enabled is membership, priority is position.
+ * The player walks such a list top to bottom. Shared by the audio and the subtitle priority list —
+ * only the title and the "nothing preferred" line differ between the two, and nothing else belongs in
+ * here: the online-search switches lived at the bottom of this dialog for a while, which is how the
+ * whole search feature ended up invisible behind a row named after something else.
  *
  * Reordering is done with per-row up/down buttons rather than by dragging. Dragging on Android TV is
  * "focus the handle, press OK, hold a direction, press OK again", which is worse than two buttons for
@@ -29,7 +33,7 @@ import java.util.List;
  * LinearLayout that is simply rebuilt after every change. The rebuild has to hand focus back to the
  * button that was just pressed, or a remote would be thrown out of the list on every single press.
  */
-final class AudioLanguagePriorityDialog {
+final class LanguagePriorityDialog {
 
     interface Listener {
         void onLanguagesPicked(List<String> languages);
@@ -40,33 +44,54 @@ final class AudioLanguagePriorityDialog {
     private static final int DOWN = 2;
     private static final int REMOVE = 3;
 
-    private AudioLanguagePriorityDialog() {
+    private final Context context;
+    private final int emptyRes;
+    private final int addRes;
+    private final LinkedHashMap<String, String> allLanguages;
+    private final List<String> pinned;
+    private final List<String> languages;
+    private final LinearLayout list;
+
+    private LanguagePriorityDialog(final Context context, final int emptyRes, final int addRes,
+                                   final List<String> initial,
+                                   final LinkedHashMap<String, String> allLanguages,
+                                   final List<String> pinned) {
+        this.context = context;
+        this.emptyRes = emptyRes;
+        this.addRes = addRes;
+        this.allLanguages = allLanguages;
+        this.pinned = pinned;
+        this.languages = new ArrayList<>(initial);
+        this.list = new LinearLayout(context);
+        this.list.setOrientation(LinearLayout.VERTICAL);
+        this.list.setPadding(Utils.dpToPx(16), Utils.dpToPx(8), Utils.dpToPx(16), Utils.dpToPx(8));
     }
 
     /**
+     * @param emptyRes     stands in for the list while no language is preferred
      * @param allLanguages every selectable code mapped to its label, in the order the picker lists them
      * @param pinned       codes worth offering first (device languages, languages of the open media)
+     * @param addRes       label for the row that opens the picker. A parameter because this editor is
+     *                     not only about languages any more: an ordered subset of a known set is also
+     *                     exactly what "these translation services, in this order" is
      */
-    static void show(final Context context, final String title, final List<String> initial,
-                     final LinkedHashMap<String, String> allLanguages, final List<String> pinned,
-                     final Listener listener) {
-        final List<String> languages = new ArrayList<>(initial);
-
-        final LinearLayout list = new LinearLayout(context);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(Utils.dpToPx(16), Utils.dpToPx(8), Utils.dpToPx(16), Utils.dpToPx(8));
+    static void show(final Context context, final String title, final int emptyRes, final int addRes,
+                     final List<String> initial, final LinkedHashMap<String, String> allLanguages,
+                     final List<String> pinned, final Listener listener) {
+        final LanguagePriorityDialog editor =
+                new LanguagePriorityDialog(context, emptyRes, addRes, initial, allLanguages, pinned);
 
         final ScrollView scroll = new ScrollView(context);
-        scroll.addView(list);
+        scroll.addView(editor.list);
 
-        rebuild(context, list, languages, allLanguages, pinned, -1, 0);
+        editor.rebuild(-1, 0);
 
         new AlertDialog.Builder(context)
                 .setTitle(title)
                 .setView(scroll)
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(android.R.string.ok,
-                        (dialog, which) -> listener.onLanguagesPicked(languages))
+                        (dialog, which) -> listener.onLanguagesPicked(editor.languages))
                 .show();
     }
 
@@ -74,16 +99,12 @@ final class AudioLanguagePriorityDialog {
      * @param focusRow   row to hand the focus back to after the rebuild, or -1 to leave focus alone
      * @param focusChild which of that row's buttons to prefer: UP, DOWN or REMOVE
      */
-    private static void rebuild(final Context context, final LinearLayout list,
-                                final List<String> languages,
-                                final LinkedHashMap<String, String> allLanguages,
-                                final List<String> pinned,
-                                final int focusRow, final int focusChild) {
+    private void rebuild(final int focusRow, final int focusChild) {
         list.removeAllViews();
 
         if (languages.isEmpty()) {
             final TextView empty = new TextView(context);
-            empty.setText(R.string.pref_language_audio_none);
+            empty.setText(emptyRes);
             empty.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(16));
             list.addView(empty);
         }
@@ -106,14 +127,14 @@ final class AudioLanguagePriorityDialog {
             Utils.setButtonEnabled(context, up, index > 0);
             up.setOnClickListener(v -> {
                 Collections.swap(languages, index, index - 1);
-                rebuild(context, list, languages, allLanguages, pinned, index - 1, UP);
+                rebuild(index - 1, UP);
             });
             final ImageButton down = iconButton(context, R.drawable.ic_arrow_downward_24dp,
                     context.getString(R.string.pref_language_audio_move_down), tint);
             Utils.setButtonEnabled(context, down, index < languages.size() - 1);
             down.setOnClickListener(v -> {
                 Collections.swap(languages, index, index + 1);
-                rebuild(context, list, languages, allLanguages, pinned, index + 1, DOWN);
+                rebuild(index + 1, DOWN);
             });
             final ImageButton remove = iconButton(context, R.drawable.ic_close_24dp,
                     context.getString(R.string.pref_language_audio_remove), tint);
@@ -121,8 +142,7 @@ final class AudioLanguagePriorityDialog {
                 languages.remove(index);
                 // The row is gone, so focus the one that slid into its place — or the last one left.
                 // Emptying the list leaves no row at all, and restoreFocus falls back to "Add".
-                rebuild(context, list, languages, allLanguages, pinned,
-                        Math.max(0, Math.min(index, languages.size() - 1)), REMOVE);
+                rebuild(Math.max(0, Math.min(index, languages.size() - 1)), REMOVE);
             });
             // Disabled buttons still take a D-pad stop otherwise, so the first row's "up" would swallow
             // a press that should have moved the focus out of the list.
@@ -135,7 +155,7 @@ final class AudioLanguagePriorityDialog {
         }
 
         final TextView add = new TextView(context);
-        add.setText(R.string.pref_language_audio_add);
+        add.setText(addRes);
         add.setGravity(Gravity.CENTER_VERTICAL);
         add.setClickable(true);
         add.setFocusable(true);
@@ -144,7 +164,7 @@ final class AudioLanguagePriorityDialog {
         add.setCompoundDrawableTintList(ColorStateList.valueOf(add.getCurrentTextColor()));
         add.setPadding(0, Utils.dpToPx(12), 0, Utils.dpToPx(12));
         add.setBackgroundResource(themeAttr(context, android.R.attr.selectableItemBackground));
-        add.setOnClickListener(v -> showPicker(context, list, languages, allLanguages, pinned));
+        add.setOnClickListener(v -> showPicker());
         list.addView(add);
 
         restoreFocus(list, focusRow, focusChild, add);
@@ -176,10 +196,7 @@ final class AudioLanguagePriorityDialog {
         focus.post(focus::requestFocus);
     }
 
-    private static void showPicker(final Context context, final LinearLayout list,
-                                   final List<String> languages,
-                                   final LinkedHashMap<String, String> allLanguages,
-                                   final List<String> pinned) {
+    private void showPicker() {
         final List<String> codes = new ArrayList<>();
         for (final String code : pinned) {
             if (!languages.contains(code) && !codes.contains(code)) {
@@ -196,11 +213,10 @@ final class AudioLanguagePriorityDialog {
             labels[i] = label(allLanguages, codes.get(i));
         }
         new AlertDialog.Builder(context)
-                .setTitle(R.string.pref_language_audio_add)
+                .setTitle(addRes)
                 .setItems(labels, (dialog, which) -> {
                     languages.add(codes.get(which));
-                    rebuild(context, list, languages, allLanguages, pinned,
-                            languages.size() - 1, UP);
+                    rebuild(languages.size() - 1, UP);
                 })
                 .show();
     }

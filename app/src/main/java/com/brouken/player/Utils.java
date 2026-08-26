@@ -67,6 +67,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.text.Collator;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -879,39 +880,155 @@ class Utils {
     }
 
     public static Uri convertInputStreamToUTF(Context context, Uri subtitleUri, InputStream inputStream) {
+        return convertInputStreamToUTF(context, subtitleUri, inputStream, null);
+    }
+
+    /**
+     * @param preferredName what to call the cached copy, or null to take the name from the URI. A
+     *                      subtitle found online has no useful name in its URL — often none at all,
+     *                      just an id — while the caller knows the language, and the name is where
+     *                      both the language and the label are read back from.
+     */
+    public static Uri convertInputStreamToUTF(Context context, Uri subtitleUri, InputStream inputStream,
+                                              String preferredName) {
         try {
             DecodedInputStreamReader decodedInputStreamReader = Chardet.decode(inputStream, StandardCharsets.UTF_8);
             Charset charset = decodedInputStreamReader.charset();
-            if (!StandardCharsets.UTF_8.equals(charset)) {
-                String filename = subtitleUri.getPath();
-                filename = filename.substring(filename.lastIndexOf("/") + 1);
-                final File file = new File(context.getCacheDir(), filename);
-                final BufferedReader bufferedReader = new BufferedReader(decodedInputStreamReader);
-                final BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
-                char[] buffer = new char[512];
-                int num;
-                int pass = 0;
-                boolean success = true;
-                while ((num = bufferedReader.read(buffer)) != -1) {
-                    bufferedWriter.write(buffer, 0, num);
-                    pass++;
-                    if (pass * 512 > 2_000_000) {
-                        success = false;
-                        break;
-                    }
+            // A subtitle pulled off the network is copied even when it needs no re-encoding. The URI is
+            // remembered (Prefs.subtitleUri) and re-read whenever the player is rebuilt — returning from
+            // the settings screen does exactly that — and by then a temporary download link may be gone.
+            // fileExists() settles it anyway: it answers false for any http URI, so a remembered network
+            // subtitle was simply dropped and the track vanished. A local copy is a real file to both.
+            final boolean remote = isSupportedNetworkUri(subtitleUri);
+            if (!StandardCharsets.UTF_8.equals(charset) || remote) {
+                String filename = preferredName;
+                if (filename == null) {
+                    filename = subtitleUri.getPath();
+                    filename = filename.substring(filename.lastIndexOf("/") + 1);
                 }
-                bufferedWriter.close();
-                bufferedReader.close();
-                if (success) {
+                // The name carries the format and often the language, which is how both are recovered
+                // later. The copy is unpacked and re-encoded, so the wrapper extension has to go, and
+                // proxied URLs end in an opaque id instead — give those something to parse.
+                if (filename.endsWith(".gz")) {
+                    filename = filename.substring(0, filename.length() - 3);
+                }
+                if (!filename.contains(".")) {
+                    filename = (filename.isEmpty() ? "subtitle" : filename) + ".srt";
+                }
+                File file = null;
+                boolean success = true;
+                try {
+                    final BufferedReader bufferedReader = new BufferedReader(decodedInputStreamReader);
+                    final char[] buffer = new char[512];
+                    // The head decides the name. An index is free to hand over ASS or WebVTT under a
+                    // name the caller invented, and since the format is read back off that name, a
+                    // mislabelled copy goes to the wrong parser and shows nothing at all — which reads
+                    // as a subtitle that was found, switched on, and simply is not there.
+                    int num = fill(bufferedReader, buffer);
+                    final String head = new String(buffer, 0, num);
+                    file = new File(context.getCacheDir(), nameByFormat(filename, head));
+                    final BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
+                    int pass = 0;
+                    while (num > 0) {
+                        bufferedWriter.write(buffer, 0, num);
+                        pass++;
+                        if (pass * buffer.length > 2_000_000) {
+                            success = false;
+                            break;
+                        }
+                        num = fill(bufferedReader, buffer);
+                    }
+                    bufferedWriter.close();
+                    bufferedReader.close();
+                } catch (IOException e) {
+                    // Out of space, most likely. Half a subtitle is worse than none: delete it and
+                    // hand back the URL it came from, which still plays for as long as this player
+                    // instance lives.
+                    success = false;
+                    e.printStackTrace();
+                }
+                if (success && file != null) {
+                    trimSubtitleCache(context.getCacheDir());
                     subtitleUri = Uri.fromFile(file);
                 } else {
-                    subtitleUri = null;
+                    if (file != null) {
+                        file.delete();
+                    }
+                    if (!remote) {
+                        subtitleUri = null;
+                    }
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
         return subtitleUri;
+    }
+
+    /**
+     * Reads until {@code buffer} is full or the stream ends, and answers how much of it is filled —
+     * 0 at the end. {@link java.io.Reader#read(char[])} may hand back fewer characters than asked for
+     * and over a decoded network stream routinely hands back one, which is too little to recognise a
+     * format header by and makes a count of reads a useless stand-in for a count of characters.
+     */
+    private static int fill(final BufferedReader reader, final char[] buffer) throws IOException {
+        int total = 0;
+        while (total < buffer.length) {
+            final int read = reader.read(buffer, total, buffer.length - total);
+            if (read == -1) {
+                break;
+            }
+            total += read;
+        }
+        return total;
+    }
+
+    /**
+     * The extension the content asks for, replacing whatever the name arrived with. Left alone when
+     * the head says nothing recognisable: SubRip has no header to go by, so an unremarkable file is
+     * taken at its name.
+     */
+    private static String nameByFormat(final String filename, final String head) {
+        final String extension;
+        if (head.contains("[Script Info]")) {
+            extension = ".ass";
+        } else if (head.contains("WEBVTT")) {
+            extension = ".vtt";
+        } else if (head.contains("<tt ") || head.contains("<tt\n") || head.contains("<?xml")) {
+            extension = ".ttml";
+        } else {
+            return filename;
+        }
+        if (filename.endsWith(extension)) {
+            return filename;
+        }
+        final int dot = filename.lastIndexOf('.');
+        return (dot > 0 ? filename.substring(0, dot) : filename) + extension;
+    }
+
+    /** How many downloaded subtitles are kept. Roughly a season at 30-60 KB each. */
+    private static final int SUBTITLE_CACHE_KEEP = 20;
+
+    /**
+     * Keeps the downloaded-subtitle copies to a fixed number, oldest deleted first.
+     *
+     * Nothing else bounds them: they are named per title and language, so re-watching overwrites, but
+     * every new episode leaves another file behind and nothing ever expires. The system does clear an
+     * app's cache under storage pressure, and {@link SubtitleUtils#clearCache} empties it on several
+     * unrelated occasions — neither is a plan, and neither runs before the disk is already tight.
+     */
+    private static void trimSubtitleCache(File cacheDir) {
+        // Every extension, not only .srt: the copy is named after what it turned out to be, and one
+        // the trim does not recognise would sit in the cache for good.
+        final File[] files = cacheDir.listFiles((dir, name) ->
+                name.startsWith("subs.") && SubtitleUtils.hasSubtitleExtension(name));
+        if (files == null || files.length <= SUBTITLE_CACHE_KEEP) {
+            return;
+        }
+        java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        for (int i = 0; i < files.length - SUBTITLE_CACHE_KEEP; i++) {
+            files[i].delete();
+        }
     }
 
     public static boolean isPiPSupported(Context context) {
@@ -993,6 +1110,40 @@ class Utils {
         }
     }
 
+    /**
+     * Every language that can be preferred, code to label ("Ukrainian [ukr]"), collated by label.
+     *
+     * <p>Walks a few hundred locales, so it is worth calling once per screen rather than per row —
+     * both the settings priority lists and the manual subtitle search ask for the same map.
+     */
+    public static LinkedHashMap<String, String> allLanguages() {
+        final LinkedHashMap<String, String> languages = new LinkedHashMap<>();
+        for (final Locale locale : Locale.getAvailableLocales()) {
+            try {
+                // MissingResourceException: Couldn't find 3-letter language code for zz
+                final String key = locale.getISO3Language();
+                if (languages.containsKey(key)) {
+                    // Hundreds of locales collapse onto the same language here, and the display name
+                    // never depends on region or script — resolving it again only burns main-thread
+                    // time while the screen opens.
+                    continue;
+                }
+                String language = locale.getDisplayLanguage();
+                final int length = language.offsetByCodePoints(0, 1);
+                if (!language.isEmpty()) {
+                    language = language.substring(0, length).toUpperCase(locale) + language.substring(length);
+                }
+                languages.put(key, language + " [" + key + "]");
+            } catch (MissingResourceException e) {
+                e.printStackTrace();
+            }
+        }
+        final Collator collator = Collator.getInstance();
+        collator.setStrength(Collator.PRIMARY);
+        orderByValue(languages, collator::compare);
+        return languages;
+    }
+
     /** The stored audio priority list ("ukr,eng") as a mutable list, blanks dropped. */
     public static List<String> splitLanguages(final String languages) {
         final List<String> list = new ArrayList<>();
@@ -1003,6 +1154,38 @@ class Utils {
             }
         }
         return list;
+    }
+
+    /**
+     * The best-ranked of {@code wanted} that a track name gives away, or null. Muxers routinely leave a
+     * track's language tag empty and write the language into its name instead — "rus", "RUS #01 ENG #03",
+     * "rus/eng/por/spa" — where nothing that reads {@link androidx.media3.common.Format#language} can
+     * see it.
+     *
+     * <p>Matched this way round on purpose: the wanted codes are looked for in the name, rather than the
+     * name read for whatever language it might hold. Locale hands back any three-letter word as its own
+     * ISO-3 code (see {@link #toIso3Language}), so "DUB", "WEB" and "SUB" would each otherwise pass for
+     * a language of their own.
+     */
+    public static String languageInName(final String name, final List<String> wanted) {
+        if (name == null || name.isEmpty() || wanted.isEmpty()) {
+            return null;
+        }
+        int best = wanted.size();
+        // Three-letter tokens only. Two-letter codes are real languages but collide with ordinary words
+        // ("is", "no", "it"), and a release name is largely made of those; a name spelling the language
+        // out ("Russian") is not read either.
+        for (final String token : name.split("[^A-Za-z]+")) {
+            if (token.length() != 3) {
+                continue;
+            }
+            final String language = toIso3Language(token);
+            final int rank = language == null ? -1 : wanted.indexOf(language);
+            if (rank >= 0 && rank < best) {
+                best = rank;
+            }
+        }
+        return best < wanted.size() ? wanted.get(best) : null;
     }
 
     public static ComponentName getSystemComponent(Context context, Intent intent) {

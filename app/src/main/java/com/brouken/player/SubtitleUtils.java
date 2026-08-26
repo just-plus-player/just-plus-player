@@ -3,11 +3,23 @@ package com.brouken.player;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.TypefaceSpan;
 
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.text.Cue;
+import androidx.media3.common.text.CueGroup;
+
+import com.google.common.collect.ImmutableList;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -15,6 +27,84 @@ import java.util.Arrays;
 import java.util.List;
 
 class SubtitleUtils {
+
+    /**
+     * Span types that say how a subtitle should <em>look</em>, as opposed to what it means. Colour,
+     * size and typeface are the file's opinion about presentation, and presentation is the viewer's
+     * to set — so these are dropped and the app's own style applies to every line alike.
+     *
+     * <p>What is deliberately not here: {@code StyleSpan} (italic and bold), {@code UnderlineSpan} and
+     * {@code StrikethroughSpan}. Those carry meaning rather than decoration — italics are how a
+     * subtitle marks a voice off screen, a narrator, a thought, or a line in another language — and
+     * stripping them would lose information, not styling. Media3's own language-feature spans (ruby,
+     * text emphasis, vertical text) stay for the same reason.
+     */
+    private static final Class<?>[] LOOK_SPANS = {
+            ForegroundColorSpan.class, BackgroundColorSpan.class,
+            AbsoluteSizeSpan.class, RelativeSizeSpan.class, TypefaceSpan.class,
+    };
+
+    /**
+     * The same cues with the file's own presentation taken out, so that every subtitle looks the way
+     * the viewer set it and nothing else.
+     *
+     * <p>This replaces the "Embedded styles" switch. That switch had to choose between two bad ends:
+     * on, an ASS file could render itself unreadable with no recourse; off, Media3's
+     * {@code removeAllEmbeddedStyling} stripped every span there is, italics included, and a voice off
+     * screen became indistinguishable from a line of dialogue. Taking out colour, size and typeface
+     * while leaving the typographic marks gives one uniform look with nothing lost.
+     *
+     * <p>Returns the group unchanged when there was nothing to take out, which is the common case: a
+     * plain SRT carries little more than italics.
+     */
+    static CueGroup withoutEmbeddedLook(final CueGroup group) {
+        boolean changed = false;
+        final List<Cue> cues = new ArrayList<>(group.cues.size());
+        for (final Cue cue : group.cues) {
+            final Cue stripped = withoutEmbeddedLook(cue);
+            changed |= stripped != cue;
+            cues.add(stripped);
+        }
+        return changed
+                ? new CueGroup(ImmutableList.copyOf(cues), group.presentationTimeUs)
+                : group;
+    }
+
+    private static Cue withoutEmbeddedLook(final Cue cue) {
+        final boolean ownSize = cue.textSize != Cue.DIMEN_UNSET || cue.textSizeType != Cue.TYPE_UNSET;
+        Spannable text = null;
+        if (cue.text instanceof Spanned) {
+            final Spanned spanned = (Spanned) cue.text;
+            for (final Class<?> type : LOOK_SPANS) {
+                final Object[] spans = spanned.getSpans(0, spanned.length(), type);
+                if (spans.length == 0) {
+                    continue;
+                }
+                if (text == null) {
+                    text = new SpannableString(cue.text);
+                }
+                for (final Object span : spans) {
+                    text.removeSpan(span);
+                }
+            }
+        }
+        if (text == null && !ownSize && !cue.windowColorSet) {
+            return cue;
+        }
+        final Cue.Builder builder = cue.buildUpon();
+        if (text != null) {
+            builder.setText(text);
+        }
+        if (ownSize) {
+            builder.setTextSize(Cue.DIMEN_UNSET, Cue.TYPE_UNSET);
+        }
+        if (cue.windowColorSet) {
+            // The box the file wanted behind its own text. The viewer's background setting is the one
+            // that decides here.
+            builder.clearWindowColor();
+        }
+        return builder.build();
+    }
 
     public static String getSubtitleMime(Uri uri) {
         final String path = uri.getPath();
@@ -29,10 +119,26 @@ class SubtitleUtils {
         }
     }
 
+    /** Extensions a subtitle can arrive with. The format is read back off the name, so this is
+     *  also the list of names {@link #getSubtitleLanguage} and the cache are willing to recognise. */
+    static final String[] EXTENSIONS = { ".srt", ".ass", ".ssa", ".vtt", ".ttml" };
+
+    /** Whether a file name ends in one of {@link #EXTENSIONS}. */
+    static boolean hasSubtitleExtension(final String name) {
+        for (final String extension : EXTENSIONS) {
+            if (name.endsWith(extension)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String getSubtitleLanguage(Uri uri) {
         final String path = uri.getPath().toLowerCase();
 
-        if (path.endsWith(".srt")) {
+        // Any subtitle extension, not only .srt: a downloaded copy is named after what it turned out
+        // to be, and the language sits in the same place whatever that was.
+        if (hasSubtitleExtension(path)) {
             int last = path.lastIndexOf(".");
             int prev = last;
 
@@ -220,9 +326,7 @@ class SubtitleUtils {
     public static boolean isSubtitleFile(DocumentFile file) {
         if (!file.isFile())
             return false;
-        final String name = file.getName().toLowerCase();
-        return name.endsWith(".srt") || name.endsWith(".ssa") || name.endsWith(".ass")
-                || name.endsWith(".vtt") || name.endsWith(".ttml");
+        return hasSubtitleExtension(file.getName().toLowerCase());
     }
 
     public static boolean isSubtitle(Uri uri, String mimeType) {
@@ -253,10 +357,34 @@ class SubtitleUtils {
         return false;
     }
 
+    /**
+     * Drops every machine-translated copy in the cache. Called when the translation setting changes:
+     * a copy made under the previous choice would keep being served for everything watched recently,
+     * so the new choice would look like it did nothing. They cost one request each to rebuild.
+     */
+    static void clearTranslatedCache(Context context) {
+        final File[] files = context.getCacheDir().listFiles((dir, name) ->
+                name.startsWith("subs.") && name.contains(".auto.") && hasSubtitleExtension(name));
+        if (files == null) {
+            return;
+        }
+        for (final File file : files) {
+            file.delete();
+        }
+    }
+
+    /**
+     * Empties the cache of the copies made while opening a subtitle by hand.
+     *
+     * <p>Deliberately spares the {@code subs.*} files: those are what the online search downloaded and
+     * what makes a second watch cost no request and no quota. This used to delete everything, so opening
+     * one external subtitle threw away every subtitle found for every film watched recently — and the
+     * next search paid for them all again. Trimming those is {@code Utils.trimSubtitleCache}'s job.
+     */
     public static void clearCache(Context context) {
         try {
             for (File file : context.getCacheDir().listFiles()) {
-                if (file.isFile()) {
+                if (file.isFile() && !file.getName().startsWith("subs.")) {
                     file.delete();
                 }
             }
@@ -270,6 +398,11 @@ class SubtitleUtils {
         final String subtitleLanguage = SubtitleUtils.getSubtitleLanguage(uri);
         if (subtitleLanguage == null && subtitleName == null)
             subtitleName = Utils.getFileName(context, uri);
+        // A name that is nothing but digits is not a name: it is what is left of a content:// URI whose
+        // display name the resolver would not hand over, and the picker showed it as "1000000160".
+        // Dropped, so the row falls back to its track number instead of reciting a MediaStore id.
+        if (subtitleName != null && subtitleName.matches("\\d+"))
+            subtitleName = null;
 
         MediaItem.SubtitleConfiguration.Builder subtitleConfigurationBuilder = new MediaItem.SubtitleConfiguration.Builder(uri)
                 // Becomes the track's Format.id, which is how a selected subtitle is remembered and

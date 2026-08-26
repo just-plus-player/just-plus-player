@@ -883,8 +883,9 @@ public final class SegmentFinder {
         return SkipSegment.Category.UNKNOWN;
     }
 
-    /** imdb → tmdb id via TMDB find (lazy; only reached from the TheIntroDB step). */
-    private static long tmdbFind(String imdbId, boolean isMovie) {
+    /** imdb → tmdb id via TMDB find. Also used by the online subtitle search, whose sources take
+     *  one id or the other and never the same one. */
+    public static long tmdbFind(String imdbId, boolean isMovie) {
         final HttpUrl url = HttpUrl.parse(SegmentEndpoints.TMDB_FIND).newBuilder()
                 .addPathSegment(imdbId)
                 .addQueryParameter("api_key", SegmentEndpoints.TMDB_KEY)
@@ -903,7 +904,8 @@ public final class SegmentFinder {
     }
 
     /** tmdb → imdb id via TMDB external_ids (movie or tv). Returns null when unavailable. */
-    private static String tmdbExternalImdb(long tmdbId, boolean isMovie) {
+    /** tmdb → imdb id. Public for the same reason as {@link #tmdbFind}. */
+    public static String tmdbExternalImdb(long tmdbId, boolean isMovie) {
         final HttpUrl url = HttpUrl.parse(SegmentEndpoints.TMDB_BASE).newBuilder()
                 .addPathSegment(isMovie ? "movie" : "tv")
                 .addPathSegment(String.valueOf(tmdbId))

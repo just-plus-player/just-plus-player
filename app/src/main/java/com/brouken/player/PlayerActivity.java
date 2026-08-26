@@ -26,6 +26,7 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.ClipDrawable;
@@ -43,6 +44,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
@@ -72,7 +74,6 @@ import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -133,7 +134,10 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.text.TextOutput;
+import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
+import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
 import androidx.media3.extractor.text.SubtitleParser;
@@ -178,6 +182,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Date;
@@ -186,6 +191,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 
@@ -480,7 +489,6 @@ public class PlayerActivity extends Activity {
     private static final int REQUEST_CHOOSER_VIDEO_MEDIASTORE = 20;
     private static final int REQUEST_CHOOSER_SUBTITLE_MEDIASTORE = 21;
     private static final int REQUEST_SETTINGS = 100;
-    private static final int REQUEST_SYSTEM_CAPTIONS = 200;
     public static final int CONTROLLER_TIMEOUT = 3500;
     // Media3's own DURATION_FOR_HIDING_ANIMATION_MS — see fadeChrome, which has to match it.
     private static final int CHROME_FADE_MS = 250;
@@ -516,6 +524,7 @@ public class PlayerActivity extends Activity {
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
+    private android.app.Dialog subtitleOffsetDialog;
     private android.app.Dialog sleepTimerDialog;
     private android.app.Dialog menuDialog;
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
@@ -586,6 +595,7 @@ public class PlayerActivity extends Activity {
     // a background thread: a snapshot taken before it started would still play after onStop cleared this.
     boolean play;
     private float subtitlesScale;
+    private float secondarySubtitlesScale;
     private boolean isScrubbing;
     private boolean scrubbingNoticeable;
     private long scrubbingStart;
@@ -719,8 +729,35 @@ public class PlayerActivity extends Activity {
     String apiTmdbId;
     final List<Integer> apiPlaylistSeasons = new ArrayList<>();
     final List<Integer> apiPlaylistEpisodes = new ArrayList<>();
+    final List<String> apiPlaylistNames = new ArrayList<>();
     final List<String> apiPlaylistImdbIds = new ArrayList<>();
     final List<String> apiPlaylistTmdbIds = new ArrayList<>();
+    // The title picked by hand in the subtitle search, overriding whatever the launcher sent. Session
+    // scoped and deliberately the title only, never the episode: the next item of the same playlist is
+    // the same series, and its episode number still comes from its own name.
+    private String manualTmdbId;
+    // Whether that title is a film. MediaId reads movie-vs-series off the season number alone, so the
+    // type TMDB reported has to arrive as a season — otherwise a series nobody could parse an episode
+    // out of is asked about as a film, which is the one case this whole dialog exists for.
+    private boolean manualMovie;
+    // The episode picked along with it, and the playlist item it was picked for. The title outlives that
+    // item and the episode does not: the next file of the same series is the same title and a different
+    // episode, which its own name (or, failing that, the whole-season query) answers better than this.
+    private int manualSeason = -1;
+    private int manualEpisode = -1;
+    private int manualIndex = -1;
+    // The aired run of that series in the numbering the sources use, and where in it the pick landed.
+    // Kept so the rest of the playlist can be lined up against it without having to know which
+    // numbering the launcher wrote its own season and episode numbers in.
+    private List<TitleSearch.Episode> manualEpisodes;
+    private int manualAbsolute = -1;
+
+    /** Characters before the live title search starts asking; below this every name matches. */
+    private static final int TITLE_QUERY_MIN = 3;
+    /** Long enough that typing a name is one request rather than one per letter. */
+    private static final long TITLE_QUERY_DEBOUNCE_MS = 400;
+    /** Bumped on every keystroke so a slow reply cannot land on a query nobody is looking at. */
+    private int titleSearchGeneration;
     // Manual quality selection (LAMPA quality-switching port). Per-episode label->url maps aligned by
     // index with apiMediaItems; apiSingleQuality holds the top-level map for a single (non-playlist) video.
     // Maps are empty when the sender supplied no quality variants.
@@ -738,8 +775,81 @@ public class PlayerActivity extends Activity {
     // True once any skip segment has appeared this session; keeps the offset button available
     // afterwards even on an item that itself has no segments.
     private boolean skipSeenThisSession;
-    private static final double SKIP_OFFSET_MAX_SEC = 30;   // ± range of the offset slider
-    private static final double SKIP_OFFSET_STEP_SEC = 0.25; // fine step (± buttons / D-pad)
+    // Shared by the skip and the subtitle offset panel — one shape, one fine step, a range each.
+    private static final double OFFSET_MAX_SEC = 30;   // ± range of the skip offset slider
+    /**
+     * ± range of the subtitle offset slider. Wider than the skip one because it answers a different
+     * question: a segment is nudged by seconds, while a subtitle file written for another release of
+     * the same cut can sit minutes out — and a slider that cannot reach the offset is no answer at all.
+     */
+    private static final double SUBTITLE_OFFSET_MAX_SEC = 180;
+    private static final double OFFSET_STEP_SEC = 0.25; // fine step (± buttons / D-pad)
+    // Subtitle timing offset (seconds, positive = subtitles later) — session-only like the skip offset
+    // above. Applied by SubtitleOffsetRenderer, which is rebuilt with the player and re-seeded from here.
+    private double subtitleOffsetSec = 0;
+    // The second subtitle line and its own timing. Two files from two releases are almost never in
+    // sync with each other, so one offset for both would be a setting that cannot be satisfied.
+    private SecondarySubtitles secondarySubtitles;
+    private double secondarySubtitleOffsetSec = 0;
+    // The second line's cue source, mirroring the first line's pair exactly: an offset built with the
+    // player, and — when what it shows is a file rather than a track — the file's timeline to paint
+    // from instead of the renderer's cues.
+    private SubtitleOffset secondarySubtitleOffset;
+    private SubtitleTimeline secondarySubtitleTimeline;
+    /** The file the second line is painting, or null when it is off or showing a track. */
+    private Uri secondarySubtitleUri;
+    // Which text track belongs to the second line. Read by the track selector on the playback thread,
+    // and the reason a second text renderer receives anything at all — see SecondaryTextTrack.
+    private final SecondaryTextTrack secondaryTextTrack = new SecondaryTextTrack();
+    /** Height the subtitle sizes were last worked out from; see the layout listener in onCreate. */
+    private int subtitleViewHeight;
+    /** The chosen track as the selector addresses it: a media track group and an index inside it. */
+    private TrackGroup secondaryTrackGroup;
+    private int secondaryTrackIndex;
+    // The same pair for the first line, kept so that it can be pinned back — the second line's override
+    // costs it its own. See applyMainLineTrackSelection.
+    private TrackGroup mainTrackGroup;
+    private int mainTrackIndex;
+    // The media whose second line has already been decided — by the language list or by hand. Auto-fill
+    // runs once per film and never again: a viewer who switched the hint off means it to stay off.
+    private Uri secondaryChoiceMedia;
+    // A track has just been given to the second line and the selector has not been asked yet whether
+    // its renderer could take it. See verifySecondaryTrackReached.
+    private boolean secondaryTrackPending;
+    // Which line the manual subtitle search was opened from. A field because the title search is one
+    // modal run — dialog, season, episode — and threading a flag through all of it would have three
+    // methods carrying an argument they only pass on.
+    private boolean subtitleSearchForSecondary;
+    /** Where both subtitle offsets read the media position from; the player is asked for it lazily. */
+    private final SubtitleOffset.Position subtitlePosition = new SubtitleOffset.Position() {
+        @Override
+        public long currentMs() {
+            return player == null ? C.TIME_UNSET : player.getCurrentPosition();
+        }
+
+        @Override
+        public boolean playing() {
+            return player != null && player.isPlaying();
+        }
+    };
+    private SubtitleOffset subtitleOffset;
+    // The viewer switched the first line off, and this is the authority on it. The selector's own
+    // rendererDisabled flag cannot be: initializePlayer builds a new DefaultTrackSelector, so "off"
+    // was thrown away by every rebuild — a trip to the settings screen, a quality switch, a decoder
+    // change — and the preferred-language list promptly turned the line back on. Session scoped like
+    // the offsets, cleared by resetApiAccess when another media arrives.
+    private boolean mainLineOff;
+    // The external subtitle file taken over from the renderer, and which URI it was read from. Parsed
+    // once per track choice on a worker; kept across player rebuilds, dropped with the media session.
+    private SubtitleTimeline subtitleTimeline;
+    private Uri subtitleTimelineUri;
+    // A subtitle shown without a track of its own, painted from the file by SubtitleOffset: attaching it
+    // as a track means re-preparing the player, which on an HTTP stream costs a re-open of the media and
+    // seconds of re-buffering — for a file the app found by itself, unasked, mid-playback.
+    // ponytail: switch a painted subtitle off and a later search that hits the disk cache can paint it
+    // again. Remembering "the viewer said no to this file" needs a second field; not worth it until
+    // someone hits it (subtitleSearchStarted and the miss TTL cover it in practice).
+    private Uri paintedSubtitleUri;
     // Set before a reinitialisation that must not auto-play — a SOURCE switch, or any rebuild caused by
     // returning to the foreground (initializePlayer otherwise force-plays under apiAccess or at position
     // zero). Consumed once inside initializePlayer.
@@ -824,6 +934,14 @@ public class PlayerActivity extends Activity {
     private int segmentFetchGeneration;
     // The next playlist item's segments are warmed into the finder's cache once per item.
     private boolean skipNextPrefetched;
+    // What an online subtitle search has already been started for. onTracksChanged fires more than
+    // once per item — a sideloaded subtitle is itself a track change — and every extra pass would be a
+    // request nobody asked for.
+    private String subtitleSearchStarted;
+    // The search is cancelled the way the segment finder is, and for a sharper reason: `player` is
+    // static, so a worker outliving its session would hand its subtitle to whatever is playing by then.
+    private Thread subtitleSearchThread;
+    private volatile int subtitleSearchGeneration;
     // Automatic-skip undo: where the jump started, where it landed, and — once the user undid it — the
     // position up to which auto-skip stays disarmed so the same stretch is not skipped straight again.
     private long skipUndoFromMs = C.TIME_UNSET;
@@ -954,6 +1072,24 @@ public class PlayerActivity extends Activity {
         coordinatorLayout = findViewById(R.id.coordinatorLayout);
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         playerView = findViewById(R.id.video_view);
+        // Built with the view rather than with the player: it paints from a file and asks for the
+        // position lazily, so a rebuild of the player leaves it alone.
+        final View secondaryHint = playerView.findViewById(R.id.subtitle_secondary);
+        secondarySubtitles = new SecondarySubtitles((TextView) secondaryHint, this::onSecondaryPeekEnd,
+                subtitlePosition);
+        // Sizes are worked out from the subtitle view's height, and the first pass runs before there is
+        // one. This catches that, and every later resize a configuration change does not report —
+        // entering split screen, dragging a freeform window, a fold opening. Guarded on the height
+        // actually differing, because the pass itself sets padding and margins and would otherwise ask
+        // to be run again for ever.
+        final View subtitleView = playerView.findViewById(androidx.media3.ui.R.id.exo_subtitles);
+        if (subtitleView != null) {
+            subtitleView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or_, ob) -> {
+                if (b - t != subtitleViewHeight) {
+                    updateSubtitleLayout();
+                }
+            });
+        }
         exoPlayPause = findViewById(R.id.exo_play_pause);
         // Brand hero: the central Play/Pause sits on a disc (inset from the large tap target) carrying the
         // icon's ramp, with a white glyph. Doubles as a contrast anchor on bright frames, where a bare
@@ -1819,8 +1955,7 @@ public class PlayerActivity extends Activity {
         exoSubtitle.setOnClickListener(v -> showSubtitleDialog());
 
         exoSubtitle.setOnLongClickListener(v -> {
-            enableRotation();
-            safelyStartActivityForResult(new Intent(Settings.ACTION_CAPTIONING_SETTINGS), REQUEST_SYSTEM_CAPTIONS);
+            openSettings("languageSubtitle");
             return true;
         });
 
@@ -1954,6 +2089,11 @@ public class PlayerActivity extends Activity {
                     controllerChromeVisible = false;
                 }
 
+                // The bar has come or gone over the band the hint sits in, so the lines re-place
+                // themselves. Posted, because the bar's height is only measurable once it is laid out.
+                if (controllerVisible != wasVisible) {
+                    playerView.post(PlayerActivity.this::updateSubtitleLayout);
+                }
                 if (controllerVisible) {
                     updateMediaInfo();
                     startEndsAtUpdates();
@@ -2110,9 +2250,7 @@ public class PlayerActivity extends Activity {
     public void onStart() {
         super.onStart();
         alive = true;
-        if (!(isTvBox && Build.VERSION.SDK_INT >= 31)) {
-            updateSubtitleStyle(this);
-        }
+        updateSubtitleStyle(this);
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
             Utils.toggleSystemUi(this, playerView, true);
@@ -2165,9 +2303,6 @@ public class PlayerActivity extends Activity {
         // Back in front, so nothing we launched can still need the device's auto-rotate. onActivityResult
         // normally beats us to this; it does not run for a picker that finishes without handing back a result.
         restoreRotationLock();
-        if (isTvBox && Build.VERSION.SDK_INT >= 31) {
-            updateSubtitleStyle(this);
-        }
     }
 
     @Override
@@ -2233,6 +2368,9 @@ public class PlayerActivity extends Activity {
      */
     @Override
     protected void onDestroy() {
+        if (secondarySubtitles != null) {
+            secondarySubtitles.clear();
+        }
         if (together != null) {
             together.leave();
             together = null;
@@ -2538,11 +2676,11 @@ public class PlayerActivity extends Activity {
                 if (player == null)
                     break;
                 if (keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
-                    player.pause();
+                    pauseByUser();
                 } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
                     player.play();
                 } else if (player.isPlaying()) {
-                    player.pause();
+                    pauseByUser();
                 } else {
                     player.play();
                 }
@@ -2561,7 +2699,7 @@ public class PlayerActivity extends Activity {
                     break;
                 if (!controllerVisibleFully) {
                     if (player.isPlaying()) {
-                        player.pause();
+                        pauseByUser();
                     } else {
                         player.play();
                     }
@@ -2841,7 +2979,7 @@ public class PlayerActivity extends Activity {
             setSpeedBoostIndicatorVisible(false);
             updateRoomBadge();
             updateOverlayClock();
-            setSubtitleTextSizePiP();
+            updateSubtitleLayout();
             playerView.setScale(1.f);
             mReceiver = new BroadcastReceiver() {
                 @Override
@@ -2855,14 +2993,14 @@ public class PlayerActivity extends Activity {
                             player.play();
                             break;
                         case CONTROL_TYPE_PAUSE:
-                            player.pause();
+                            pauseByUser();
                             break;
                     }
                 }
             };
             ContextCompat.registerReceiver(this, mReceiver, new IntentFilter(ACTION_MEDIA_CONTROL), ContextCompat.RECEIVER_EXPORTED);
         } else {
-            setSubtitleTextSize();
+            updateSubtitleLayout();
             // Back to the full window: the clock returns if the preference wants it, and the skip pill
             // comes back by itself on the next poll while a segment is still current.
             updateOverlayClock();
@@ -2911,8 +3049,16 @@ public class PlayerActivity extends Activity {
         apiEpisode = -1;
         apiImdbId = null;
         apiTmdbId = null;
+        manualTmdbId = null;
+        manualMovie = false;
+        manualSeason = -1;
+        manualEpisode = -1;
+        manualIndex = -1;
+        manualEpisodes = null;
+        manualAbsolute = -1;
         apiPlaylistSeasons.clear();
         apiPlaylistEpisodes.clear();
+        apiPlaylistNames.clear();
         apiPlaylistImdbIds.clear();
         apiPlaylistTmdbIds.clear();
         apiPlaylistQuality.clear();
@@ -2931,6 +3077,7 @@ public class PlayerActivity extends Activity {
         skipNextPrefetched = false;
         clearSkipUndo();
         cancelSegmentFinder();
+        cancelSubtitleSearch();
         hideSkipButton();
         // Skip offset is session-scoped: a new media session resets it and hides its control.
         skipOffsetSec = 0;
@@ -2939,6 +3086,14 @@ public class PlayerActivity extends Activity {
             skipOffsetDialog.dismiss();
         }
         updateSkipOffsetButton();
+        // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
+        applySubtitleOffset(0);
+        clearSubtitleTimeline();
+        // "Off" was said about the film that is being replaced, not about this one.
+        mainLineOff = false;
+        if (subtitleOffsetDialog != null && subtitleOffsetDialog.isShowing()) {
+            subtitleOffsetDialog.dismiss();
+        }
         if (timeBar != null) {
             timeBar.clearSkipHighlights();
         }
@@ -3008,14 +3163,22 @@ public class PlayerActivity extends Activity {
         updateSkipOffsetButton();
     }
 
+    /**
+     * Whether shifting the skip marks is worth offering: any segment exists, now or earlier this
+     * session. Asked directly rather than read off the button's visibility, which is what the overflow
+     * row used to do — a view standing in for a condition that is right here.
+     */
+    private boolean skipOffsetReachable() {
+        return mPrefs != null && mPrefs.skipEnabled && skipManager != null
+                && (skipManager.hasSegments() || skipSeenThisSession);
+    }
+
     /** The offset button is shown once any skip segment exists — now or earlier this session. */
     private void updateSkipOffsetButton() {
         if (buttonSkipOffset == null) {
             return;
         }
-        final boolean show = mPrefs.skipEnabled && skipManager != null
-                && (skipManager.hasSegments() || skipSeenThisSession);
-        buttonSkipOffset.setVisibility(show ? View.VISIBLE : View.GONE);
+        buttonSkipOffset.setVisibility(skipOffsetReachable() ? View.VISIBLE : View.GONE);
     }
 
     /** Apply a new session skip offset and re-derive the segments (moves timeline highlights live). */
@@ -3034,10 +3197,95 @@ public class PlayerActivity extends Activity {
         }
         skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
                 brandColor(),   // coral, matches the skip timeline highlight
-                getString(R.string.skip_offset_title),
-                SKIP_OFFSET_MAX_SEC, SKIP_OFFSET_STEP_SEC, skipOffsetSec,
-                this::applySkipOffset);
+                getString(R.string.skip_offset_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC,
+                new OffsetPanel.Line(null, skipOffsetSec, this::applySkipOffset));
         showPickerDialog(skipOffsetDialog);
+    }
+
+    private void applySecondarySubtitleOffset(double sec) {
+        secondarySubtitleOffsetSec = sec;
+        if (secondarySubtitleOffset != null) {
+            secondarySubtitleOffset.setOffsetSec(sec);
+        }
+    }
+
+    /** Apply a new subtitle offset to the live text renderer (no reload, no reselection). */
+    private void applySubtitleOffset(double sec) {
+        subtitleOffsetSec = sec;
+        if (subtitleOffset != null) {
+            subtitleOffset.setOffsetSec(sec);
+        }
+    }
+
+    /**
+     * Session-only subtitle-offset panel — the same {@link OffsetPanel}, bound to the text renderer.
+     *
+     * <p>Both lines in one panel, and one row in the menu to reach it. Two files from two releases are
+     * almost never in sync with each other, so the second line needs an offset of its own; that is one
+     * setting with two values, not two settings, and the panel names each of them instead. The second
+     * slider is there only while there is a second line to shift.
+     */
+    private void showSubtitleOffsetDialog() {
+        if (player == null) {
+            return;
+        }
+        if (subtitleOffsetDialog != null) {
+            subtitleOffsetDialog.dismiss();
+        }
+        final List<OffsetPanel.Line> lines = new ArrayList<>();
+        // Named whenever a second line is possible at all, not only when one happens to be showing. A
+        // lone unlabelled slider in a player that has two subtitle lines reads as "this panel only does
+        // the first one"; captioned, its solitude is the answer instead: there is no hint to shift.
+        final boolean named = secondaryEnabled();
+        if (subtitleOffsetShiftable()) {
+            // Named as the panel names it, not "Subtitles" — one line called after the whole feature
+            // and the other called "second" reads as a parent and a child rather than as two lines.
+            lines.add(new OffsetPanel.Line(named ? getString(R.string.subtitle_main_title) : null,
+                    subtitleOffsetSec, this::applySubtitleOffset));
+        }
+        if (secondaryOffsetShiftable()) {
+            lines.add(new OffsetPanel.Line(
+                    named ? getString(R.string.subtitle_secondary_title) : null,
+                    secondarySubtitleOffsetSec, this::applySecondarySubtitleOffset));
+        }
+        if (lines.isEmpty()) {
+            return;
+        }
+        subtitleOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout, brandColor(),
+                getString(R.string.subtitle_offset_title), SUBTITLE_OFFSET_MAX_SEC, OFFSET_STEP_SEC,
+                lines.toArray(new OffsetPanel.Line[0]));
+        showPickerDialog(subtitleOffsetDialog);
+    }
+
+    /**
+     * Whether there is a first line to shift. A painted file counts — it is the case SubtitleTimeline
+     * was built for — and selects no track.
+     */
+    private boolean subtitleOffsetShiftable() {
+        return mainLineTrackSelected() || paintedSubtitleUri != null;
+    }
+
+    private boolean secondaryOffsetShiftable() {
+        return secondarySubtitles != null && secondaryActive();
+    }
+
+    /**
+     * What the menu row says without being opened. With two lines both values are named or neither is:
+     * one number on its own would not say which line it belongs to.
+     */
+    private String subtitleOffsetSummary() {
+        if (!secondaryOffsetShiftable()) {
+            return subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec);
+        }
+        if (!subtitleOffsetShiftable()) {
+            return secondarySubtitleOffsetSec == 0
+                    ? null : OffsetPanel.format(secondarySubtitleOffsetSec);
+        }
+        if (subtitleOffsetSec == 0 && secondarySubtitleOffsetSec == 0) {
+            return null;
+        }
+        return OffsetPanel.format(subtitleOffsetSec) + " · "
+                + OffsetPanel.format(secondarySubtitleOffsetSec);
     }
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
@@ -3053,14 +3301,13 @@ public class PlayerActivity extends Activity {
             return;
         }
         final int index = player.getCurrentMediaItemIndex();
-        final String imdbId = imdbIdAt(index);
-        final String tmdbId = tmdbIdAt(index);
-        if ((imdbId == null || imdbId.isEmpty()) && (tmdbId == null || tmdbId.isEmpty())) {
+        final MediaId id = mediaIdAt(index);
+        if (id.isEmpty()) {
             return;
         }
         cancelSegmentFinder();
         final int generation = segmentFetchGeneration;
-        segmentFinderThread = SegmentFinder.find(imdbId, tmdbId, seasonAt(index), episodeAt(index),
+        segmentFinderThread = SegmentFinder.find(id.imdb, id.tmdb, id.season, id.episode,
                 currentDurationSec(),
                 segments -> runOnUiThread(() -> onSegmentsFetched(generation, index, segments)));
         prefetchNextSegments();
@@ -3081,19 +3328,17 @@ public class PlayerActivity extends Activity {
         }
         final int index = player.getCurrentMediaItemIndex();
         final int next = player.getNextMediaItemIndex();
-        final String imdbId = imdbIdAt(next);
-        final String tmdbId = tmdbIdAt(next);
-        if ((imdbId == null || imdbId.isEmpty()) && (tmdbId == null || tmdbId.isEmpty())) {
+        final MediaId id = mediaIdAt(next);
+        if (id.isEmpty()) {
             return;
         }
         // A playlist that carries no per-item ids resolves every item to the same title and episode —
         // warming that is just a duplicate request for what is already playing.
-        if (TextUtils.equals(imdbId, imdbIdAt(index)) && TextUtils.equals(tmdbId, tmdbIdAt(index))
-                && seasonAt(next) == seasonAt(index) && episodeAt(next) == episodeAt(index)) {
+        if (id.sameAs(mediaIdAt(index))) {
             return;
         }
         skipNextPrefetched = true;
-        SegmentFinder.find(imdbId, tmdbId, seasonAt(next), episodeAt(next), 0, segments -> { });
+        SegmentFinder.find(id.imdb, id.tmdb, id.season, id.episode, 0, segments -> { });
     }
 
     private void onSegmentsFetched(int generation, int targetIndex, java.util.List<SkipSegment> segments) {
@@ -3123,40 +3368,122 @@ public class PlayerActivity extends Activity {
     // Per-item metadata for the lookup. The playlist lists, when present, are authoritative for the
     // item at that index; a single-media launch falls back to the intent's own extras.
 
-    private String imdbIdAt(int index) {
-        if (player != null && !apiPlaylistImdbIds.isEmpty()) {
-            return index >= 0 && index < apiPlaylistImdbIds.size() ? apiPlaylistImdbIds.get(index) : null;
-        }
-        return apiImdbId;
-    }
-
-    private String tmdbIdAt(int index) {
-        if (player != null && !apiPlaylistTmdbIds.isEmpty()) {
-            return index >= 0 && index < apiPlaylistTmdbIds.size() ? apiPlaylistTmdbIds.get(index) : null;
-        }
-        return apiTmdbId;
-    }
-
-    private int seasonAt(int index) {
-        if (player != null && !apiPlaylistSeasons.isEmpty()) {
-            if (index >= 0 && index < apiPlaylistSeasons.size()) {
-                final Integer season = apiPlaylistSeasons.get(index);
-                return season != null ? season : -1;
+    /**
+     * What is playing at {@code index}, as the ids the online lookups are keyed by. Per-item values from
+     * a playlist win over the single-item extras; a playlist without them resolves every item to the
+     * same title, which the callers guard against themselves.
+     *
+     * <p>Built fresh on every call rather than cached in a field: skip segments and the subtitle search
+     * both read it, and a shared holder is exactly how the previous episode's id ends up fetching
+     * subtitles for the next one.
+     */
+    private MediaId mediaIdAt(int index) {
+        // A hand-picked title wins outright, and takes the launcher's imdb id down with it: the sources
+        // that only speak imdb would otherwise keep answering about the wrong title, which is the very
+        // thing the person went looking for a title to fix. SubtitleSearch.enrich() derives the right
+        // imdb id from the tmdb one anyway.
+        final String imdb = manualTmdbId != null ? null : stringAt(apiPlaylistImdbIds, index, apiImdbId);
+        final String tmdb = manualTmdbId != null
+                ? manualTmdbId : stringAt(apiPlaylistTmdbIds, index, apiTmdbId);
+        int season = valueAt(apiPlaylistSeasons, index, apiSeason);
+        int episode = valueAt(apiPlaylistEpisodes, index, apiEpisode);
+        // Last resort, and for at least one launcher the only one that works: LAMPA sends every
+        // per-episode field as an empty string and writes the numbers into the item's name instead.
+        // Without them a series is looked up as a film, which is not just a worse match but a
+        // different question — the answer is subtitles for some other part of the same title.
+        if (episode < 1) {
+            final int[] fromName = seasonEpisodeIn(stringAt(apiPlaylistNames, index, null));
+            if (fromName != null) {
+                season = season >= 1 ? season : fromName[0];
+                episode = fromName[1];
             }
-            return -1;
         }
-        return apiSeason;
+        // A hand-picked title overrules both. For a film that means no season at all, even when the
+        // release name carries something that reads like one. For a series the picked episode applies to
+        // the item it was picked for, and every other item falls back to its own name — or, when the
+        // name says nothing, to the whole season, which every source treats as an answerable question.
+        if (manualTmdbId != null) {
+            if (manualMovie) {
+                season = -1;
+                episode = -1;
+            } else if (index == manualIndex) {
+                season = manualSeason;
+                episode = manualEpisode;
+            } else {
+                final int[] lined = lineUpWithPick(index, season, episode);
+                season = lined[0];
+                episode = lined[1];
+            }
+        }
+        return new MediaId(imdb, tmdb, season, episode);
     }
 
-    private int episodeAt(int index) {
-        if (player != null && !apiPlaylistEpisodes.isEmpty()) {
-            if (index >= 0 && index < apiPlaylistEpisodes.size()) {
-                final Integer episode = apiPlaylistEpisodes.get(index);
-                return episode != null ? episode : -1;
-            }
-            return -1;
+    /**
+     * A playlist item other than the one a title was picked for, as {season, episode} in the numbering
+     * the sources use.
+     *
+     * <p>Self-checking rather than trusting either side: a coordinate the episode list actually
+     * contains is already in the right numbering and is left alone, and only one it does not know is
+     * lined up by position from the pick. That is what makes this safe without knowing which numbering
+     * the launcher used — TMDB folds an anime's seasons together, so {@code S01E13} exists there and
+     * nowhere else, while {@code S01E05} means the same episode either way.
+     */
+    private int[] lineUpWithPick(int index, int season, int episode) {
+        if (manualEpisodes == null || manualAbsolute < 0) {
+            // Nothing to line up against. A season with no episode still asks an answerable question.
+            return new int[] { season < 1 ? 1 : season, episode };
         }
-        return apiEpisode;
+        for (TitleSearch.Episode known : manualEpisodes) {
+            if (known.season == season && known.number == episode) {
+                return new int[] { season, episode };
+            }
+        }
+        final int position = manualAbsolute + (index - manualIndex);
+        if (position < 0 || position >= manualEpisodes.size()) {
+            return new int[] { season < 1 ? 1 : season, episode };
+        }
+        final TitleSearch.Episode lined = manualEpisodes.get(position);
+        return new int[] { lined.season, lined.number };
+    }
+
+    /** {@code S01E05} or {@code 1x05} anywhere in the text, as {season, episode}; null if absent. */
+    private static int[] seasonEpisodeIn(String text) {
+        if (text == null) {
+            return null;
+        }
+        for (Pattern pattern : SEASON_EPISODE_PATTERNS) {
+            final Matcher matcher = pattern.matcher(text);
+            if (matcher.find()) {
+                try {
+                    return new int[] { Integer.parseInt(matcher.group(1)),
+                            Integer.parseInt(matcher.group(2)) };
+                } catch (NumberFormatException ignored) {
+                    // Try the next shape.
+                }
+            }
+        }
+        return null;
+    }
+
+    // The Cyrillic "х" is in the second one on purpose: a localized episode list writes 1х05 with it,
+    // and it is indistinguishable from the Latin letter on screen.
+    private static final Pattern[] SEASON_EPISODE_PATTERNS = {
+            Pattern.compile("(?i)s\\s*(\\d{1,2})\\s*[.\\-_ ]?\\s*e\\s*(\\d{1,3})"),
+            Pattern.compile("(?<!\\d)(\\d{1,2})\\s*[x\u0445]\\s*(\\d{1,3})(?!\\d)"),
+    };
+
+    /** Per-item value from a playlist, or the single-item extra where the playlist has none. */
+    private String stringAt(List<String> playlist, int index, String fallback) {
+        final String value = player != null && index >= 0 && index < playlist.size()
+                ? playlist.get(index) : null;
+        return value != null && !value.isEmpty() ? value : fallback;
+    }
+
+    /** Per-item number from a playlist, or the single-item extra where the playlist has none. */
+    private int valueAt(List<Integer> playlist, int index, int fallback) {
+        final Integer value = player != null && index >= 0 && index < playlist.size()
+                ? playlist.get(index) : null;
+        return value != null ? value : fallback;
     }
 
     /** Brand accent color from {@code @color/brand}; pass an alpha (0x00..0xFF) for a translucent variant. */
@@ -3614,6 +3941,8 @@ public class PlayerActivity extends Activity {
         if (locked && mPrefs != null && mPrefs.skipHideWhenLocked) {
             hideSkipPill();
         }
+        // The mark is a thing to press, and nothing can be pressed while the screen is locked.
+        updateSecondaryState();
         updateRoomBadge();
     }
 
@@ -3846,6 +4175,7 @@ public class PlayerActivity extends Activity {
         apiPlaylistSegments.clear();
         apiPlaylistSeasons.clear();
         apiPlaylistEpisodes.clear();
+        apiPlaylistNames.clear();
         apiPlaylistImdbIds.clear();
         apiPlaylistTmdbIds.clear();
         apiPlaylistQuality.clear();
@@ -3903,6 +4233,7 @@ public class PlayerActivity extends Activity {
             // Episode metadata, aligned by index (null when absent). Stored, not yet used.
             apiPlaylistSeasons.add(parseIntOrNull(seasons, i));
             apiPlaylistEpisodes.add(parseIntOrNull(episodes, i));
+            apiPlaylistNames.add(names != null && i < names.length ? names[i] : null);
             apiPlaylistImdbIds.add(imdbIds != null && i < imdbIds.length
                     && imdbIds[i] != null && !imdbIds[i].isEmpty() ? imdbIds[i] : null);
             apiPlaylistTmdbIds.add(tmdbIds != null && i < tmdbIds.length
@@ -4143,10 +4474,7 @@ public class PlayerActivity extends Activity {
         // Same shape as the track list: <label or container name or language> [<codec> <channels> <bitrate>k] (<lang>)
         final String language = languageDisplayName(audio.language);
         // Rich release label: Media3's Format.label first, then the name read from the container.
-        String metaName = audio.label;
-        if ((metaName == null || metaName.isEmpty()) && audio.id != null) {
-            metaName = resolvedTrackNames.get(audio.id);
-        }
+        final String metaName = trackName(audio);
         final String title = (metaName != null && !metaName.isEmpty()) ? metaName : language;
         final StringBuilder b = new StringBuilder();
         if (title != null && !title.isEmpty()) {
@@ -4172,6 +4500,14 @@ public class PlayerActivity extends Activity {
         containerTracksUri = uri;
         resolveTrackNames();
         updateMediaInfo();
+        // Matroska names reach us here rather than through Format.label, and this can land after
+        // onTracksChanged — so a language that lives in a name is only now readable. A track turned on
+        // by one is also the answer to whatever the search was started for, which is why that question
+        // is put again: the file has what it was going to download.
+        if (selectSubtitleByName()) {
+            cancelSubtitleSearch();
+            maybeSearchSubtitlesOnline(player.getCurrentTracks());
+        }
     }
 
     /** {@link #containerTracks}, but only when they belong to the item playing now. */
@@ -5090,6 +5426,31 @@ public class PlayerActivity extends Activity {
         final CharSequence subtitle;
         final boolean checked;
         final Runnable action;
+        /**
+         * Chrome rather than a choice: a caption naming the group below it, or — with no title — a bare
+         * rule. A list where a doorway into another list, a set of choices and an action all look alike
+         * reads as unstructured, and the icon some of them carry reads as decoration rather than as the
+         * thing that tells them apart. Not clickable and never focusable: a remote must not stop here.
+         */
+        final boolean chrome;
+
+        static MenuItem caption(CharSequence title) {
+            return new MenuItem(title, true);
+        }
+
+        static MenuItem rule() {
+            return new MenuItem(null, true);
+        }
+
+        private MenuItem(CharSequence title, boolean chrome) {
+            this.iconRes = 0;
+            this.imageUrl = null;
+            this.title = title;
+            this.subtitle = null;
+            this.checked = false;
+            this.action = null;
+            this.chrome = chrome;
+        }
 
         MenuItem(CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
             this(0, title, subtitle, checked, action);
@@ -5107,15 +5468,55 @@ public class PlayerActivity extends Activity {
             this.subtitle = subtitle;
             this.checked = checked;
             this.action = action;
+            this.chrome = false;
         }
+    }
+
+    /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
+    private View menuRule(int topPx, int bottomPx) {
+        final View rule = new View(this);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        lp.topMargin = topPx;
+        lp.bottomMargin = bottomPx;
+        rule.setLayoutParams(lp);
+        rule.setBackgroundColor(0x1AFFFFFF);
+        return rule;
+    }
+
+    /**
+     * A caption naming the group under it, in the register the panel already uses for a row's details —
+     * same size, same dimmed white. Indented to where the titles of that group start, not to the icon
+     * column, and given more air above than below so it belongs to what follows it.
+     */
+    private View menuCaption(CharSequence text) {
+        final TextView caption = new TextView(this);
+        caption.setText(text);
+        caption.setTextColor(0x99FFFFFF);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
+        return caption;
     }
 
     // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
     private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
+        showSideMenu(menuTitle, items, 34, 48);
+    }
+
+    /**
+     * @param posterWDp poster size for rows that carry artwork. The default is a thumbnail beside a
+     *                  name that already says everything; a list where the poster is what tells the
+     *                  rows apart — search results for a name typed from across the room — asks for
+     *                  bigger, and nothing else about the panel changes.
+     */
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
         if (items == null || items.isEmpty()) {
             return;
         }
         final View[] currentRow = new View[1];
+        // Where the D-pad starts when no row is checked — a panel of actions has nothing ticked, and
+        // without this a remote opens onto whatever focus the dialog happened to pick.
+        final View[] firstRow = new View[1];
 
         final LinearLayout listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
@@ -5130,15 +5531,15 @@ public class PlayerActivity extends Activity {
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        final View divider = new View(this);
-        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-        dividerLp.bottomMargin = Utils.dpToPx(4);
-        divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(0x1AFFFFFF);
-        listLayout.addView(divider);
+        listLayout.addView(menuRule(0, Utils.dpToPx(4)));
 
         for (final MenuItem item : items) {
+            if (item.chrome) {
+                // Air on both sides of a group boundary: it belongs to neither of the two groups.
+                listLayout.addView(item.title == null
+                        ? menuRule(Utils.dpToPx(6), Utils.dpToPx(6)) : menuCaption(item.title));
+                continue;
+            }
             final boolean isCurrent = item.checked;
 
             final LinearLayout row = new LinearLayout(this);
@@ -5157,6 +5558,9 @@ public class PlayerActivity extends Activity {
             row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
+            }
+            if (firstRow[0] == null) {
+                firstRow[0] = row;
             }
 
             // A room with artwork leads with it rather than with a glyph: in a list of rooms the poster is
@@ -5178,7 +5582,7 @@ public class PlayerActivity extends Activity {
                     }
                 });
                 final LinearLayout.LayoutParams artLp =
-                        new LinearLayout.LayoutParams(ui.dpS(34), ui.dpS(48));
+                        new LinearLayout.LayoutParams(ui.dpS(posterWDp), ui.dpS(posterHDp));
                 artLp.setMarginEnd(Utils.dpToPx(16));
                 art.setLayoutParams(artLp);
                 row.addView(art);
@@ -5264,8 +5668,9 @@ public class PlayerActivity extends Activity {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
         }
         showPickerDialog(menuDialog);
-        if (currentRow[0] != null) {
-            currentRow[0].post(() -> currentRow[0].requestFocus());
+        final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
+        if (focus != null) {
+            focus.post(focus::requestFocus);
         }
     }
 
@@ -5325,26 +5730,175 @@ public class PlayerActivity extends Activity {
 
     // Media3 keeps the subtitle button visible-but-disabled while loading; we instead hide it entirely
     // until the media actually exposes subtitle tracks, matching the audio/quality buttons.
+    /**
+     * Shows an external subtitle on the item playing now, without interrupting it. The file is parsed
+     * into a {@link SubtitleTimeline} and painted by {@link SubtitleOffset} straight to the player's text
+     * output — which is where a selected sideloaded subtitle already ends up for the offset to work — so
+     * the player never re-prepares: no re-open, no re-buffer, no gap in the sound, no reset progress bar.
+     * The track itself turns up on the next player rebuild, from {@code mPrefs.subtitleUri} (see
+     * {@link #rememberedSubtitle()}), so this state heals by itself.
+     *
+     * <p>It also breaks a loop at its root: painting raises no track change, so the finder is not sent
+     * looking again by the very subtitle it just found.
+     *
+     * @return whether this was a new subtitle, i.e. whether it is worth telling the viewer about
+     */
+    boolean addSubtitleTrack(Uri subtitleUri) {
+        if (player == null || subtitleUri == null) {
+            return false;
+        }
+        final int index = player.getCurrentMediaItemIndex();
+        final int count = player.getMediaItemCount();
+        if (index < 0 || index >= count) {
+            return false;
+        }
+        // Already on screen: no second read of the file, and no second toast for it — a re-search that
+        // hits the cache asks for the same one again.
+        if (subtitleUri.equals(paintedSubtitleUri)) {
+            return false;
+        }
+        final MediaItem current = player.getMediaItemAt(index);
+        if (current.localConfiguration != null) {
+            for (MediaItem.SubtitleConfiguration existing : current.localConfiguration.subtitleConfigurations) {
+                if (existing.uri.equals(subtitleUri)) {
+                    return false; // a real track carries it: the renderer and the picker have it already
+                }
+            }
+        }
+        paintSubtitle(subtitleUri);
+        return true;
+    }
+
+    /** Reads the file on a worker and hands it to {@link SubtitleOffset}; re-prepares only if it cannot. */
+    private void paintSubtitle(Uri uri) {
+        Utils.log("subtitles: painting " + uri.getLastPathSegment());
+        // The line has something on it again, so it is no longer off. Painting bypasses the renderer and
+        // would look fine without this — right up to the next rebuild, which restores the file as a real
+        // track (rememberedSubtitle) and would find the line still switched off underneath it.
+        mainLineOff = false;
+        paintedSubtitleUri = uri;
+        subtitleTimelineUri = uri;
+        subtitleTimeline = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+        final String mimeType = SubtitleUtils.getSubtitleMime(uri);
+        final Thread worker = new Thread(() -> {
+            final SubtitleTimeline loaded = SubtitleTimeline.load(this, uri, mimeType);
+            runOnUiThread(() -> {
+                if (!uri.equals(paintedSubtitleUri)) {
+                    return; // another file, another episode, or a rebuild got there first
+                }
+                if (loaded == null) {
+                    // Nothing to paint: no parser, no cue, or the read failed. Only the renderer can
+                    // show it now, and that costs the re-prepare this exists to avoid.
+                    paintedSubtitleUri = null;
+                    subtitleTimelineUri = null;
+                    attachSubtitleTrack(uri);
+                    return;
+                }
+                subtitleTimeline = loaded;
+                if (subtitleOffset != null) {
+                    subtitleOffset.setTimeline(loaded);
+                }
+                updateSubtitleButton(); // no track moved, so nothing else would
+            });
+        }, "SubtitleTimeline");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Sideloads an external subtitle as a real track, keeping the playlist and the position. The
+     * fallback for a file {@link SubtitleTimeline} cannot parse — everything else is painted instead
+     * (see {@link #addSubtitleTrack}), because this re-opens the media.
+     *
+     * <p>The timeline is rebuilt rather than the item replaced. With the media URI unchanged
+     * {@code replaceMediaItem} updates the item in place and never re-instantiates the source, so an
+     * added subtitle configuration is accepted and then silently ignored — the player reports no new
+     * text track at all. It is the same trap {@link #recoverFromContainerError()} documents for the mime
+     * type. {@code setMediaItems} with the whole list is what re-creates the merged source, and unlike
+     * {@code setMediaItem} it keeps the other episodes, their arrows and their remembered positions.
+     */
+    private void attachSubtitleTrack(Uri subtitleUri) {
+        if (player == null) {
+            return;
+        }
+        // Re-read rather than passed in: this runs a whole file read after the decision to attach.
+        final int index = player.getCurrentMediaItemIndex();
+        final int count = player.getMediaItemCount();
+        if (index < 0 || index >= count) {
+            return;
+        }
+        final MediaItem current = player.getMediaItemAt(index);
+        if (current.localConfiguration != null) {
+            for (MediaItem.SubtitleConfiguration existing : current.localConfiguration.subtitleConfigurations) {
+                if (existing.uri.equals(subtitleUri)) {
+                    // Doing nothing when it is already attached is what stops this from looping: the
+                    // re-prepare produces another track change, which sends the finder looking again.
+                    return;
+                }
+            }
+        }
+        final MediaItem updated =
+                withSubtitle(current, SubtitleUtils.buildSubtitle(this, subtitleUri, null, true));
+
+        final long position = player.getCurrentPosition();
+        final List<MediaItem> items = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            items.add(i == index ? updated : player.getMediaItemAt(i));
+        }
+        player.setMediaItems(items, index, position);
+        player.prepare();
+    }
+
+    /** The external subtitle remembered for this media, or null when there is nothing to restore. */
+    private MediaItem.SubtitleConfiguration rememberedSubtitle() {
+        if (mPrefs.subtitleUri == null || !Utils.fileExists(this, mPrefs.subtitleUri)) {
+            return null;
+        }
+        return SubtitleUtils.buildSubtitle(this, mPrefs.subtitleUri, null, true);
+    }
+
+    /** The item plus one more subtitle, keeping every one it already carries. */
+    private static MediaItem withSubtitle(MediaItem item, MediaItem.SubtitleConfiguration subtitle) {
+        final List<MediaItem.SubtitleConfiguration> subtitles = new ArrayList<>();
+        if (item.localConfiguration != null) {
+            subtitles.addAll(item.localConfiguration.subtitleConfigurations);
+        }
+        subtitles.add(subtitle);
+        return item.buildUpon().setSubtitleConfigurations(subtitles).build();
+    }
+
     private void updateSubtitleButton() {
         if (exoSubtitle == null) {
             return;
         }
-        boolean hasSubtitles = false;
-        boolean textSelected = false;
+        // Seeded from a subtitle painted without a track of its own; the loop below can only add.
+        // The second line counts for both, and for two separate reasons. The icon says "subtitles are
+        // on screen", and a hint is on screen — a dark icon over a line of text reads as the player
+        // having lost track of itself. And the button is the only door to the picker that can switch
+        // the hint off again: a film with no text track of its own and a downloaded hint would
+        // otherwise hide the button while the hint plays, with no way back to Off.
+        boolean hasSubtitles = subtitleWithoutTrack() != null || secondaryActive();
+        boolean textSelected =
+                paintedSubtitleUri != null || mainLineTrackSelected() || secondaryActive();
         if (player != null) {
             for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
                 if (group.getType() == C.TRACK_TYPE_TEXT
                         && !isPhantomClosedCaption(group.getMediaTrackGroup().getFormat(0))) {
                     hasSubtitles = true;
-                    if (group.isSelected()) {
-                        textSelected = true;
-                        break;
-                    }
+                    break;
                 }
             }
         }
         exoSubtitle.setVisibility(hasSubtitles ? View.VISIBLE : View.GONE);
-        // Light the CC icon coral while a subtitle track is actually showing.
+        // Media3 owns this button too (it keeps the id it found) and disables it whenever the player
+        // reports no text track — which is exactly the case for a subtitle painted from its file. It
+        // dims the icon with the same alpha this helper applies, so setEnabled alone would leave a
+        // working button that still looks dead. The deferred post() this runs from gives us last word.
+        Utils.setButtonEnabled(this, exoSubtitle, hasSubtitles);
+        // Light the CC icon coral while either line is actually showing something.
         exoSubtitle.setSelected(textSelected);
     }
 
@@ -5421,6 +5975,679 @@ public class PlayerActivity extends Activity {
         );
     }
 
+    /**
+     * Same ordered fallback chain as the audio list, for subtitles. The system captioning language is
+     * deliberately not consulted here — it seeds this list once (see Prefs.getLanguageSubtitle) and
+     * the list is the only place the language is chosen afterwards. An empty list prefers nothing.
+     */
+    private void applyPreferredTextLanguages() {
+        if (trackSelector == null) {
+            return;
+        }
+        // Nothing is preferred while the line is off, or the first selection of a rebuilt player would
+        // put a track back on it — and applyMainLineTrackSelection, which enforces the state, only runs
+        // once that selection has already happened. Guarding here is what keeps the line from flashing
+        // one subtitle on and off again on every return from the settings screen.
+        final List<String> languages = mainLineOff
+                ? Collections.<String>emptyList() : Utils.splitLanguages(mPrefs.languageSubtitle);
+        if (languages.isEmpty()) {
+            return;
+        }
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setPreferredTextLanguages(languages.toArray(new String[0]))
+        );
+    }
+
+    /**
+     * Turns on a subtitle track whose language only its name gives away. The selector reads
+     * {@link Format#language} and nothing else, so a track tagged "und" but named "rus" — which is how
+     * plenty of releases are muxed — is invisible to the priority list, and the viewer is left with no
+     * subtitles next to a file that has them.
+     *
+     * <p>Only ever makes a selection nothing else made: a track the selector did match, a choice made by
+     * hand, a remembered one and a deliberate "off" all outrank a name. That leaves a tagged track the
+     * selector matched holding the selection even when a name ranks better — reaching past its choice is
+     * where fighting the selector starts.
+     *
+     * <p>A forced track loses to every full one, whatever the priority list says: it carries the signs
+     * and the foreign lines only, so full subtitles in a language ranked lower are still the better
+     * answer. It is picked only when nothing else matched at all.
+     *
+     * @return whether a track was turned on
+     */
+    private boolean selectSubtitleByName() {
+        if (player == null || paintedSubtitleUri != null || mPrefs.subtitleTrackId != null
+                || hasOverrideType(C.TRACK_TYPE_TEXT) || mainLineDisabled()) {
+            return false;
+        }
+        final Tracks tracks = player.getCurrentTracks();
+        // The first line's own track, not any text track: the second line has one of those whenever a
+        // hint is playing, and reading it as "subtitles are already on" is what stopped this line from
+        // ever being filled by name while a hint was up.
+        if (mainLineTrackSelected()) {
+            return false;
+        }
+        final List<String> preferred = Utils.splitLanguages(mPrefs.languageSubtitle);
+        if (preferred.isEmpty()) {
+            return false;
+        }
+        int best = preferred.size();
+        boolean bestForced = true;
+        TrackGroup bestGroup = null;
+        int bestIndex = 0;
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                final Format format = group.getTrackFormat(i);
+                // A tagged track is the selector's business, and it has already had its say on it.
+                if (!group.isTrackSupported(i) || isPhantomClosedCaption(format)
+                        || Utils.toIso3Language(format.language) != null) {
+                    continue;
+                }
+                final int rank = preferred.indexOf(
+                        Utils.languageInName(trackName(format), preferred));
+                if (rank < 0) {
+                    continue;
+                }
+                final boolean forced = (format.selectionFlags & C.SELECTION_FLAG_FORCED) != 0;
+                if ((bestForced && !forced) || (bestForced == forced && rank < best)) {
+                    best = rank;
+                    bestForced = forced;
+                    bestGroup = group.getMediaTrackGroup();
+                    bestIndex = i;
+                }
+            }
+        }
+        if (bestGroup == null) {
+            return false;
+        }
+        applySubtitle(bestGroup, bestIndex);
+        return true;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Online subtitle search: when the media carries nothing in the language the priority list asks
+    // for, fetch it rather than leave the viewer with no subtitles and no way to get any.
+
+    /**
+     * How long a title that turned up nothing stays written off. Short on purpose: "nothing found" can
+     * also mean the sources were having a bad minute, and an evening is far too long to hold that
+     * against a title the user is still sitting in front of.
+     */
+    private static final long SUBTITLE_MISS_TTL_MS = 30 * 60 * 1000L;
+
+    /**
+     * How long the "looking"/"translating" notice stays up on its own. Only a backstop against a
+     * search that neither finds nor fails — the outcome takes the notice down, and until then there
+     * is nothing else on screen to say the search is still running.
+     */
+    private static final long SUBTITLE_NOTICE_MS = 90 * 1000L;
+
+    /**
+     * Stands where the plain dot would in a cached subtitle's name, marking the file as translated by a
+     * machine — either by this app or by whoever uploaded it. The name is the only place such a mark
+     * survives a restart, and it sits before the language rather than after it so the language is still
+     * read back from between the last two dots.
+     */
+    private static final String MACHINE_TRANSLATED = ".auto.";
+
+    /** Both spellings of a cached subtitle's name, human first. */
+    private static final String[] SUBTITLE_CACHE_PREFIXES = { ".", MACHINE_TRANSLATED };
+
+    /**
+     * Titles already searched without a hit, so restarting an episode or rewatching it does not spend
+     * the daily download budget re-learning the same nothing. Process-lifetime and keyed per episode:
+     * the next episode of the same series is a different key and is looked up on its own.
+     */
+    private static final Map<String, Long> subtitleSearchMisses = new ConcurrentHashMap<>();
+
+    /**
+     * Looks online for a preferred subtitle language the media does not carry, and sideloads it. Runs
+     * off the playback thread and never blocks playback: the video starts on time and the track turns
+     * up a second or two in.
+     *
+     * <p>Does nothing at all when the priority list is empty, which is what a fresh install has — with
+     * no preferred language there is nothing to go looking for, and the player stays off the network.
+     */
+    private void cancelSubtitleSearch() {
+        subtitleSearchGeneration++;
+        subtitleSearchStarted = null;
+        if (subtitleSearchThread != null) {
+            // Nothing is looking any more, so the notice saying so goes too — otherwise a change of
+            // media leaves the last search still apparently running over the next one. Only when there
+            // was a search to cancel: this line is the gestures' notice as well, and clearing it
+            // unasked would cut a brightness readout short.
+            subtitleSearchNotice(0);
+            subtitleSearchThread.interrupt();
+            subtitleSearchThread = null;
+        }
+    }
+
+    private void maybeSearchSubtitlesOnline(Tracks tracks) {
+        maybeSearchSubtitlesOnline(tracks, false, null, false);
+    }
+
+    /**
+     * What the search is doing, on the same one-line notice the gestures speak through; {@code 0}
+     * takes it down again.
+     *
+     * <p>Only a search that was asked for says anything. An automatic one runs on every open, nobody
+     * is waiting for it, and narrating it would put a line on screen every time a film starts.
+     */
+    private void subtitleSearchNotice(int text) {
+        if (playerView == null) {
+            return;
+        }
+        if (text == 0) {
+            playerView.removeCallbacks(playerView.textClearRunnable);
+            playerView.textClearRunnable.run();
+            return;
+        }
+        Utils.showText(playerView, getString(text), SUBTITLE_NOTICE_MS);
+    }
+
+    /**
+     * @param manual    the viewer asked for this by name. That changes what the guards are for: the
+     *                  feature switch, a language the media already carries, and an earlier "nothing
+     *                  found" are all good reasons not to go looking unprompted, and none of them is a
+     *                  reason to refuse.
+     * @param languages for this search only, in place of the stored priority list; null to use it.
+     * @param forSecondary the viewer asked from the second line's picker, so whatever is found belongs
+     *                     to the second line. Only meaningful together with {@code manual}: an
+     *                     automatic search always considers both lines anyway.
+     */
+    private void maybeSearchSubtitlesOnline(Tracks tracks, boolean manual, List<String> languages,
+                                            boolean forSecondary) {
+        // An empty track list is not "this media has no subtitles" — it is Media3 reporting that it
+        // does not know yet, which it does on every prepare and before an HLS or DASH manifest has been
+        // read. Searching then asks the internet for subtitles the file is about to expose by itself.
+        if (player == null || tracks.getGroups().isEmpty()
+                || player.getPlaybackState() == Player.STATE_IDLE) {
+            return;
+        }
+        // With the search switched off this still runs, and stops at the cache: a copy downloaded for
+        // this very film costs no request and answers the same question, and the switch is about going
+        // to the network rather than about refusing what is already on the disk. It used to return here,
+        // so switching the search off hid subtitles that were sitting in the cache — which reads as a
+        // file that is there and cannot be seen.
+        final boolean offline = !mPrefs.subtitleSearch && !manual;
+        List<String> preferred = languages != null && !languages.isEmpty()
+                ? languages
+                : Utils.splitLanguages(forSecondary
+                        ? mPrefs.languageSubtitleSecondary : mPrefs.languageSubtitle);
+        if (preferred.isEmpty()) {
+            if (manual) {
+                // A fresh install has no priority list, and somebody who has just typed in a title
+                // should not be sent to the settings screen to discover that. The device's language is
+                // the guess.
+                final String device = Utils.toIso3Language(Locale.getDefault().getLanguage());
+                if (device == null) {
+                    return;
+                }
+                preferred = Collections.singletonList(device);
+            } else if (forSecondary
+                    || Utils.splitLanguages(mPrefs.languageSubtitleSecondary).isEmpty()) {
+                return;
+            }
+            // Falls through with an empty list on purpose: the first line wanting nothing is not the end
+            // of the question, because the second line has a list of its own. Somebody who filled in
+            // only that one is asking for exactly this, and returning here would answer them with
+            // silence. subtitleLanguagesToSearch gives back nothing for an empty list, so the first
+            // line simply takes no part in what follows.
+        }
+        // What each line still wants, kept apart rather than merged into one list. One sweep can only
+        // ever serve one line: SubtitleSearch.find stops at the first file it can actually download, so
+        // a longer list of languages does not come back with a longer list of files. Two wants
+        // therefore mean two passes, below.
+        List<String> missing = forSecondary
+                ? Collections.<String>emptyList() : subtitleLanguagesToSearch(tracks, preferred);
+        List<String> secondary;
+        if (forSecondary) {
+            secondary = preferred;
+        } else if (languages == null) {
+            secondary = secondarySubtitleLanguagesToSearch();
+        } else {
+            secondary = Collections.emptyList();
+        }
+        // The first line is about to be given missing.get(0), so the second must not go looking for the
+        // same thing: two passes fetching one language would put identical text on both lines.
+        if (!missing.isEmpty() && secondary.contains(missing.get(0))) {
+            secondary = new ArrayList<>(secondary);
+            secondary.remove(missing.get(0));
+        }
+        if (missing.isEmpty() && secondary.isEmpty()) {
+            if (!manual) {
+                return;
+            }
+            // Asked for regardless: whatever track outranked the list is evidently not doing the job.
+            if (forSecondary) {
+                secondary = preferred;
+            } else {
+                missing = preferred;
+            }
+        }
+        final MediaId id = mediaIdAt(player.getCurrentMediaItemIndex());
+        if (id.isEmpty()) {
+            // Nothing to ask the sources about. Every one of them is keyed by imdb or tmdb, so a file
+            // opened without a title behind it cannot be searched for at all.
+            Utils.log("subtitles: no title id, not searching");
+            if (manual) {
+                // Asked for out loud, so it is answered out loud. Silence here reads as a search that
+                // is still running, and this one never started.
+                Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        // Everything either line wants, plus what each of them could be translated from. This builds
+        // the key only — the passes below each take their own slice of it.
+        final List<String> wanted = new ArrayList<>(missing);
+        for (final String language : secondary) {
+            if (!wanted.contains(language)) {
+                wanted.add(language);
+            }
+        }
+        for (final String language : new ArrayList<>(wanted)) {
+            // Which languages those are follows from the target rather than from a setting — see
+            // SubtitleTranslate.sourcesFor. Note that a language further down the viewer's own list is
+            // included: ranking a language second says it is readable, not that it is what was wanted.
+            // The top of the list is what was wanted, and a machine rendering of it is nearer to that
+            // than a human file in the next language down. Without this the feature would never fire
+            // for a list like "ukr, rus, eng", where Russian is always found and always ends the search.
+            for (final String source : translateSourcesFor(language)) {
+                if (!wanted.contains(source)) {
+                    wanted.add(source);
+                }
+            }
+        }
+        // Keyed by the question, not just the media: which sources are on and which languages are
+        // wanted are half of it. Turning a source on asks something that has not been asked before, so
+        // an earlier "nothing found" is no longer an answer to it — without this, changing a switch
+        // appears to do nothing at all.
+        final String key = id.key() + "|" + wanted + "|" + enabledSubtitleSources();
+        if (manual) {
+            // Both of these answer "that has been asked already" — true, and beside the point. Somebody
+            // pressing the row is asking for the question to be put again, so it is put again.
+            subtitleSearchMisses.remove(key);
+        } else {
+            if (key.equals(subtitleSearchStarted)) {
+                return;
+            }
+            final Long missedAt = subtitleSearchMisses.get(key);
+            if (missedAt != null && System.currentTimeMillis() - missedAt < SUBTITLE_MISS_TTL_MS) {
+                return;
+            }
+        }
+        final int index = player.getCurrentMediaItemIndex();
+        // Written under the first, looked for under all of them — see subtitleCacheNames.
+        final List<String> cacheNames = subtitleCacheNames(id);
+        final String cacheName = cacheNames.get(0);
+
+        cancelSubtitleSearch();
+        subtitleSearchStarted = key;
+
+        // A copy kept from an earlier watch answers the same question for nothing — no request, no
+        // quota, no waiting. Probed per line, because a hit for one of them says nothing about the
+        // other: this is what makes a second watch open with both lines and no network at all.
+        //
+        // Not for a search that was asked for, though. Somebody reaching for the row is saying that
+        // what they have is not right, and the copy in the cache is exactly what they have — answering
+        // with it makes the row look broken and leaves no way at all to get past a bad file.
+        final boolean mainCached = !manual && !missing.isEmpty()
+                && attachCachedSubtitle(missing, cacheNames, index, false);
+        final boolean secondaryCached = !manual && !secondary.isEmpty()
+                && attachCachedSubtitle(secondary, cacheNames, index, true);
+        final List<String> mainTargets = mainCached ? Collections.<String>emptyList() : missing;
+        final List<String> secondaryTargets =
+                secondaryCached ? Collections.<String>emptyList() : secondary;
+        if (mainTargets.isEmpty() && secondaryTargets.isEmpty()) {
+            return;
+        }
+        if (offline) {
+            return; // the cache has been asked, and that is as far as the switch allows
+        }
+
+        final int generation = subtitleSearchGeneration;
+        // What is playing right now, so a result that lands after the player was rebuilt can be
+        // checked against it rather than thrown away in advance.
+        final Uri media = mPrefs.mediaUri;
+        // How long it is, read here because the worker has no business asking the player. This is what
+        // tells a file timed for another cut of the same film from one that fits — see
+        // SubtitleFetcher.fitsMedia. C.TIME_UNSET while a stream is still opening, which accepts
+        // whatever comes down, as it did before there was a check at all.
+        final long durationMs = player.getDuration();
+
+        if (manual) {
+            subtitleSearchNotice(R.string.subtitle_search_searching);
+        }
+
+        final Thread worker = new Thread(() -> {
+            final AtomicBoolean answered = new AtomicBoolean();
+            SubtitleSearch.Result found = null;
+            try {
+                if (!mainTargets.isEmpty()) {
+                    found = subtitleSearchPass(id, mainTargets, cacheName, generation, index, media,
+                            durationMs, answered, false, manual);
+                }
+                // The second line's own sweep, in the same worker so there is still one search to
+                // cancel and one generation to check. After the first, because the main line is the one
+                // being read and it gets the sources' attention first.
+                if (!secondaryTargets.isEmpty() && generation == subtitleSearchGeneration
+                        && !Thread.currentThread().isInterrupted()) {
+                    final SubtitleSearch.Result second = subtitleSearchPass(id, secondaryTargets,
+                            cacheName, generation, index, media, durationMs, answered, true, manual);
+                    if (found == null) {
+                        found = second;
+                    }
+                }
+            } catch (Throwable t) {
+                // Playback is not part of this. Whatever went wrong looking for a subtitle, it must not
+                // be what takes the player down.
+                Utils.log("subtitles: search failed " + t);
+            }
+            // Only a search that actually reached the sources proves anything about this title. A
+            // cancelled one proves nothing, and neither does one that ran with no way out to the
+            // network — writing either off would keep the title unsearchable long after the cause.
+            if (found == null && answered.get() && !Thread.currentThread().isInterrupted()) {
+                subtitleSearchMisses.put(key, System.currentTimeMillis());
+            }
+            // A search that was asked for is reported either way. Not written off first: whether the
+            // sources answered at all is why it stays retryable, and beside the point to the person
+            // waiting — as far as they are concerned there are no subtitles.
+            final boolean nothing = found == null;
+            if (manual && nothing && !Thread.currentThread().isInterrupted()) {
+                runOnUiThread(() -> {
+                    if (generation != subtitleSearchGeneration) {
+                        return;
+                    }
+                    subtitleSearchNotice(0);
+                    Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+                });
+            }
+        }, "SubtitleSearch");
+        worker.setDaemon(true);
+        subtitleSearchThread = worker;
+        worker.start();
+    }
+
+    /** The languages a target may be machine-translated from; empty when translation is off. */
+    private List<String> translateSourcesFor(String target) {
+        return mPrefs.subtitleTranslate
+                ? SubtitleTranslate.sourcesFor(target) : Collections.<String>emptyList();
+    }
+
+    /**
+     * A copy kept from an earlier watch, for one line. The file is named after the title and the
+     * language rather than after whichever release the source happened to hand over, which is what
+     * lets it answer here at all.
+     *
+     * <p>Never a language being translated from: a cached Russian copy is the raw material for this
+     * search, not its answer, and probing for it would hand back the very file the translation was
+     * meant to replace — on every replay, for good. What the translation produced is cached in its own
+     * right, under the marked name, and that is what answers here from the second watch on.
+     *
+     * @return whether a subtitle was found and handed to the line
+     */
+    private boolean attachCachedSubtitle(List<String> targets, List<String> cacheNames, int index,
+                                         boolean secondary) {
+        final List<String> translateFrom = translateSourcesFor(targets.get(0));
+        for (final String language : targets) {
+            if (translateFrom.contains(language)) {
+                continue;
+            }
+            // Every name this episode may be filed under (see subtitleCacheNames), both spellings of
+            // the prefix, and any extension — the copy was named after what it turned out to be, so
+            // looking only for .srt would miss an ASS one and pay for it again on every replay.
+            for (final String name : cacheNames) {
+                for (final String prefix : SUBTITLE_CACHE_PREFIXES) {
+                    for (final String extension : SubtitleUtils.EXTENSIONS) {
+                        final java.io.File cached = new java.io.File(getCacheDir(),
+                                name + prefix + language + extension);
+                        if (cached.isFile() && cached.length() > 0) {
+                            // Touched so the twenty-file trim treats "watched again" as recently used.
+                            cached.setLastModified(System.currentTimeMillis());
+                            Utils.log("subtitles: cached " + language
+                                    + (secondary ? " (second line)" : "") + " " + cached.getName());
+                            attachSearchedSubtitle(subtitleSearchGeneration, index, mPrefs.mediaUri,
+                                    Uri.fromFile(cached), language, secondary);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * One sweep of the sources for one line: the best file in a language it wants, downloaded,
+     * machine-translated if that is the only way to reach the language, and handed over.
+     *
+     * <p>One line per sweep, because {@link SubtitleSearch#find} stops at the first file it can
+     * actually download. Asking for both lines' languages at once comes back with one file, and the
+     * other line is left waiting for a search that has already ended — which is exactly what the first
+     * version of this did.
+     *
+     * <p>Runs on the search worker.
+     */
+    private SubtitleSearch.Result subtitleSearchPass(MediaId id, List<String> targets,
+                                                     String cacheName, int generation, int index,
+                                                     Uri media, long durationMs,
+                                                     AtomicBoolean answered,
+                                                     boolean secondary, boolean manual) {
+        final String target = targets.get(0);
+        final List<String> translateFrom = translateSourcesFor(target);
+        final String translateTo = translateFrom.isEmpty() ? null : target;
+        // Searched for as well, so a language only worth translating is still found — after everything
+        // actually wanted, so it can never be preferred over a real hit.
+        final List<String> wanted = new ArrayList<>(targets);
+        for (final String source : translateFrom) {
+            if (!wanted.contains(source)) {
+                wanted.add(source);
+            }
+        }
+        return SubtitleSearch.find(id, wanted, mPrefs, durationMs, result -> {
+            if (generation != subtitleSearchGeneration) {
+                return false;
+            }
+            final List<Uri> urls = new ArrayList<>(result.urls.size());
+            for (String url : result.urls) {
+                urls.add(Uri.parse(url));
+            }
+            // The language goes in the file name because that is where it is read back from: a
+            // track whose language is unknown is not the one setPreferredTextLanguages picks,
+            // so an aggregator's opaque URL arrives as an unnamed track nobody switched on.
+            // MACHINE_TRANSLATED goes in the same place for the same reason — it is the only
+            // marker that survives a restart, and it is what keeps the label honest.
+            final Uri file = new SubtitleFetcher(this, urls, cacheName
+                    + (result.machine ? MACHINE_TRANSLATED : ".")
+                    + result.language + ".srt", durationMs).fetchNow();
+            if (file == null) {
+                return false;
+            }
+            Uri show = file;
+            String shown = result.language;
+            if (translateTo != null && translateFrom.contains(result.language)) {
+                // The long half of the wait, and the half that looks like nothing happening: the file
+                // is already downloaded and the track does not appear until this comes back.
+                if (manual) {
+                    runOnUiThread(() -> subtitleSearchNotice(R.string.subtitle_search_translating));
+                }
+                final Uri translated = SubtitleTranslate.translate(this, file, result.language,
+                        translateTo, new java.io.File(getCacheDir(),
+                                cacheName + MACHINE_TRANSLATED + translateTo + ".srt"),
+                        mPrefs.subtitleTranslateBackends);
+                if (translated != null) {
+                    show = translated;
+                    shown = translateTo;
+                } else {
+                    // Not translated: show it as it came. It is still a subtitle in a language the
+                    // viewer ranked, and it is what the player would have shown before it could
+                    // translate at all — failing the search instead would turn an outage at the
+                    // translation endpoint into no subtitles. Said out loud though: otherwise the
+                    // only clue is a subtitle in the wrong language, whoever asked for it.
+                    final String message = getString(R.string.subtitle_translate_failed,
+                            displayLanguage(translateTo));
+                    runOnUiThread(() ->
+                            Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
+                }
+            }
+            final Uri attach = show;
+            final String language = shown;
+            runOnUiThread(() ->
+                    attachSearchedSubtitle(generation, index, media, attach, language, secondary));
+            return true;
+        }, answered);
+    }
+
+    /**
+     * Attaches a downloaded subtitle, but only to the item it was actually searched for.
+     *
+     * <p>Four conditions, and {@code media} is the one that lets a search outlive the player it was
+     * started under: the playlist index alone does not tell two films apart, because skipToNext puts
+     * the next one at the same index in a freshly built player. Comparing what is actually loaded
+     * means a result that arrives late is either still wanted or quietly dropped — never attached to
+     * the wrong film.
+     */
+    private void attachSearchedSubtitle(int generation, int index, Uri media, Uri file,
+                                        String language, boolean secondary) {
+        if (generation != subtitleSearchGeneration || player == null
+                || player.getCurrentMediaItemIndex() != index
+                || !Objects.equals(media, mPrefs.mediaUri)) {
+            // Said out loud rather than dropped in silence: a file that was searched for, downloaded
+            // and then discarded on arrival looks from the outside exactly like a search that found
+            // nothing, and the four reasons are not guessable from the screen.
+            Utils.log("subtitles: dropping " + language + ", generation " + generation + "/"
+                    + subtitleSearchGeneration + ", item " + index + "/"
+                    + (player == null ? -1 : player.getCurrentMediaItemIndex())
+                    + ", same media " + Objects.equals(media, mPrefs.mediaUri));
+            return;
+        }
+        // Whatever the notice was saying the search is doing, it is done — the toast below says what
+        // came of it.
+        subtitleSearchNotice(0);
+        // Which line asked for it is known by the pass that found it, not guessed from the language
+        // afterwards. This is the whole of "opens with two lines": the first line is served by the
+        // track it already had or by its own pass, the second by its own.
+        if (secondary) {
+            chooseSecondarySubtitle(file);
+            Toast.makeText(this, getString(R.string.subtitle_search_found_secondary,
+                    displayLanguage(language)), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        mPrefs.updateSubtitle(file);
+        if (!addSubtitleTrack(file)) {
+            // Refused: it is already what is on screen, or a real track in the media carries it. Both
+            // are fine, and neither is worth a toast — but they are the difference between "the search
+            // did nothing" and "the search found what you are already reading".
+            Utils.log("subtitles: " + file.getLastPathSegment() + " not added, already there");
+        } else {
+            String message = getString(R.string.subtitle_search_found, displayLanguage(language));
+            if (isMachineTranslated(file)) {
+                message = getString(R.string.subtitle_machine_translated, message);
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Translated by a machine — by this app, or by whoever uploaded it. See {@link #MACHINE_TRANSLATED}. */
+    private static boolean isMachineTranslated(Uri uri) {
+        final String path = uri.getPath();
+        return path != null && path.contains(MACHINE_TRANSLATED);
+    }
+
+    /** The enabled sources, in order, as part of what a search result is an answer to. */
+    private String enabledSubtitleSources() {
+        return (mPrefs.subtitleSourceRest ? "1" : "")
+                + (mPrefs.subtitleSourceStremio ? "2" : "")
+                + (mPrefs.subtitleSourceShegu ? "3" : "")
+                + (mPrefs.subtitleSourceOpenSubtitles ? "4" : "");
+    }
+
+    /** An ISO 639-2/T code as something to show a person: "ukr" becomes "українська". */
+    private static String displayLanguage(String language) {
+        final List<String> two = OpenSubtitles.toIso639_1(Collections.singletonList(language));
+        return two.isEmpty() ? language : new Locale(two.get(0)).getDisplayLanguage();
+    }
+
+    /**
+     * The one language the second line wants and has no file for, or nothing.
+     *
+     * <p>Deliberately not {@link #subtitleLanguagesToSearch}: that answers "is there a better track
+     * than the one showing", and a track is exactly what the second line cannot use. Only a file
+     * counts here — a language sitting in the container as an embedded track is still missing as far
+     * as this line is concerned.
+     */
+    private List<String> secondarySubtitleLanguagesToSearch() {
+        if (secondarySubtitles == null || !secondaryEnabled() || secondaryActive()
+                || (mPrefs.mediaUri != null && mPrefs.mediaUri.equals(secondaryChoiceMedia))) {
+            return Collections.emptyList();
+        }
+        final List<String> wanted = secondarySubtitleLanguages();
+        if (wanted.isEmpty()) {
+            return Collections.emptyList();
+        }
+        final Set<String> haveFiles = new HashSet<>();
+        for (final Uri uri : externalSubtitleUris()) {
+            final String language = Utils.toIso3Language(SubtitleUtils.getSubtitleLanguage(uri));
+            if (language != null) {
+                haveFiles.add(language);
+            }
+        }
+        final String showing = mainLineLanguage();
+        for (final String language : wanted) {
+            if (!haveFiles.contains(language) && !language.equals(showing)) {
+                return Collections.singletonList(language);
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * The languages worth searching for: everything the priority list ranks above the best one the media
+     * already carries. A file with English on a {@code uk, ru, en} list is searched for Ukrainian and
+     * Russian and no further — the English already there is as good as anything downloaded.
+     *
+     * <p>In strict mode it is all-or-nothing instead: any preferred language present at all means no
+     * search. An empty result either way means leave the media alone.
+     */
+    private List<String> subtitleLanguagesToSearch(Tracks tracks, List<String> preferred) {
+        final Set<String> present = new HashSet<>();
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                final Format format = group.getTrackFormat(i);
+                if (isPhantomClosedCaption(format)) {
+                    continue;
+                }
+                // An untagged track ("und", or nothing at all) is evidence of a language only where its
+                // name spells one out; anything else counts as absence, the alternative being a file full
+                // of Polish passing for Ukrainian.
+                String language = Utils.toIso3Language(format.language);
+                if (language == null) {
+                    language = Utils.languageInName(trackName(format), preferred);
+                }
+                if (language != null) {
+                    present.add(language);
+                }
+            }
+        }
+        int best = preferred.size();
+        for (int i = 0; i < preferred.size(); i++) {
+            if (present.contains(preferred.get(i))) {
+                best = i;
+                break;
+            }
+        }
+        if (best == 0 || (mPrefs.subtitleSearchStrict && best < preferred.size())) {
+            return Collections.emptyList();
+        }
+        return preferred.subList(0, best);
+    }
+
     // ExoPlayer invents an empty CEA-608 track for every HLS stream whose playlist declares no closed
     // captions at all (DefaultHlsExtractorFactory.exposeCea608WhenMissingDeclarations, on by default
     // and not reachable through the final DefaultMediaSourceFactory). Almost no such stream actually
@@ -5435,12 +6662,17 @@ public class PlayerActivity extends Activity {
                 && format.accessibilityChannel == Format.NO_VALUE;
     }
 
+    /** What a track is called: Media3's own label, else the name read from the container. */
+    private String trackName(Format format) {
+        if (format.label != null && !format.label.isEmpty()) {
+            return format.label;
+        }
+        return format.id != null ? resolvedTrackNames.get(format.id) : null;
+    }
+
     private String buildSubtitleInfo(Format text) {
         final String language = languageDisplayName(text.language);
-        String name = text.label;
-        if ((name == null || name.isEmpty()) && text.id != null) {
-            name = resolvedTrackNames.get(text.id);
-        }
+        final String name = trackName(text);
         final StringBuilder b = new StringBuilder();
         final String title = (name != null && !name.isEmpty()) ? name : language;
         if (title != null && !title.isEmpty()) {
@@ -5458,9 +6690,36 @@ public class PlayerActivity extends Activity {
         if (player == null) {
             return;
         }
-        final boolean textEnabled = player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_TEXT);
+        final boolean textEnabled = mainLineTrackSelected();
+        // A subtitle painted from its file has no track here, so it needs a row of its own — otherwise
+        // it could never be switched off, and "off" would read as the choice while it is on screen.
+        final Uri fileOnly = subtitleWithoutTrack();
+        final boolean painting = paintedSubtitleUri != null;
         final List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled, this::disableSubtitles));
+        // Three kinds of row live in this one panel — a doorway into another list, the choices for this
+        // line, and an action — so each gets a register of its own rather than an icon to be told apart
+        // by. The doorway leads: its summary names what the second line is showing, so that state reads
+        // without opening it, and a film handed over with three dozen subtitle configurations would bury
+        // it anywhere further down. Focus still lands on the ticked track (see showSideMenu), so a row
+        // above them costs nothing on a D-pad.
+        final boolean second = secondaryEnabled();
+        if (second) {
+            items.add(new MenuItem(R.drawable.ic_subtitle_secondary_24dp,
+                    getString(R.string.subtitle_secondary_title), secondarySubtitleSummary(),
+                    false, this::showSecondarySubtitleDialog));
+            items.add(MenuItem.rule());
+            // Named only while there is a second line to tell it apart from: on its own it is the only
+            // group in the panel, and naming the obvious is noise.
+            items.add(MenuItem.caption(getString(R.string.subtitle_main_title)));
+        }
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled && !painting,
+                this::disableSubtitles));
+        if (fileOnly != null) {
+            // addSubtitleTrack rather than paintSubtitle: it carries the already-on-screen guard, so
+            // tapping the ticked row costs nothing and tapping it after "off" puts the subtitle back.
+            items.add(new MenuItem(subtitleFileLabel(fileOnly), null, painting,
+                    () -> addSubtitleTrack(fileOnly)));
+        }
         int number = 0;
         for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
             if (group.getType() != C.TRACK_TYPE_TEXT) {
@@ -5476,37 +6735,1409 @@ public class PlayerActivity extends Activity {
                     continue;
                 }
                 number++;
+                // The second line's track is the second line's business. Left in here it would show as
+                // ticked — its renderer really has selected it — while the first line shows something
+                // else entirely.
+                if (format.equals(secondaryTextTrack.get())) {
+                    continue;
+                }
                 String label = buildSubtitleInfo(format);
                 if (label == null || label.isEmpty()) {
                     label = getString(R.string.audio_track_number, number);
                 }
                 final int index = i;
-                items.add(new MenuItem(label, null, textEnabled && group.isTrackSelected(i),
+                // !painting: an embedded track can stay selected while the file is painted over it
+                // (SubtitleOffset drops the renderer's cues), and two ticked rows is a lie.
+                items.add(new MenuItem(label, null, textEnabled && !painting && group.isTrackSelected(i),
                         () -> applySubtitle(trackGroup, index)));
             }
         }
+        // Last, and with no tick: it is an action rather than a track, so it sits under a rule of its
+        // own. Offered whatever the automatic search's switch says — pressing it is the consent that
+        // switch stands in for.
+        items.add(MenuItem.rule());
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
+                null, false, () -> showSubtitleSearchDialog(false)));
         showSideMenu(getString(R.string.subtitle_title), items);
+    }
+
+    /** The second line's language, or that there is none — the row says it without being opened. */
+    private String secondarySubtitleSummary() {
+        final Format track = secondaryTextTrack.get();
+        if (track != null) {
+            final String label = buildSubtitleInfo(track);
+            return label == null || label.isEmpty() ? getString(R.string.subtitle_title) : label;
+        }
+        return secondarySubtitleUri == null
+                ? getString(R.string.subtitle_off) : subtitleFileLabel(secondarySubtitleUri);
+    }
+
+    /**
+     * Whether the second line exists as a feature at all. Off is not "no line right now": it takes the
+     * row out of the picker, stops anything being found for it, and gives back the band under the first
+     * line — the setting is there for people who will never want a second line, and it has to leave
+     * nothing behind.
+     */
+    private boolean secondaryEnabled() {
+        return mPrefs != null && !Prefs.SECONDARY_OFF.equals(mPrefs.subtitleSecondaryMode);
+    }
+
+    /** Whether the hint is asked for rather than always drawn. */
+    private boolean secondaryOnDemand() {
+        return mPrefs != null && Prefs.SECONDARY_DEMAND.equals(mPrefs.subtitleSecondaryMode);
+    }
+
+    /** Whether the second line has anything at all — a track of the media, or a file. */
+    private boolean secondaryActive() {
+        return secondaryEnabled()
+                && (secondarySubtitleUri != null || secondaryTextTrack.get() != null);
+    }
+
+    /**
+     * Which of the three the second line is in right now, in one place — the states are decided by
+     * five different things and every one of them can change without the others.
+     */
+    private SecondarySubtitles.State secondaryState() {
+        if (secondarySubtitles == null || isInPip() || !secondaryActive()) {
+            return SecondarySubtitles.State.HIDDEN;
+        }
+        if (!secondaryOnDemand()) {
+            return SecondarySubtitles.State.SHOWN;
+        }
+        // Nothing stands where the hint would be: a pause is what asks for it, and until it is asked
+        // for the first line keeps its usual place.
+        return locked || !secondarySubtitles.isPeeking()
+                ? SecondarySubtitles.State.HIDDEN : SecondarySubtitles.State.SHOWN;
+    }
+
+    /**
+     * Re-reads {@link #secondaryState()} and applies everything that follows from it. The layout pass
+     * is where the state is asserted, so this is that pass under the name of what is calling it.
+     */
+    private void updateSecondaryState() {
+        updateSubtitleLayout();
+    }
+
+    /**
+     * Asks for the hint, and reports whether there was one to ask for — the callers are keys that have
+     * something else to do when there is not.
+     */
+    private boolean peekSecondarySubtitle() {
+        if (secondarySubtitles == null || !secondaryOnDemand() || !secondaryActive()
+                || locked || isInPip()) {
+            return false;
+        }
+        if (!secondarySubtitles.peek(player == null ? 0 : player.getCurrentPosition())) {
+            // Nothing to show: the key that asked goes on to do whatever it did before.
+            return false;
+        }
+        updateSecondaryState();
+        return true;
+    }
+
+    /** The peek ran out on its own; the band it opened closes again. */
+    private void onSecondaryPeekEnd() {
+        updateSecondaryState();
+    }
+
+    /**
+     * The second line's own list: the same panel, the same shape, one slot along.
+     *
+     * <p>Only files, because that is all the second line can paint — the player renders one text track
+     * and it belongs to the first line (see {@link SecondarySubtitles}). And never the file the first
+     * line is already showing: the same words twice, once under the other, is not a hint.
+     */
+    private void showSecondarySubtitleDialog() {
+        if (player == null) {
+            return;
+        }
+        final Uri current = secondarySubtitleUri;
+        final Format currentTrack = secondaryTextTrack.get();
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !secondaryActive(),
+                () -> chooseSecondarySubtitle(null)));
+        // Tracks of the media itself — an HLS rendition, a track muxed into the file, one handed over
+        // by the app that launched us. Never the one the first line is showing: the same words twice,
+        // once under the other, is not a hint.
+        int number = 0;
+        for (final Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                final Format format = group.getTrackFormat(i);
+                if (!group.isTrackSupported(i) || isPhantomClosedCaption(format)
+                        || format.sampleMimeType == null
+                        || MimeTypes.isImage(format.sampleMimeType)) {
+                    continue;
+                }
+                number++;
+                if (shownByMainLine(format)) {
+                    continue;
+                }
+                String label = buildSubtitleInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
+                final TrackGroup mediaGroup = group.getMediaTrackGroup();
+                final int trackIndex = i;
+                items.add(new MenuItem(label, null, format.equals(currentTrack),
+                        () -> chooseSecondarySubtitleTrack(mediaGroup, trackIndex, format)));
+            }
+        }
+        // A subtitle the media item carries is already one of the tracks above — media3 makes a text
+        // track out of every subtitle configuration — so listing it again as a file would be the same
+        // subtitle twice in one list, and the second time under whatever its file happens to be called.
+        // A resolver handing over three dozen of them names them by number, so the copy is not even
+        // readable; the track row carries the language the configuration was labelled with.
+        final Set<Uri> asTracks = new HashSet<>();
+        final MediaItem carrying = player.getCurrentMediaItem();
+        if (carrying != null && carrying.localConfiguration != null) {
+            for (final MediaItem.SubtitleConfiguration config
+                    : carrying.localConfiguration.subtitleConfigurations) {
+                asTracks.add(config.uri);
+            }
+        }
+        for (final Uri uri : externalSubtitleUris()) {
+            if (uri.equals(current)) {
+                items.add(new MenuItem(subtitleFileLabel(uri), null, true,
+                        () -> chooseSecondarySubtitle(uri)));
+                continue;
+            }
+            if (shownByMainLine(uri) || asTracks.contains(uri)) {
+                continue;
+            }
+            items.add(new MenuItem(subtitleFileLabel(uri), null, false,
+                    () -> chooseSecondarySubtitle(uri)));
+        }
+        // An action, not a candidate — the same boundary the first line's list draws, so the two panels
+        // read alike.
+        items.add(MenuItem.rule());
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
+                null, false, () -> showSubtitleSearchDialog(true)));
+        showSideMenu(getString(R.string.subtitle_secondary_title), items);
+    }
+
+    /**
+     * Every subtitle file the second line could be pointed at.
+     *
+     * <p>Four places, because a downloaded subtitle is in none of the obvious ones. {@link
+     * #addSubtitleTrack} paints a file straight to the text output and deliberately does <em>not</em>
+     * add a subtitle configuration — that is what keeps playback from re-preparing — so a file the
+     * search fetched two minutes ago is not on the media item at all until the next rebuild. The cache
+     * is therefore read as well, which is also what makes a second watch open with both lines: the
+     * copy kept from the first one is already there, and no search has to run.
+     */
+    private List<Uri> externalSubtitleUris() {
+        final List<Uri> uris = new ArrayList<>();
+        if (player == null) {
+            return uris;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item != null && item.localConfiguration != null) {
+            for (final MediaItem.SubtitleConfiguration config : item.localConfiguration.subtitleConfigurations) {
+                if (!uris.contains(config.uri)) {
+                    uris.add(config.uri);
+                }
+            }
+        }
+        for (final Uri painted : new Uri[]{paintedSubtitleUri, mPrefs.subtitleUri,
+                secondarySubtitleUri}) {
+            if (painted != null && !uris.contains(painted)) {
+                uris.add(painted);
+            }
+        }
+        for (final Uri cached : cachedSubtitleUris()) {
+            if (!uris.contains(cached)) {
+                uris.add(cached);
+            }
+        }
+        return uris;
+    }
+
+    /** Copies this title's searches left behind, named after the title and the language they are in. */
+    private List<Uri> cachedSubtitleUris() {
+        final List<Uri> uris = new ArrayList<>();
+        if (player == null) {
+            return uris;
+        }
+        final MediaId id = mediaIdAt(player.getCurrentMediaItemIndex());
+        if (id == null || id.isEmpty()) {
+            return uris;
+        }
+        final List<String> cacheNames = subtitleCacheNames(id);
+        final java.io.File[] files = getCacheDir().listFiles((dir, name) -> {
+            if (!SubtitleUtils.hasSubtitleExtension(name)) {
+                return false;
+            }
+            for (final String prefix : cacheNames) {
+                if (name.startsWith(prefix)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+        if (files == null) {
+            return uris;
+        }
+        java.util.Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
+        for (final java.io.File file : files) {
+            if (file.isFile() && file.length() > 0) {
+                uris.add(Uri.fromFile(file));
+            }
+        }
+        return uris;
+    }
+
+    /**
+     * What a cached copy of this title's subtitles is called, before the prefix and the language — the
+     * name to write under first, then any other name the same episode may already be sitting under.
+     *
+     * <p>Keyed by the id pair, the same episode had two names and two copies: a hand-picked title nulls
+     * the imdb id on purpose (see {@link #mediaIdAt(int)}), so the automatic search wrote
+     * {@code tt14688458-125988-1-2} and the manual one {@code null-125988-1-2} — the same 46 KB file
+     * twice, and the second watch downloading what the first had already fetched. Keyed by one id it is
+     * still two names, because the two paths do not have the same id to hand. So the copy is written
+     * under one name and looked for under both, which is what actually stops the second download.
+     *
+     * <p>The search key still uses the whole {@link MediaId#key()}, which is right: what was asked has
+     * changed even when what is being watched has not.
+     */
+    private static List<String> subtitleCacheNames(MediaId id) {
+        final List<String> names = new ArrayList<>(2);
+        if (id.tmdb != null) {
+            names.add(subtitleCacheName("t" + id.tmdb, id));
+        }
+        if (id.imdb != null) {
+            names.add(subtitleCacheName(id.imdb, id));
+        }
+        // And the name the other id would have given it, when a search has already told us what that
+        // id is — see SubtitleSearch.pairedWith.
+        final String pairedTmdb = id.tmdb == null ? SubtitleSearch.pairedWith(id.imdb) : null;
+        if (pairedTmdb != null) {
+            names.add(subtitleCacheName("t" + pairedTmdb, id));
+        }
+        final String pairedImdb = id.imdb == null ? SubtitleSearch.pairedWith(id.tmdb) : null;
+        if (pairedImdb != null) {
+            names.add(subtitleCacheName(pairedImdb, id));
+        }
+        if (names.isEmpty()) {
+            names.add(subtitleCacheName("none", id));
+        }
+        return names;
+    }
+
+    private static String subtitleCacheName(String title, MediaId id) {
+        return ("subs." + title + "-" + id.season + "-" + id.episode)
+                .replaceAll("[^A-Za-z0-9.]", "-");
+    }
+
+    /**
+     * Looks for subtitles by a name rather than by whatever the launcher said this is. The way in when
+     * the automatic search has nothing to go on — a stream whose URL is a hash, or a launcher that sent
+     * the wrong id — since every source is keyed by the title and none of them can be told a filename.
+     *
+     * <p>Results arrive while the name is still being typed, from the third character on: nobody
+     * recalls a title exactly, and the point of the posters is to be recognised rather than remembered.
+     *
+     * <p>A tmdb or imdb id counts as a name here, pasted bare or still inside the page URL it came
+     * from — the shortest way in when the title is known exactly and the search cannot be trusted to
+     * land on it.
+     *
+     * <p>{@code forSecondary} is which line opened it: the same dialog serves both pickers, and what it
+     * finds has to go back where it was asked from.
+     */
+    private void showSubtitleSearchDialog(final boolean forSecondary) {
+        subtitleSearchForSecondary = forSecondary;
+        final EditText query = new EditText(this);
+        query.setInputType(InputType.TYPE_CLASS_TEXT);
+        query.setSingleLine(true);
+        query.setHint(R.string.subtitle_search_hint);
+        // Without this the keyboard takes the whole screen in landscape — its extract mode — and covers
+        // the dialog it belongs to, list and all. The list is the point of this dialog: it fills in while
+        // the name is still being typed, and a player is always in landscape.
+        query.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        // Deliberately not prefilled from the file name: reaching this dialog means the name is already
+        // what failed, and clearing a line of release noise with a remote costs more than typing.
+
+        final LinearLayout results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(results);
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(query);
+        // Capped rather than free: the list has to leave the field and the keyboard on screen, because
+        // the next thing typed is what narrows it down. Half the window is the ceiling because the
+        // player is landscape — a fixed height that fits a phone upright pushes the field off it.
+        final int listHeight = Math.min(ui.dpS(260),
+                getResources().getDisplayMetrics().heightPixels / 2);
+        fields.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_manual)
+                .setView(fields)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final Runnable[] pending = new Runnable[1];
+        query.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (pending[0] != null) {
+                    handler.removeCallbacks(pending[0]);
+                }
+                final String text = s.toString().trim();
+                // Every keystroke invalidates the answer to the last one, whether or not a new request
+                // goes out — otherwise a slow reply for "Sil" lands on top of the results for "Silo".
+                titleSearchGeneration++;
+                if (text.length() < TITLE_QUERY_MIN) {
+                    results.removeAllViews();
+                    return;
+                }
+                final int generation = titleSearchGeneration;
+                pending[0] = () -> searchTitles(text, generation, results, dialog);
+                handler.postDelayed(pending[0], TITLE_QUERY_DEBOUNCE_MS);
+            }
+        });
+        dialog.show();
+    }
+
+    /** Asks TMDB what the typed name could be, then fills the list in place. */
+    private void searchTitles(String query, int generation, LinearLayout results, AlertDialog dialog) {
+        final Thread worker = new Thread(() -> {
+            final List<TitleSearch.Title> titles = TitleSearch.search(query);
+            runOnUiThread(() -> {
+                if (isFinishing() || generation != titleSearchGeneration) {
+                    return;
+                }
+                results.removeAllViews();
+                if (titles.isEmpty()) {
+                    results.addView(searchNote(getString(R.string.subtitle_search_none)));
+                    return;
+                }
+                for (final TitleSearch.Title title : titles) {
+                    // Movie or series is not decoration: the sources are asked a different question for
+                    // each, and an adaptation sharing its name and year with the film is told apart by
+                    // nothing else.
+                    final String kind = getString(title.movie
+                            ? R.string.subtitle_search_movie : R.string.subtitle_search_series);
+                    results.addView(searchRow(title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
+                            title.year == null ? kind : title.year + " · " + kind, () -> {
+                        dialog.dismiss();
+                        if (title.movie) {
+                            applyManualTitle(title, -1, -1, null);
+                        } else {
+                            chooseSeason(title);
+                        }
+                    }));
+                }
+            });
+        }, "TitleSearch");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Which season, then which episode. Asked rather than guessed: the episode number is the half of
+     * the question the sources answer most literally, and a file whose name never carried one is
+     * exactly the case this dialog gets reached from.
+     *
+     * <p>The whole series arrives in one request, so picking a season costs nothing after this and the
+     * numbering cannot drift between the two steps.
+     */
+    private void chooseSeason(TitleSearch.Title title) {
+        final Thread worker = new Thread(() -> {
+            // Cinemeta is keyed by imdb and the search gave a tmdb id, so one hop first. The resolver
+            // is the one the automatic search already uses for the same reason.
+            String imdb = null;
+            try {
+                imdb = SegmentFinder.tmdbExternalImdb(Long.parseLong(title.tmdb), false);
+            } catch (Exception e) {
+                Utils.log("titles: imdb lookup " + e);
+            }
+            final List<TitleSearch.Episode> episodes = TitleSearch.episodes(imdb, title.tmdb);
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                // Nothing came back. Rather than quietly guess the first season, hand over the numbers:
+                // a title no catalogue lists is exactly when somebody knows them and we do not.
+                if (episodes.isEmpty()) {
+                    askSeasonEpisode(title, episodes);
+                    return;
+                }
+                final List<Integer> seasons = new ArrayList<>();
+                for (TitleSearch.Episode episode : episodes) {
+                    if (!seasons.contains(episode.season)) {
+                        seasons.add(episode.season);
+                    }
+                }
+                if (seasons.size() == 1) {
+                    chooseEpisode(title, episodes, seasons.get(0));
+                    return;
+                }
+                final List<MenuItem> items = new ArrayList<>(seasons.size() + 1);
+                items.add(typeNumbersRow(title, episodes));
+                for (final int season : seasons) {
+                    items.add(new MenuItem(getString(season == 0
+                                    ? R.string.subtitle_search_specials
+                                    : R.string.subtitle_search_season, season),
+                            null, false, () -> chooseEpisode(title, episodes, season)));
+                }
+                showSideMenu(title.name, items);
+            });
+        }, "TitleEpisodes");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** No request of its own — the season's episodes are already in hand. */
+    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season) {
+        final List<MenuItem> items = new ArrayList<>();
+        for (final TitleSearch.Episode episode : episodes) {
+            if (episode.season != season) {
+                continue;
+            }
+            final String number = getString(R.string.subtitle_search_episode, episode.number);
+            items.add(new MenuItem(0, episode.stillUrl,
+                    episode.name != null ? episode.name : number,
+                    episode.name != null ? number : null, false,
+                    () -> applyManualTitle(title, season, episode.number, episodes)));
+        }
+        if (items.isEmpty()) {
+            applyManualTitle(title, season, -1, episodes);
+            return;
+        }
+        // Here as well as on the season list: a series with one season skips that step entirely, and
+        // typing the numbers must not end up being something only multi-season shows offer.
+        items.add(0, typeNumbersRow(title, episodes));
+        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster.
+        showSideMenu(title.name, items, 72, 41);
+    }
+
+    /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */
+    private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        return new MenuItem(getString(R.string.subtitle_search_type), null, false,
+                () -> askSeasonEpisode(title, episodes));
+    }
+
+    /**
+     * Season and episode by hand. The catalogues disagree often enough that a list can be wrong or
+     * simply not have the thing playing, and then the numbers somebody read off the file are better
+     * than anything on offer here.
+     *
+     * <p>Prefilled with what is currently believed, so correcting one digit is one digit of typing.
+     * A blank season means the first, and a blank episode means the whole season — which every source
+     * reads as an answerable question.
+     */
+    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
+
+        final EditText season = new EditText(this);
+        season.setInputType(InputType.TYPE_CLASS_NUMBER);
+        season.setSingleLine(true);
+        if (current != null && current.season >= 0) {
+            season.setText(String.valueOf(current.season));
+        }
+
+        final EditText episode = new EditText(this);
+        episode.setInputType(InputType.TYPE_CLASS_NUMBER);
+        episode.setSingleLine(true);
+        if (current != null && current.episode >= 1) {
+            episode.setText(String.valueOf(current.episode));
+        }
+
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        // Labelled above the fields, not only as hints: prefilling is the normal case here — the whole
+        // point is to correct one digit of what is already believed — and a filled field shows no hint,
+        // so both rows read as a bare "1" and "2" with nothing to say which is which.
+        fields.addView(fieldLabel(R.string.subtitle_search_season_label));
+        fields.addView(season);
+        fields.addView(fieldLabel(R.string.subtitle_search_episode_label));
+        fields.addView(episode);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_type)
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
+                        number(season.getText().toString(), 1),
+                        number(episode.getText().toString(), -1), episodes))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** A caption over a text field, in the register the dialog's own hints use. */
+    private TextView fieldLabel(final int textRes) {
+        final TextView label = new TextView(this);
+        label.setText(textRes);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        label.setPadding(0, Utils.dpToPx(8), 0, 0);
+        return label;
+    }
+
+    /** A typed number, or {@code fallback} for anything that is not one. */
+    private static int number(String text, int fallback) {
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Adopts the hand-picked title and puts the search question again with it. The episode list is
+     * kept so the rest of the playlist can be lined up against it — see {@link #mediaIdAt(int)}.
+     */
+    private void applyManualTitle(TitleSearch.Title title, int season, int episode,
+                                  List<TitleSearch.Episode> episodes) {
+        manualTmdbId = title.tmdb;
+        manualMovie = title.movie;
+        manualSeason = season;
+        manualEpisode = episode;
+        // Pinned to the item it was chosen for: the title carries over to the rest of the playlist —
+        // the next file is the same series — but the episode number does not.
+        manualIndex = player != null ? player.getCurrentMediaItemIndex() : -1;
+        manualEpisodes = null;
+        manualAbsolute = -1;
+        if (episodes != null) {
+            // Specials are left out: they are not part of the aired run a playlist walks through, so
+            // counting them would shift every position after the first one.
+            final List<TitleSearch.Episode> run = new ArrayList<>(episodes.size());
+            for (TitleSearch.Episode item : episodes) {
+                if (item.season > 0) {
+                    run.add(item);
+                }
+            }
+            manualEpisodes = run;
+            for (int i = 0; i < run.size(); i++) {
+                if (run.get(i).season == season && run.get(i).number == episode) {
+                    manualAbsolute = i;
+                    break;
+                }
+            }
+        }
+        if (player == null) {
+            return;
+        }
+        if (!mPrefs.subtitleSearchLanguage) {
+            maybeSearchSubtitlesOnline(player.getCurrentTracks(), true, null,
+                    subtitleSearchForSecondary);
+            return;
+        }
+        final boolean forSecondary = subtitleSearchForSecondary;
+        // Seeded from the priority list every time and never written back: the list is the standing
+        // answer, and this is one search that wants a different one. Confirming it costs a press. Which
+        // list it is seeded from follows the line the search was opened for.
+        LanguagePriorityDialog.show(this, getString(R.string.subtitle_search_language_title),
+                R.string.pref_language_subtitle_none, R.string.pref_language_audio_add,
+                Utils.splitLanguages(forSecondary
+                        ? mPrefs.languageSubtitleSecondary : mPrefs.languageSubtitle),
+                Utils.allLanguages(), pinnedLanguages(), picked -> {
+                    if (player != null) {
+                        maybeSearchSubtitlesOnline(player.getCurrentTracks(), true, picked,
+                                forSecondary);
+                    }
+                });
+    }
+
+    /**
+     * Languages worth offering first: the device's own, then those the clip carries. Without them the
+     * one being looked for is buried somewhere in several hundred locales.
+     */
+    private List<String> pinnedLanguages() {
+        final List<String> pinned = new ArrayList<>(Arrays.asList(Utils.getDeviceLanguages()));
+        for (final AudioChoice choice : buildAudioChoices()) {
+            if (choice.language != null && !pinned.contains(choice.language)) {
+                pinned.add(choice.language);
+            }
+        }
+        return pinned;
+    }
+
+    /** A line of plain text where a row would go, for "nothing found". */
+    private TextView searchNote(CharSequence text) {
+        final TextView note = new TextView(this);
+        note.setText(text);
+        note.setTextColor(0x99FFFFFF);
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+        note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+        return note;
+    }
+
+    /**
+     * A result row: artwork, name, and a line of detail under it. The side panels get theirs from
+     * {@link #showSideMenu}, but this list is rebuilt on every keystroke inside a dialog that has to
+     * keep both the keyboard and the field it belongs to, so it builds its own.
+     */
+    private View searchRow(String imageUrl, int imageW, int imageH, CharSequence name,
+                           CharSequence detail, Runnable action) {
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Utils.dpToPx(6), 0, Utils.dpToPx(6));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setMinimumHeight(ui.rowMinHeight());
+        final GradientDrawable content = new GradientDrawable();
+        content.setCornerRadius(Utils.dpToPx(8));
+        content.setColor(Color.TRANSPARENT);
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(Utils.dpToPx(8));
+        mask.setColor(Color.WHITE);
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), content, mask));
+
+        final ImageView art = new ImageView(this);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        // Grey only while something is on its way. A title the catalogue has no poster for led with a
+        // grey card standing in for an image that was never coming — the row should lead with nothing.
+        art.setBackgroundColor(imageUrl != null ? 0xFF333333 : Color.TRANSPARENT);
+        final int corner = Utils.dpToPx(4);
+        art.setClipToOutline(true);
+        art.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), corner);
+            }
+        });
+        final LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(imageW, imageH);
+        artLp.setMarginEnd(Utils.dpToPx(12));
+        art.setLayoutParams(artLp);
+        row.addView(art);
+        if (imageUrl != null) {
+            Glide.with(this).load(imageUrl).into(art);
+        }
+
+        final LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final TextView titleView = new TextView(this);
+        titleView.setText(name);
+        titleView.setTextColor(0xFFDDDDDD);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+        textBlock.addView(titleView);
+        TextView detailView = null;
+        if (detail != null && detail.length() > 0) {
+            detailView = new TextView(this);
+            detailView.setText(detail);
+            detailView.setTextColor(0x99FFFFFF);
+            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+            textBlock.addView(detailView);
+        }
+        row.addView(textBlock);
+        fitLongText(row, titleView, detailView);
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
+    /** Nothing is painted from a file any more: the renderer's own cues get through again. */
+    private void clearSubtitleTimeline() {
+        paintedSubtitleUri = null;
+        subtitleTimeline = null;
+        subtitleTimelineUri = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+    }
+
+    /** Drops a subtitle that had no track of its own — the viewer just picked something else, or off. */
+    private void clearPaintedSubtitle() {
+        if (paintedSubtitleUri == null) {
+            return;
+        }
+        clearSubtitleTimeline();
+        updateSubtitleButton(); // no track moved, so nothing else would
+    }
+
+    /**
+     * Hands the selected subtitle over to {@link SubtitleTimeline} when it is a file the app sideloaded,
+     * and back to the renderer when it is not (an embedded track, or subtitles off). Runs on every track
+     * change, so it has to be cheap when nothing moved — the file is read once per choice, on a worker.
+     */
+    private void updateSubtitleTimeline(Tracks tracks) {
+        final MediaItem.SubtitleConfiguration selected = selectedSideloadedSubtitle(tracks);
+        if (selected == null) {
+            // A painted subtitle has no track to be "selected", and this runs on every track change —
+            // an audio pick, an HLS variant switch. Reading that absence as "nothing to show" is what
+            // would wipe it off the screen.
+            if (paintedSubtitleUri == null) {
+                clearSubtitleTimeline();
+            }
+            return;
+        }
+        // A file the app put on screen itself outranks the track the selector is still holding: that
+        // track is what the viewer went looking online to get away from — a media's own signs-only
+        // subtitle, say — and painting never deselects anything, so it is still selected underneath.
+        // Handing its timeline over here is what used to wipe downloaded subtitles off the screen on the
+        // first track change after a seek. A pick from the menu clears the painted file first, so this
+        // only ever holds off a selection nobody asked for.
+        if (paintedSubtitleUri != null && !paintedSubtitleUri.equals(selected.uri)) {
+            return;
+        }
+        if (selected.uri.equals(subtitleTimelineUri)) {
+            // Already read, or being read. A player rebuild brings a new SubtitleOffset, so re-hand it.
+            if (subtitleOffset != null && subtitleTimeline != null) {
+                subtitleOffset.setTimeline(subtitleTimeline);
+            }
+            return;
+        }
+        subtitleTimelineUri = selected.uri;
+        subtitleTimeline = null;
+        if (subtitleOffset != null) {
+            subtitleOffset.setTimeline(null);
+        }
+        final Uri uri = selected.uri;
+        final String mimeType = selected.mimeType;
+        final Thread worker = new Thread(() -> {
+            final SubtitleTimeline loaded = SubtitleTimeline.load(this, uri, mimeType);
+            runOnUiThread(() -> {
+                // Another track (or another media) was chosen while this was being read.
+                if (!uri.equals(subtitleTimelineUri)) {
+                    return;
+                }
+                subtitleTimeline = loaded;
+                if (subtitleOffset != null) {
+                    subtitleOffset.setTimeline(loaded);
+                }
+            });
+        }, "SubtitleTimeline");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * The sideloaded subtitle the <em>first line</em> is showing, matched by the URI its track carries
+     * as its id.
+     *
+     * <p>The first line, not any line. Since the second line can hold a track of its own, "a selected
+     * text track that is one of the media item's subtitle configurations" is no longer the same thing as
+     * "what the first line is showing" — and reading it as such painted the second line's file onto the
+     * first, so both lines carried the same subtitle and the viewer got it twice for a choice they made
+     * once.
+     */
+    private MediaItem.SubtitleConfiguration selectedSideloadedSubtitle(Tracks tracks) {
+        if (player == null) {
+            return null;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item == null || item.localConfiguration == null
+                || item.localConfiguration.subtitleConfigurations.isEmpty()) {
+            return null;
+        }
+        for (final Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSelected(i)) {
+                    continue;
+                }
+                final Format format = group.getTrackFormat(i);
+                // The second line's own track: its cues are painted by its own offset, into its own view.
+                if (format.equals(secondaryTextTrack.get())) {
+                    continue;
+                }
+                final String id = format.id;
+                for (final MediaItem.SubtitleConfiguration config : item.localConfiguration.subtitleConfigurations) {
+                    if (config.mimeType != null && carriesUri(id, config.uri)) {
+                        return config;
+                    }
+                }
+                return null; // selected, but embedded — the renderer keeps it
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a track id is the one the app gave this sideloaded subtitle. The id it set is the URI
+     * (SubtitleUtils.buildSubtitle), but Media3 hands the track out prefixed with the index its source
+     * has in the merge — "1:file:///…" — so the URI is the tail of the id, not all of it.
+     */
+    private static boolean carriesUri(String formatId, Uri uri) {
+        if (formatId == null) {
+            return false;
+        }
+        final String text = uri.toString();
+        return formatId.equals(text) || formatId.endsWith(":" + text);
+    }
+
+    /**
+     * The remembered external subtitle when the player carries no track for it — the one that is
+     * painted, or can be. This is what keeps it in the picker after the viewer switches it off: without
+     * a track of its own it would otherwise take the CC button with it and become unreachable.
+     */
+    private Uri subtitleWithoutTrack() {
+        final Uri uri = mPrefs.subtitleUri;
+        if (uri == null || player == null) {
+            return null;
+        }
+        final MediaItem item = player.getCurrentMediaItem();
+        if (item != null && item.localConfiguration != null) {
+            for (final MediaItem.SubtitleConfiguration config : item.localConfiguration.subtitleConfigurations) {
+                if (config.uri.equals(uri)) {
+                    return null; // the item carries it, so the renderer and the picker do too
+                }
+            }
+        }
+        return uri;
+    }
+
+    /** What a file with no track is called in the picker — the name its track would have carried. */
+    private String subtitleFileLabel(Uri uri) {
+        // Media3 normalises a track language before it reaches Format.language; a file name is raw.
+        final String language =
+                languageDisplayName(Util.normalizeLanguageCode(SubtitleUtils.getSubtitleLanguage(uri)));
+        final String label = language != null ? language : Utils.getFileName(this, uri);
+        // A machine translation that reads like a human one in the picker is the feature lying about
+        // itself: the first odd line then looks like a broken player rather than what was agreed to.
+        return isMachineTranslated(uri) ? getString(R.string.subtitle_machine_translated, label) : label;
+    }
+
+    /**
+     * Which renderer draws which subtitle line. The order the two were built in is the whole of it (see
+     * {@link SecondaryTextTrack}) and it is fixed, so this needs no mapping and can be asked before the
+     * first selection has run.
+     *
+     * @param ordinal 1 for the first line's renderer, 2 for the second line's
+     * @return the renderer index, or -1 when there is no player or no such renderer
+     */
+    private int textRendererIndex(final int ordinal) {
+        if (player == null) {
+            return -1;
+        }
+        int seen = 0;
+        for (int i = 0; i < player.getRendererCount(); i++) {
+            if (player.getRendererType(i) == C.TRACK_TYPE_TEXT && ++seen == ordinal) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether the first line has been switched off. Its renderer carries that now rather than the track
+     * type (see {@link #disableSubtitles}); the type flag is still read, because a build before this one
+     * may have left it set on this install.
+     */
+    private boolean mainLineDisabled() {
+        // Asked before the selector has been told, on the first track change after a rebuild, so the
+        // field is read first: without it selectSubtitleByName would fill a line the viewer switched off.
+        if (mainLineOff) {
+            return true;
+        }
+        if (player == null) {
+            return false;
+        }
+        if (player.getTrackSelectionParameters().disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            return true;
+        }
+        final int primary = textRendererIndex(1);
+        return trackSelector != null && primary >= 0
+                && trackSelector.getParameters().getRendererDisabled(primary);
     }
 
     private void disableSubtitles() {
         if (player == null) {
             return;
         }
-        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .build());
+        // The second line lives under the first one, so it goes off with it. Without this, turning
+        // subtitles off would leave a lone hint floating at the bottom of a subtitle-free picture.
+        chooseSecondarySubtitle(null);
+        clearPaintedSubtitle();
+        mainLineOff = true;
+        // Off is this line's renderer, not the whole track type. setTrackTypeDisabled(TEXT) is the
+        // selector's last word — applyRendererDisableOverrides runs after every override it applies —
+        // so it takes the second line's track down with the first one, and the hint then shows as
+        // chosen, holds its band open, and never draws a word. The type flag is still cleared here,
+        // since a build before this one may have left it set.
+        final int primary = trackSelector == null ? -1 : textRendererIndex(1);
+        if (primary < 0) {
+            player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build());
+            return;
+        }
+        final DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
+        builder.clearOverridesOfType(C.TRACK_TYPE_TEXT);
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false);
+        builder.setRendererDisabled(primary, true);
+        trackSelector.setParameters(builder);
+    }
+
+    /**
+     * The language the first line is showing right now, or null when it is showing nothing.
+     *
+     * <p>Deliberately not "any language on the first list". That list is a chain of fallbacks — a
+     * language ranked third on it is a last resort, not what is on screen — and treating the whole
+     * chain as taken is what left the second line with nothing whenever the two lists overlapped at
+     * all. What the two lines must not do is show the same language at the same time, and that is this.
+     */
+    private String mainLineLanguage() {
+        final Uri uri = paintedSubtitleUri != null ? paintedSubtitleUri : mPrefs.subtitleUri;
+        if (uri != null) {
+            final String named = Utils.toIso3Language(SubtitleUtils.getSubtitleLanguage(uri));
+            if (named != null) {
+                return named;
+            }
+        }
+        if (player != null) {
+            for (final Tracks.Group group : player.getCurrentTracks().getGroups()) {
+                if (group.getType() != C.TRACK_TYPE_TEXT) {
+                    continue;
+                }
+                for (int i = 0; i < group.length; i++) {
+                    if (group.isTrackSelected(i)) {
+                        return Utils.toIso3Language(group.getTrackFormat(i).language);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a text track is selected <em>for the first line</em>.
+     *
+     * <p>{@code Tracks.isTypeSelected(TRACK_TYPE_TEXT)} stopped answering that the moment there were
+     * two text renderers: the second line's own track is selected too, and by its own renderer. So the
+     * question has to be asked track by track, skipping the one the second line was given.
+     */
+    private boolean mainLineTrackSelected() {
+        if (player == null) {
+            return false;
+        }
+        final Format secondary = secondaryTextTrack.get();
+        for (final Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                if (group.isTrackSelected(i) && !group.getTrackFormat(i).equals(secondary)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Whether the first line is already showing this track — the second one must never repeat it. */
+    private boolean shownByMainLine(Format format) {
+        if (player == null || format.equals(secondaryTextTrack.get())) {
+            return false;
+        }
+        for (final Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                if (group.isTrackSelected(i) && group.getTrackFormat(i).equals(format)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Whether the first line is already showing this file — the second one must never repeat it. */
+    private boolean shownByMainLine(Uri uri) {
+        return uri.equals(mPrefs.subtitleUri) || uri.equals(paintedSubtitleUri);
+    }
+
+    /** What the second line is asked to be, in order. Empty means it is only ever chosen by hand. */
+    private List<String> secondarySubtitleLanguages() {
+        return Utils.splitLanguages(mPrefs.languageSubtitleSecondary);
+    }
+
+    /**
+     * Turns the second line on by itself, from the files this item already carries.
+     *
+     * <p>Runs once per film. Anything the viewer does to the second line afterwards — picking another
+     * file, or switching it off — settles it for good, which is what {@link #secondaryChoiceMedia} is
+     * for: a hint that came back after being dismissed would be the player arguing.
+     *
+     * <p>Only files, and never the one the first line is showing. A language wanted by both lists
+     * belongs to the first line — the same words twice, once under the other, is not a hint.
+     */
+    private void autoFillSecondarySubtitle() {
+        if (secondarySubtitles == null || player == null || !secondaryEnabled()
+                || mPrefs.mediaUri == null || mPrefs.mediaUri.equals(secondaryChoiceMedia)
+                || secondaryActive()) {
+            return;
+        }
+        final List<String> wanted = secondarySubtitleLanguages();
+        if (wanted.isEmpty()) {
+            return;
+        }
+        int best = wanted.size();
+        Uri bestUri = null;
+        for (final Uri uri : externalSubtitleUris()) {
+            if (shownByMainLine(uri)) {
+                continue;
+            }
+            final String language = Utils.toIso3Language(SubtitleUtils.getSubtitleLanguage(uri));
+            // Never the language the first line is showing: the same words twice, once under the other,
+            // is not a hint.
+            if (language == null || language.equals(mainLineLanguage())) {
+                continue;
+            }
+            final int rank = wanted.indexOf(language);
+            if (rank >= 0 && rank < best) {
+                best = rank;
+                bestUri = uri;
+            }
+        }
+        if (bestUri == null) {
+            // Nothing to show yet. Not settled either: the search may still deliver one, and this runs
+            // again on every track change.
+            return;
+        }
+        secondaryChoiceMedia = mPrefs.mediaUri;
+        setSecondarySubtitle(bestUri);
+    }
+
+    /**
+     * A choice made in the picker, which also settles the second line for this film so that
+     * {@link #autoFillSecondarySubtitle()} stops having an opinion about it.
+     */
+    private void chooseSecondarySubtitle(Uri uri) {
+        secondaryChoiceMedia = mPrefs.mediaUri;
+        setSecondarySubtitle(uri);
+        if (uri != null) {
+            sayHowToPeek();
+        }
+    }
+
+    /**
+     * On demand, choosing a second line puts nothing on screen at all, which reads as the choice not
+     * having taken. Said once, on an explicit choice — feedback rather than a tip.
+     */
+    private void sayHowToPeek() {
+        if (!secondaryOnDemand() || playerView == null) {
+            return;
+        }
+        Utils.showText(playerView, getString(R.string.subtitle_secondary_peek_hint),
+                SECONDARY_HINT_MS);
+    }
+
+    /**
+     * Points the second line at a file, or switches it off with {@code null}. The one door in: it
+     * remembers the choice, hands it to the painter, and reserves — or gives back — the band the main
+     * line is shifted up over.
+     */
+    private void setSecondarySubtitle(Uri uri) {
+        if (secondarySubtitles == null) {
+            return;
+        }
+        // Already this file, read or being read. Reaching for it again would blank the line for as long
+        // as the read takes, and a rebuild of the player comes through here on every return from the
+        // background.
+        if (uri != null && uri.equals(secondarySubtitleUri)) {
+            if (secondarySubtitleOffset != null) {
+                // A rebuild brings a new offset with it, so hand it what has already been read.
+                secondarySubtitleOffset.setTimeline(secondarySubtitleTimeline);
+                secondarySubtitleOffset.setOffsetSec(secondarySubtitleOffsetSec);
+            }
+            return;
+        }
+        mPrefs.updateSecondarySubtitle(uri);
+        // A file and a track are the two ways this line can be filled, and it can only be filled one
+        // way at a time — including "no way", which is what Off is.
+        setSecondaryTrack(null);
+        paintSecondarySubtitle(uri);
+        updateSubtitleLayout();
+        updateSubtitleButton();
+    }
+
+    /**
+     * Reads the file on a worker and hands it to the second line's offset, exactly as
+     * {@link #paintSubtitle} does for the first. Unlike the first line there is no renderer to fall
+     * back to: a file this cannot parse simply does not take.
+     */
+    private void paintSecondarySubtitle(Uri uri) {
+        secondarySubtitleUri = uri;
+        secondarySubtitleTimeline = null;
+        if (secondarySubtitleOffset != null) {
+            secondarySubtitleOffset.setTimeline(null);
+            secondarySubtitleOffset.setOffsetSec(secondarySubtitleOffsetSec);
+        }
+        if (secondarySubtitles != null) {
+            secondarySubtitles.clear();
+        }
+        if (uri == null) {
+            return;
+        }
+        final String mimeType = SubtitleUtils.getSubtitleMime(uri);
+        final Thread worker = new Thread(() -> {
+            final SubtitleTimeline loaded = SubtitleTimeline.load(this, uri, mimeType);
+            runOnUiThread(() -> {
+                if (!uri.equals(secondarySubtitleUri)) {
+                    return; // another choice, another episode, or a rebuild got there first
+                }
+                if (loaded == null) {
+                    // Nothing to paint, and the band reserved for it has to go back or the first line
+                    // stays shifted up over a hint that never arrived. The icon goes with it: nothing
+                    // is showing on this line after all.
+                    secondarySubtitleUri = null;
+                    updateSubtitleLayout();
+                    updateSubtitleButton();
+                    return;
+                }
+                secondarySubtitleTimeline = loaded;
+                if (secondarySubtitleOffset != null) {
+                    secondarySubtitleOffset.setTimeline(loaded);
+                }
+            });
+        }, "SecondarySubtitleTimeline");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Gives the second line a track of the media — which is what {@link SecondaryTextTrack} exists
+     * for. The selector has to be asked again, because which renderer may take which group is exactly
+     * what has just changed; the override that turns it on is applied once the new mapping is known
+     * (see {@link #applySecondaryTrackSelection}).
+     */
+    private void setSecondaryTrack(Format format) {
+        if (Objects.equals(secondaryTextTrack.get(), format)) {
+            return;
+        }
+        // Last moment the first line's track is still selected: the override applied below takes it
+        // away, and by the time the track change arrives there is nothing left to read it from.
+        rememberMainLineTrack();
+        secondaryTextTrack.set(format);
+        // Answered by verifySecondaryTrackReached on the next track change, which is the first moment
+        // the new mapping exists.
+        secondaryTrackPending = format != null;
+        if (format == null) {
+            secondaryTrackGroup = null;
+        }
+        if (format != null) {
+            paintSecondarySubtitle(null);
+            mPrefs.updateSecondarySubtitle(null);
+        }
+        if (secondarySubtitles != null) {
+            secondarySubtitles.clear();
+        }
+        // Enabling the renderer is itself the parameter change that re-runs the selector, and the
+        // second run is where the group finally lands on it. See applySecondaryTrackSelection.
+        applySecondaryTrackSelection();
+        updateSubtitleLayout();
+        updateSubtitleButton();
+    }
+
+    /**
+     * Notes which track the first line is showing, so that {@link #applyMainLineTrackSelection()} can
+     * put it back. Silent when the first line has nothing selected, which is the state this exists to
+     * recover from — the last known answer is better than none.
+     */
+    private void rememberMainLineTrack() {
+        if (player == null) {
+            return;
+        }
+        final Format secondary = secondaryTextTrack.get();
+        for (final Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSelected(i)) {
+                    continue;
+                }
+                final Format format = group.getTrackFormat(i);
+                if (secondary != null && secondary.equals(format)) {
+                    continue;
+                }
+                mainTrackGroup = group.getMediaTrackGroup();
+                mainTrackIndex = i;
+                return;
+            }
+        }
+    }
+
+    /**
+     * Pins the first line's track for as long as the second line holds one of its own.
+     *
+     * <p>Without this, giving the second line a track switches the first line off. The cause is one
+     * line in the selector: {@code selectTracks} applies the per-renderer overrides <em>before</em>
+     * {@code selectAllTracks}, and that method begins its text pass with
+     * {@code if (findDefinitionForType(definitions, TRACK_TYPE_TEXT) == null)}. The second line's
+     * override is a text definition, so the test fails and the automatic pass — the one that reads the
+     * language priority and fills the first line — is skipped for every text renderer at once. One
+     * selection is all the selector will make for a track type; two lines therefore need two overrides,
+     * not one.
+     *
+     * <p>Runs from the track change rather than from wherever the track was chosen, for the same reason
+     * {@link #applySecondaryTrackSelection()} does: the key of a per-renderer override is the renderer's
+     * whole {@code TrackGroupArray}, and the array this line's renderer ends up with is what the
+     * re-selection produces. Cleared again as soon as the second line has no track, so a lone first line
+     * goes back to being chosen by language, by name and by what was remembered.
+     */
+    private void applyMainLineTrackSelection() {
+        if (trackSelector == null) {
+            return;
+        }
+        final int renderer = textRendererIndex(1);
+        if (renderer < 0) {
+            return;
+        }
+        final MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+        final TrackGroupArray groups = info == null ? null : info.getTrackGroups(renderer);
+        final int group = groups == null || mainTrackGroup == null || secondaryTextTrack.get() == null
+                ? -1 : groups.indexOf(mainTrackGroup);
+        final DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
+        if (group < 0) {
+            builder.clearSelectionOverrides(renderer);
+        } else {
+            builder.setSelectionOverride(renderer, groups,
+                    new DefaultTrackSelector.SelectionOverride(group, mainTrackIndex));
+        }
+        // And whether the line is on at all. Asserted here rather than only where Off is pressed,
+        // because a rebuilt player brings a selector that has never been told — which is what let a
+        // switched-off line come back on.
+        builder.setRendererDisabled(renderer, mainLineOff);
+        // A no-op when nothing changed: the selector compares parameters before it invalidates, so this
+        // running on every track change does not chase its own tail.
+        trackSelector.setParameters(builder);
+    }
+
+    /** A track chosen in the picker, which also settles the second line for this film. */
+    private void chooseSecondarySubtitleTrack(TrackGroup mediaGroup, int index, Format format) {
+        // Refused before anything moves, because a group carrying more than one format cannot be split
+        // at all: findRenderer scores a group by the best support any of its formats gets and hands the
+        // whole group to one renderer. Asked afterwards instead — which is what verifySecondaryTrackReached
+        // does — the answer came back "the group arrived", true and useless: the second line then showed
+        // the track as chosen and drew nothing, while the first line, whose only track was the other
+        // format in that same group, read as switched off. A DASH text AdaptationSet with two
+        // Representations is the shape that does this.
+        if (mediaGroup.length > 1) {
+            Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
+            return;
+        }
+        secondaryChoiceMedia = mPrefs.mediaUri;
+        secondaryTrackGroup = mediaGroup;
+        secondaryTrackIndex = index;
+        setSecondaryTrack(format);
+        sayHowToPeek();
+    }
+
+    /**
+     * Turns the second line's track on, with a per-renderer override.
+     *
+     * <p>Two dead ends came before this one, and both are worth recording because each looked right.
+     *
+     * <p>A {@link TrackSelectionOverride} — the modern, renderer-agnostic kind — cannot express this at
+     * all. {@code DefaultTrackSelector.applyTrackSelectionOverrides} collects them into a map keyed by
+     * <em>track type</em>, so one text override is the most a player can have, and it explicitly clears
+     * the selection of every other renderer of that type. Two text tracks at once is precisely what it
+     * refuses.
+     *
+     * <p>The per-renderer override below can express it, but its key is the renderer's whole
+     * {@code TrackGroupArray}, and reading that from {@code getCurrentMappedTrackInfo} never worked:
+     * moving a group from one renderer to another is not a change of <em>selection</em>, so the player
+     * finds the new result equivalent, keeps the old one, and never hands the selector its new mapping.
+     * The mapping stayed as it was at the first selection, for good.
+     *
+     * <p>What breaks the circle is that the array does not have to be read. It can be built: the second
+     * line's renderer says it can handle exactly one format, so its groups are exactly one group — the
+     * chosen one — and {@code TrackGroupArray} compares by content. The renderer index does not depend
+     * on the mapping either, only on the order the renderers were built in, which is fixed.
+     *
+     * <p>Applied after the type-keyed pass by {@code selectAllTracks}, so it also survives the first
+     * line's own picker, which clears every text override to set its own.
+     *
+     * <p>Cheap to call with nothing to do, and called on every track change so a rebuild heals itself.
+     */
+    private void applySecondaryTrackSelection() {
+        if (trackSelector == null) {
+            return;
+        }
+        final int renderer = textRendererIndex(2);
+        if (renderer < 0) {
+            return;
+        }
+        final DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
+        if (secondaryTextTrack.get() == null || secondaryTrackGroup == null) {
+            builder.clearSelectionOverrides(renderer);
+        } else {
+            builder.setSelectionOverride(renderer, new TrackGroupArray(secondaryTrackGroup),
+                    new DefaultTrackSelector.SelectionOverride(0, secondaryTrackIndex));
+        }
+        builder.setRendererDisabled(renderer, false);
+        trackSelector.setParameters(builder);
+    }
+
+    /**
+     * Whether the second line's renderer was actually handed the track it was given — asked once per
+     * choice, and only from a track change, which is the first moment the new mapping exists.
+     *
+     * <p>Not a formality. A {@code TrackGroup} carrying more than one text format cannot be split at
+     * all: {@code findRenderer} scores a group by the <em>best</em> support any of its formats gets, so
+     * both renderers answer alike and the group goes to the first of them. The second line would then
+     * show that track as chosen, hold its band open under the first line, and never draw a word. Saying
+     * so and going back to Off is the honest end.
+     */
+    private void verifySecondaryTrackReached() {
+        if (!secondaryTrackPending || trackSelector == null || secondaryTextTrack.get() == null) {
+            return;
+        }
+        final MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+        final int renderer = textRendererIndex(2);
+        if (info == null || renderer < 0 || renderer >= info.getRendererCount()) {
+            return; // no mapping yet; the next track change asks again
+        }
+        secondaryTrackPending = false;
+        if (info.getTrackGroups(renderer).length > 0) {
+            return;
+        }
+        setSecondaryTrack(null);
+        Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
     }
 
     private void applySubtitle(TrackGroup group, int index) {
         if (player == null || group == null) {
             return;
         }
+        // Without this the picked track would show nothing: SubtitleOffset drops the renderer's cues
+        // for as long as a file is painted.
+        clearPaintedSubtitle();
+        // Off disables this line's renderer rather than the whole track type (see disableSubtitles), so
+        // putting a track back on the line has to lift that first — here for this player, and in the
+        // field so the next rebuild does not put it back.
+        mainLineOff = false;
+        final int primary = trackSelector == null ? -1 : textRendererIndex(1);
+        if (primary >= 0) {
+            final DefaultTrackSelector.Parameters.Builder enable = trackSelector.buildUponParameters();
+            enable.setRendererDisabled(primary, false);
+            trackSelector.setParameters(enable);
+        }
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .setOverrideForType(new TrackSelectionOverride(group, Collections.singletonList(index)))
                 .build());
+        // The pin outlives this choice otherwise: per-renderer overrides are applied after the
+        // type-keyed ones, so a stale one would quietly beat the track just picked.
+        mainTrackGroup = group;
+        mainTrackIndex = index;
+        applyMainLineTrackSelection();
     }
 
     private static final float[] SPEED_PRESETS =
@@ -5725,24 +8356,56 @@ public class PlayerActivity extends Activity {
         showPickerDialog(sleepTimerDialog);
     }
 
-    // Overflow menu: everything used rarely or once per session lives here so the main row stays calm.
+    /**
+     * Overflow menu: everything used rarely or once per session, so the control row stays calm.
+     *
+     * <p>Three bands rather than one column, because three unlike things were sharing it and an icon on
+     * every row told them apart from nothing. First the instruments of <em>this</em> film — the only
+     * rows that carry live state, and the only ones anybody comes back to; then errands, done once and
+     * done with; then the ways of leaving this film. Two rules and one caption, drawn by the same panel
+     * that draws the subtitle picker's.
+     *
+     * <p>Titled "More", as the button that opens it is named. It used to be titled "Settings" and to
+     * carry a row called "More" that opened the real settings screen: one glyph, two destinations, and
+     * three names between them.
+     */
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
+        // "Playback" rather than "this film": of these four only the skip offset is per file. The speed
+        // outlives the app, the subtitle timing outlives the episode, and a sleep timer was never about
+        // one file at all. The caption also carries the qualifier for the band, which is why the row
+        // below is "Speed" and only its own panel says "Playback speed".
+        items.add(MenuItem.caption(getString(R.string.menu_playback)));
         if (player != null) {
-            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_title),
-                    formatSpeed(userSpeed()), false, this::showSpeedDialog));
+            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
+                    // Quiet at 1x, like every other row here: a summary reports what has been changed,
+                    // and "Normal" is the absence of a change.
+                    userSpeed() == 1f ? null : formatSpeed(userSpeed()),
+                    false, this::showSpeedDialog));
+        }
+        // Only with subtitles on: there is nothing to shift otherwise. One row for both lines — the
+        // panel behind it carries a slider each, and which is which is answered there.
+        if (subtitleOffsetShiftable() || secondaryOffsetShiftable()) {
+            items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
+                    getString(R.string.subtitle_offset_title), subtitleOffsetSummary(),
+                    false, this::showSubtitleOffsetDialog));
+        }
+        if (skipOffsetReachable()) {
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
+                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
+                    false, this::showSkipOffsetDialog));
+        }
+        if (player != null) {
             items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
                     sleepTimerSummary(), false, this::showSleepTimerMenu));
-            // Rides the stats panel: the details it reports are the ones on screen, and the row would be
-            // noise for everyone who has not asked for them. From the menu rather than a long-press on the
-            // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
-            if (mPrefs.showStats) {
-                items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
-                        getString(R.string.stats_report_title), null, false, this::showPlayerState));
-            }
         }
-        if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
-            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset), null, false, this::showSkipOffsetDialog));
+        items.add(MenuItem.rule());
+        // Here as well as in the subtitle panel: the panel is where somebody who has looked for
+        // subtitles ends up, and this menu is where they look when the panel had nothing to offer.
+        if (player != null) {
+            items.add(new MenuItem(R.drawable.ic_search_24dp,
+                    getString(R.string.subtitle_search_manual), null, false,
+                    () -> showSubtitleSearchDialog(false)));
         }
         // Only for network media: a room syncs one shared URL, and there is nothing to share about a
         // file that lives on this device alone.
@@ -5750,13 +8413,20 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_title),
                     togetherSummary(), false, this::showTogetherMenu));
         }
+        // Rides the stats panel: the details it reports are the ones on screen, and the row would be
+        // noise for everyone who has not asked for them. From the menu rather than a long-press on the
+        // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
+        if (player != null && mPrefs.showStats) {
+            items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
+                    getString(R.string.stats_report_title), null, false, this::showPlayerState));
+        }
+        items.add(MenuItem.rule());
         // Same two entry points the empty state offers (hence its strings), so opening something else is
         // not a matter of first getting back to an empty player.
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
-        // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
-        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, this::openSettings));
-        showSideMenu(getString(R.string.pref_title), items);
+        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
+        showSideMenu(getString(R.string.button_more), items);
     }
 
     // --- Watch together -------------------------------------------------------------------------
@@ -6819,6 +9489,10 @@ public class PlayerActivity extends Activity {
         SubtitleUtils.clearCache(this);
         uri = Utils.convertToUTF(this, uri);
         mPrefs.updateSubtitle(uri);
+        // And put it on screen. Remembering it was all this used to do, so a subtitle handed over while
+        // something was already playing changed nothing at all until the player happened to be rebuilt —
+        // which from the outside is an intent that was accepted and then ignored.
+        addSubtitleTrack(uri);
     }
 
     // Whether the current media is a Matroska container, detected from the resolved MIME type or the
@@ -6969,18 +9643,13 @@ public class PlayerActivity extends Activity {
         // Ordered fallback chain: the selector walks the list and takes the first language the media
         // actually carries. An empty list leaves the media's own order alone.
         applyPreferredAudioLanguages();
-        final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
-        if (!captioningManager.isEnabled()) {
-            trackSelector.setParameters(trackSelector.buildUponParameters()
-                    .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-            );
-        }
-        Locale locale = captioningManager.getLocale();
-        if (locale != null) {
-            trackSelector.setParameters(trackSelector.buildUponParameters()
-                    .setPreferredTextLanguage(locale.getISO3Language())
-            );
-        }
+        // A subtitle nobody asked for is in the way, so the file marking one as default is not enough
+        // on its own: subtitles come on when the preferred-language list below matches, or by hand.
+        // This used to depend on the system captioning toggle, which is no longer read anywhere.
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+        );
+        applyPreferredTextLanguages();
         // Set rather than left to the default so Dv7Converter can hand the very same instance to the
         // Matroska extractor it re-creates — subtitle parsing is a constructor argument there, and
         // matching it by construction beats matching Media3's defaults from memory.
@@ -7041,6 +9710,39 @@ public class PlayerActivity extends Activity {
                         .build();
                 audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes);
                 return audioSink;
+            }
+
+            @Override
+            protected void buildTextRenderers(Context context, TextOutput output, Looper outputLooper,
+                                              int extensionRendererMode, ArrayList<Renderer> out) {
+                // The subtitle offset wraps the text renderer on both sides — its cue output and its
+                // clock (see SubtitleOffset). The list the base class appends to already holds the
+                // video/audio renderers, hence the index.
+                final SubtitleOffset offset = new SubtitleOffset(output, outputLooper, subtitlePosition);
+                offset.setOffsetSec(subtitleOffsetSec);
+                offset.setTimeline(subtitleTimeline);
+                subtitleOffset = offset;
+                final int first = out.size();
+                super.buildTextRenderers(context, offset, outputLooper, extensionRendererMode, out);
+                for (int i = first; i < out.size(); i++) {
+                    out.set(i, secondaryTextTrack.forPrimary(offset.wrap(out.get(i))));
+                }
+
+                // The second line gets the same again: its own offset, its own renderers. Built even
+                // when no second line is chosen — renderers are fixed once the player exists, and
+                // rebuilding it to turn a hint on would cost a re-buffer. Idle they cost nothing:
+                // SecondaryTextTrack hands them no track until one is picked, and a text renderer with
+                // no track does no work.
+                final SubtitleOffset second =
+                        new SubtitleOffset(secondarySubtitles, outputLooper, subtitlePosition);
+                second.setOffsetSec(secondarySubtitleOffsetSec);
+                second.setTimeline(secondarySubtitleTimeline);
+                secondarySubtitleOffset = second;
+                final int firstSecondary = out.size();
+                super.buildTextRenderers(context, second, outputLooper, extensionRendererMode, out);
+                for (int i = firstSecondary; i < out.size(); i++) {
+                    out.set(i, secondaryTextTrack.forSecondary(second.wrap(out.get(i))));
+                }
             }
         };
         @SuppressLint("WrongConstant") DefaultRenderersFactory renderersFactory = baseRenderersFactory
@@ -7216,14 +9918,28 @@ public class PlayerActivity extends Activity {
                         .build();
                 mediaItemBuilder.setMediaMetadata(mediaMetadata);
             }
-            if (apiAccess && apiSubs.size() > 0) {
-                mediaItemBuilder.setSubtitleConfigurations(apiSubs);
-            } else if (mPrefs.subtitleUri != null && Utils.fileExists(this, mPrefs.subtitleUri)) {
-                MediaItem.SubtitleConfiguration subtitle = SubtitleUtils.buildSubtitle(this, mPrefs.subtitleUri, null, true);
-                mediaItemBuilder.setSubtitleConfigurations(Collections.singletonList(subtitle));
+            // Both, not one or the other: an external subtitle found for this media is added to the
+            // ones the launcher supplied rather than in their place. Dropping either is how a track the
+            // viewer was watching disappears on the next rebuild.
+            final MediaItem.SubtitleConfiguration remembered = rememberedSubtitle();
+            final List<MediaItem.SubtitleConfiguration> startingSubs = new ArrayList<>();
+            if (apiAccess) {
+                startingSubs.addAll(apiSubs);
+            }
+            if (remembered != null) {
+                startingSubs.add(remembered);
+            }
+            if (!startingSubs.isEmpty()) {
+                mediaItemBuilder.setSubtitleConfigurations(startingSubs);
             }
             if (!apiMediaItems.isEmpty()) {
-                player.setMediaItems(new ArrayList<>(apiMediaItems), apiPlaylistStartIndex, mPrefs.getPosition());
+                // The playlist items are built from the intent and never saw the remembered subtitle, so
+                // the one item about to play gets it here. The rest pick up their own when they start.
+                final List<MediaItem> items = new ArrayList<>(apiMediaItems);
+                if (remembered != null && apiPlaylistStartIndex >= 0 && apiPlaylistStartIndex < items.size()) {
+                    items.set(apiPlaylistStartIndex, withSubtitle(items.get(apiPlaylistStartIndex), remembered));
+                }
+                player.setMediaItems(items, apiPlaylistStartIndex, mPrefs.getPosition());
             } else {
                 player.setMediaItem(mediaItemBuilder.build(), mPrefs.getPosition());
             }
@@ -7286,6 +10002,25 @@ public class PlayerActivity extends Activity {
         }
         player.prepare();
 
+        // The second line is view-scoped and survives this rebuild. A track of the media cannot be
+        // remembered in the preferences — a Format is not a Uri — so it lives in fields that outlive
+        // the player, and this is where they are kept or dropped: kept for a rebuild of the same film,
+        // where applySecondaryTrackSelection puts the override back on the next track change; dropped
+        // when the film changed, and only then is the remembered file put back.
+        if (secondaryEnabled() && secondaryTextTrack.get() != null && mPrefs.mediaUri != null
+                && mPrefs.mediaUri.equals(secondaryChoiceMedia)) {
+            if (secondarySubtitles != null) {
+                // The line on screen belongs to the player that has just gone.
+                secondarySubtitles.clear();
+            }
+            // New player, new mapping: ask again whether its second text renderer can take the track.
+            secondaryTrackPending = true;
+        } else {
+            mainTrackGroup = null;
+            setSecondaryTrack(null);
+            setSecondarySubtitle(secondaryEnabled() ? mPrefs.subtitleSecondaryUri : null);
+        }
+
         // Only while the activity is up: a recovery rebuild posted from onPlayerError can land after the user
         // has already left, and resuming there would play in the background.
         if (restorePlayState && alive) {
@@ -7344,8 +10079,16 @@ public class PlayerActivity extends Activity {
      * the new state with itself.
      */
     void openSettings() {
+        openSettings(null);
+    }
+
+    /** @param scrollToKey preference to open the screen on, or null to start at the top. */
+    void openSettings(final String scrollToKey) {
         settingsBefore = mPrefs.snapshot();
         final Intent intent = new Intent(this, SettingsActivity.class);
+        if (scrollToKey != null) {
+            intent.putExtra(SettingsActivity.EXTRA_SCROLL_TO, scrollToKey);
+        }
         // Lets the audio language picker put the languages of the clip on screen right now on top,
         // instead of burying them somewhere in the device's several hundred locales.
         final List<String> languages = new ArrayList<>();
@@ -7397,7 +10140,11 @@ public class PlayerActivity extends Activity {
                     rememberEpisodePosition(player.getCurrentMediaItemIndex(), position);
                 }
                 mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
-                        getSelectedTrack(C.TRACK_TYPE_TEXT),
+                        // A painted subtitle is on screen with no track selected, so getSelectedTrack
+                        // answers "#none" — which reads back as "the viewer chose off" and disables the
+                        // very track the next rebuild restores from mPrefs.subtitleUri. Null means no
+                        // choice recorded, letting that track's DEFAULT flag select it as a fresh open does.
+                        paintedSubtitleUri != null ? null : getSelectedTrack(C.TRACK_TYPE_TEXT),
                         playerView.getResizeMode(),
                         playerView.getVideoSurfaceView().getScaleX(),
                         currentAspectRatio,
@@ -7523,6 +10270,21 @@ public class PlayerActivity extends Activity {
         }
         stopSkipPolling();
         cancelSegmentFinder();
+        // Deliberately not cancelSubtitleSearch(). A rebuild is not a change of mind: opening the
+        // settings screen, rotating, or switching the decoder all pass through here and used to
+        // throw away a search or a translation that was seconds from finishing — and the next
+        // attempt started from nothing, so on a slow endpoint it could never finish at all. The
+        // search now outlives the player: attachSearchedSubtitle checks the generation, the index
+        // and the loaded media before it attaches anything, and a result that arrives while there
+        // is no player still lands in the cache, where the search after the rebuild finds it at
+        // once. What genuinely invalidates a search still cancels it: a new item (the media item
+        // transition), a new session, and a search for a different key.
+        // The paint had no track behind it; the rebuild puts the file back as a real one
+        // (rememberedSubtitle). Deliberately not clearSubtitleTimeline(): the parsed timeline has to
+        // survive so initializePlayer can seed the new SubtitleOffset with it, and updateSubtitleTimeline
+        // recognises it by subtitleTimelineUri and re-hands the same object — no re-read, no blank gap.
+        // After the savePlayer() above, which still needs to see the flag.
+        paintedSubtitleUri = null;
         hideSkipPill();
         skipBuilt = false;
         if (timeBar != null) {
@@ -7547,6 +10309,10 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null) {
             skipOffsetDialog.dismiss();
             skipOffsetDialog = null;
+        }
+        if (subtitleOffsetDialog != null) {
+            subtitleOffsetDialog.dismiss();
+            subtitleOffsetDialog = null;
         }
         // Only the panel goes: this runs on a quality switch too, and an armed timer has to ride across that.
         if (sleepTimerDialog != null) {
@@ -7621,6 +10387,21 @@ public class PlayerActivity extends Activity {
             if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
                 playerStartPositionMs = currentPeriodPositionMs();
             }
+            // A delayed cue still waiting to be shown belongs to the moment it was read at, not to this one.
+            if (subtitleOffset != null) {
+                subtitleOffset.clear();
+            }
+            if (secondarySubtitleOffset != null) {
+                secondarySubtitleOffset.clear();
+            }
+            // And the hint forgets what it was holding. A seek lands where nothing is being said far more
+            // often than not, and the renderer says nothing at all about that — it simply stops sending
+            // cues — so without this the line from before the seek stays the hint's idea of "now" and a
+            // peek a whole scene later answers with it. What the viewer missed is not on the other side
+            // of a seek.
+            if (secondarySubtitles != null) {
+                secondarySubtitles.clear();
+            }
             // The seek flushed the audio output, so the bitstream may need re-locking (see
             // audioRestartPending). Latched, not run here. Within one item only.
             if (reason == Player.DISCONTINUITY_REASON_SEEK
@@ -7666,6 +10447,17 @@ public class PlayerActivity extends Activity {
                         mPrefs.mediaUri = current.localConfiguration.uri;
                     }
                 }
+            }
+            // The remembered external subtitle belonged to the item that just ended: it was downloaded
+            // or picked for that episode, and the next rebuild would put it back — minutes out of sync
+            // with what is playing now. PLAYLIST_CHANGED is excluded because that is the transition
+            // attachSubtitleTrack() itself causes, and clearing there would undo the attach that raised it.
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                mPrefs.updateSubtitle(null);
+                // Painting is not tied to a track, so nothing else would stop the previous episode's
+                // subtitles from being drawn over this one.
+                clearSubtitleTimeline();
+                cancelSubtitleSearch();
             }
             // The new item opens its own audio output; a restart latched on the old one must not tear it down.
             // The armer goes with it: a stall at the end of an episode would otherwise land on the next one's
@@ -7741,6 +10533,27 @@ public class PlayerActivity extends Activity {
             if (playerView != null) {
                 playerView.post(PlayerActivity.this::updateSubtitleButton);
             }
+            updateSubtitleTimeline(tracks);
+            // Before the search: a track whose name gives its language away answers what the search
+            // would otherwise go looking for.
+            selectSubtitleByName();
+            // What the first line is showing right now, before anything below can cost it that.
+            rememberMainLineTrack();
+            // The second line's renderer is turned on here rather than where the track is picked: the
+            // mapping it needs is what the re-selection produces, so it exists only by now. Also heals
+            // a player rebuild, which starts with no overrides at all.
+            applySecondaryTrackSelection();
+            // Both lines are pinned from here, and in this order: the second line's override is what
+            // makes the first line's necessary.
+            applyMainLineTrackSelection();
+            // The mapping this change carries is the answer to the last track the second line was given.
+            verifySecondaryTrackReached();
+            // A file the second line wants may have arrived with this very change — the search attaches
+            // one as a track. Before the search, so a file already here is used instead of fetched.
+            autoFillSecondarySubtitle();
+            // The track list is what decides whether anything is missing, so this is the first moment
+            // the question can be asked at all.
+            maybeSearchSubtitlesOnline(tracks);
             // Apply a sticky quality choice to a freshly auto-advanced episode once its variants are known.
             // Posted so the reinitialisation never runs while listeners are being dispatched.
             if (playerView != null) {
@@ -7781,6 +10594,13 @@ public class PlayerActivity extends Activity {
         // playWhenReady survives both, and a latch armed there would be spent on whatever output comes next.
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
+            // Subtitles are painted off the media position, which only moves while this is true.
+            if (subtitleOffset != null) {
+                subtitleOffset.wake();
+            }
+            if (secondarySubtitleOffset != null) {
+                secondarySubtitleOffset.wake();
+            }
             if (isPlaying) {
                 playerView.removeCallbacks(rebufferArmRunnable);
                 audioRestartSettling = false;
@@ -7914,7 +10734,7 @@ public class PlayerActivity extends Activity {
                             updateButtonRotation();
                         }
 
-                        updateSubtitleViewMargin(format);
+                        updateSubtitleLayout();
                     }
 
                     if (duration != C.TIME_UNSET && duration > TimeUnit.MINUTES.toMillis(20)) {
@@ -8798,66 +11618,249 @@ public class PlayerActivity extends Activity {
         return null;
     }
 
-    void setSubtitleTextSize() {
-        setSubtitleTextSize(getResources().getConfiguration().orientation);
+    /** Line box as a multiple of the text size, for reserving the band without measuring anything. */
+    private static final float SECONDARY_LINE_HEIGHT = 1.3f;
+    /** Matches SecondarySubtitles.MAX_LINES: the band has to hold whatever the line may grow to. */
+    private static final int SECONDARY_MAX_LINES = 2;
+    /** How long the lines take to make room for a hint that was asked for, and to close again. */
+    private static final int SECONDARY_PEEK_MS = 150;
+    /** Where the last slide was headed, in pixels of translation. */
+    private float subtitleShift;
+    /** How long the one line explaining how to ask for the hint stays. Sized to read, not to glance. */
+    private static final int SECONDARY_HINT_MS = 3000;
+
+    /**
+     * Everything about where the two subtitle lines sit and how big they are, in one place.
+     *
+     * <p>It was four places, and they disagreed. Text size, the band the second line sits in, the
+     * subtitle view's padding and its margins were each set from a different method, called from
+     * different events, in an order nobody could see — and any of them could undo another. The bug
+     * that ended it: the band is the view's bottom padding, and a fractional text size is a fraction
+     * of the view height <em>minus padding</em>, so turning the hint on quietly shrank the line above
+     * it by a quarter. Two lines set to the same size came out different sizes.
+     *
+     * <p>Hence one method, one order, and an absolute text size for the main line rather than a
+     * fraction: pixels cannot be reinterpreted by whatever is set afterwards, and both lines are then
+     * handed the very same number.
+     */
+    private void updateSubtitleLayout() {
+        updateSubtitleLayout(getResources().getConfiguration().orientation);
     }
 
-    void setSubtitleTextSize(final int orientation) {
-        // Tweak text size as fraction size doesn't work well in portrait
-        final SubtitleView subtitleView = playerView.getSubtitleView();
-        if (subtitleView != null) {
-            final float size;
-            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                size = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitlesScale;
-            } else {
-                DisplayMetrics metrics = getResources().getDisplayMetrics();
-                float ratio = ((float)metrics.heightPixels / (float)metrics.widthPixels);
-                if (ratio < 1)
-                    ratio = 1 / ratio;
-                size = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitlesScale / ratio;
+    /**
+     * @param orientation taken as an argument because a rotation reports the new one before the
+     *                    resources carry it.
+     */
+    private void updateSubtitleLayout(final int orientation) {
+        final SubtitleView subtitleView = playerView == null ? null : playerView.getSubtitleView();
+        if (subtitleView == null) {
+            return;
+        }
+        if (secondarySubtitles != null) {
+            // Asserted here rather than wherever the state last changed, because this pass runs on a
+            // rotation, a resize and a style change too — a state set anywhere else would be undone by
+            // the next one of those. A hint has no room in a thumbnail either, and the band it would
+            // reserve there would cost the line above it a third of the window.
+            secondarySubtitles.setState(secondaryState());
+        }
+        if (isInPip()) {
+            // The window, not the display, is what the size has to follow here — so a fraction, and no
+            // band under a line that is not being drawn.
+            //
+            // 1.4 rather than 2: the fraction is already of the window's height, so the window being
+            // small is accounted for once, and doubling it a second time made an ordinary line wrap
+            // four and five times and cover the picture it was captioning. The margins go too — they
+            // were measured against the full-screen letterbox and mean nothing in a window this size.
+            subtitleView.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.4f);
+            subtitleView.setBottomPaddingFraction(subtitleBaseBottomFraction());
+            subtitleView.setPadding(0, 0, 0, 0);
+            Utils.setViewParams(subtitleView, 0, 0, 0, 0, 0, 0, 0, 0);
+            slideSubtitles(subtitleView, 0);
+            return;
+        }
+
+        // The view's own height, not the display's. They are the same on a phone playing full screen
+        // and they are not on a tablet in split screen or a freeform window, and it is the view that
+        // the subtitles are drawn in — this is the height Media3 itself used before the size became
+        // absolute. Falls back to the display until the first layout has happened.
+        final int height = subtitleViewHeightPx(subtitleView);
+        subtitleViewHeight = height;
+        final float mainPx = subtitleTextFraction(orientation, subtitlesScale) * height;
+        final float hintPx = subtitleTextFraction(orientation, secondarySubtitlesScale) * height;
+        final int band = secondaryRestingBandPx(hintPx);
+        final int gap = Math.round(subtitleBaseBottomFraction() * height);
+
+        subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_PX, mainPx);
+        subtitleView.setBottomPaddingFraction(subtitleBaseBottomFraction());
+        // Margins keep picture-shaped subtitles (PGS) over the picture rather than over the black bars;
+        // the bottom padding is the band. Padding rather than a bigger bottom-padding fraction, which
+        // was the first attempt and only moves cues that carry no position of their own — a track muxed
+        // into MP4 or HLS usually does carry one, and those landed on top of the hint.
+        // CanvasSubtitleOutput lays every cue out inside the padding, positioned or not.
+        // Both lines move up together while the control bar is over the place the hint sits in. Only
+        // while a hint is actually drawn: on demand the bar is what the peek arrives on top of — a pause
+        // is what asks for the hint and a pause is what shows the controller — and lifting the main line
+        // whenever the controller appears would make ordinary subtitles jump on every tap.
+        final int lift = controllerLift(gap);
+        Utils.setViewParams(subtitleView, 0, 0, 0, band + lift,
+                subtitleSideMargin(orientation), 0, subtitleSideMargin(orientation), 0);
+
+        final View hint = playerView.findViewById(R.id.subtitle_secondary);
+        if (hint != null) {
+            final ViewGroup.MarginLayoutParams lp =
+                    (ViewGroup.MarginLayoutParams) hint.getLayoutParams();
+            lp.bottomMargin = gap + lift;
+            hint.setLayoutParams(lp);
+        }
+        if (secondarySubtitles != null) {
+            secondarySubtitles.style(mPrefs.subtitleSecondaryTextColor,
+                    mPrefs.subtitleSecondaryBackgroundColor, hintPx,
+                    Typeface.create(Typeface.DEFAULT,
+                            mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL),
+                    ui.dpS(6), ui.dpS(8), ui.dpS(4));
+        }
+        // Translation rather than more padding: a hint that comes and goes would otherwise relayout the
+        // subtitle view on every frame of the move, and the number the text size is derived from is the
+        // height minus that padding — the very coupling phase 3a took out.
+        slideSubtitles(subtitleView, secondaryPeekShiftPx(hintPx));
+    }
+
+    /**
+     * Moves both lines up by the room a hint needs, and back down when it has gone.
+     *
+     * <p>Set, not animated, and that is not a shortcut. Animating this translation leaves the
+     * {@code SubtitleView} composited from a display list that stops being refreshed: cues keep
+     * arriving — the renderer was logged delivering them — and the screen stays blank until something
+     * else forces a redraw, which on a television is the next press of a key. Invalidating the output
+     * child on every frame of the animation does hold it off, but that is fighting the view to buy a
+     * flourish, in the one path where going wrong means no subtitles at all. The move is caused by a
+     * press, and self-caused movement is where an instant one reads best anyway.
+     */
+    private void slideSubtitles(final SubtitleView subtitleView, final int shift) {
+        final float target = -shift;
+        if (subtitleShift == target) {
+            return;
+        }
+        subtitleShift = target;
+        subtitleView.setTranslationY(target);
+    }
+
+    /**
+     * How far the two lines rise to clear the control bar, or 0 when there is nothing to clear.
+     *
+     * <p>The hint sits a fixed gap off the bottom edge, and that is exactly where the bar's row of
+     * buttons is — so a hint and a visible controller land on top of each other. On demand that is not
+     * an edge case but the normal course of events: the pause that asks for the hint is the same press
+     * that puts the controller up, and the controller does not hide again while playback is stopped.
+     *
+     * @param gap the resting distance from the bottom edge, already counted once
+     */
+    private int controllerLift(final int gap) {
+        if (!controllerVisible || secondarySubtitles == null || !secondarySubtitles.isVisible()) {
+            return 0;
+        }
+        // Measured off the chrome itself rather than from one view's height: the block to clear is the
+        // time bar and the button row together, and they are siblings with margins between them, so a
+        // single height came out short and left the hint's plate resting on the progress line.
+        final Rect window = new Rect();
+        if (!playerView.getGlobalVisibleRect(window)) {
+            return 0;
+        }
+        int top = window.bottom;
+        for (final int id : new int[] { R.id.exo_bottom_bar, androidx.media3.ui.R.id.exo_progress }) {
+            final View view = findViewById(id);
+            final Rect bounds = new Rect();
+            if (view != null && view.getVisibility() == View.VISIBLE
+                    && view.getGlobalVisibleRect(bounds)) {
+                top = Math.min(top, bounds.top);
             }
-
-            subtitleView.setFractionalTextSize(size);
         }
+        return Math.max(0, window.bottom - top + ui.dpS(16) - gap);
     }
 
-    void updateSubtitleViewMargin() {
-        if (player == null) {
-            return;
-        }
-
-        updateSubtitleViewMargin(player.getVideoFormat());
+    private int subtitleViewHeightPx(final SubtitleView subtitleView) {
+        final int measured = subtitleView.getHeight();
+        return measured > 0 ? measured : getResources().getDisplayMetrics().heightPixels;
     }
 
-    // Set margins to fix PGS aspect as subtitle view is outside of content frame
-    void updateSubtitleViewMargin(Format format) {
-        if (format == null) {
-            return;
+    /**
+     * Fraction of the view height one subtitle line is drawn at; portrait needs it wound back.
+     *
+     * @param scale the line's own normalised scale — the two lines each have one, so that they can be
+     *              set to match or deliberately not to
+     */
+    private float subtitleTextFraction(final int orientation, final float scale) {
+        // Tweak text size as fraction size doesn't work well in portrait
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            return SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * scale;
         }
+        final DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float ratio = ((float) metrics.heightPixels / (float) metrics.widthPixels);
+        if (ratio < 1)
+            ratio = 1 / ratio;
+        return SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * scale / ratio;
+    }
 
+    /** The gap the main line keeps from the bottom edge — and where the second line sits inside it. */
+    private float subtitleBaseBottomFraction() {
+        return SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION * 2f / 3f;
+    }
+
+    /**
+     * Side margins that keep picture-shaped subtitles over the picture: the subtitle view is outside
+     * the content frame, so on a display wider than the video it would otherwise stretch across the
+     * black bars too.
+     */
+    private int subtitleSideMargin(final int orientation) {
+        final Format format = player == null ? null : player.getVideoFormat();
+        if (format == null || orientation != Configuration.ORIENTATION_LANDSCAPE) {
+            return 0;
+        }
         final Rational aspectVideo = Utils.getRational(format);
         final DisplayMetrics metrics = getResources().getDisplayMetrics();
         final Rational aspectDisplay = new Rational(metrics.widthPixels, metrics.heightPixels);
-
-        int marginHorizontal = 0;
-        int marginVertical = 0;
-
-        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            if (aspectDisplay.floatValue() > aspectVideo.floatValue()) {
-                // Left & right bars
-                int videoWidth = metrics.heightPixels / aspectVideo.getDenominator() * aspectVideo.getNumerator();
-                marginHorizontal = (metrics.widthPixels - videoWidth) / 2;
-            }
+        if (aspectDisplay.floatValue() <= aspectVideo.floatValue()) {
+            return 0;
         }
-
-        Utils.setViewParams(playerView.getSubtitleView(), 0, 0, 0, 0,
-                marginHorizontal, marginVertical, marginHorizontal, marginVertical);
+        final int videoWidth =
+                metrics.heightPixels / aspectVideo.getDenominator() * aspectVideo.getNumerator();
+        return (metrics.widthPixels - videoWidth) / 2;
     }
 
-    void setSubtitleTextSizePiP() {
-        final SubtitleView subtitleView = playerView.getSubtitleView();
-        if (subtitleView != null)
-            subtitleView.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 2);
+    /**
+     * Height reserved for the second line while it is on.
+     *
+     * <p>Fixed rather than measured, and that is the whole design. The main line is bottom-anchored
+     * inside a full-bleed {@code SubtitleView}, so placing anything exactly above it would mean
+     * measuring the cue it is currently drawing — and a band that follows the hint is a main line that
+     * jumps every time the hint appears. So the band is reserved for as long as a second line is
+     * chosen, and the main line's position becomes a function of one boolean instead of of the text.
+     */
+    private int secondaryBandPx(final float hintPx) {
+        return Math.round(SECONDARY_MAX_LINES * hintPx * SECONDARY_LINE_HEIGHT)
+                + 2 * ui.dpS(4) + ui.dpS(12);
+    }
+
+    /**
+     * What the band holds when nothing has been asked for: two lines of hint while the second line is
+     * simply on, and nothing at all while it is waiting to be asked for. On demand that is the whole
+     * point — the first line keeps its usual place, and the seventh of the screen the band costs is
+     * spent for the seconds the hint is being read rather than for the film.
+     */
+    private int secondaryRestingBandPx(final float hintPx) {
+        if (secondarySubtitles == null || !secondarySubtitles.isVisible() || secondaryOnDemand()) {
+            return 0;
+        }
+        return secondaryBandPx(hintPx);
+    }
+
+    /** How far the lines travel while a hint that was asked for is on screen. */
+    private int secondaryPeekShiftPx(final float hintPx) {
+        if (secondarySubtitles == null || !secondaryOnDemand()
+                || secondarySubtitles.getState() != SecondarySubtitles.State.SHOWN) {
+            return 0;
+        }
+        return secondaryBandPx(hintPx);
     }
 
     @TargetApi(26)
@@ -8892,10 +11895,7 @@ public class PlayerActivity extends Activity {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        if (!isInPip()) {
-            setSubtitleTextSize(newConfig.orientation);
-        }
-        updateSubtitleViewMargin();
+        updateSubtitleLayout(newConfig.orientation);
 
         updateButtonRotation();
 
@@ -8915,7 +11915,7 @@ public class PlayerActivity extends Activity {
 
     private void dismissOpenPickers() {
         final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog,
-                sleepTimerDialog, menuDialog };
+                subtitleOffsetDialog, sleepTimerDialog, menuDialog };
         for (final android.app.Dialog d : pickers) {
             if (d != null && d.isShowing()) {
                 d.dismiss();
@@ -9258,27 +12258,32 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /**
+     * The whole look comes from this app's own settings. The system captioning screen used to supply
+     * it — and a language with it, which is why it is no longer read or offered anywhere.
+     */
     void updateSubtitleStyle(final Context context) {
-        final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
         final SubtitleView subtitleView = playerView.getSubtitleView();
         final boolean isTablet = Utils.isTablet(context);
-        subtitlesScale = SubtitleUtils.normalizeFontScale(captioningManager.getFontScale(), isTvBox || isTablet);
+        subtitlesScale = SubtitleUtils.normalizeFontScale(mPrefs.subtitleScale, isTvBox || isTablet);
+        secondarySubtitlesScale =
+                SubtitleUtils.normalizeFontScale(mPrefs.subtitleSecondaryScale, isTvBox || isTablet);
         if (subtitleView != null) {
-            final CaptioningManager.CaptionStyle userStyle = captioningManager.getUserStyle();
-            final CaptionStyleCompat userStyleCompat = CaptionStyleCompat.createFromCaptionStyle(userStyle);
+            // A window behind the text is a captioning concept nobody asks for, so it stays off. The
+            // outline needs no knob either, it just has to contrast: black around every colour except
+            // black text, which only reads against a light outline.
             final CaptionStyleCompat captionStyle = new CaptionStyleCompat(
-                    userStyle.hasForegroundColor() ? userStyleCompat.foregroundColor : Color.WHITE,
-                    userStyle.hasBackgroundColor() ? userStyleCompat.backgroundColor : Color.TRANSPARENT,
-                    userStyle.hasWindowColor() ? userStyleCompat.windowColor : Color.TRANSPARENT,
-                    userStyle.hasEdgeType() ? userStyleCompat.edgeType : CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                    userStyle.hasEdgeColor() ? userStyleCompat.edgeColor : Color.BLACK,
-                    Typeface.create(userStyleCompat.typeface != null ? userStyleCompat.typeface : Typeface.DEFAULT,
+                    mPrefs.subtitleTextColor,
+                    mPrefs.subtitleBackgroundColor,
+                    Color.TRANSPARENT,
+                    mPrefs.subtitleEdgeType,
+                    mPrefs.subtitleTextColor == Color.BLACK ? Color.WHITE : Color.BLACK,
+                    Typeface.create(Typeface.DEFAULT,
                             mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL));
             subtitleView.setStyle(captionStyle);
-            subtitleView.setApplyEmbeddedStyles(mPrefs.subtitleStyleEmbedded);
-            subtitleView.setBottomPaddingFraction(SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION * 2f / 3f);
         }
-        setSubtitleTextSize();
+        // Sets the sizes, the band the second line sits in, and the padding and margins with them.
+        updateSubtitleLayout();
     }
 
     void searchSubtitles() {
@@ -9742,8 +12747,26 @@ public class PlayerActivity extends Activity {
             shortControllerTimeout = true;
             androidx.media3.common.util.Util.handlePlayButtonAction(player);
         } else {
-            androidx.media3.common.util.Util.handlePauseButtonAction(player);
+            pauseByUser();
         }
+    }
+
+    /**
+     * A pause the viewer asked for — as opposed to the ones playback makes for itself. Both ways of
+     * seeking stop the film for the length of the scrub, and at the player those are the same event as a
+     * finger on the pause button: {@code player.pause()}, reported as a user request. So the question is
+     * asked here, where it is still known who is asking, rather than of the state afterwards.
+     *
+     * <p>On demand this is also a request for the hint, which is why every button, key and gesture that
+     * pauses comes through here. Anything else that pauses the player — a scrub, a focus loss, a
+     * rebuild — deliberately does not.
+     */
+    public void pauseByUser() {
+        if (player == null) {
+            return;
+        }
+        peekSecondarySubtitle();
+        androidx.media3.common.util.Util.handlePauseButtonAction(player);
     }
 
     void skipToNext() {

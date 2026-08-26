@@ -2,9 +2,15 @@ package com.brouken.player;
 
 import android.net.Uri;
 
+import androidx.media3.common.C;
+
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,6 +36,8 @@ class SubtitleFetcher {
     private final PlayerActivity activity;
     private final List<Uri> urls;
     private final String cacheName;
+    /** Length of what is playing, or {@link C#TIME_UNSET} when it is not known — see {@link #fitsMedia}. */
+    private final long durationMs;
 
     private static final int CONNECT_TIMEOUT_SEC = 10;
     private static final int READ_TIMEOUT_SEC = 20;
@@ -48,22 +56,42 @@ class SubtitleFetcher {
     /** Subtitles are text; anything this size is not one, and is not worth the memory to find out. */
     private static final long MAX_BYTES = 2_000_000;
 
+    /** How far past the end of the media a file's last line may still sit. See {@link #fitsMedia}. */
+    private static final long FIT_MARGIN_MS = 10_000;
+
+    /**
+     * Candidates already turned away, as url + the length they were turned away for. The answer depends
+     * on nothing else, so a second search for the same film skips straight to the file that fits rather
+     * than paying for the same three downloads again — which is most of what a search costs when the
+     * index lists another cut first.
+     *
+     * <p>ponytail: never trimmed. It holds a handful of strings per film watched, and a process that
+     * has searched enough films to notice has bigger tables than this one.
+     */
+    private static final Set<String> WRONG_CUT = Collections.newSetFromMap(
+            new ConcurrentHashMap<String, Boolean>());
+
     /** The name the file was uploaded under, out of {@code attachment; filename="…"}. */
     private static final Pattern ATTACHMENT_NAME = Pattern.compile("filename[^=]*=\"?([^\";]+)");
 
     public SubtitleFetcher(PlayerActivity activity, List<Uri> urls) {
-        this(activity, urls, null);
+        this(activity, urls, null, C.TIME_UNSET);
     }
 
     /**
      * @param cacheName what to call the downloaded copy; null takes the name from the URL. A subtitle
      *                  found online has no useful name in its URL — often just an id — while the caller
      *                  knows the language, and the name is where the language is read back from.
+     * @param durationMs how long the media is, or {@link C#TIME_UNSET} to accept whatever comes down.
+     *                   Read on the caller's thread and passed in, because this runs on a worker and
+     *                   the player is not its to ask.
      */
-    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls, String cacheName) {
+    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls, String cacheName,
+                           long durationMs) {
         this.activity = activity;
         this.urls = urls;
         this.cacheName = cacheName;
+        this.durationMs = durationMs;
     }
 
     /** Fire and forget: download in the background and attach whatever turns up. */
@@ -111,6 +139,9 @@ class SubtitleFetcher {
         if (HttpUrl.parse(url.toString()) == null) {
             return null;
         }
+        if (WRONG_CUT.contains(wrongCutKey(url))) {
+            return null; // downloaded once already, and it was for another cut of this film
+        }
         final Request request = new Request.Builder().url(url.toString()).build();
         try (Response response = client.newCall(request).execute()) {
             final ResponseBody body = response.body();
@@ -133,11 +164,58 @@ class SubtitleFetcher {
             if (url.getPath() != null && url.getPath().endsWith(".gz")) {
                 stream = new GZIPInputStream(stream);
             }
-            return Utils.convertInputStreamToUTF(activity, url, stream, cacheName);
+            final Uri file = Utils.convertInputStreamToUTF(activity, url, stream, cacheName);
+            if (file != null && !fitsMedia(file)) {
+                WRONG_CUT.add(wrongCutKey(url));
+                return null;
+            }
+            return file;
         } catch (IOException e) {
             Utils.log("subtitle download: " + e);
             return null;
         }
+    }
+
+    private String wrongCutKey(Uri url) {
+        return url + "|" + durationMs;
+    }
+
+    /**
+     * Whether the file that just came down was timed for the cut that is playing.
+     *
+     * <p>An index is keyed by the title, not by the release, so it happily answers a 141-minute
+     * theatrical film with the extended cut's subtitles — for The Martian every Russian file shegu.st
+     * lists but the last two is the extended one. Nothing can rescue that: the offsets differ scene by
+     * scene because the scenes the file was timed around are not in the video. So it gives way to the
+     * next candidate, exactly as a forced track does.
+     *
+     * <p>Only a file that runs past the end of the video is turned away, which is the half that
+     * proves itself. The opposite — a theatrical file over an extended cut — ends early, and so does
+     * any honest file whose last line comes well before the credits do, so there is nothing to tell
+     * those two apart by. {@link #FIT_MARGIN_MS} is for the few seconds a re-encode can lose off the
+     * tail, not for a difference in cut.
+     */
+    private boolean fitsMedia(Uri file) {
+        if (durationMs == C.TIME_UNSET || durationMs <= 0) {
+            return true;
+        }
+        final SubtitleTimeline timeline =
+                SubtitleTimeline.load(activity, file, SubtitleUtils.getSubtitleMime(file));
+        if (timeline == null || timeline.size() == 0) {
+            return true; // unreadable here is not the same as wrong; the player gets its own go at it
+        }
+        // The last cue's start, not its end: a line shown over the final seconds legitimately runs on
+        // past the last frame, and rejecting for that would throw away files that are perfectly synced.
+        final long lastMs = timeline.startUs(timeline.size() - 1) / 1000;
+        if (lastMs <= durationMs + FIT_MARGIN_MS) {
+            return true;
+        }
+        Utils.log("subtitle download: last cue " + lastMs + "ms past a " + durationMs
+                + "ms media, wrong cut — skipping");
+        // Deleted, or the next search would find it in the cache and hand over the same bad file for
+        // good: the cached copy is named after the title and the language, not after this candidate.
+        new File(String.valueOf(file.getPath())).delete();
+        return false;
     }
 
     /** @return the uploader's own file name, which subs5.strem.io sends back, or null when none does */

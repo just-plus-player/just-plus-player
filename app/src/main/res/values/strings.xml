@@ -284,9 +284,12 @@
     <string name="pref_subtitle_search_language_summary">A manual search offers the language list first, for that search only</string>
     <string name="subtitle_search_found">Subtitles found: %1$s</string>
     <string name="subtitle_search_manual">Find subtitles online</string>
-    <string name="subtitle_search_hint">Movie or series name</string>
+    <string name="subtitle_search_hint">Name, or a tmdb / imdb id</string>
     <string name="subtitle_search_language_title">Choose language</string>
     <string name="subtitle_search_none">Nothing found</string>
+    <string name="subtitle_search_searching">Looking for subtitles…</string>
+    <string name="subtitle_search_translating">Translating subtitles…</string>
+    <string name="subtitle_translate_failed">Could not translate to %1$s</string>
     <string name="subtitle_search_movie">Movie</string>
     <string name="subtitle_search_series">Series</string>
     <string name="subtitle_search_type">Enter numbers</string>

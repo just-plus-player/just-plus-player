@@ -265,9 +265,12 @@
     <string name="pref_subtitle_search_language_summary">Ручной поиск сначала предлагает список языков — только для этого поиска</string>
     <string name="subtitle_search_found">Найдены субтитры: %1$s</string>
     <string name="subtitle_search_manual">Найти субтитры онлайн</string>
-    <string name="subtitle_search_hint">Название фильма или сериала</string>
+    <string name="subtitle_search_hint">Название или id из tmdb / imdb</string>
     <string name="subtitle_search_language_title">Выбор языка</string>
     <string name="subtitle_search_none">Ничего не найдено</string>
+    <string name="subtitle_search_searching">Ищем субтитры…</string>
+    <string name="subtitle_search_translating">Переводим субтитры…</string>
+    <string name="subtitle_translate_failed">Не удалось перевести на %1$s</string>
     <string name="subtitle_search_movie">Фильм</string>
     <string name="subtitle_search_series">Сериал</string>
     <string name="subtitle_search_type">Ввести номера вручную</string>

@@ -265,9 +265,12 @@
     <string name="pref_subtitle_search_language_summary">Ручний пошук спершу пропонує список мов — лише для цього пошуку</string>
     <string name="subtitle_search_found">Знайдено субтитри: %1$s</string>
     <string name="subtitle_search_manual">Знайти субтитри онлайн</string>
-    <string name="subtitle_search_hint">Назва фільму або серіалу</string>
+    <string name="subtitle_search_hint">Назва або id з tmdb / imdb</string>
     <string name="subtitle_search_language_title">Вибір мови</string>
     <string name="subtitle_search_none">Нічого не знайдено</string>
+    <string name="subtitle_search_searching">Шукаємо субтитри…</string>
+    <string name="subtitle_search_translating">Перекладаємо субтитри…</string>
+    <string name="subtitle_translate_failed">Не вдалося перекласти на %1$s</string>
     <string name="subtitle_search_movie">Фільм</string>
     <string name="subtitle_search_series">Серіал</string>
     <string name="subtitle_search_type">Ввести номери вручну</string>

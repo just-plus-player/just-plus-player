@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import okhttp3.HttpUrl;
 import okhttp3.Request;
@@ -40,6 +42,15 @@ final class TitleSearch {
 
     /** TMDB pages at 20 and nobody scrolls a panel further than that to find what they just typed. */
     private static final int MAX_RESULTS = 20;
+
+    /** An imdb id, wherever it sits — typed alone, or inside the imdb.com URL it was copied from. */
+    private static final Pattern IMDB_ID = Pattern.compile("tt(\\d{5,})");
+
+    /** A tmdb id in a themoviedb.org URL, where the path says which of the two catalogues it is in. */
+    private static final Pattern TMDB_URL = Pattern.compile("themoviedb\\.org/(movie|tv)/(\\d+)");
+
+    /** A tmdb id on its own. Capped because past nine digits it is not one. */
+    private static final Pattern TMDB_ID = Pattern.compile("\\d{1,9}");
 
     /** One thing the typed name could have meant. */
     static final class Title {
@@ -78,12 +89,18 @@ final class TitleSearch {
     /**
      * Blocking; call from a worker. An empty list covers both "no such title" and "that did not
      * work" — neither is worth telling apart to somebody who is about to retype the name anyway.
+     *
+     * <p>An id in the text is resolved as well as searched for, so pasting one is a way in of its
+     * own: what {@code tt3659388} or {@code 286217} names comes first, the name matches after it.
+     * Both questions are always asked because they cannot collide — TMDB's name search answers
+     * nothing at all for an id or a URL.
      */
     static List<Title> search(String query) {
         final List<Title> out = new ArrayList<>();
         if (query == null || query.trim().isEmpty()) {
             return out;
         }
+        out.addAll(byId(query.trim()));
         final HttpUrl.Builder url = base();
         if (url == null) {
             return out;
@@ -99,29 +116,103 @@ final class TitleSearch {
             return out;
         }
         for (int i = 0; i < results.length() && out.size() < MAX_RESULTS; i++) {
-            final JSONObject item = results.optJSONObject(i);
-            if (item == null) {
-                continue;
+            final Title title = title(results.optJSONObject(i));
+            if (title != null) {
+                out.add(title);
             }
-            // search/multi also answers with people and collections, which no subtitle source can
-            // be asked about.
-            final String type = item.optString("media_type", "");
-            final boolean movie = "movie".equals(type);
-            if (!movie && !"tv".equals(type)) {
-                continue;
-            }
-            final long id = item.optLong("id", -1);
-            final String name = string(item, movie ? "title" : "name");
-            if (id < 1 || name == null) {
-                continue;
-            }
-            final String date = string(item, movie ? "release_date" : "first_air_date");
-            final String poster = string(item, "poster_path");
-            out.add(new Title(String.valueOf(id), movie, name,
-                    date != null && date.length() >= 4 ? date.substring(0, 4) : null,
-                    poster == null ? null : IMAGE + poster));
         }
         return out;
+    }
+
+    /**
+     * What an id in the typed text points at: {@code tt3659388}, {@code 286217}, or the imdb /
+     * themoviedb.org URL either was copied out of. Empty when there is no id in there, or no
+     * catalogue entry answers to it.
+     *
+     * <p>Offered alongside the name matches rather than instead of them, because a bare number is
+     * both: {@code 1917} is a film and it is also a tmdb id (a different film). Which of the two
+     * catalogues a bare number belongs to is unknowable as well — 286217 is The Martian and, in the
+     * series numbering, something else entirely — so both are asked and both are put on the list.
+     */
+    private static List<Title> byId(String text) {
+        final List<Title> out = new ArrayList<>();
+        final Matcher imdb = IMDB_ID.matcher(text);
+        if (imdb.find()) {
+            final HttpUrl.Builder url = base();
+            if (url == null) {
+                return out;
+            }
+            // find answers with one array per kind; the items carry media_type, so they read exactly
+            // like a search result.
+            final JSONObject root = get(url.addPathSegment("find").addPathSegment(imdb.group())
+                    .addQueryParameter("external_source", "imdb_id").build());
+            for (String kind : new String[] { "movie_results", "tv_results" }) {
+                final JSONArray results = root == null ? null : root.optJSONArray(kind);
+                for (int i = 0; results != null && i < results.length(); i++) {
+                    final Title title = title(results.optJSONObject(i));
+                    if (title != null) {
+                        out.add(title);
+                    }
+                }
+            }
+            return out;
+        }
+        final Matcher url = TMDB_URL.matcher(text);
+        if (url.find()) {
+            add(out, url.group(2), "movie".equals(url.group(1)));
+            return out;
+        }
+        if (TMDB_ID.matcher(text).matches()) {
+            add(out, text, true);
+            add(out, text, false);
+        }
+        return out;
+    }
+
+    /** Adds the movie or the series a tmdb id names, if there is one; a 404 adds nothing. */
+    private static void add(List<Title> out, String tmdb, boolean movie) {
+        final HttpUrl.Builder url = base();
+        if (url == null) {
+            return;
+        }
+        final JSONObject root = get(url.addPathSegment(movie ? "movie" : "tv")
+                .addPathSegment(tmdb).build());
+        final String name = root == null ? null : string(root, movie ? "title" : "name");
+        if (name == null) {
+            return;
+        }
+        final String poster = string(root, "poster_path");
+        out.add(new Title(tmdb, movie, name, year(string(root, movie ? "release_date" : "first_air_date")),
+                poster == null ? null : IMAGE + poster));
+    }
+
+    /**
+     * One result of a search or a find, or null for anything no subtitle source can be asked about —
+     * search/multi also answers with people and collections.
+     */
+    private static Title title(JSONObject item) {
+        if (item == null) {
+            return null;
+        }
+        final String type = item.optString("media_type", "");
+        final boolean movie = "movie".equals(type);
+        if (!movie && !"tv".equals(type)) {
+            return null;
+        }
+        final long id = item.optLong("id", -1);
+        final String name = string(item, movie ? "title" : "name");
+        if (id < 1 || name == null) {
+            return null;
+        }
+        final String poster = string(item, "poster_path");
+        return new Title(String.valueOf(id), movie, name,
+                year(string(item, movie ? "release_date" : "first_air_date")),
+                poster == null ? null : IMAGE + poster);
+    }
+
+    /** The year out of a TMDB date, or null when there is no date — an unreleased title still has a name. */
+    private static String year(String date) {
+        return date != null && date.length() >= 4 ? date.substring(0, 4) : null;
     }
 
     /**

@@ -5752,6 +5752,7 @@ public class PlayerActivity extends Activity {
 
     /** Reads the file on a worker and hands it to {@link SubtitleOffset}; re-prepares only if it cannot. */
     private void paintSubtitle(Uri uri) {
+        Utils.log("subtitles: painting " + uri.getLastPathSegment());
         paintedSubtitleUri = uri;
         subtitleTimelineUri = uri;
         subtitleTimeline = null;
@@ -6050,6 +6051,13 @@ public class PlayerActivity extends Activity {
     private static final long SUBTITLE_MISS_TTL_MS = 30 * 60 * 1000L;
 
     /**
+     * How long the "looking"/"translating" notice stays up on its own. Only a backstop against a
+     * search that neither finds nor fails — the outcome takes the notice down, and until then there
+     * is nothing else on screen to say the search is still running.
+     */
+    private static final long SUBTITLE_NOTICE_MS = 90 * 1000L;
+
+    /**
      * Stands where the plain dot would in a cached subtitle's name, marking the file as translated by a
      * machine — either by this app or by whoever uploaded it. The name is the only place such a mark
      * survives a restart, and it sits before the language rather than after it so the language is still
@@ -6079,6 +6087,11 @@ public class PlayerActivity extends Activity {
         subtitleSearchGeneration++;
         subtitleSearchStarted = null;
         if (subtitleSearchThread != null) {
+            // Nothing is looking any more, so the notice saying so goes too — otherwise a change of
+            // media leaves the last search still apparently running over the next one. Only when there
+            // was a search to cancel: this line is the gestures' notice as well, and clearing it
+            // unasked would cut a brightness readout short.
+            subtitleSearchNotice(0);
             subtitleSearchThread.interrupt();
             subtitleSearchThread = null;
         }
@@ -6086,6 +6099,25 @@ public class PlayerActivity extends Activity {
 
     private void maybeSearchSubtitlesOnline(Tracks tracks) {
         maybeSearchSubtitlesOnline(tracks, false, null, false);
+    }
+
+    /**
+     * What the search is doing, on the same one-line notice the gestures speak through; {@code 0}
+     * takes it down again.
+     *
+     * <p>Only a search that was asked for says anything. An automatic one runs on every open, nobody
+     * is waiting for it, and narrating it would put a line on screen every time a film starts.
+     */
+    private void subtitleSearchNotice(int text) {
+        if (playerView == null) {
+            return;
+        }
+        if (text == 0) {
+            playerView.removeCallbacks(playerView.textClearRunnable);
+            playerView.textClearRunnable.run();
+            return;
+        }
+        Utils.showText(playerView, getString(text), SUBTITLE_NOTICE_MS);
     }
 
     /**
@@ -6167,6 +6199,11 @@ public class PlayerActivity extends Activity {
             // Nothing to ask the sources about. Every one of them is keyed by imdb or tmdb, so a file
             // opened without a title behind it cannot be searched for at all.
             Utils.log("subtitles: no title id, not searching");
+            if (manual) {
+                // Asked for out loud, so it is answered out loud. Silence here reads as a search that
+                // is still running, and this one never started.
+                Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+            }
             return;
         }
         // Everything either line wants, plus what each of them could be translated from. This builds
@@ -6217,9 +6254,13 @@ public class PlayerActivity extends Activity {
         // A copy kept from an earlier watch answers the same question for nothing — no request, no
         // quota, no waiting. Probed per line, because a hit for one of them says nothing about the
         // other: this is what makes a second watch open with both lines and no network at all.
-        final boolean mainCached = !missing.isEmpty()
+        //
+        // Not for a search that was asked for, though. Somebody reaching for the row is saying that
+        // what they have is not right, and the copy in the cache is exactly what they have — answering
+        // with it makes the row look broken and leaves no way at all to get past a bad file.
+        final boolean mainCached = !manual && !missing.isEmpty()
                 && attachCachedSubtitle(missing, cacheName, index, false);
-        final boolean secondaryCached = !secondary.isEmpty()
+        final boolean secondaryCached = !manual && !secondary.isEmpty()
                 && attachCachedSubtitle(secondary, cacheName, index, true);
         final List<String> mainTargets = mainCached ? Collections.<String>emptyList() : missing;
         final List<String> secondaryTargets =
@@ -6232,6 +6273,15 @@ public class PlayerActivity extends Activity {
         // What is playing right now, so a result that lands after the player was rebuilt can be
         // checked against it rather than thrown away in advance.
         final Uri media = mPrefs.mediaUri;
+        // How long it is, read here because the worker has no business asking the player. This is what
+        // tells a file timed for another cut of the same film from one that fits — see
+        // SubtitleFetcher.fitsMedia. C.TIME_UNSET while a stream is still opening, which accepts
+        // whatever comes down, as it did before there was a check at all.
+        final long durationMs = player.getDuration();
+
+        if (manual) {
+            subtitleSearchNotice(R.string.subtitle_search_searching);
+        }
 
         final Thread worker = new Thread(() -> {
             final AtomicBoolean answered = new AtomicBoolean();
@@ -6239,7 +6289,7 @@ public class PlayerActivity extends Activity {
             try {
                 if (!mainTargets.isEmpty()) {
                     found = subtitleSearchPass(id, mainTargets, cacheName, generation, index, media,
-                            answered, false);
+                            durationMs, answered, false, manual);
                 }
                 // The second line's own sweep, in the same worker so there is still one search to
                 // cancel and one generation to check. After the first, because the main line is the one
@@ -6247,7 +6297,7 @@ public class PlayerActivity extends Activity {
                 if (!secondaryTargets.isEmpty() && generation == subtitleSearchGeneration
                         && !Thread.currentThread().isInterrupted()) {
                     final SubtitleSearch.Result second = subtitleSearchPass(id, secondaryTargets,
-                            cacheName, generation, index, media, answered, true);
+                            cacheName, generation, index, media, durationMs, answered, true, manual);
                     if (found == null) {
                         found = second;
                     }
@@ -6262,6 +6312,19 @@ public class PlayerActivity extends Activity {
             // network — writing either off would keep the title unsearchable long after the cause.
             if (found == null && answered.get() && !Thread.currentThread().isInterrupted()) {
                 subtitleSearchMisses.put(key, System.currentTimeMillis());
+            }
+            // A search that was asked for is reported either way. Not written off first: whether the
+            // sources answered at all is why it stays retryable, and beside the point to the person
+            // waiting — as far as they are concerned there are no subtitles.
+            final boolean nothing = found == null;
+            if (manual && nothing && !Thread.currentThread().isInterrupted()) {
+                runOnUiThread(() -> {
+                    if (generation != subtitleSearchGeneration) {
+                        return;
+                    }
+                    subtitleSearchNotice(0);
+                    Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+                });
             }
         }, "SubtitleSearch");
         worker.setDaemon(true);
@@ -6303,6 +6366,8 @@ public class PlayerActivity extends Activity {
                     if (cached.isFile() && cached.length() > 0) {
                         // Touched so the twenty-file trim treats "watched again" as recently used.
                         cached.setLastModified(System.currentTimeMillis());
+                        Utils.log("subtitles: cached " + language + (secondary ? " (second line)" : "")
+                                + " " + cached.getName());
                         attachSearchedSubtitle(subtitleSearchGeneration, index, mPrefs.mediaUri,
                                 Uri.fromFile(cached), language, secondary);
                         return true;
@@ -6326,8 +6391,9 @@ public class PlayerActivity extends Activity {
      */
     private SubtitleSearch.Result subtitleSearchPass(MediaId id, List<String> targets,
                                                      String cacheName, int generation, int index,
-                                                     Uri media, AtomicBoolean answered,
-                                                     boolean secondary) {
+                                                     Uri media, long durationMs,
+                                                     AtomicBoolean answered,
+                                                     boolean secondary, boolean manual) {
         final String target = targets.get(0);
         final List<String> translateFrom = translateSourcesFor(target);
         final String translateTo = translateFrom.isEmpty() ? null : target;
@@ -6339,7 +6405,7 @@ public class PlayerActivity extends Activity {
                 wanted.add(source);
             }
         }
-        return SubtitleSearch.find(id, wanted, mPrefs, result -> {
+        return SubtitleSearch.find(id, wanted, mPrefs, durationMs, result -> {
             if (generation != subtitleSearchGeneration) {
                 return false;
             }
@@ -6354,13 +6420,18 @@ public class PlayerActivity extends Activity {
             // marker that survives a restart, and it is what keeps the label honest.
             final Uri file = new SubtitleFetcher(this, urls, cacheName
                     + (result.machine ? MACHINE_TRANSLATED : ".")
-                    + result.language + ".srt").fetchNow();
+                    + result.language + ".srt", durationMs).fetchNow();
             if (file == null) {
                 return false;
             }
             Uri show = file;
             String shown = result.language;
             if (translateTo != null && translateFrom.contains(result.language)) {
+                // The long half of the wait, and the half that looks like nothing happening: the file
+                // is already downloaded and the track does not appear until this comes back.
+                if (manual) {
+                    runOnUiThread(() -> subtitleSearchNotice(R.string.subtitle_search_translating));
+                }
                 final Uri translated = SubtitleTranslate.translate(this, file, result.language,
                         translateTo, new java.io.File(getCacheDir(),
                                 cacheName + MACHINE_TRANSLATED + translateTo + ".srt"),
@@ -6368,11 +6439,17 @@ public class PlayerActivity extends Activity {
                 if (translated != null) {
                     show = translated;
                     shown = translateTo;
+                } else {
+                    // Not translated: show it as it came. It is still a subtitle in a language the
+                    // viewer ranked, and it is what the player would have shown before it could
+                    // translate at all — failing the search instead would turn an outage at the
+                    // translation endpoint into no subtitles. Said out loud though: otherwise the
+                    // only clue is a subtitle in the wrong language, whoever asked for it.
+                    final String message = getString(R.string.subtitle_translate_failed,
+                            displayLanguage(translateTo));
+                    runOnUiThread(() ->
+                            Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
                 }
-                // Not translated: show it as it came. It is still a subtitle in a language the
-                // viewer ranked, and it is what the player would have shown before it could
-                // translate at all — failing the search instead would turn an outage at the
-                // translation endpoint into no subtitles.
             }
             final Uri attach = show;
             final String language = shown;
@@ -6396,8 +6473,18 @@ public class PlayerActivity extends Activity {
         if (generation != subtitleSearchGeneration || player == null
                 || player.getCurrentMediaItemIndex() != index
                 || !Objects.equals(media, mPrefs.mediaUri)) {
+            // Said out loud rather than dropped in silence: a file that was searched for, downloaded
+            // and then discarded on arrival looks from the outside exactly like a search that found
+            // nothing, and the four reasons are not guessable from the screen.
+            Utils.log("subtitles: dropping " + language + ", generation " + generation + "/"
+                    + subtitleSearchGeneration + ", item " + index + "/"
+                    + (player == null ? -1 : player.getCurrentMediaItemIndex())
+                    + ", same media " + Objects.equals(media, mPrefs.mediaUri));
             return;
         }
+        // Whatever the notice was saying the search is doing, it is done — the toast below says what
+        // came of it.
+        subtitleSearchNotice(0);
         // Which line asked for it is known by the pass that found it, not guessed from the language
         // afterwards. This is the whole of "opens with two lines": the first line is served by the
         // track it already had or by its own pass, the second by its own.
@@ -6408,7 +6495,12 @@ public class PlayerActivity extends Activity {
             return;
         }
         mPrefs.updateSubtitle(file);
-        if (addSubtitleTrack(file)) {
+        if (!addSubtitleTrack(file)) {
+            // Refused: it is already what is on screen, or a real track in the media carries it. Both
+            // are fine, and neither is worth a toast — but they are the difference between "the search
+            // did nothing" and "the search found what you are already reading".
+            Utils.log("subtitles: " + file.getLastPathSegment() + " not added, already there");
+        } else {
             String message = getString(R.string.subtitle_search_found, displayLanguage(language));
             if (isMachineTranslated(file)) {
                 message = getString(R.string.subtitle_machine_translated, message);
@@ -6859,6 +6951,10 @@ public class PlayerActivity extends Activity {
      * <p>Results arrive while the name is still being typed, from the third character on: nobody
      * recalls a title exactly, and the point of the posters is to be recognised rather than remembered.
      *
+     * <p>A tmdb or imdb id counts as a name here, pasted bare or still inside the page URL it came
+     * from — the shortest way in when the title is known exactly and the search cannot be trusted to
+     * land on it.
+     *
      * <p>{@code forSecondary} is which line opened it: the same dialog serves both pickers, and what it
      * finds has to go back where it was asked from.
      */
@@ -7275,6 +7371,15 @@ public class PlayerActivity extends Activity {
             if (paintedSubtitleUri == null) {
                 clearSubtitleTimeline();
             }
+            return;
+        }
+        // A file the app put on screen itself outranks the track the selector is still holding: that
+        // track is what the viewer went looking online to get away from — a media's own signs-only
+        // subtitle, say — and painting never deselects anything, so it is still selected underneath.
+        // Handing its timeline over here is what used to wipe downloaded subtitles off the screen on the
+        // first track change after a seek. A pick from the menu clears the painted file first, so this
+        // only ever holds off a selection nobody asked for.
+        if (paintedSubtitleUri != null && !paintedSubtitleUri.equals(selected.uri)) {
             return;
         }
         if (selected.uri.equals(subtitleTimelineUri)) {

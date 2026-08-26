@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.brouken.player.skip.SegmentFinder;
@@ -71,8 +72,14 @@ final class SubtitleSearch {
             .readTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
             .build();
 
-    /** How many links of the winning language are handed on, so a dead one is not the end of it. */
-    private static final int MAX_URLS = 3;
+    /**
+     * How many links of the winning language are handed on, so a dead one is not the end of it — and
+     * so is one that turns out to be timed for another cut of the film, which the fetcher only learns
+     * by downloading it. Six rather than three because those are not rare: of the five Russian files
+     * shegu.st lists for The Martian the first three are the extended cut, and the theatrical one a
+     * 141-minute video needs is fourth.
+     */
+    private static final int MAX_URLS = 6;
 
     /** What the search found: the language it is in, and the links to try in order. */
     static final class Result {
@@ -102,12 +109,19 @@ final class SubtitleSearch {
         final String url;
         /** Machine-translated, where the source says so. False also means "does not say". */
         final boolean machine;
+        /**
+         * Where the file's last line sits, in ms, or 0 when the index does not say. Only
+         * rest.opensubtitles.org does ({@code SubLastTS}) — and it is the one thing that tells the cuts
+         * of a film apart before anything is downloaded. See {@link #ofOneCut}.
+         */
+        final long lastMs;
 
-        Candidate(String language, int downloads, String url, boolean machine) {
+        Candidate(String language, int downloads, String url, boolean machine, long lastMs) {
             this.language = language;
             this.downloads = downloads;
             this.url = url;
             this.machine = machine;
+            this.lastMs = lastMs;
         }
     }
 
@@ -129,8 +143,8 @@ final class SubtitleSearch {
      *                 network came back.
      * @return the hit that was downloaded, or null when no enabled source could deliver one
      */
-    static Result find(MediaId identifier, List<String> preferred, Prefs prefs, Sink sink,
-                       AtomicBoolean answered) {
+    static Result find(MediaId identifier, List<String> preferred, Prefs prefs, long durationMs,
+                       Sink sink, AtomicBoolean answered) {
         if (identifier == null || identifier.isEmpty() || preferred.isEmpty()) {
             return null;
         }
@@ -144,12 +158,16 @@ final class SubtitleSearch {
         // Every source takes one id and not the other, so whichever is missing is resolved once, up
         // front, from the one we have. Without this a launcher that sends only a tmdb id leaves two
         // sources unable to run at all — and they look broken rather than unasked.
-        final MediaId id = enrich(identifier);
+        //
+        // Only for a source that is actually switched on, though: the lookup is a round trip to TMDB
+        // ahead of every search, and it buys nothing when the sources that need that id are all off.
+        final MediaId id = needsOtherId(identifier, prefs) ? enrich(identifier) : identifier;
         if (cancelled()) {
             return null;
         }
         Utils.log("subtitles: " + id.imdb + " / " + id.tmdb
-                + " s" + id.season + "e" + id.episode + " want=" + preferred);
+                + " s" + id.season + "e" + id.episode + " want=" + preferred
+                + " media=" + durationMs + "ms");
 
         // The three keyless indexes are asked at once: none of them costs anything, they disagree
         // about which files exist, and asking them in turn means waiting out each one's timeout
@@ -161,13 +179,13 @@ final class SubtitleSearch {
         final List<Callable<Result>> keyless = new ArrayList<>(3);
         if (prefs.subtitleSourceRest) {
             keyless.add(() -> best(SOURCE_REST,
-                    restOpenSubtitles(id, preferred, answered, allowMachine), preferred));
+                    restOpenSubtitles(id, preferred, answered, allowMachine), preferred, durationMs));
         }
         if (prefs.subtitleSourceStremio) {
-            keyless.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred));
+            keyless.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred, durationMs));
         }
         if (prefs.subtitleSourceShegu) {
-            keyless.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred));
+            keyless.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred, durationMs));
         }
         final Result keylessHit = firstDelivered(keyless, sink, preferred);
         if (keylessHit != null) {
@@ -273,6 +291,67 @@ final class SubtitleSearch {
         return null;
     }
 
+    /** Anything past the end of the media, with the few seconds a re-encode can lose off the tail. */
+    private static final long CUT_MARGIN_MS = 10_000;
+
+    /**
+     * How far apart two files' last lines may be and still be the same cut. Generous, because within
+     * one cut they differ by whatever each translator did with the credits: the four Russian files for
+     * Once Upon a Time in America end at 03:34:56, 03:36:56, 03:36:59 and 03:57:34, and only the last
+     * of those is a different film — the extended cut, twenty-odd minutes longer.
+     */
+    private static final long CUT_TOLERANCE_MS = 6 * 60 * 1000L;
+
+    /**
+     * The files that are plausibly for the cut being played, out of one language's worth of them.
+     *
+     * <p>A film that exists in more than one cut has subtitles for each, and an index is keyed by the
+     * title: nothing in it says which. The last line's timestamp does, and rest.opensubtitles.org
+     * hands it over in the search response — so the wrong cut can be left alone here, before it costs
+     * a download, rather than being caught by {@link SubtitleFetcher} after one.
+     *
+     * <p>Two steps, and the order matters. Anything ending after the media does is for a longer cut,
+     * full stop. Of what is left, the one ending latest is the one that runs closest to this media's
+     * own end, and everything within {@link #CUT_TOLERANCE_MS} of it is the same cut — kept, so the
+     * pick among them is still made on popularity, which is what tells a good upload from a poor one.
+     * A file the index said nothing about is never dropped: unknown is not the same as wrong.
+     */
+    private static List<Candidate> ofOneCut(List<Candidate> inLanguage, long durationMs) {
+        if (durationMs <= 0) {
+            return inLanguage;
+        }
+        long latest = 0;
+        for (Candidate candidate : inLanguage) {
+            if (candidate.lastMs > 0 && candidate.lastMs <= durationMs + CUT_MARGIN_MS) {
+                latest = Math.max(latest, candidate.lastMs);
+            }
+        }
+        final List<Candidate> kept = new ArrayList<>(inLanguage.size());
+        for (Candidate candidate : inLanguage) {
+            if (candidate.lastMs <= 0
+                    || (candidate.lastMs <= durationMs + CUT_MARGIN_MS
+                        && candidate.lastMs >= latest - CUT_TOLERANCE_MS)) {
+                kept.add(candidate);
+            }
+        }
+        return kept;
+    }
+
+    /** {@code "03:57:34"} as ms, or 0 for anything else — the field is often absent or empty. */
+    private static long lastTimestampMs(String value) {
+        if (value == null) {
+            return 0;
+        }
+        final Matcher matcher = LAST_TS.matcher(value);
+        if (!matcher.matches()) {
+            return 0;
+        }
+        return (Long.parseLong(matcher.group(1)) * 3600 + Long.parseLong(matcher.group(2)) * 60
+                + Long.parseLong(matcher.group(3))) * 1000;
+    }
+
+    private static final Pattern LAST_TS = Pattern.compile("(\\d{1,2}):([0-5]\\d):([0-5]\\d)");
+
     private static boolean cancelled() {
         return Thread.currentThread().isInterrupted();
     }
@@ -286,6 +365,21 @@ final class SubtitleSearch {
         }
         Utils.log("subtitles: " + result.source + " listed but would not download");
         return false;
+    }
+
+    /**
+     * Whether any enabled source is keyed by the id this one does not carry.
+     *
+     * <p>api.opensubtitles.com is counted among the imdb ones although it answers to either: asked by
+     * imdb it is being asked the question every other index here is asked, and that is worth one lookup
+     * rather than a second set of results to explain. It is the only source in the list with a choice.
+     */
+    private static boolean needsOtherId(MediaId id, Prefs prefs) {
+        if (id.imdb == null && (prefs.subtitleSourceStremio || prefs.subtitleSourceRest
+                || prefs.subtitleSourceOpenSubtitles)) {
+            return true;
+        }
+        return id.tmdb == null && prefs.subtitleSourceShegu;
     }
 
     /**
@@ -369,7 +463,7 @@ final class SubtitleSearch {
                 // the download.
                 if (language != null && link != null && !forcedName(entry.optString("display"))) {
                     final String direct = origin(link);
-                    candidates.add(new Candidate(language, 0, direct != null ? direct : link, false));
+                    candidates.add(new Candidate(language, 0, direct != null ? direct : link, false, 0));
                 }
             }
         } catch (Exception e) {
@@ -431,7 +525,7 @@ final class SubtitleSearch {
                 final String language = Utils.toIso3Language(entry.optString("lang"));
                 final String link = entry.optString("url", null);
                 if (language != null && link != null) {
-                    candidates.add(new Candidate(language, 0, link, false));
+                    candidates.add(new Candidate(language, 0, link, false, 0));
                 }
             }
         } catch (Exception e) {
@@ -496,7 +590,8 @@ final class SubtitleSearch {
                         continue;
                     }
                     candidates.add(new Candidate(found,
-                            parseInt(entry.optString("SubDownloadsCnt")), link, machine));
+                            parseInt(entry.optString("SubDownloadsCnt")), link, machine,
+                            lastTimestampMs(entry.optString("SubLastTS"))));
                 }
             } catch (Exception e) {
                 Utils.log("rest.opensubtitles.org: " + e);
@@ -567,7 +662,8 @@ final class SubtitleSearch {
      * <p>The whole list handed on is of one kind, human or machine, so the label the viewer ends up
      * seeing still describes the file that arrives when the first link turns out to be dead.
      */
-    private static Result best(String source, List<Candidate> candidates, List<String> preferred) {
+    private static Result best(String source, List<Candidate> candidates, List<String> preferred,
+                               long durationMs) {
         String language = null;
         for (String wanted : preferred) {
             for (Candidate candidate : candidates) {
@@ -590,6 +686,13 @@ final class SubtitleSearch {
             if (language.equals(candidate.language)) {
                 inLanguage.add(candidate);
             }
+        }
+        final int listed = inLanguage.size();
+        inLanguage.retainAll(ofOneCut(inLanguage, durationMs));
+        if (inLanguage.isEmpty()) {
+            Utils.log("subtitles: " + source + " has " + listed + " " + language
+                    + ", all for another cut");
+            return null;
         }
         Collections.sort(inLanguage, (a, b) -> a.machine != b.machine
                 ? Boolean.compare(a.machine, b.machine)

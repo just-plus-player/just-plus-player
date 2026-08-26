@@ -3173,14 +3173,22 @@ public class PlayerActivity extends Activity {
         updateSkipOffsetButton();
     }
 
+    /**
+     * Whether shifting the skip marks is worth offering: any segment exists, now or earlier this
+     * session. Asked directly rather than read off the button's visibility, which is what the overflow
+     * row used to do — a view standing in for a condition that is right here.
+     */
+    private boolean skipOffsetReachable() {
+        return mPrefs != null && mPrefs.skipEnabled && skipManager != null
+                && (skipManager.hasSegments() || skipSeenThisSession);
+    }
+
     /** The offset button is shown once any skip segment exists — now or earlier this session. */
     private void updateSkipOffsetButton() {
         if (buttonSkipOffset == null) {
             return;
         }
-        final boolean show = mPrefs.skipEnabled && skipManager != null
-                && (skipManager.hasSegments() || skipSeenThisSession);
-        buttonSkipOffset.setVisibility(show ? View.VISIBLE : View.GONE);
+        buttonSkipOffset.setVisibility(skipOffsetReachable() ? View.VISIBLE : View.GONE);
     }
 
     /** Apply a new session skip offset and re-derive the segments (moves timeline highlights live). */
@@ -3235,14 +3243,19 @@ public class PlayerActivity extends Activity {
             subtitleOffsetDialog.dismiss();
         }
         final List<OffsetPanel.Line> lines = new ArrayList<>();
-        final boolean both = subtitleOffsetShiftable() && secondaryOffsetShiftable();
+        // Named whenever a second line is possible at all, not only when one happens to be showing. A
+        // lone unlabelled slider in a player that has two subtitle lines reads as "this panel only does
+        // the first one"; captioned, its solitude is the answer instead: there is no hint to shift.
+        final boolean named = secondaryEnabled();
         if (subtitleOffsetShiftable()) {
-            lines.add(new OffsetPanel.Line(both ? getString(R.string.subtitle_title) : null,
+            // Named as the panel names it, not "Subtitles" — one line called after the whole feature
+            // and the other called "second" reads as a parent and a child rather than as two lines.
+            lines.add(new OffsetPanel.Line(named ? getString(R.string.subtitle_main_title) : null,
                     subtitleOffsetSec, this::applySubtitleOffset));
         }
         if (secondaryOffsetShiftable()) {
             lines.add(new OffsetPanel.Line(
-                    both ? getString(R.string.subtitle_secondary_title) : null,
+                    named ? getString(R.string.subtitle_secondary_title) : null,
                     secondarySubtitleOffsetSec, this::applySecondarySubtitleOffset));
         }
         if (lines.isEmpty()) {
@@ -5423,6 +5436,31 @@ public class PlayerActivity extends Activity {
         final CharSequence subtitle;
         final boolean checked;
         final Runnable action;
+        /**
+         * Chrome rather than a choice: a caption naming the group below it, or — with no title — a bare
+         * rule. A list where a doorway into another list, a set of choices and an action all look alike
+         * reads as unstructured, and the icon some of them carry reads as decoration rather than as the
+         * thing that tells them apart. Not clickable and never focusable: a remote must not stop here.
+         */
+        final boolean chrome;
+
+        static MenuItem caption(CharSequence title) {
+            return new MenuItem(title, true);
+        }
+
+        static MenuItem rule() {
+            return new MenuItem(null, true);
+        }
+
+        private MenuItem(CharSequence title, boolean chrome) {
+            this.iconRes = 0;
+            this.imageUrl = null;
+            this.title = title;
+            this.subtitle = null;
+            this.checked = false;
+            this.action = null;
+            this.chrome = chrome;
+        }
 
         MenuItem(CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
             this(0, title, subtitle, checked, action);
@@ -5440,7 +5478,34 @@ public class PlayerActivity extends Activity {
             this.subtitle = subtitle;
             this.checked = checked;
             this.action = action;
+            this.chrome = false;
         }
+    }
+
+    /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
+    private View menuRule(int topPx, int bottomPx) {
+        final View rule = new View(this);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        lp.topMargin = topPx;
+        lp.bottomMargin = bottomPx;
+        rule.setLayoutParams(lp);
+        rule.setBackgroundColor(0x1AFFFFFF);
+        return rule;
+    }
+
+    /**
+     * A caption naming the group under it, in the register the panel already uses for a row's details —
+     * same size, same dimmed white. Indented to where the titles of that group start, not to the icon
+     * column, and given more air above than below so it belongs to what follows it.
+     */
+    private View menuCaption(CharSequence text) {
+        final TextView caption = new TextView(this);
+        caption.setText(text);
+        caption.setTextColor(0x99FFFFFF);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
+        return caption;
     }
 
     // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
@@ -5459,6 +5524,9 @@ public class PlayerActivity extends Activity {
             return;
         }
         final View[] currentRow = new View[1];
+        // Where the D-pad starts when no row is checked — a panel of actions has nothing ticked, and
+        // without this a remote opens onto whatever focus the dialog happened to pick.
+        final View[] firstRow = new View[1];
 
         final LinearLayout listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
@@ -5473,15 +5541,15 @@ public class PlayerActivity extends Activity {
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        final View divider = new View(this);
-        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-        dividerLp.bottomMargin = Utils.dpToPx(4);
-        divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(0x1AFFFFFF);
-        listLayout.addView(divider);
+        listLayout.addView(menuRule(0, Utils.dpToPx(4)));
 
         for (final MenuItem item : items) {
+            if (item.chrome) {
+                // Air on both sides of a group boundary: it belongs to neither of the two groups.
+                listLayout.addView(item.title == null
+                        ? menuRule(Utils.dpToPx(6), Utils.dpToPx(6)) : menuCaption(item.title));
+                continue;
+            }
             final boolean isCurrent = item.checked;
 
             final LinearLayout row = new LinearLayout(this);
@@ -5500,6 +5568,9 @@ public class PlayerActivity extends Activity {
             row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
+            }
+            if (firstRow[0] == null) {
+                firstRow[0] = row;
             }
 
             // A room with artwork leads with it rather than with a glyph: in a list of rooms the poster is
@@ -5607,8 +5678,9 @@ public class PlayerActivity extends Activity {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
         }
         showPickerDialog(menuDialog);
-        if (currentRow[0] != null) {
-            currentRow[0].post(() -> currentRow[0].requestFocus());
+        final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
+        if (focus != null) {
+            focus.post(focus::requestFocus);
         }
     }
 
@@ -6519,14 +6591,21 @@ public class PlayerActivity extends Activity {
         final Uri fileOnly = subtitleWithoutTrack();
         final boolean painting = paintedSubtitleUri != null;
         final List<MenuItem> items = new ArrayList<>();
-        // First, and the only row here that carries an icon — which is what tells it apart from the
-        // track rows below without a divider or a header. Its summary names the language it is showing,
-        // so the state reads without opening it. Focus still lands on the ticked track (see
-        // showSideMenu), so a row above them costs nothing on a D-pad.
-        if (secondaryEnabled()) {
+        // Three kinds of row live in this one panel — a doorway into another list, the choices for this
+        // line, and an action — so each gets a register of its own rather than an icon to be told apart
+        // by. The doorway leads: its summary names what the second line is showing, so that state reads
+        // without opening it, and a film handed over with three dozen subtitle configurations would bury
+        // it anywhere further down. Focus still lands on the ticked track (see showSideMenu), so a row
+        // above them costs nothing on a D-pad.
+        final boolean second = secondaryEnabled();
+        if (second) {
             items.add(new MenuItem(R.drawable.ic_subtitle_secondary_24dp,
                     getString(R.string.subtitle_secondary_title), secondarySubtitleSummary(),
                     false, this::showSecondarySubtitleDialog));
+            items.add(MenuItem.rule());
+            // Named only while there is a second line to tell it apart from: on its own it is the only
+            // group in the panel, and naming the obvious is noise.
+            items.add(MenuItem.caption(getString(R.string.subtitle_main_title)));
         }
         items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled && !painting,
                 this::disableSubtitles));
@@ -6568,8 +6647,10 @@ public class PlayerActivity extends Activity {
                         () -> applySubtitle(trackGroup, index)));
             }
         }
-        // Last, and with no tick: it is an action rather than a track. Offered whatever the automatic
-        // search's switch says — pressing it is the consent that switch stands in for.
+        // Last, and with no tick: it is an action rather than a track, so it sits under a rule of its
+        // own. Offered whatever the automatic search's switch says — pressing it is the consent that
+        // switch stands in for.
+        items.add(MenuItem.rule());
         items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
                 null, false, () -> showSubtitleSearchDialog(false)));
         showSideMenu(getString(R.string.subtitle_title), items);
@@ -6768,6 +6849,9 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(subtitleFileLabel(uri), null, false,
                     () -> chooseSecondarySubtitle(uri)));
         }
+        // An action, not a candidate — the same boundary the first line's list draws, so the two panels
+        // read alike.
+        items.add(MenuItem.rule());
         items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
                 null, false, () -> showSubtitleSearchDialog(true)));
         showSideMenu(getString(R.string.subtitle_secondary_title), items);
@@ -8112,34 +8196,50 @@ public class PlayerActivity extends Activity {
         showPickerDialog(sleepTimerDialog);
     }
 
-    // Overflow menu: everything used rarely or once per session lives here so the main row stays calm.
+    /**
+     * Overflow menu: everything used rarely or once per session, so the control row stays calm.
+     *
+     * <p>Three bands rather than one column, because three unlike things were sharing it and an icon on
+     * every row told them apart from nothing. First the instruments of <em>this</em> film — the only
+     * rows that carry live state, and the only ones anybody comes back to; then errands, done once and
+     * done with; then the ways of leaving this film. Two rules and one caption, drawn by the same panel
+     * that draws the subtitle picker's.
+     *
+     * <p>Titled "More", as the button that opens it is named. It used to be titled "Settings" and to
+     * carry a row called "More" that opened the real settings screen: one glyph, two destinations, and
+     * three names between them.
+     */
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
+        // "Playback" rather than "this film": of these four only the skip offset is per file. The speed
+        // outlives the app, the subtitle timing outlives the episode, and a sleep timer was never about
+        // one file at all. The caption also carries the qualifier for the band, which is why the row
+        // below is "Speed" and only its own panel says "Playback speed".
+        items.add(MenuItem.caption(getString(R.string.menu_playback)));
         if (player != null) {
-            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_title),
-                    formatSpeed(userSpeed()), false, this::showSpeedDialog));
-            items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
-                    sleepTimerSummary(), false, this::showSleepTimerMenu));
-            // Rides the stats panel: the details it reports are the ones on screen, and the row would be
-            // noise for everyone who has not asked for them. From the menu rather than a long-press on the
-            // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
-            if (mPrefs.showStats) {
-                items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
-                        getString(R.string.stats_report_title), null, false, this::showPlayerState));
-            }
+            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
+                    // Quiet at 1x, like every other row here: a summary reports what has been changed,
+                    // and "Normal" is the absence of a change.
+                    userSpeed() == 1f ? null : formatSpeed(userSpeed()),
+                    false, this::showSpeedDialog));
         }
-        if (buttonSkipOffset != null && buttonSkipOffset.getVisibility() == View.VISIBLE) {
-            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
-                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
-                    false, this::showSkipOffsetDialog));
-        }
-        // Right below its twin. Only with subtitles on: there is nothing to shift otherwise. One row for
-        // both lines — the panel behind it carries a slider each, and which is which is answered there.
+        // Only with subtitles on: there is nothing to shift otherwise. One row for both lines — the
+        // panel behind it carries a slider each, and which is which is answered there.
         if (subtitleOffsetShiftable() || secondaryOffsetShiftable()) {
             items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
                     getString(R.string.subtitle_offset_title), subtitleOffsetSummary(),
                     false, this::showSubtitleOffsetDialog));
         }
+        if (skipOffsetReachable()) {
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
+                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
+                    false, this::showSkipOffsetDialog));
+        }
+        if (player != null) {
+            items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
+                    sleepTimerSummary(), false, this::showSleepTimerMenu));
+        }
+        items.add(MenuItem.rule());
         // Here as well as in the subtitle panel: the panel is where somebody who has looked for
         // subtitles ends up, and this menu is where they look when the panel had nothing to offer.
         if (player != null) {
@@ -8153,13 +8253,20 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_title),
                     togetherSummary(), false, this::showTogetherMenu));
         }
+        // Rides the stats panel: the details it reports are the ones on screen, and the row would be
+        // noise for everyone who has not asked for them. From the menu rather than a long-press on the
+        // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
+        if (player != null && mPrefs.showStats) {
+            items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
+                    getString(R.string.stats_report_title), null, false, this::showPlayerState));
+        }
+        items.add(MenuItem.rule());
         // Same two entry points the empty state offers (hence its strings), so opening something else is
         // not a matter of first getting back to an empty player.
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
-        // "More" → the full app settings screen (long-pressing the gear opens it directly, too).
-        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.button_more), null, false, this::openSettings));
-        showSideMenu(getString(R.string.pref_title), items);
+        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
+        showSideMenu(getString(R.string.button_more), items);
     }
 
     // --- Watch together -------------------------------------------------------------------------

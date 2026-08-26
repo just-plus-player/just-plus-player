@@ -272,7 +272,7 @@
     <string name="pref_subtitle_edge_shadow">Drop shadow</string>
     <string name="pref_subtitle_none">None</string>
     <string name="pref_language_subtitle">Default subtitle track</string>
-    <string name="pref_language_subtitle_none">Not set — only a subtitle the file itself marks as default is used</string>
+    <string name="pref_language_subtitle_none">Not set — subtitles stay off until you turn them on</string>
     <string name="pref_language_subtitle_secondary">Secondary subtitle track</string>
     <string name="pref_language_subtitle_secondary_none">Not set — the second line is only ever chosen during playback</string>
     <string name="pref_subtitle_search_screen">Search online</string>

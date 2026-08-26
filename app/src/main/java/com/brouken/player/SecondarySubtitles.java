@@ -219,21 +219,20 @@ final class SecondarySubtitles implements TextOutput {
     }
 
     /**
-     * Forgets the line without taking anything off screen: a seek makes what was showing no longer an
-     * answer to anything, but whatever the renderer sends next is still welcome.
+     * Takes the line off screen and forgets what was on it — after a seek, an item change or a rebuild,
+     * where what was showing is no longer an answer to anything. Whatever the renderer sends next is
+     * still welcome.
+     *
+     * <p>There used to be a {@code forget()} beside this with a byte-identical body and a comment
+     * claiming it left the screen alone, which {@code show("", 0)} plainly does not.
      */
-    void forget() {
-        endPeek();
-        last = "";
-        lastAtMs = 0;
-        show("", 0);
-    }
-
-    /** Takes the line off screen and forgets what was on it. */
     void clear() {
         endPeek();
         last = "";
         lastAtMs = 0;
+        // Nothing is on screen to have ended, so the moment the last line went is no longer a fact about
+        // anything. Left behind, it was a stale timestamp that only happened to be harmless.
+        lastEndedAtMs = C.TIME_UNSET;
         show("", 0);
     }
 

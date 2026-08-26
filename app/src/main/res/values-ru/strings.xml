@@ -295,7 +295,7 @@
     <string name="pref_subtitle_source_stremio_summary">Дополнение Stremio, без ограничений. Нужен IMDb id</string>
     <string name="pref_subtitle_source_rest">OpenSubtitles.org</string>
     <string name="pref_subtitle_source_rest_summary">Закрытый API. Пока отвечает, но может отключиться в любой момент</string>
-    <string name="pref_language_subtitle_none">Не задано — включится лишь дорожка, помеченная в файле как основная</string>
+    <string name="pref_language_subtitle_none">Не задано — субтитры выключены, пока вы их не включите</string>
     <string name="pref_language_subtitle_secondary">Дополнительные субтитры по умолчанию</string>
     <string name="pref_language_subtitle_secondary_none">Не задано — вторая строка выбирается только вручную во время просмотра</string>
     <string name="pref_subtitle_style_bold">Полужирный стиль</string>

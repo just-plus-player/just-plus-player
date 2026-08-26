@@ -57,7 +57,7 @@ final class SubtitleOffset implements TextOutput {
     }
 
     private static final long TICK_MS = 50; // resolution of the hold, far below what an eye can catch
-    private static final long HISTORY_MS = 32_000; // the panel's ±30 s, and room to spare
+    private static final long HISTORY_MS = 182_000; // the panel's ±3 min, and room to spare
 
     private final TextOutput output;
     private final Position position;

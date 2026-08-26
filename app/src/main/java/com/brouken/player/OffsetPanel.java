@@ -192,7 +192,12 @@ final class OffsetPanel {
 
         final SeekBar seekBar = new SeekBar(activity);
         seekBar.setMax(progressMax);
-        seekBar.setKeyProgressIncrement(2); // D-pad step = 2 × stepSec
+        // D-pad step, scaled to the range instead of fixed at 2 × stepSec. Fixed, it made the wide
+        // subtitle range unreachable from a remote: measured on a television, five presses moved the
+        // value 2.5 s, so ±180 s was 360 presses to one edge with the thumb barely leaving the middle.
+        // A press is now a ninetieth of the range, floored at 2 × stepSec so the narrow skip panel keeps
+        // exactly the step it had. The fine step stays on the ± buttons, which is where it belongs.
+        seekBar.setKeyProgressIncrement(Math.max(2, (int) Math.round(maxSec / 90 / stepSec)));
         seekBar.setProgress((int) Math.round(line.initialSec / stepSec) + mid);
         seekBar.setFocusable(true);
         seekBar.setSplitTrack(false);

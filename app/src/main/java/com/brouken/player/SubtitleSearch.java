@@ -162,6 +162,7 @@ final class SubtitleSearch {
         // Only for a source that is actually switched on, though: the lookup is a round trip to TMDB
         // ahead of every search, and it buys nothing when the sources that need that id are all off.
         final MediaId id = needsOtherId(identifier, prefs) ? enrich(identifier) : identifier;
+        rememberPair(id);
         if (cancelled()) {
             return null;
         }
@@ -351,6 +352,33 @@ final class SubtitleSearch {
     }
 
     private static final Pattern LAST_TS = Pattern.compile("(\\d{1,2}):([0-5]\\d):([0-5]\\d)");
+
+    /**
+     * The imdb/tmdb pairs learned while searching, so a cached copy can be looked for under the name
+     * the other id would have given it.
+     *
+     * <p>The two ways in do not carry the same id: a launcher may send only one, and a hand-picked
+     * title deliberately drops the imdb one. The cached file is named after whichever was to hand, so
+     * without this the same episode was downloaded twice — once per name. Resolving the missing id
+     * before probing the cache would mean a round trip to TMDB on every open, which is exactly what
+     * needsOtherId exists to avoid; remembering what a search already found out costs nothing.
+     *
+     * <p>Process-lifetime, like the misses in PlayerActivity: the automatic search runs before anyone
+     * reaches the manual one, so by the time the pairing is needed it has been learned.
+     */
+    private static final Map<String, String> PAIRS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static void rememberPair(MediaId id) {
+        if (id.imdb != null && id.tmdb != null) {
+            PAIRS.put(id.imdb, id.tmdb);
+            PAIRS.put(id.tmdb, id.imdb);
+        }
+    }
+
+    /** What the given id was last seen paired with, or null. */
+    static String pairedWith(String id) {
+        return id == null ? null : PAIRS.get(id);
+    }
 
     private static boolean cancelled() {
         return Thread.currentThread().isInterrupted();

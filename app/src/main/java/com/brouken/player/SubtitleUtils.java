@@ -373,10 +373,18 @@ class SubtitleUtils {
         }
     }
 
+    /**
+     * Empties the cache of the copies made while opening a subtitle by hand.
+     *
+     * <p>Deliberately spares the {@code subs.*} files: those are what the online search downloaded and
+     * what makes a second watch cost no request and no quota. This used to delete everything, so opening
+     * one external subtitle threw away every subtitle found for every film watched recently — and the
+     * next search paid for them all again. Trimming those is {@code Utils.trimSubtitleCache}'s job.
+     */
     public static void clearCache(Context context) {
         try {
             for (File file : context.getCacheDir().listFiles()) {
-                if (file.isFile()) {
+                if (file.isFile() && !file.getName().startsWith("subs.")) {
                     file.delete();
                 }
             }
@@ -390,6 +398,11 @@ class SubtitleUtils {
         final String subtitleLanguage = SubtitleUtils.getSubtitleLanguage(uri);
         if (subtitleLanguage == null && subtitleName == null)
             subtitleName = Utils.getFileName(context, uri);
+        // A name that is nothing but digits is not a name: it is what is left of a content:// URI whose
+        // display name the resolver would not hand over, and the picker showed it as "1000000160".
+        // Dropped, so the row falls back to its track number instead of reciting a MediaStore id.
+        if (subtitleName != null && subtitleName.matches("\\d+"))
+            subtitleName = null;
 
         MediaItem.SubtitleConfiguration.Builder subtitleConfigurationBuilder = new MediaItem.SubtitleConfiguration.Builder(uri)
                 // Becomes the track's Format.id, which is how a selected subtitle is remembered and

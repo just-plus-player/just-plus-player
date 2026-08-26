@@ -60,7 +60,39 @@ final class SubtitleTimeline {
      * Reads and parses the whole file. Null when Media3 has no parser for it, when it holds no cue, or
      * when reading fails — the caller then leaves the track to the renderer.
      */
+    /**
+     * The file parsed last, handed on once.
+     *
+     * <p>{@link SubtitleFetcher} builds a timeline to read the last cue's time and decide whether the
+     * file was timed for this cut, and {@link PlayerActivity} then builds the very same one again to put
+     * it on screen — a few thousand cues parsed twice for every subtitle found. Handed over rather than
+     * cached: the second reader is always the next one along, so keeping one entry until it is taken
+     * costs a single reference, where a real cache would be a film's worth of cues held on the chance of
+     * a third reader.
+     */
+    private static Uri pendingUri;
+    private static SubtitleTimeline pending;
+
+    private static synchronized SubtitleTimeline take(Uri uri) {
+        if (pendingUri == null || !pendingUri.equals(uri)) {
+            return null;
+        }
+        final SubtitleTimeline taken = pending;
+        pendingUri = null;
+        pending = null;
+        return taken;
+    }
+
+    private static synchronized void offer(Uri uri, SubtitleTimeline timeline) {
+        pendingUri = uri;
+        pending = timeline;
+    }
+
     static SubtitleTimeline load(Context context, Uri uri, String mimeType) {
+        final SubtitleTimeline reused = take(uri);
+        if (reused != null) {
+            return reused;
+        }
         try {
             final Format format = new Format.Builder().setSampleMimeType(mimeType).build();
             final SubtitleParser.Factory factory = new DefaultSubtitleParserFactory();
@@ -104,7 +136,9 @@ final class SubtitleTimeline {
                         : (i + 1 < count ? kept.get(i + 1).startTimeUs : block.startTimeUs + OPEN_ENDED_US);
                 cues.add(block.cues);
             }
-            return new SubtitleTimeline(startUs, endUs, cues);
+            final SubtitleTimeline timeline = new SubtitleTimeline(startUs, endUs, cues);
+            offer(uri, timeline);
+            return timeline;
         } catch (Throwable t) {
             // A subtitle is not worth a broken playback: the renderer keeps the track either way.
             Utils.log("subtitles: timeline failed " + t);
@@ -183,13 +217,36 @@ final class SubtitleTimeline {
         return kept;
     }
 
+    /**
+     * What an inserted advertisement says about itself, beside carrying an address. Required on top of
+     * {@link #PROMO}, because an address alone is also what a line of dialogue looks like when somebody
+     * reads a website out — "Зайди на sciencedirect.com, там всё есть" was deleted as an advertisement,
+     * which is the defect this whole window is supposed to be careful about.
+     * <p>
+     * Every notice this feature has actually met names itself: "Устали искать субтитры? … getray.app",
+     * "Натисніть відтворення. Субтитри з'являються … tryray.app", "Watch any video online with
+     * Open-SUBTITLES / Free Browser extension: osdb.link/ext", "Оцените данный субтитр, пожалуйста,
+     * www.osdb.link/…". The Avatar end-credit helpline cards, which must be kept, name none of this.
+     * <p>
+     * The cost is the bare-URL advertisement with no words around it, which now survives — and by this
+     * file's own reckoning that is the right way round: an advertisement shown is a nuisance, a line of
+     * the film deleted is a defect.
+     */
+    private static final Pattern PROMO_WORDS = Pattern.compile(
+            "subtitl|субтитр|переклад|перевод|translat|download|скача|завантаж|"
+                    + "extension|browser|расширени|розширенн|\\bfree\\b|бесплатн|безкоштовн|"
+                    + "\\bai\\b|нейросет|нейромереж|оцените|оцініть|watch any",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /** Both marks are looked for across the whole block: a notice may put its address on its own line. */
     private static boolean isPromo(final CuesWithTiming block) {
+        final StringBuilder text = new StringBuilder();
         for (final Cue cue : block.cues) {
-            if (cue.text != null && PROMO.matcher(cue.text).find()) {
-                return true;
+            if (cue.text != null) {
+                text.append(cue.text).append('\n');
             }
         }
-        return false;
+        return PROMO.matcher(text).find() && PROMO_WORDS.matcher(text).find();
     }
 
     /** Indices of the blocks on screen at this moment, ascending; empty when there is nothing to show. */

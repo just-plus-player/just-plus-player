@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -88,9 +89,14 @@ final class OffsetPanel {
 
         final List<Runnable> resets = new ArrayList<>();
         SeekBar firstBar = null;
+        // One value gets the big readout it was designed for; two share the height, so they take the
+        // clock's size instead. Two 44sp numbers plus their sliders do not fit a phone held sideways,
+        // and what fell off the bottom was the second slider — the panel looked like it could only
+        // shift the first line.
+        final float valueSp = lines.length > 1 ? ui.textClock() : ui.textValue();
         for (final Line line : lines) {
             root.addView(verticalSpacer(activity));
-            final SeekBar bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, resets);
+            final SeekBar bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp, resets);
             if (firstBar == null) {
                 firstBar = bar;
             }
@@ -129,8 +135,15 @@ final class OffsetPanel {
         Utils.padForPickerInsets(activity, ui, insetSource, root, Utils.dpToPx(24) + ui.overscanH(),
                 Utils.dpToPx(20), Utils.dpToPx(24));
 
+        // Scrolled, because a clipped panel is a panel that lies: the readouts stayed on screen while
+        // the slider under the second one did not. fillViewport keeps the weighted spacers centring the
+        // content while it still fits, and the SeekBars drag across, so nothing fights the scroll.
+        final ScrollView scroller = new ScrollView(activity);
+        scroller.setFillViewport(true);
+        scroller.addView(root);
+
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
-        dialog.setContentView(root);
+        dialog.setContentView(scroller);
         dialog.setCanceledOnTouchOutside(true);
         final Window window = dialog.getWindow();
         if (window != null) {
@@ -151,7 +164,8 @@ final class OffsetPanel {
     /** Caption, readout and slider for one offset. Returns its SeekBar; adds its reset to {@code resets}. */
     private static SeekBar addLine(final Activity activity, final UiMetrics ui, final LinearLayout root,
                                    final int accent, final Line line, final double maxSec,
-                                   final double stepSec, final List<Runnable> resets) {
+                                   final double stepSec, final float valueSp,
+                                   final List<Runnable> resets) {
         final int trackBg = 0x33FFFFFF;
         final int progressMax = (int) Math.round(2 * maxSec / stepSec);
         final int mid = progressMax / 2;
@@ -169,7 +183,7 @@ final class OffsetPanel {
         }
 
         final TextView value = new TextView(activity);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textValue());
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, valueSp);
         value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         value.setFontFeatureSettings("tnum"); // fixed-width digits: the readout stops twitching as it counts
         value.setGravity(Gravity.CENTER);

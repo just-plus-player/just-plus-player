@@ -10,7 +10,6 @@ import android.util.TypedValue;
 import android.view.View;
 import android.widget.TextView;
 
-import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.media3.common.C;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
@@ -35,11 +34,11 @@ import java.util.List;
  * plate with alpha; and {@code SubtitleView} would place the cue by its own rules, when the whole
  * point of this line is that it sits in a band of its own and never moves.
  *
- * <p>Three states rather than a boolean, because a hint that is always there is a hint nobody reads —
- * the native tongue wins every time it is on screen. {@link State#PEEKABLE} is the mode the line was
- * really made for: a mark stands where the hint would be, and the hint itself arrives for the one line
- * that did not land and leaves with it. What it shows is drawn from {@link #current}, which is kept
- * whether or not it is on screen, so asking for it costs nothing and waits for nothing.
+ * <p>Shown or hidden, because a hint that is always there is a hint nobody reads — the native tongue
+ * wins every time it is on screen. On demand nothing stands where the hint would be: the hint arrives
+ * for the one line that did not land and leaves with it, and the first line keeps its usual place the
+ * rest of the time. What it shows is drawn from {@link #current}, which is kept whether or not it is
+ * on screen, so asking for it costs nothing and waits for nothing.
  */
 final class SecondarySubtitles implements TextOutput {
 
@@ -99,14 +98,12 @@ final class SecondarySubtitles implements TextOutput {
     /** How often a running peek checks whether the film has moved past the line it was asked about. */
     private static final long PEEK_WATCH_MS = 500;
 
-    /** How much of the mark's colour is left. Present enough to find, quiet enough to ignore. */
-    private static final float MARK_ALPHA = 0.55f;
-
     enum State {
-        /** Nothing drawn: picture-in-picture, no second line chosen, or the feature switched off. */
+        /**
+         * Nothing drawn: picture-in-picture, no second line chosen, the feature switched off, or on
+         * demand simply not asked for yet.
+         */
         HIDDEN,
-        /** The mark only — a second line is chosen and waiting to be asked for. */
-        PEEKABLE,
         /** The hint itself, on its plate. Collapses to nothing while the line is silent. */
         SHOWN,
     }
@@ -166,7 +163,6 @@ final class SecondarySubtitles implements TextOutput {
     private Typeface typeface = Typeface.DEFAULT;
     private int padHPx;
     private int padVPx;
-    private Drawable mark;
     private Drawable plate;
     /** The state the view's chrome is currently set up for, so a cue change does not redo all of it. */
     private State applied;
@@ -196,7 +192,7 @@ final class SecondarySubtitles implements TextOutput {
     }
 
     /**
-     * Colour, plate, size and the mark. Everything else about the look is the main line's to decide.
+     * Colour, plate and size. Everything else about the look is the main line's to decide.
      *
      * <p>The typeface is passed in rather than left to the view, and that is not cosmetic. The first
      * line is drawn by Media3 with {@code Typeface.DEFAULT}; a {@code TextView} left alone takes its
@@ -204,8 +200,7 @@ final class SecondarySubtitles implements TextOutput {
      * do not look the same size, and the difference reads as the size setting having failed.
      */
     void style(final int textColor, final int backgroundColor, final float textSizePx,
-               final Typeface typeface, final int cornerPx, final int padHPx, final int padVPx,
-               final Drawable mark, final int markWidthPx, final int markHeightPx) {
+               final Typeface typeface, final int cornerPx, final int padHPx, final int padVPx) {
         this.textColor = textColor;
         this.textSizePx = textSizePx;
         this.typeface = typeface;
@@ -218,12 +213,6 @@ final class SecondarySubtitles implements TextOutput {
             drawable.setCornerRadius(cornerPx);
             drawable.setColor(backgroundColor);
             plate = drawable;
-        }
-        if (mark != null) {
-            // The mark stands in for the hint, so it is the hint's own colour, quietened.
-            this.mark = DrawableCompat.wrap(mark.mutate());
-            DrawableCompat.setTint(this.mark, textColor);
-            this.mark.setBounds(0, 0, markWidthPx, markHeightPx);
         }
         applied = null;
         render();
@@ -393,10 +382,6 @@ final class SecondarySubtitles implements TextOutput {
             applied = state;
             applyChrome();
         }
-        if (state == State.PEEKABLE) {
-            view.setVisibility(mark == null ? View.GONE : View.VISIBLE);
-            return;
-        }
         final CharSequence text = displayed();
         view.setText(text);
         // GONE rather than INVISIBLE: the band above it is reserved by the main line's padding, so a
@@ -410,19 +395,8 @@ final class SecondarySubtitles implements TextOutput {
      * not, and a line of dialogue arrives every few seconds.
      */
     private void applyChrome() {
-        if (state == State.PEEKABLE) {
-            // No plate under the mark: the plate is what says "there is a line here to read", and there
-            // is not one yet. Padding is kept so the touch target does not move with the state.
-            view.setText("");
-            view.setBackground(null);
-            view.setAlpha(MARK_ALPHA);
-            view.setCompoundDrawables(mark, null, null, null);
-        } else {
-            view.setCompoundDrawables(null, null, null, null);
-            view.setAlpha(1f);
-            // Kept whether or not there is a plate, so turning one on does not move the text.
-            view.setBackground(plate);
-        }
+        // Kept whether or not there is a plate, so turning one on does not move the text.
+        view.setBackground(plate);
         view.setPadding(padHPx, padVPx, padHPx, padVPx);
         view.setTextColor(textColor);
         view.setTypeface(typeface);

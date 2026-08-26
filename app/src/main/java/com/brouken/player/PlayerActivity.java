@@ -66,7 +66,6 @@ import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.TouchDelegate;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
@@ -1066,16 +1065,6 @@ public class PlayerActivity extends Activity {
         final View secondaryHint = playerView.findViewById(R.id.subtitle_secondary);
         secondarySubtitles = new SecondarySubtitles((TextView) secondaryHint, this::onSecondaryPeekEnd,
                 subtitlePosition);
-        // On demand, the mark under the first line is the whole affordance: it says a hint is there
-        // without saying it, and pressing it is how the hint arrives. Clickable only while it is the
-        // mark that is drawn, so that the rest of the time a tap down here still opens the controls.
-        secondaryHint.setOnClickListener(v -> peekSecondarySubtitle());
-        secondaryHint.setClickable(false);
-        // Belt and braces with the layout: setClickable is what would otherwise make it focusable, and
-        // a focus target down here is a D-pad walking into the subtitles on its way out of the controls.
-        secondaryHint.setFocusable(false);
-        secondaryHint.addOnLayoutChangeListener(
-                (v, l, t, r, b, ol, ot, or_, ob) -> updateSecondaryTouchTarget());
         // Sizes are worked out from the subtitle view's height, and the first pass runs before there is
         // one. This catches that, and every later resize a configuration change does not report —
         // entering split screen, dragging a freeform window, a fold opening. Guarded on the height
@@ -2716,25 +2705,7 @@ public class PlayerActivity extends Activity {
                         return true;
                 }
                 break;
-            case KeyEvent.KEYCODE_CAPTIONS:
-                // Free on every remote that has it, and it means this and nothing else. With no hint to
-                // ask for it goes on doing what the default case below does with an unhandled key.
-                if (peekSecondarySubtitle()) {
-                    return true;
-                }
-                if (!controllerVisibleFully) {
-                    playerView.showController();
-                    return true;
-                }
-                break;
             case KeyEvent.KEYCODE_DPAD_UP:
-                // Up with the controls hidden used to do what Down and every other key also do — open
-                // the controls — so it is the one press free to mean something. It peeks only while the
-                // mark is showing; otherwise nothing changes for anyone.
-                if (!controllerVisibleFully && event.getRepeatCount() == 0
-                        && peekSecondarySubtitle()) {
-                    return true;
-                }
                 if (controllerVisibleFully) {
                     // Up from the topmost row dismisses the controls instead of waiting out the timeout.
                     // Anywhere else it stays plain focus navigation: consuming the key here would suppress
@@ -6677,19 +6648,6 @@ public class PlayerActivity extends Activity {
         return mPrefs != null && !Prefs.SECONDARY_OFF.equals(mPrefs.subtitleSecondaryMode);
     }
 
-    /**
-     * Whether the mark under the first line is drawn at all.
-     *
-     * <p>Only where it can be pressed. On a remote it cannot: it is deliberately not focusable, because
-     * a focus target down there is a D-pad walking into the subtitles on its way out of the controls.
-     * That would leave it as a permanent glyph that does nothing and costs the first line its place, so
-     * on a television it is not drawn and the hint is asked for with the key alone — which is what the
-     * one line shown on choosing a second line says.
-     */
-    private boolean secondaryMarkShown() {
-        return !isTvBox;
-    }
-
     /** Whether the hint is asked for rather than always drawn. */
     private boolean secondaryOnDemand() {
         return mPrefs != null && Prefs.SECONDARY_DEMAND.equals(mPrefs.subtitleSecondaryMode);
@@ -6712,13 +6670,10 @@ public class PlayerActivity extends Activity {
         if (!secondaryOnDemand()) {
             return SecondarySubtitles.State.SHOWN;
         }
-        if (secondarySubtitles.isPeeking()) {
-            return SecondarySubtitles.State.SHOWN;
-        }
-        // The mark is a thing to press. Locked, nothing can be, and on a remote nothing ever is, so
-        // either way it would be a glyph on screen that answers to nothing.
-        return locked || !secondaryMarkShown()
-                ? SecondarySubtitles.State.HIDDEN : SecondarySubtitles.State.PEEKABLE;
+        // Nothing stands where the hint would be: a pause is what asks for it, and until it is asked
+        // for the first line keeps its usual place.
+        return locked || !secondarySubtitles.isPeeking()
+                ? SecondarySubtitles.State.HIDDEN : SecondarySubtitles.State.SHOWN;
     }
 
     /**
@@ -6749,34 +6704,6 @@ public class PlayerActivity extends Activity {
     /** The peek ran out on its own; the band it opened closes again. */
     private void onSecondaryPeekEnd() {
         updateSecondaryState();
-    }
-
-    /**
-     * A 48 dp target around a mark drawn much smaller than that. Cleared whenever the mark is not what
-     * is on screen: a touch delegate does not care whether its view is visible, so one left standing
-     * would swallow taps meant for the controls.
-     */
-    private void updateSecondaryTouchTarget() {
-        if (playerView == null) {
-            return;
-        }
-        final View hint = playerView.findViewById(R.id.subtitle_secondary);
-        final View parent = hint == null ? null : (View) hint.getParent();
-        if (parent == null) {
-            return;
-        }
-        final boolean peekable = secondarySubtitles != null
-                && secondarySubtitles.getState() == SecondarySubtitles.State.PEEKABLE;
-        hint.setClickable(peekable);
-        if (!peekable || hint.getWidth() == 0) {
-            parent.setTouchDelegate(null);
-            return;
-        }
-        final Rect target = new Rect();
-        hint.getHitRect(target);
-        target.inset(-Math.max(0, (ui.dpS(140) - target.width()) / 2),
-                -Math.max(0, (ui.dpS(48) - target.height()) / 2));
-        parent.setTouchDelegate(new TouchDelegate(target, hint));
     }
 
     /**
@@ -7680,16 +7607,14 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * On demand, choosing a second line puts a small mark on screen and nothing else, which reads as
-     * the choice not having taken. Said once, on an explicit choice — feedback rather than a tip.
+     * On demand, choosing a second line puts nothing on screen at all, which reads as the choice not
+     * having taken. Said once, on an explicit choice — feedback rather than a tip.
      */
     private void sayHowToPeek() {
         if (!secondaryOnDemand() || playerView == null) {
             return;
         }
-        Utils.showText(playerView, getString(isTvBox
-                        ? R.string.subtitle_secondary_peek_hint_tv
-                        : R.string.subtitle_secondary_peek_hint),
+        Utils.showText(playerView, getString(R.string.subtitle_secondary_peek_hint),
                 SECONDARY_HINT_MS);
     }
 
@@ -11506,7 +11431,6 @@ public class PlayerActivity extends Activity {
             subtitleView.setBottomPaddingFraction(subtitleBaseBottomFraction());
             subtitleView.setPadding(0, 0, 0, 0);
             slideSubtitles(subtitleView, 0);
-            updateSecondaryTouchTarget();
             return;
         }
 
@@ -11543,15 +11467,12 @@ public class PlayerActivity extends Activity {
                     mPrefs.subtitleSecondaryBackgroundColor, hintPx,
                     Typeface.create(Typeface.DEFAULT,
                             mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL),
-                    ui.dpS(6), ui.dpS(8), ui.dpS(4),
-                    ContextCompat.getDrawable(this, R.drawable.ic_subtitle_secondary_mark),
-                    secondaryMarkWidthPx(), secondaryMarkHeightPx());
+                    ui.dpS(6), ui.dpS(8), ui.dpS(4));
         }
         // Translation rather than more padding: a hint that comes and goes would otherwise relayout the
         // subtitle view on every frame of the move, and the number the text size is derived from is the
         // height minus that padding — the very coupling phase 3a took out.
         slideSubtitles(subtitleView, secondaryPeekShiftPx(hintPx));
-        updateSecondaryTouchTarget();
     }
 
     /**
@@ -11639,15 +11560,15 @@ public class PlayerActivity extends Activity {
 
     /**
      * What the band holds when nothing has been asked for: two lines of hint while the second line is
-     * simply on, and only the mark while it is waiting to be asked for. On demand that is the whole
-     * point — the first line keeps its usual place, and the seventh of the screen the full band costs
-     * is spent for the seconds it is being read rather than for the film.
+     * simply on, and nothing at all while it is waiting to be asked for. On demand that is the whole
+     * point — the first line keeps its usual place, and the seventh of the screen the band costs is
+     * spent for the seconds the hint is being read rather than for the film.
      */
     private int secondaryRestingBandPx(final float hintPx) {
-        if (secondarySubtitles == null || !secondarySubtitles.isVisible()) {
+        if (secondarySubtitles == null || !secondarySubtitles.isVisible() || secondaryOnDemand()) {
             return 0;
         }
-        return secondaryOnDemand() ? secondaryMarkBandPx() : secondaryBandPx(hintPx);
+        return secondaryBandPx(hintPx);
     }
 
     /** How far the lines travel while a hint that was asked for is on screen. */
@@ -11656,21 +11577,7 @@ public class PlayerActivity extends Activity {
                 || secondarySubtitles.getState() != SecondarySubtitles.State.SHOWN) {
             return 0;
         }
-        return Math.max(0, secondaryBandPx(hintPx) - secondaryMarkBandPx());
-    }
-
-    private int secondaryMarkBandPx() {
-        return secondaryMarkShown() ? secondaryMarkHeightPx() + 2 * ui.dpS(4) : 0;
-    }
-
-    // Matches the drawable's own 28x10, so the mark is drawn at its natural proportions and the band
-    // above it is exactly as tall as the mark plus the padding the view keeps in either state.
-    private int secondaryMarkWidthPx() {
-        return ui.dpS(28);
-    }
-
-    private int secondaryMarkHeightPx() {
-        return ui.dpS(10);
+        return secondaryBandPx(hintPx);
     }
 
     @TargetApi(26)

@@ -193,8 +193,7 @@
     <string name="subtitle_main_title">Main subtitles</string>
     <string name="subtitle_search_found_secondary">Secondary subtitles: %1$s</string>
     <string name="subtitle_secondary_unavailable">This track cannot be shown as a second line</string>
-    <string name="subtitle_secondary_peek_hint">Tap the mark under the subtitles to see this line</string>
-    <string name="subtitle_secondary_peek_hint_tv">Press up to see this line</string>
+    <string name="subtitle_secondary_peek_hint">Secondary subtitles appear when you pause</string>
     <string name="pref_subtitle_secondary_header">Secondary subtitles</string>
     <string name="pref_subtitle_secondary_mode">When to show</string>
     <string name="pref_subtitle_secondary_mode_off">Never — no second line at all</string>

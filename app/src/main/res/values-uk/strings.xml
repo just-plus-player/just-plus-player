@@ -177,8 +177,7 @@
     <string name="subtitle_main_title">Основні субтитри</string>
     <string name="subtitle_search_found_secondary">Додаткові субтитри: %1$s</string>
     <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати другим рядком</string>
-    <string name="subtitle_secondary_peek_hint">Торкніться позначки під субтитрами, щоб побачити цей рядок</string>
-    <string name="subtitle_secondary_peek_hint_tv">Натисніть угору, щоб побачити цей рядок</string>
+    <string name="subtitle_secondary_peek_hint">Додаткові субтитри з’являються на паузі</string>
     <string name="pref_subtitle_secondary_header">Додаткові субтитри</string>
     <string name="pref_subtitle_secondary_mode">Коли показувати</string>
     <string name="pref_subtitle_secondary_mode_off">Ніколи — другого рядка немає взагалі</string>

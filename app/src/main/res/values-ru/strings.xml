@@ -170,8 +170,7 @@
     <string name="subtitle_main_title">Основные субтитры</string>
     <string name="subtitle_search_found_secondary">Дополнительные субтитры: %1$s</string>
     <string name="subtitle_secondary_unavailable">Эту дорожку нельзя показать второй строкой</string>
-    <string name="subtitle_secondary_peek_hint">Коснитесь значка под субтитрами, чтобы увидеть эту строку</string>
-    <string name="subtitle_secondary_peek_hint_tv">Нажмите вверх, чтобы увидеть эту строку</string>
+    <string name="subtitle_secondary_peek_hint">Дополнительные субтитры появляются на паузе</string>
     <string name="pref_subtitle_secondary_header">Дополнительные субтитры</string>
     <string name="pref_subtitle_secondary_mode">Когда показывать</string>
     <string name="pref_subtitle_secondary_mode_off">Никогда — второй строки нет совсем</string>

@@ -3,11 +3,23 @@ package com.brouken.player;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.TypefaceSpan;
 
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.text.Cue;
+import androidx.media3.common.text.CueGroup;
+
+import com.google.common.collect.ImmutableList;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -15,6 +27,84 @@ import java.util.Arrays;
 import java.util.List;
 
 class SubtitleUtils {
+
+    /**
+     * Span types that say how a subtitle should <em>look</em>, as opposed to what it means. Colour,
+     * size and typeface are the file's opinion about presentation, and presentation is the viewer's
+     * to set — so these are dropped and the app's own style applies to every line alike.
+     *
+     * <p>What is deliberately not here: {@code StyleSpan} (italic and bold), {@code UnderlineSpan} and
+     * {@code StrikethroughSpan}. Those carry meaning rather than decoration — italics are how a
+     * subtitle marks a voice off screen, a narrator, a thought, or a line in another language — and
+     * stripping them would lose information, not styling. Media3's own language-feature spans (ruby,
+     * text emphasis, vertical text) stay for the same reason.
+     */
+    private static final Class<?>[] LOOK_SPANS = {
+            ForegroundColorSpan.class, BackgroundColorSpan.class,
+            AbsoluteSizeSpan.class, RelativeSizeSpan.class, TypefaceSpan.class,
+    };
+
+    /**
+     * The same cues with the file's own presentation taken out, so that every subtitle looks the way
+     * the viewer set it and nothing else.
+     *
+     * <p>This replaces the "Embedded styles" switch. That switch had to choose between two bad ends:
+     * on, an ASS file could render itself unreadable with no recourse; off, Media3's
+     * {@code removeAllEmbeddedStyling} stripped every span there is, italics included, and a voice off
+     * screen became indistinguishable from a line of dialogue. Taking out colour, size and typeface
+     * while leaving the typographic marks gives one uniform look with nothing lost.
+     *
+     * <p>Returns the group unchanged when there was nothing to take out, which is the common case: a
+     * plain SRT carries little more than italics.
+     */
+    static CueGroup withoutEmbeddedLook(final CueGroup group) {
+        boolean changed = false;
+        final List<Cue> cues = new ArrayList<>(group.cues.size());
+        for (final Cue cue : group.cues) {
+            final Cue stripped = withoutEmbeddedLook(cue);
+            changed |= stripped != cue;
+            cues.add(stripped);
+        }
+        return changed
+                ? new CueGroup(ImmutableList.copyOf(cues), group.presentationTimeUs)
+                : group;
+    }
+
+    private static Cue withoutEmbeddedLook(final Cue cue) {
+        final boolean ownSize = cue.textSize != Cue.DIMEN_UNSET || cue.textSizeType != Cue.TYPE_UNSET;
+        Spannable text = null;
+        if (cue.text instanceof Spanned) {
+            final Spanned spanned = (Spanned) cue.text;
+            for (final Class<?> type : LOOK_SPANS) {
+                final Object[] spans = spanned.getSpans(0, spanned.length(), type);
+                if (spans.length == 0) {
+                    continue;
+                }
+                if (text == null) {
+                    text = new SpannableString(cue.text);
+                }
+                for (final Object span : spans) {
+                    text.removeSpan(span);
+                }
+            }
+        }
+        if (text == null && !ownSize && !cue.windowColorSet) {
+            return cue;
+        }
+        final Cue.Builder builder = cue.buildUpon();
+        if (text != null) {
+            builder.setText(text);
+        }
+        if (ownSize) {
+            builder.setTextSize(Cue.DIMEN_UNSET, Cue.TYPE_UNSET);
+        }
+        if (cue.windowColorSet) {
+            // The box the file wanted behind its own text. The viewer's background setting is the one
+            // that decides here.
+            builder.clearWindowColor();
+        }
+        return builder.build();
+    }
 
     public static String getSubtitleMime(Uri uri) {
         final String path = uri.getPath();

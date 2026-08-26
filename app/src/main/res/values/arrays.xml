@@ -52,18 +52,19 @@
     <item>none</item>
   </string-array>
 
-  <!-- Machine translation, and whether the source line stays under it. One choice: showing the
-       original means nothing when nothing is being translated. -->
-  <string-array name="subtitle_translate_entries">
-    <item>@string/pref_subtitle_translate_never</item>
-    <item>@string/pref_subtitle_translate_only</item>
-    <item>@string/pref_subtitle_translate_both</item>
+  <!-- When the second subtitle line is drawn. "Off" takes the whole feature away rather than just the
+       line, and "on demand" is what the line was made for: the original read on its own, the hint
+       asked for in the one moment a phrase did not land. -->
+  <string-array name="subtitle_secondary_mode_entries">
+    <item>@string/pref_subtitle_secondary_mode_off</item>
+    <item>@string/pref_subtitle_secondary_mode_always</item>
+    <item>@string/pref_subtitle_secondary_mode_demand</item>
   </string-array>
 
-  <string-array name="subtitle_translate_values">
+  <string-array name="subtitle_secondary_mode_values">
     <item>off</item>
-    <item>only</item>
-    <item>both</item>
+    <item>always</item>
+    <item>demand</item>
   </string-array>
 
   <string-array name="skip_undo_entries">

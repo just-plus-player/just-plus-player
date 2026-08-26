@@ -192,13 +192,13 @@
     <string name="subtitle_secondary_title">Secondary subtitles</string>
     <string name="subtitle_main_title">Main subtitles</string>
     <string name="subtitle_search_found_secondary">Secondary subtitles: %1$s</string>
-    <string name="subtitle_secondary_unavailable">This track cannot be shown as a second line</string>
+    <string name="subtitle_secondary_unavailable">This track cannot be shown as secondary subtitles</string>
     <string name="subtitle_secondary_peek_hint">Secondary subtitles appear when you pause</string>
     <string name="pref_subtitle_secondary_header">Secondary subtitles</string>
     <string name="pref_subtitle_secondary_mode">When to show</string>
-    <string name="pref_subtitle_secondary_mode_off">Never — no second line at all</string>
-    <string name="pref_subtitle_secondary_mode_always">Always — under the first line</string>
-    <string name="pref_subtitle_secondary_mode_demand">On demand — shown when asked for, then gone</string>
+    <string name="pref_subtitle_secondary_mode_off">Never — no secondary subtitles at all</string>
+    <string name="pref_subtitle_secondary_mode_always">Always — under the main subtitles</string>
+    <string name="pref_subtitle_secondary_mode_demand">On demand — above the main subtitles when you pause</string>
     <string name="speed_title">Playback speed</string>
     <string name="speed_normal">Normal</string>
     <string name="audio_track_number">Track %1$d</string>
@@ -274,7 +274,7 @@
     <string name="pref_language_subtitle">Default subtitle track</string>
     <string name="pref_language_subtitle_none">Not set — subtitles stay off until you turn them on</string>
     <string name="pref_language_subtitle_secondary">Secondary subtitle track</string>
-    <string name="pref_language_subtitle_secondary_none">Not set — the second line is only ever chosen during playback</string>
+    <string name="pref_language_subtitle_secondary_none">Not set — secondary subtitles are only ever chosen during playback</string>
     <string name="pref_subtitle_search_screen">Search online</string>
     <string name="pref_subtitle_search_when">When to search</string>
     <string name="pref_subtitle_search_never">Never — only when I ask</string>

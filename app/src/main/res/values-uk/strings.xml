@@ -176,13 +176,13 @@
     <string name="subtitle_secondary_title">Додаткові субтитри</string>
     <string name="subtitle_main_title">Основні субтитри</string>
     <string name="subtitle_search_found_secondary">Додаткові субтитри: %1$s</string>
-    <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати другим рядком</string>
+    <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати як додаткові субтитри</string>
     <string name="subtitle_secondary_peek_hint">Додаткові субтитри з’являються на паузі</string>
     <string name="pref_subtitle_secondary_header">Додаткові субтитри</string>
     <string name="pref_subtitle_secondary_mode">Коли показувати</string>
-    <string name="pref_subtitle_secondary_mode_off">Ніколи — другого рядка немає взагалі</string>
-    <string name="pref_subtitle_secondary_mode_always">Завжди — під першим рядком</string>
-    <string name="pref_subtitle_secondary_mode_demand">На вимогу — з’являється, коли попросити, і зникає</string>
+    <string name="pref_subtitle_secondary_mode_off">Ніколи — додаткових субтитрів немає взагалі</string>
+    <string name="pref_subtitle_secondary_mode_always">Завжди — під основними субтитрами</string>
+    <string name="pref_subtitle_secondary_mode_demand">На вимогу — над основними субтитрами на паузі</string>
     <string name="speed_title">Швидкість відтворення</string>
     <string name="speed_normal">Звичайна</string>
     <string name="audio_track_number">Доріжка %1$d</string>
@@ -297,7 +297,7 @@
     <string name="pref_subtitle_source_rest_summary">Закритий API. Ще відповідає, але може вимкнутись будь-коли</string>
     <string name="pref_language_subtitle_none">Не задано — субтитри вимкнені, доки ви їх не увімкнете</string>
     <string name="pref_language_subtitle_secondary">Додаткові субтитри за замовчуванням</string>
-    <string name="pref_language_subtitle_secondary_none">Не задано — другий рядок обирається лише вручну під час перегляду</string>
+    <string name="pref_language_subtitle_secondary_none">Не задано — додаткові субтитри обираються лише вручну під час перегляду</string>
     <string name="pref_subtitle_style_bold">Жирний стиль</string>
     <string name="pref_subtitle_style_bold_on">Використовувати жирний шрифт замість звичайного</string>
     <string name="pref_subtitle_style_bold_off">Використовувати звичайний шрифт за замовчуванням</string>

@@ -2089,11 +2089,6 @@ public class PlayerActivity extends Activity {
                     controllerChromeVisible = false;
                 }
 
-                // The bar has come or gone over the band the hint sits in, so the lines re-place
-                // themselves. Posted, because the bar's height is only measurable once it is laid out.
-                if (controllerVisible != wasVisible) {
-                    playerView.post(PlayerActivity.this::updateSubtitleLayout);
-                }
                 if (controllerVisible) {
                     updateMediaInfo();
                     startEndsAtUpdates();
@@ -6804,8 +6799,8 @@ public class PlayerActivity extends Activity {
         if (!secondaryOnDemand()) {
             return SecondarySubtitles.State.SHOWN;
         }
-        // Nothing stands where the hint would be: a pause is what asks for it, and until it is asked
-        // for the first line keeps its usual place.
+        // A pause is what asks for it, and until it is asked for its slot above the first line stands
+        // empty. The first line keeps its usual place either way.
         return locked || !secondarySubtitles.isPeeking()
                 ? SecondarySubtitles.State.HIDDEN : SecondarySubtitles.State.SHOWN;
     }
@@ -11618,6 +11613,40 @@ public class PlayerActivity extends Activity {
         return null;
     }
 
+    /**
+     * Where the hint is drawn: in a band of its own, under the first line while the second line is
+     * simply on and above it while it is asked for. Both lines sit at the bottom of the picture either
+     * way, and in both modes the band is reserved — so nothing moves when the hint arrives or goes.
+     *
+     * <p>Which line the band is taken out of is the whole difference between the two modes. With the
+     * hint always on it comes out from under the first line, which then sits a band higher for the whole
+     * film — the price of reading both lines all the time. On demand the first line is read on its own
+     * for almost all of the film, so it keeps the place every other mode gives it and the room is
+     * reserved above it instead: {@code gap + mainRoom}.
+     *
+     * <p>Reserved, not measured, and for the same reason as the band itself. Tucking the hint exactly
+     * against the first line's painted top edge is not possible — media3 does not report where it drew
+     * the glyphs, and a slot that follows the text is a first line that jumps. So {@code mainRoom} is
+     * the room two lines of the main size take and the hint's slot begins above that. The ceiling: a cue
+     * that wraps to a third line grows into the slot.
+     *
+     * @param gap      the resting distance from the bottom edge, the one the first line keeps
+     * @param mainRoom the room held for the first line to grow into, or 0 when the hint sits under it
+     */
+    private void placeHint(final int gap, final int mainRoom) {
+        final View hint = playerView.findViewById(R.id.subtitle_secondary);
+        if (hint == null) {
+            return;
+        }
+        final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) hint.getLayoutParams();
+        // Set rather than left to the layout: the mode can be changed while the player is up, and the
+        // hint used to be placed against the top edge on demand.
+        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = 0;
+        lp.bottomMargin = gap + mainRoom;
+        hint.setLayoutParams(lp);
+    }
+
     /** Line box as a multiple of the text size, for reserving the band without measuring anything. */
     private static final float SECONDARY_LINE_HEIGHT = 1.3f;
     /** Matches SecondarySubtitles.MAX_LINES: the band has to hold whatever the line may grow to. */
@@ -11697,21 +11726,12 @@ public class PlayerActivity extends Activity {
         // was the first attempt and only moves cues that carry no position of their own — a track muxed
         // into MP4 or HLS usually does carry one, and those landed on top of the hint.
         // CanvasSubtitleOutput lays every cue out inside the padding, positioned or not.
-        // Both lines move up together while the control bar is over the place the hint sits in. Only
-        // while a hint is actually drawn: on demand the bar is what the peek arrives on top of — a pause
-        // is what asks for the hint and a pause is what shows the controller — and lifting the main line
-        // whenever the controller appears would make ordinary subtitles jump on every tap.
-        final int lift = controllerLift(gap);
-        Utils.setViewParams(subtitleView, 0, 0, 0, band + lift,
+        Utils.setViewParams(subtitleView, 0, 0, 0, band,
                 subtitleSideMargin(orientation), 0, subtitleSideMargin(orientation), 0);
 
-        final View hint = playerView.findViewById(R.id.subtitle_secondary);
-        if (hint != null) {
-            final ViewGroup.MarginLayoutParams lp =
-                    (ViewGroup.MarginLayoutParams) hint.getLayoutParams();
-            lp.bottomMargin = gap + lift;
-            hint.setLayoutParams(lp);
-        }
+        // On demand the hint sits above the first line, so what has to be reserved is a line of the
+        // main size rather than of its own; the band under the first line is then nothing.
+        placeHint(gap, secondaryOnDemand() ? secondaryBandPx(mainPx) : 0);
         if (secondarySubtitles != null) {
             secondarySubtitles.style(mPrefs.subtitleSecondaryTextColor,
                     mPrefs.subtitleSecondaryBackgroundColor, hintPx,
@@ -11719,10 +11739,10 @@ public class PlayerActivity extends Activity {
                             mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL),
                     ui.dpS(6), ui.dpS(8), ui.dpS(4));
         }
-        // Translation rather than more padding: a hint that comes and goes would otherwise relayout the
-        // subtitle view on every frame of the move, and the number the text size is derived from is the
-        // height minus that padding — the very coupling phase 3a took out.
-        slideSubtitles(subtitleView, secondaryPeekShiftPx(hintPx));
+        // Zero, and it stays zero: the band under the first line is reserved for as long as a second
+        // line is chosen, so neither line has anywhere to travel to. Still called, because a rebuilt
+        // view can come back carrying a translation from before.
+        slideSubtitles(subtitleView, 0);
     }
 
     /**
@@ -11743,39 +11763,6 @@ public class PlayerActivity extends Activity {
         }
         subtitleShift = target;
         subtitleView.setTranslationY(target);
-    }
-
-    /**
-     * How far the two lines rise to clear the control bar, or 0 when there is nothing to clear.
-     *
-     * <p>The hint sits a fixed gap off the bottom edge, and that is exactly where the bar's row of
-     * buttons is — so a hint and a visible controller land on top of each other. On demand that is not
-     * an edge case but the normal course of events: the pause that asks for the hint is the same press
-     * that puts the controller up, and the controller does not hide again while playback is stopped.
-     *
-     * @param gap the resting distance from the bottom edge, already counted once
-     */
-    private int controllerLift(final int gap) {
-        if (!controllerVisible || secondarySubtitles == null || !secondarySubtitles.isVisible()) {
-            return 0;
-        }
-        // Measured off the chrome itself rather than from one view's height: the block to clear is the
-        // time bar and the button row together, and they are siblings with margins between them, so a
-        // single height came out short and left the hint's plate resting on the progress line.
-        final Rect window = new Rect();
-        if (!playerView.getGlobalVisibleRect(window)) {
-            return 0;
-        }
-        int top = window.bottom;
-        for (final int id : new int[] { R.id.exo_bottom_bar, androidx.media3.ui.R.id.exo_progress }) {
-            final View view = findViewById(id);
-            final Rect bounds = new Rect();
-            if (view != null && view.getVisibility() == View.VISIBLE
-                    && view.getGlobalVisibleRect(bounds)) {
-                top = Math.min(top, bounds.top);
-            }
-        }
-        return Math.max(0, window.bottom - top + ui.dpS(16) - gap);
     }
 
     private int subtitleViewHeightPx(final SubtitleView subtitleView) {
@@ -11828,40 +11815,39 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * Height reserved for the second line while it is on.
+     * The height a line of subtitles at {@code textPx} is given — the band the second line sits in, and
+     * on demand the room held under that band for the first line.
      *
      * <p>Fixed rather than measured, and that is the whole design. The main line is bottom-anchored
-     * inside a full-bleed {@code SubtitleView}, so placing anything exactly above it would mean
-     * measuring the cue it is currently drawing — and a band that follows the hint is a main line that
-     * jumps every time the hint appears. So the band is reserved for as long as a second line is
-     * chosen, and the main line's position becomes a function of one boolean instead of of the text.
+     * inside a full-bleed {@code SubtitleView}, so placing anything exactly against it would mean
+     * measuring the cue it is currently drawing — and a band that follows the text is a line that jumps
+     * every time the other one appears. So the room is reserved for as long as a second line is chosen,
+     * and where each line sits becomes a function of one boolean instead of of the text.
      */
-    private int secondaryBandPx(final float hintPx) {
-        return Math.round(SECONDARY_MAX_LINES * hintPx * SECONDARY_LINE_HEIGHT)
+    private int secondaryBandPx(final float textPx) {
+        return Math.round(SECONDARY_MAX_LINES * textPx * SECONDARY_LINE_HEIGHT)
                 + 2 * ui.dpS(4) + ui.dpS(12);
     }
 
     /**
-     * What the band holds when nothing has been asked for: two lines of hint while the second line is
-     * simply on, and nothing at all while it is waiting to be asked for. On demand that is the whole
-     * point — the first line keeps its usual place, and the seventh of the screen the band costs is
-     * spent for the seconds the hint is being read rather than for the film.
+     * The band under the first line: held for as long as a second line is chosen and whether or not the
+     * hint is being drawn at this moment, and nothing at all on demand.
+     *
+     * <p>On demand it was tried both ways and it is neither. Opened by the peek and closed after it, the
+     * band cost the picture nothing while nobody was reading it — a real saving and the wrong trade,
+     * because the peek is asked for with a pause, so every pause moved both lines up and back down
+     * again. Held for the whole film instead, nothing moved, but the line being read sat a band higher
+     * from the first frame to the last for the sake of a hint that is on screen for seconds of it. So on
+     * demand the first line is left exactly where every other mode puts it, and the hint's slot is
+     * reserved above it — see {@link #placeHint}.
      */
     private int secondaryRestingBandPx(final float hintPx) {
-        if (secondarySubtitles == null || !secondarySubtitles.isVisible() || secondaryOnDemand()) {
+        if (secondarySubtitles == null || !secondaryActive() || secondaryOnDemand()) {
             return 0;
         }
         return secondaryBandPx(hintPx);
     }
 
-    /** How far the lines travel while a hint that was asked for is on screen. */
-    private int secondaryPeekShiftPx(final float hintPx) {
-        if (secondarySubtitles == null || !secondaryOnDemand()
-                || secondarySubtitles.getState() != SecondarySubtitles.State.SHOWN) {
-            return 0;
-        }
-        return secondaryBandPx(hintPx);
-    }
 
     @TargetApi(26)
     boolean updatePictureInPictureActions(final int iconId, final int resTitle, final int controlType, final int requestCode) {

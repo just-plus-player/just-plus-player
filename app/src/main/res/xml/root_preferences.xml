@@ -93,8 +93,8 @@
             <!-- Size, colour and plate of its own. Edge and weight stay inherited from the first line —
                  nobody sets an outline for one line and not the other. The same three lists the main
                  line uses, so the colour chips and the clash check in SettingsActivity cover these for
-                 free. The defaults are chosen so that nobody has to come here: same size as the line
-                 above, dimmed text on a translucent plate, which is what tells a hint apart from the
+                 free. The defaults are chosen so that nobody has to come here: the same size as the
+                 main subtitles, dimmed text on a translucent plate, which is what tells a hint apart from the
                  line being read. -->
             <ListPreference
                 app:key="subtitleSecondaryScale"

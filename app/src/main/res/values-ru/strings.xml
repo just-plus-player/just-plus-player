@@ -169,13 +169,13 @@
     <string name="subtitle_secondary_title">Дополнительные субтитры</string>
     <string name="subtitle_main_title">Основные субтитры</string>
     <string name="subtitle_search_found_secondary">Дополнительные субтитры: %1$s</string>
-    <string name="subtitle_secondary_unavailable">Эту дорожку нельзя показать второй строкой</string>
+    <string name="subtitle_secondary_unavailable">Эту дорожку нельзя показать как дополнительные субтитры</string>
     <string name="subtitle_secondary_peek_hint">Дополнительные субтитры появляются на паузе</string>
     <string name="pref_subtitle_secondary_header">Дополнительные субтитры</string>
     <string name="pref_subtitle_secondary_mode">Когда показывать</string>
-    <string name="pref_subtitle_secondary_mode_off">Никогда — второй строки нет совсем</string>
-    <string name="pref_subtitle_secondary_mode_always">Всегда — под первой строкой</string>
-    <string name="pref_subtitle_secondary_mode_demand">По требованию — появляется, когда попросишь, и уходит</string>
+    <string name="pref_subtitle_secondary_mode_off">Никогда — дополнительных субтитров нет совсем</string>
+    <string name="pref_subtitle_secondary_mode_always">Всегда — под основными субтитрами</string>
+    <string name="pref_subtitle_secondary_mode_demand">По требованию — над основными субтитрами на паузе</string>
     <string name="speed_title">Скорость воспроизведения</string>
     <string name="speed_normal">Обычная</string>
     <string name="audio_track_number">Дорожка %1$d</string>
@@ -297,7 +297,7 @@
     <string name="pref_subtitle_source_rest_summary">Закрытый API. Пока отвечает, но может отключиться в любой момент</string>
     <string name="pref_language_subtitle_none">Не задано — субтитры выключены, пока вы их не включите</string>
     <string name="pref_language_subtitle_secondary">Дополнительные субтитры по умолчанию</string>
-    <string name="pref_language_subtitle_secondary_none">Не задано — вторая строка выбирается только вручную во время просмотра</string>
+    <string name="pref_language_subtitle_secondary_none">Не задано — дополнительные субтитры выбираются только вручную во время просмотра</string>
     <string name="pref_subtitle_style_bold">Полужирный стиль</string>
     <string name="pref_subtitle_style_bold_on">Использовать полужирный шрифт как обычный</string>
     <string name="pref_subtitle_style_bold_off">Использовать стандартный шрифт по умолчанию</string>

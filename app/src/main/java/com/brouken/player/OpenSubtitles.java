@@ -51,9 +51,11 @@ final class OpenSubtitles {
 
     /**
      * Consumer key shipped with the app. The 100 downloads a day are counted per client rather than
-     * pooled, so one heavy user cannot drain everybody else's — but it is still a shared resource:
-     * abuse gets it revoked for every install at once. Hence this source is asked last, and only for
-     * what the keyless ones could not produce.
+     * pooled, so a hundred a day is a hundred for this device — which is why this source leads the
+     * search rather than covering for the free ones: what was being saved by holding it back was a
+     * budget nobody spends. It is still a shared resource in one sense, that abuse gets the key
+     * revoked for every install at once, so nothing here asks for more than one file at a time and
+     * the free indexes stay in place as the answer for a key that has been spent or withdrawn.
      */
     private static final String KEY = "IxrxupVBKx7dhBkAAtW7QbwnhDMgOdEO";
 

@@ -162,11 +162,19 @@
                 app:summary="@string/pref_subtitle_search_language_summary"
                 app:title="@string/pref_subtitle_search_language" />
 
-            <!-- Tried top to bottom until one has the wanted language. Individually switchable so a
+            <!-- Asked all at once and answered top to bottom, which is why OpenSubtitles.com stands
+                 first: it is the only one that knows whether a file is machine-translated, so it is
+                 the only one whose answer says anything about quality. Individually switchable so a
                  single source can be exercised on its own when a result looks wrong — a testing
                  affordance, which is why it sits at the bottom of a sub-screen and not on the way to
                  anything. -->
             <PreferenceCategory app:title="@string/pref_subtitle_sources">
+
+                <SwitchPreferenceCompat
+                    app:key="subtitleSourceOpenSubtitles"
+                    app:defaultValue="true"
+                    app:summary="@string/pref_subtitle_source_opensubtitles_summary"
+                    app:title="@string/pref_subtitle_source_opensubtitles" />
 
                 <SwitchPreferenceCompat
                     app:key="subtitleSourceRest"
@@ -185,12 +193,6 @@
                     app:defaultValue="true"
                     app:summary="@string/pref_subtitle_source_shegu_summary"
                     app:title="@string/pref_subtitle_source_shegu" />
-
-                <SwitchPreferenceCompat
-                    app:key="subtitleSourceOpenSubtitles"
-                    app:defaultValue="true"
-                    app:summary="@string/pref_subtitle_source_opensubtitles_summary"
-                    app:title="@string/pref_subtitle_source_opensubtitles" />
 
             </PreferenceCategory>
 

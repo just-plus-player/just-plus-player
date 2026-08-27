@@ -29,20 +29,31 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 /**
- * Where an online subtitle comes from. Four sources, tried in the order below until one of them has
- * the wanted language, each switchable on its own so a single source can be exercised in isolation.
+ * Where an online subtitle comes from. Four sources, all asked at once and answered in the order
+ * below, each switchable on its own so a single source can be exercised in isolation.
  *
  * <ol>
+ *   <li>{@link OpenSubtitles} (api.opensubtitles.com) — the fullest index, the only one that filters
+ *       by language server-side and the only one that knows whether a file is machine-translated,
+ *       how often it was downloaded and whether its uploader is trusted. First because that is what
+ *       decides whether the file is any good, and the three below can offer none of it.</li>
  *   <li>rest.opensubtitles.org — the retired legacy API, still answering and still the quickest to
  *       reply. One language per request and a gzipped file at the end of it.</li>
  *   <li>opensubtitles-v3.strem.io — imdb only, unmetered, already normalised to UTF-8.</li>
- *   <li>{@link OpenSubtitles} — the fullest index, the only one that filters by language server-side
- *       and knows whether a file is machine-translated. Third because it is the only metered one:
- *       100 downloads a day, and the two above cost nothing.</li>
  *   <li>shegu.st — tmdb only, unmetered, no language filter (the whole index arrives and is sifted
  *       here). Last because it is the least dependable: its index changed size twice within five
- *       minutes of testing, and about half its entries point at the host source 2 already is.</li>
+ *       minutes of testing, and about half its entries point at the host source 3 already is.</li>
  * </ol>
+ *
+ * <p>The keyed source led once before and was demoted during the build for being the only metered
+ * one — 100 downloads a day against three that cost nothing. That was the wrong way round, and the
+ * measurements in the feature's own notes said so at the time: the quota is counted per client, not
+ * pooled, so a hundred a day is a hundred for this device alone, which no viewer reaches. What was
+ * actually being saved was a budget nobody was spending, and what it cost was every search — the
+ * free indexes have no machine-translation flag, so the file that wins is whatever they list first.
+ * Its cost now: a search is free, and the metered call is the download, so a unit goes on any file
+ * this source offers that is looked at — including the rare one that loses to a better language from
+ * a free index further down.</p>
  *
  * Two of these normalise their URLs the way api.opensubtitles.com does and answer a redirect when
  * they are not given what they want: {@code rest.opensubtitles.org} needs its path segments in
@@ -170,41 +181,31 @@ final class SubtitleSearch {
                 + " s" + id.season + "e" + id.episode + " want=" + preferred
                 + " media=" + durationMs + "ms");
 
-        // The three keyless indexes are asked at once: none of them costs anything, they disagree
-        // about which files exist, and asking them in turn means waiting out each one's timeout
-        // before the next gets a chance. Results are still taken in source order, not in whichever
-        // order they happen to answer — but only the ones ahead of a hit are waited for.
+        // All four are asked at once: they disagree about which files exist, and asking them in turn
+        // means waiting out each one's timeout before the next gets a chance. Answers are still taken
+        // in source order, not in whichever order they arrive — but only the sources ahead of a hit
+        // are waited for, so the keyed one leading costs the others nothing when it delivers.
         // Whether a machine translation may be taken at all is one answer for every source that says
         // so — the setting is about the class of file, not about who is offering it.
         final boolean allowMachine = prefs.subtitleTranslate;
-        final List<Callable<Result>> keyless = new ArrayList<>(3);
+        final List<Callable<Result>> sources = new ArrayList<>(4);
+        if (prefs.subtitleSourceOpenSubtitles) {
+            sources.add(() -> fromOpenSubtitles(id, preferred, allowMachine));
+        }
         if (prefs.subtitleSourceRest) {
-            keyless.add(() -> best(SOURCE_REST,
+            sources.add(() -> best(SOURCE_REST,
                     restOpenSubtitles(id, preferred, answered, allowMachine), preferred, durationMs));
         }
         if (prefs.subtitleSourceStremio) {
-            keyless.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred, durationMs));
+            sources.add(() -> best(SOURCE_STREMIO, stremio(id, answered), preferred, durationMs));
         }
         if (prefs.subtitleSourceShegu) {
-            keyless.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred, durationMs));
+            sources.add(() -> best(SOURCE_SHEGU, shegu(id, answered), preferred, durationMs));
         }
-        final Result keylessHit = firstDelivered(keyless, sink, preferred);
-        if (keylessHit != null) {
-            return keylessHit;
-        }
-        // Only now the metered one. It is the fullest index, but its download call is the single
-        // thing here that spends one of a hundred a day — so it is asked only for what the free
-        // sources could not produce.
-        if (!cancelled() && prefs.subtitleSourceOpenSubtitles) {
-            final Result result = fromOpenSubtitles(id, preferred, allowMachine);
-            if (delivered(result, sink)) {
-                return result;
-            }
-        }
-        return null;
+        return firstDelivered(sources, sink, preferred);
     }
 
-    /** How long all the keyless sources together get before the search moves on without them. */
+    /** How long all the sources together get before the search moves on without them. */
     private static final int PARALLEL_TIMEOUT_SEC = 15;
 
     /**
@@ -218,7 +219,7 @@ final class SubtitleSearch {
      * arrives, and anything below it is held until the sources that might still beat it have answered.
      *
      *
-     * <p>The results are collected one source at a time on purpose. Waiting for all three before
+     * <p>The results are collected one source at a time on purpose. Waiting for all of them before
      * looking at any of them made every search as slow as its slowest source: rest.opensubtitles.org
      * answers a search in about 0.2 s and shegu.st, which is one small origin behind Cloudflare with
      * nothing cached ({@code cf-cache-status: DYNAMIC}) and no language filter, takes 0.3 s warm and

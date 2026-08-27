@@ -772,6 +772,12 @@ public class PlayerActivity extends Activity {
     // Skip-segment timing offset (seconds) — in-session only, never persisted; applies to all
     // playlist items and is reset on a new media session (resetApiAccess).
     private double skipOffsetSec = 0;
+    // How this session offers segments, or null to follow the settings. One value for both kinds,
+    // because the viewer mid-film holds one intention and not two — "stop interrupting me in this
+    // series" — and two rows of it were two rows of the same answer. Same life as the offset above and
+    // set from the same panel: a series that matches the same way in every episode is a session, not a
+    // change of mind about every film after it.
+    private String skipModeSession;
     // True once any skip segment has appeared this session; keeps the offset button available
     // afterwards even on an item that itself has no segments.
     private boolean skipSeenThisSession;
@@ -1252,7 +1258,7 @@ public class PlayerActivity extends Activity {
         buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonSkipOffset.setImageResource(R.drawable.ic_skip_offset_24dp);
         buttonSkipOffset.setId(View.generateViewId());
-        buttonSkipOffset.setContentDescription(getString(R.string.button_skip_offset));
+        buttonSkipOffset.setContentDescription(getString(R.string.skip_session_title));
         buttonSkipOffset.setVisibility(View.GONE);
         buttonSkipOffset.setOnClickListener(view -> showSkipOffsetDialog());
 
@@ -1575,6 +1581,18 @@ public class PlayerActivity extends Activity {
         // stretched to full width inside the CoordinatorLayout and pinned the pill to the left edge — is gone.
         // Modern TV focus: a coral ring on the pill (state-driven stroke) plus a slight scale-up, replacing
         // the dated flat grey selectableItemBackground wash.
+        buttonSkip.setOnLongClickListener(v -> {
+            // The panel from the one place where the question comes up by itself: the segment is on
+            // screen, this is the button that would be pressed for it, and holding it says "do this
+            // yourself from now on" without going looking for anywhere. The offset button in the bottom
+            // bar opens the same panel for when there is no button to hold — after the mode has been set
+            // to automatic, chiefly.
+            if (PlayerActivity.locked) {
+                return false;
+            }
+            showSkipOffsetDialog();
+            return true;
+        });
         buttonSkip.setOnFocusChangeListener((v, hasFocus) -> {
             skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, brandColor());
             final float scale = hasFocus ? 1.06f : 1f;
@@ -3074,8 +3092,11 @@ public class PlayerActivity extends Activity {
         cancelSegmentFinder();
         cancelSubtitleSearch();
         hideSkipButton();
-        // Skip offset is session-scoped: a new media session resets it and hides its control.
+        // The offset and the session's skip modes go the same way, and "session" here is the film rather
+        // than the player: the next file in the folder keeps both, which is the whole point of them,
+        // while a film picked afresh starts from the settings again.
         skipOffsetSec = 0;
+        skipModeSession = null;
         skipSeenThisSession = false;
         if (skipOffsetDialog != null && skipOffsetDialog.isShowing()) {
             skipOffsetDialog.dismiss();
@@ -3182,7 +3203,62 @@ public class PlayerActivity extends Activity {
         rebuildSkip();
     }
 
-    /** Session-only skip-offset panel — the shared {@link OffsetPanel} bound to {@link #skipOffsetSec}. */
+    /** The four ways a segment can be offered, as the session panel lists them, with their labels. */
+    private static final String[] SKIP_MODE_VALUES = {
+            Prefs.SKIP_MODE_BRIEF, Prefs.SKIP_MODE_BUTTON, Prefs.SKIP_MODE_AUTO, Prefs.SKIP_MODE_OFF };
+    private static final int[] SKIP_MODE_LABELS = {
+            R.string.skip_mode_brief_short, R.string.skip_mode_button_short,
+            R.string.skip_mode_auto_short, R.string.skip_mode_off_short };
+
+    /**
+     * Whether this film has anything the session could be asked about: a segment somebody might be
+     * offered. Ads are skipped silently whatever anyone says, so a file carrying only those gets the
+     * offset and nothing else.
+     */
+    private boolean hasSkipSegment() {
+        if (skipManager == null) {
+            return false;
+        }
+        for (final SkipSegment segment : skipManager.getSegments()) {
+            if (segment.type != SkipSegment.Type.AD) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The session's row: the four ways a segment can be offered, the one in force lit.
+     *
+     * <p>Nothing is lit in the one case where there is no single answer to light — the settings ask for
+     * one thing at the start of an episode and another at its end, and this session has not been told
+     * otherwise. Lighting either of them would be a claim about the other.
+     */
+    private OffsetPanel.Choice skipModeChoice() {
+        final CharSequence[] labels = new CharSequence[SKIP_MODE_VALUES.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = getString(SKIP_MODE_LABELS[i]);
+        }
+        final String settings = mPrefs.skipMode.equals(mPrefs.skipModeCredits) ? mPrefs.skipMode : null;
+        return new OffsetPanel.Choice(labels, SKIP_MODE_VALUES,
+                skipModeSession != null ? skipModeSession : settings, settings,
+                this::setSessionSkipMode);
+    }
+
+    /**
+     * Everything this session's skipping is, in one panel: how each kind of segment is offered, and how
+     * far the marks are shifted. Both are the session's and neither is written to the preferences —
+     * which is what makes this the right place for them and the settings screen the wrong one. A series
+     * matches the same way in every episode, and that is a fact about the series, not about the player.
+     *
+     * <p>One row for both kinds of segment, not one each: asked what they want mid-film, the answer is
+     * "stop interrupting me in this series" rather than two separate policies for the start of an
+     * episode and its end. The settings keep the two apart for anyone who does want that.
+     *
+     * <p>Reached by holding the Skip button, where the question arises, and from the bottom bar for when
+     * there is no button to hold. Its reset clears both halves — the choice goes back to following the
+     * settings and the offset to zero — because everything in here belongs to this session only.
+     */
     private void showSkipOffsetDialog() {
         if (player == null) {
             return;
@@ -3190,10 +3266,14 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null) {
             skipOffsetDialog.dismiss();
         }
+        final OffsetPanel.Choice[] choices = hasSkipSegment()
+                ? new OffsetPanel.Choice[]{ skipModeChoice() } : new OffsetPanel.Choice[0];
         skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
                 brandColor(),   // coral, matches the skip timeline highlight
-                getString(R.string.skip_offset_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC,
-                new OffsetPanel.Line(null, skipOffsetSec, this::applySkipOffset));
+                getString(R.string.skip_session_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC, choices,
+                // Captioned only while it shares the panel with the row above it; alone it is the panel.
+                new OffsetPanel.Line(choices.length == 0 ? null : getString(R.string.skip_offset_title),
+                        skipOffsetSec, this::applySkipOffset));
         showPickerDialog(skipOffsetDialog);
     }
 
@@ -3270,17 +3350,17 @@ public class PlayerActivity extends Activity {
      */
     private String subtitleOffsetSummary() {
         if (!secondaryOffsetShiftable()) {
-            return subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec);
+            return subtitleOffsetSec == 0 ? null : OffsetPanel.format(this, subtitleOffsetSec);
         }
         if (!subtitleOffsetShiftable()) {
             return secondarySubtitleOffsetSec == 0
-                    ? null : OffsetPanel.format(secondarySubtitleOffsetSec);
+                    ? null : OffsetPanel.format(this, secondarySubtitleOffsetSec);
         }
         if (subtitleOffsetSec == 0 && secondarySubtitleOffsetSec == 0) {
             return null;
         }
-        return OffsetPanel.format(subtitleOffsetSec) + " · "
-                + OffsetPanel.format(secondarySubtitleOffsetSec);
+        return OffsetPanel.format(this, subtitleOffsetSec) + " · "
+                + OffsetPanel.format(this, secondarySubtitleOffsetSec);
     }
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
@@ -3625,7 +3705,7 @@ public class PlayerActivity extends Activity {
             // (see SKIP_LEAD_SEC): as the Skip button when the user is asked, as the pill when the jump
             // is automatic and there is no button to offer.
             final SkipSegment upcoming = skipManager.upcomingSegment(posSec, SKIP_LEAD_SEC);
-            if (upcoming == null || autoSkipUndone(posSec)) {
+            if (upcoming == null || isSkipOff(upcoming) || autoSkipUndone(posSec)) {
                 hideSkipButton();
                 hideSkipHeadsUp();
             } else if (isAutoSkip(upcoming)) {
@@ -3643,6 +3723,12 @@ public class PlayerActivity extends Activity {
                 updateSkipButtonProgress(upcoming);
                 showSkipButton(upcoming);
             }
+            return;
+        }
+        if (isSkipOff(segment)) {
+            // Left alone for this session: no button and no jump. The highlight on the time bar stays —
+            // the segment is still there, it is only nobody's business to act on it.
+            hideSkipButton();
             return;
         }
         if (isAutoSkip(segment) && !autoSkipUndone(posSec)) {
@@ -3666,7 +3752,43 @@ public class PlayerActivity extends Activity {
         if (segment.type == SkipSegment.Type.AD) {
             return true;
         }
-        return Prefs.SKIP_MODE_AUTO.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+        return Prefs.SKIP_MODE_AUTO.equals(effectiveSkipMode(segment.credits));
+    }
+
+    /**
+     * How segments of this kind are offered right now: what the skip panel was told for this session, or
+     * the setting where it was told nothing. Credits carry their own answer, as they do in the settings.
+     *
+     * <p>The one place either is read, so a session's choice cannot apply to one half of the machinery
+     * and not the other — which is what happened while the mode was read straight off the preferences in
+     * two places and the panel had to know about both.
+     */
+    private String effectiveSkipMode(final boolean credits) {
+        if (skipModeSession != null) {
+            return skipModeSession;
+        }
+        return credits ? mPrefs.skipModeCredits : mPrefs.skipMode;
+    }
+
+    /**
+     * Whether this session has been told to leave this kind of segment alone — the mirror of asking for
+     * automatic skips, and the reason the panel offers both: a series whose intro is found in the wrong
+     * place is this session's problem, not a reason to change the setting for every film after it. Ads
+     * are nobody's choice.
+     */
+    private boolean isSkipOff(final SkipSegment segment) {
+        return segment.type != SkipSegment.Type.AD
+                && Prefs.SKIP_MODE_OFF.equals(effectiveSkipMode(segment.credits));
+    }
+
+    /**
+     * Takes the session's choice, or gives it back with {@code null} — which is what the panel's reset
+     * does, leaving the settings in charge again. Nothing is written to the preferences, and the segment
+     * on screen follows the new answer at once rather than at the next one.
+     */
+    private void setSessionSkipMode(final String mode) {
+        skipModeSession = mode;
+        skipTick();
     }
 
     /**
@@ -3989,7 +4111,7 @@ public class PlayerActivity extends Activity {
 
     /** Whether this segment's position is set to offer the Skip button briefly rather than throughout. */
     private boolean isBriefSkip(SkipSegment segment) {
-        return Prefs.SKIP_MODE_BRIEF.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+        return Prefs.SKIP_MODE_BRIEF.equals(effectiveSkipMode(segment.credits));
     }
 
     /** True while brief mode's timed offer is on screen and owns the pill. */
@@ -8386,8 +8508,10 @@ public class PlayerActivity extends Activity {
                     false, this::showSubtitleOffsetDialog));
         }
         if (skipOffsetReachable()) {
-            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
-                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
+            // Named after the panel it opens, which is no longer only the offset: the row that said
+            // "Skip offset" now leads to how each kind of segment is offered as well.
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.skip_session_title),
+                    skipOffsetSec == 0 ? null : OffsetPanel.format(this, skipOffsetSec),
                     false, this::showSkipOffsetDialog));
         }
         if (player != null) {

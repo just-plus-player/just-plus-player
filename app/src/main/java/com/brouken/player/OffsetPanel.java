@@ -2,12 +2,16 @@ package com.brouken.player;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.util.StateSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -19,6 +23,10 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.core.view.ViewCompat;
+import androidx.core.widget.TextViewCompat;
+
+import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -35,7 +43,9 @@ import java.util.Locale;
  * Input is split by device idiom, because one step size cannot serve both: a finger crossing the
  * narrow phone panel covers the whole ± range, so a raw drag moves the value in ragged sub-second
  * hops. Dragging therefore snaps to whole seconds, while the fine {@code stepSec} stays reachable
- * through the ± buttons (touch) and the D-pad (TV).
+ * through the ± buttons. A remote gets the coarse step instead: a focused {@code SeekBar} answers
+ * left and right itself, so the ± buttons beside it cannot be reached by a D-pad at all — the step
+ * a press moves is sized for that in {@link #addLine}.
  *
  * The panel owns the current values and reports every change through {@link Listener}; the caller
  * only holds the returned dialog so it can dismiss it.
@@ -60,6 +70,44 @@ final class OffsetPanel {
         }
     }
 
+    /**
+     * One thing the panel picks rather than nudges: a row of pills, the one in force lit.
+     *
+     * <p>It lives in this panel and not in a menu of its own because what is being picked and what is
+     * being nudged are one thing to the person watching — how this film's skips behave. Pills rather
+     * than a list: four short words fit across the panel, and a choice that shows all of its options at
+     * once is one press to change from a remote as well as from a finger. No caption: the panel's title
+     * already says what is being chosen, and a third label in the same style as the two below it turned
+     * the panel into a list of look-alikes.
+     */
+    static final class Choice {
+
+        interface Picked {
+            /** @param value the chosen option, or null to go back to following the settings */
+            void onPicked(String value);
+        }
+
+        private final CharSequence[] labels;
+        private final String[] values;
+        private final String current;
+        private final String inherited;
+        private final Picked listener;
+
+        /**
+         * @param current   what is in force, lit; null lights nothing (the settings disagree with
+         *                  themselves and no choice has been made yet)
+         * @param inherited what the settings say, lit again when the panel is reset; may be null
+         */
+        Choice(final CharSequence[] labels, final String[] values, final String current,
+               final String inherited, final Picked listener) {
+            this.labels = labels;
+            this.values = values;
+            this.current = current;
+            this.inherited = inherited;
+            this.listener = listener;
+        }
+    }
+
     private OffsetPanel() {
     }
 
@@ -70,30 +118,50 @@ final class OffsetPanel {
     static Dialog create(final Activity activity, final UiMetrics ui, final View insetSource,
                          final int accent, final String title, final double maxSec,
                          final double stepSec, final Line... lines) {
+        return create(activity, ui, insetSource, accent, title, maxSec, stepSec, null, lines);
+    }
+
+    /**
+     * @param choices picked rather than nudged, drawn above the sliders; null or empty for none
+     */
+    static Dialog create(final Activity activity, final UiMetrics ui, final View insetSource,
+                         final int accent, final String title, final double maxSec,
+                         final double stepSec, final Choice[] choices, final Line... lines) {
         final LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
 
         final TextView header = new TextView(activity);
         header.setText(title);
+        ViewCompat.setAccessibilityHeading(header, true);
         header.setTextColor(Color.WHITE);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(0, 0, 0, Utils.dpToPx(14));
+        // Space, not a rule: the hairline that used to sit here had a caption under it, and once the
+        // caption went it landed a few pixels above the row of pills and read as their top border.
+        header.setPadding(0, 0, 0, Utils.dpToPx(20));
         root.addView(header);
 
-        final View divider = new View(activity);
-        divider.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1)));
-        divider.setBackgroundColor(0x1AFFFFFF);
-        root.addView(divider);
-
         final List<Runnable> resets = new ArrayList<>();
+        final boolean picking = choices != null && choices.length > 0;
+        TextView firstPill = null;
+        if (picking) {
+            for (final Choice choice : choices) {
+                final TextView lit = addChoice(activity, ui, root, accent, choice, resets);
+                if (firstPill == null) {
+                    firstPill = lit;
+                }
+            }
+        }
+
         SeekBar firstBar = null;
         // One value gets the big readout it was designed for; two share the height, so they take the
         // clock's size instead. Two 44sp numbers plus their sliders do not fit a phone held sideways,
         // and what fell off the bottom was the second slider — the panel looked like it could only
         // shift the first line.
-        final float valueSp = lines.length > 1 ? ui.textClock() : ui.textValue();
+        // A choice row costs the same room as a second slider, so the readout gives up the same height
+        // for it. At the full size the panel did not fit its own window: the title was pushed off the
+        // top and the reset pill off the bottom.
+        final float valueSp = lines.length > 1 || picking ? ui.textClock() : ui.textValue();
         for (final Line line : lines) {
             root.addView(verticalSpacer(activity));
             final SeekBar bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp, resets);
@@ -112,6 +180,7 @@ final class OffsetPanel {
         reset.setClickable(true);
         reset.setFocusable(true);
         reset.setPadding(Utils.dpToPx(28), Utils.dpToPx(11), Utils.dpToPx(28), Utils.dpToPx(11));
+        reset.setMinHeight(ui.dpS(48)); // a pill this small is missed as often as it is hit
         final GradientDrawable resetContent = new GradientDrawable();
         resetContent.setCornerRadius(Utils.dpToPx(22));
         resetContent.setColor(0x1AFFFFFF);
@@ -144,6 +213,8 @@ final class OffsetPanel {
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
         dialog.setContentView(scroller);
+        // The theme carries no title bar, so this is the only name a screen reader can announce.
+        dialog.setTitle(title);
         dialog.setCanceledOnTouchOutside(true);
         final Window window = dialog.getWindow();
         if (window != null) {
@@ -154,11 +225,135 @@ final class OffsetPanel {
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new ColorDrawable(0xF0141414));
         }
-        if (firstBar != null) {
-            final SeekBar focus = firstBar;
+        // The choice, not the slider: it is the panel's first decision and it is at the top, so a
+        // remote lands on it and the scroller stays where the title is. Focusing the slider scrolled
+        // the panel to its own bottom the moment it opened.
+        final View focus = firstPill != null ? firstPill : firstBar;
+        if (focus != null) {
             focus.post(focus::requestFocus);
         }
         return dialog;
+    }
+
+    /**
+     * A row of pills for one choice, the one in force lit — and lit means the brightest thing in the
+     * row, not a tinted version of it.
+     *
+     * <p>That is the whole of the second attempt at this row. The first drew the option in force as the
+     * accent at a third of its alpha with accent text, which measured 1.1:1 against its neighbours and
+     * read as the one option that had been switched off. Filled with the accent and lettered in the
+     * panel's own near-black, it is unmistakable, it carries the same colour the readouts use for "you
+     * changed this", and {@code setSelected} says the same thing again to a screen reader — which no
+     * amount of colour can.
+     *
+     * @return the pill to hand the first focus to
+     */
+    private static TextView addChoice(final Activity activity, final UiMetrics ui,
+                                      final LinearLayout root, final int accent, final Choice choice,
+                                      final List<Runnable> resets) {
+        final int corner = Utils.dpToPx(16);
+        final LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        final TextView[] pills = new TextView[choice.values.length];
+        final int[] picked = {indexOf(choice.values, choice.current)};
+        final Runnable render = () -> {
+            for (int i = 0; i < pills.length; i++) {
+                final boolean on = i == picked[0];
+                pills[i].setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF),
+                        pillFill(accent, on, corner), roundMask(corner)));
+                pills[i].setTextColor(on ? 0xFF141414 : 0xB3FFFFFF);
+                pills[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                // Said again without colour, for a screen reader and for anyone who cannot tell these
+                // two shades apart.
+                pills[i].setSelected(on);
+            }
+        };
+        for (int i = 0; i < choice.values.length; i++) {
+            final TextView pill = new TextView(activity);
+            pill.setText(choice.labels[i]);
+            pill.setGravity(Gravity.CENTER);
+            pill.setClickable(true);
+            pill.setFocusable(true);
+            pill.setMaxLines(1);
+            // Shrunk rather than wrapped or clipped: the widest label already fills its share of the
+            // row at the ordinary size, so a longer language or a system font a notch up used to break
+            // one word across two lines and leave the row ragged.
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    pill, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
+                    TypedValue.COMPLEX_UNIT_SP);
+            pill.setPadding(ui.dpS(4), ui.dpS(12), ui.dpS(4), ui.dpS(12));
+            pill.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
+            // Equal shares of the row rather than each pill's own width: four words of different
+            // lengths read as a set this way, and the widest of them decides nothing.
+            final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+            // Gaps between the pills only: an outer margin here would set the row in from the title
+            // above it by the width of the gap, which is exactly the misalignment it looks like.
+            lp.leftMargin = i == 0 ? 0 : Utils.dpToPx(3);
+            lp.rightMargin = i == choice.values.length - 1 ? 0 : Utils.dpToPx(3);
+            pill.setLayoutParams(lp);
+            final int index = i;
+            pill.setOnClickListener(v -> {
+                if (picked[0] == index) {
+                    return;
+                }
+                picked[0] = index;
+                render.run();
+                choice.listener.onPicked(choice.values[index]);
+            });
+            // The same focus the Skip pill grows by, because this panel is used from a remote across a
+            // room, where a ripple is not a focus indicator. The white edge is in pillFill.
+            pill.setOnFocusChangeListener((v, hasFocus) -> v.animate()
+                    .scaleX(hasFocus ? 1.06f : 1f).scaleY(hasFocus ? 1.06f : 1f)
+                    .setDuration(150).start());
+            pills[i] = pill;
+            row.addView(pill);
+        }
+        render.run();
+        root.addView(row);
+        resets.add(() -> {
+            // Back to whatever the settings say, which is what "reset" means for a panel that only ever
+            // held this session's answers. Without it there was no way back from a choice at all.
+            picked[0] = indexOf(choice.values, choice.inherited);
+            render.run();
+            choice.listener.onPicked(null);
+        });
+        return pills[Math.max(0, picked[0])];
+    }
+
+    private static int indexOf(final String[] values, final String value) {
+        for (int i = 0; value != null && i < values.length; i++) {
+            if (values[i].equals(value)) {
+                return i;
+            }
+        }
+        return -1; // nothing lit: the panel is not going to guess which one is in force
+    }
+
+    /** Pill background: filled with the accent while in force, and edged in white while focused. */
+    private static Drawable pillFill(final int accent, final boolean on, final int corner) {
+        final StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_focused}, pillShape(accent, on, corner, true));
+        states.addState(StateSet.WILD_CARD, pillShape(accent, on, corner, false));
+        return states;
+    }
+
+    private static Drawable pillShape(final int accent, final boolean on, final int corner,
+                                      final boolean focused) {
+        final GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(corner);
+        shape.setColor(on ? accent : 0x14FFFFFF);
+        if (focused) {
+            shape.setStroke(Utils.dpToPx(2), Color.WHITE);
+        }
+        return shape;
+    }
+
+    private static Drawable roundMask(final int corner) {
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(corner);
+        mask.setColor(Color.WHITE);
+        return mask;
     }
 
     /** Caption, readout and slider for one offset. Returns its SeekBar; adds its reset to {@code resets}. */
@@ -178,7 +373,11 @@ final class OffsetPanel {
             caption.setTextColor(0xB3FFFFFF);
             caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
             caption.setGravity(Gravity.CENTER);
-            caption.setPadding(0, 0, 0, Utils.dpToPx(4));
+            // Asymmetric on purpose, and fixed rather than left to the weighted spacers: a caption
+            // belongs to what is under it, and the block above it needs a gap that does not vanish
+            // when the panel fills up. The spacers only share out what is left over — when there is
+            // nothing left over they collapse to nothing and two blocks end up touching.
+            caption.setPadding(0, ui.dpS(28), 0, Utils.dpToPx(4));
             root.addView(caption);
         }
 
@@ -223,11 +422,18 @@ final class OffsetPanel {
         row.addView(minus);
         row.addView(seekBar);
         row.addView(plus);
+        // Optical alignment: each ± button is a 24dp glyph in 12dp of its own padding, so the row is
+        // pulled out by that padding. What lines up with the title and the pills is the glyph.
+        final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.leftMargin = -Utils.dpToPx(12);
+        rowLp.rightMargin = -Utils.dpToPx(12);
+        row.setLayoutParams(rowLp);
         root.addView(row);
 
         // Readout: accent when non-zero, white at rest.
         final Runnable render = () -> {
-            value.setText(format(current[0]));
+            value.setText(format(activity, current[0]));
             value.setTextColor(isZero(current[0]) ? Color.WHITE : accent);
         };
         render.run();
@@ -288,23 +494,31 @@ final class OffsetPanel {
         return Math.abs(sec) < 0.001;
     }
 
-    /** "0 s" / "+2.5 s" / "-10 s" — signed, trailing zeros trimmed. */
-    static String format(double sec) {
-        if (isZero(sec)) {
-            return "0 s";
-        }
-        String s = String.format(Locale.US, "%+.2f", sec);
-        if (s.indexOf('.') >= 0) { // trim trailing zeros: "+2.50" -> "+2.5", "+3.00" -> "+3"
-            int end = s.length();
-            while (end > 0 && s.charAt(end - 1) == '0') {
+    /**
+     * "0 s" / "+2.5 s" / "-10 s" — signed, trailing zeros trimmed, and in the viewer's own language.
+     *
+     * <p>Both halves used to be English: the unit was a literal {@code " s"} and the number was
+     * formatted against {@code Locale.US}, so a Ukrainian panel read "0 s" two rows under a Ukrainian
+     * caption and printed "+2.5" where the language writes "+2,5".
+     */
+    static String format(final Context context, final double sec) {
+        final Locale locale = Locale.getDefault();
+        String number = "0";
+        if (!isZero(sec)) {
+            number = String.format(locale, "%+.2f", sec);
+            // Trim trailing zeros: "+2,50" -> "+2,5", "+3,00" -> "+3". Against the locale's own
+            // separator, which is not a dot everywhere this app is read.
+            final char point = DecimalFormatSymbols.getInstance(locale).getDecimalSeparator();
+            int end = number.length();
+            while (end > 0 && number.charAt(end - 1) == '0') {
                 end--;
             }
-            if (end > 0 && s.charAt(end - 1) == '.') {
+            if (end > 0 && number.charAt(end - 1) == point) {
                 end--;
             }
-            s = s.substring(0, end);
+            number = number.substring(0, end);
         }
-        return s + " s";
+        return context.getString(R.string.offset_seconds, number);
     }
 
     private static View verticalSpacer(Activity activity) {

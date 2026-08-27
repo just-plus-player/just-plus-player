@@ -532,7 +532,8 @@ public class PlayerActivity extends Activity {
     private boolean pickerDialogOpen;
     // Media3 keeps the controller shown indefinitely while paused (it forces the auto-hide timeout to 0),
     // so reuse the same CONTROLLER_TIMEOUT + hideController() to also clear the UI on pause. A tap re-shows
-    // and re-arms it, exactly like during playback (see scheduleHideControllerOnPause).
+    // and re-arms it, exactly like during playback, and so does any key while the controls are up (see
+    // scheduleHideControllerOnPause and dispatchKeyEvent).
     private final Runnable hideControllerAction = () -> {
         if (player != null && !player.getPlayWhenReady() && controllerVisibleFully)
             playerView.hideController();
@@ -2943,6 +2944,14 @@ public class PlayerActivity extends Activity {
             }
             return true;
         } else {
+            // Any key press is activity: postpone the pause auto-hide. Media3 keeps the controller up
+            // indefinitely while paused, so hideControllerAction is what clears it — and that was armed
+            // only by a visibility change, never by a key. The controls therefore went away
+            // CONTROLLER_TIMEOUT after they appeared, in the middle of walking the D-pad over them, and
+            // the next key, arriving with them gone, seeked instead of moving the focus.
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                scheduleHideControllerOnPause();
+            }
             return super.dispatchKeyEvent(event);
         }
     }

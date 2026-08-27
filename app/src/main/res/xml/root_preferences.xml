@@ -168,7 +168,9 @@
                  single source can be exercised on its own when a result looks wrong — a testing
                  affordance, which is why it sits at the bottom of a sub-screen and not on the way to
                  anything. -->
-            <PreferenceCategory app:title="@string/pref_subtitle_sources">
+            <PreferenceCategory
+                app:key="subtitleSourcesCategory"
+                app:title="@string/pref_subtitle_sources">
 
                 <SwitchPreferenceCompat
                     app:key="subtitleSourceOpenSubtitles"

@@ -382,10 +382,16 @@ class Prefs {
         subtitleSearchLanguage = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_SEARCH_LANGUAGE, subtitleSearchLanguage);
         subtitleTranslate = getSubtitleTranslate(mContext);
         subtitleTranslateBackends = getSubtitleTranslateBackends(mContext);
-        subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
-        subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
-        subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);
-        subtitleSourceRest = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_REST, subtitleSourceRest);
+        // Which indexes are asked is a debug affordance — a way to exercise one source on its own
+        // when a result looks wrong — and the release build has no screen for it. So the release build
+        // does not read these either: a source switched off while testing would otherwise stay off for
+        // good, invisibly, with nothing anywhere to turn it back on.
+        if (BuildConfig.DEBUG) {
+            subtitleSourceOpenSubtitles = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_OPENSUBTITLES, subtitleSourceOpenSubtitles);
+            subtitleSourceShegu = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_SHEGU, subtitleSourceShegu);
+            subtitleSourceStremio = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_STREMIO, subtitleSourceStremio);
+            subtitleSourceRest = mSharedPreferences.getBoolean(PREF_KEY_SOURCE_REST, subtitleSourceRest);
+        }
         subtitleStyleBold = mSharedPreferences.getBoolean(PREF_KEY_SUBTITLE_STYLE_BOLD, subtitleStyleBold);
         subtitleScale = Float.parseFloat(mSharedPreferences.getString(PREF_KEY_SUBTITLE_SCALE, String.valueOf(subtitleScale)));
         subtitleTextColor = Color.parseColor(mSharedPreferences.getString(PREF_KEY_SUBTITLE_TEXT_COLOR, "#FFFFFFFF"));
@@ -555,10 +561,17 @@ class Prefs {
         return migrated;
     }
 
-    /** Translation endpoints to try, in order. Unset means the two that were answering when shipped. */
+    /**
+     * Translation endpoints to try, in order. Unset means the two that were answering when shipped —
+     * and in a release build that is the only answer, for the same reason as the source switches
+     * above: the choice is a debug affordance, so a release build must not be carrying one made
+     * during testing with no screen on which to see or undo it.
+     */
     public static String getSubtitleTranslateBackends(final Context context) {
-        final String stored = PreferenceManager.getDefaultSharedPreferences(context)
-                .getString(PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS, null);
+        final String stored = BuildConfig.DEBUG
+                ? PreferenceManager.getDefaultSharedPreferences(context)
+                        .getString(PREF_KEY_SUBTITLE_TRANSLATE_BACKENDS, null)
+                : null;
         // Folded onto the ids that exist now, so a setting written when every Mozhi host was its
         // own entry still means Mozhi rather than nothing.
         return SubtitleTranslate.normalize(

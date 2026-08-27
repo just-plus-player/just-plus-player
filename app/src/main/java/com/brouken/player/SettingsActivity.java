@@ -306,6 +306,21 @@ public class SettingsActivity extends AppCompatActivity
                 });
             }
 
+            // Both of these exist to take a source out of the picture while a result is being
+            // chased down, and neither is anybody's setting: which index answered and which endpoint
+            // translated are not decisions a viewer has any way to judge. So they are shown in a debug
+            // build and are not in a release one — where Prefs also stops reading what they wrote.
+            if (!BuildConfig.DEBUG) {
+                final Preference sources = findPreference("subtitleSourcesCategory");
+                if (sources != null) {
+                    sources.setVisible(false);
+                }
+                final Preference endpoints = findPreference("subtitleTranslateBackends");
+                if (endpoints != null) {
+                    endpoints.setVisible(false);
+                }
+            }
+
             final Preference translateBackends = findPreference("subtitleTranslateBackends");
             if (translateBackends != null) {
                 final LinkedHashMap<String, String> services = SubtitleTranslate.backends();

@@ -9969,6 +9969,15 @@ public class PlayerActivity extends Activity {
                 headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
             }
 
+            // Some proxies (Telegram-stream bridges among them) answer range requests only: a GET with
+            // no Range header gets no response at all, not even headers, so nothing is ever transferred
+            // and the load watchdog reports a timeout on a stream that is working. Media3 is the client
+            // that opens without one — HttpUtil.buildRangeRequestHeader returns null at position 0 with
+            // an unbounded length — so seed the whole-file range every browser sends. A default request
+            // property is the lowest priority DefaultHttpDataSource has: it overwrites this whenever it
+            // computes a real range, leaving seeks and byte-range segments alone.
+            headers.put("Range", "bytes=0-");
+
             // Always our own factory, headers or not, for the read timeout. Media3 defaults it to 8 s,
             // which is a verdict a torrent-backed server cannot meet: it answers the range request at
             // once and then goes quiet for as long as fetching those pieces from peers takes. Silence is
@@ -9983,9 +9992,7 @@ public class PlayerActivity extends Activity {
             if (userAgent != null) {
                 defaultHttpDataSourceFactory.setUserAgent(userAgent);
             }
-            if (!headers.isEmpty()) {
-                defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
-            }
+            defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
             upstreamFactory = new DefaultDataSource.Factory(this, defaultHttpDataSourceFactory);
         }
 

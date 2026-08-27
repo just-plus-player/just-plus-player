@@ -20,6 +20,7 @@
     <string name="error_playback_timeout">Playback took too long to start. Please try again.</string>
     <string name="error_playback_stalled">Playback stopped and did not resume. Please try again.</string>
     <string name="error_stream_interrupted">The live stream keeps stopping and could not be resumed. Please try again later.</string>
+    <string name="error_software_video_too_slow">%1$s %2$s is being decoded in software on this device and cannot keep up. Try a copy with a lower resolution.</string>
     <string name="error_stream_broken">The video stream is damaged or unavailable. Please try again.</string>
     <string name="error_stream_http_status">Server error %1$d at %2$s</string>
     <string name="error_media_access_expired">Access to this video has expired. Open it again from the app you shared it from.</string>
@@ -51,6 +52,7 @@
     <string name="pref_tunneling">Tunneled playback</string>
     <string name="pref_tunneling_summary">On some TV boxes the picture freezes completely, with no error — the app then turns this off by itself. Where it works, it improves 4K/HDR playback</string>
     <string name="notice_tunneling_disabled">Tunneled playback disabled — it freezes the picture on this device</string>
+    <string name="notice_quality_lowered">Switched to %1$s — the original needs a hardware decoder this device does not have</string>
     <string name="pref_auto_pip">Auto picture-in-picture</string>
     <string name="pref_auto_pip_on">Switch to PiP when leaving the app</string>
     <string name="pref_auto_pip_off">Do not automatically switch to PiP</string>

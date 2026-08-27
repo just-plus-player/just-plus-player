@@ -131,6 +131,7 @@ import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.audio.ForwardingAudioSink;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -367,6 +368,10 @@ public class PlayerActivity extends Activity {
     // thread by the analytics listener, reset per player build.
     private String videoDecoderName;
     private String audioDecoderName;
+    // One-shot guard for recoverByLoweringQuality(). Deliberately not reset by initializePlayer: the
+    // downgrade itself rebuilds the player, and a variant that is still beyond the device has to fail
+    // once rather than walk the whole list.
+    private boolean softwareVideoDowngraded;
     // Loader's throughput estimate — the one stats figure the player itself cannot be asked for.
     private long bandwidthBitrate;
     private final AnalyticsListener playbackInfoListener = new AnalyticsListener() {
@@ -11273,6 +11278,36 @@ public class PlayerActivity extends Activity {
                 final StuckPlayerException stuck = cause instanceof StuckPlayerException
                         ? (StuckPlayerException) cause : null;
                 if (stuck == null || stuck.stuckType == StuckPlayerException.STUCK_PLAYING_NO_PROGRESS) {
+                    // A software decoder crawling on a format past its reach. None of the rungs below can
+                    // help: re-decoding Dolby Vision as HEVC does not apply, and dropping tunneling or
+                    // revoking a passthrough mime would take audio features away for good — permanently,
+                    // device-wide — to answer a problem on the video path. Lowering the quality is the
+                    // only thing that can still play the film; failing that, say what actually happened
+                    // rather than reporting that the device decoder wedged.
+                    //
+                    // Keyed on the detector having named this stall itself, which is what stuck != null
+                    // means inside this branch: STUCK_PLAYING_NO_PROGRESS is Media3's own verdict that the
+                    // renderers are not progressing, and it excludes both the buffering stalls (a network
+                    // problem, not a decoder one) and the unknown case where blaming the decoder would be
+                    // a guess. Deliberately NOT gated on stalledAtStart(): the detector needs ten seconds
+                    // of a frozen clock, a crawling decoder yields frames in bursts, and the position
+                    // creeps past that two-second window long before the verdict lands — measured. A
+                    // false negative here is exactly the passthrough revocation this rung exists to
+                    // prevent, so the tighter test is the wrong trade.
+                    final String beyondDevice = stuck != null
+                            ? softwareVideoMessage(player != null ? player.getVideoFormat() : null) : null;
+                    if (beyondDevice != null) {
+                        if (recoverByLoweringQuality()) {
+                            reportStall(error, stuck, "quality-lowered");
+                            return;
+                        }
+                        reportStall(error, stuck, null);
+                        showErrorScreen(errorSummary(error),
+                                "Stall class: " + stallClass(stuck) + "\n\n" + errorReport(error),
+                                beyondDevice);
+                        releasePlayer(false);
+                        return;
+                    }
                     if (recoverByForcingHevcForDolbyVision(error,
                             player != null ? player.getVideoFormat() : null)) {
                         return;
@@ -11317,6 +11352,15 @@ public class PlayerActivity extends Activity {
             // from the loud symptom instead of the silent one.
             if (error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
                     && recoverByRevokingAudioMime(audioTrackInitFailureMime(error))) {
+                return;
+            }
+            // The decoder never opened for a format software decoding was never going to carry — 4K on
+            // a box with no hardware decoder, where the frame buffers alone do not fit. The re-reads below
+            // would spend their budget on a certain failure, so offer the lower-quality variant first.
+            if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+                    && error instanceof ExoPlaybackException
+                    && softwareVideoMessage(((ExoPlaybackException) error).rendererFormat) != null
+                    && recoverByLoweringQuality()) {
                 return;
             }
             // A bitstream's AudioTrack can also die under a player that was happily feeding it for an hour
@@ -11563,6 +11607,144 @@ public class PlayerActivity extends Activity {
         playerView.post(() -> {
             releasePlayer();
             initializePlayer();
+        });
+        return true;
+    }
+
+    /**
+     * The one-line reason a software video decoder cannot carry this format, or null when that is not
+     * what happened. Nothing upstream ever says so: Libdav1dVideoRenderer.supportsFormat() looks only at
+     * the mime and whether its library loaded, and a platform software codec advertises size limits far
+     * beyond what it can actually keep up with, so a 4K track is accepted on hardware that has no chance
+     * of decoding it and FORMAT_EXCEEDS_CAPABILITIES never arrives. The format is passed in rather than
+     * read from the player for the same reason as in recoverByForcingHevcForDolbyVision: on the loud path
+     * the renderers are already disabled and getVideoFormat() is null by the time this runs.
+     */
+    private String softwareVideoMessage(final Format video) {
+        // isVideo because the format on the loud path is whichever renderer failed, and an audio decoder
+        // failing to open must not be answered with a sentence about resolution.
+        if (video == null || !MimeTypes.isVideo(video.sampleMimeType) || !isAbove1080p(video)) {
+            return null;
+        }
+        // What actually decoded, when a decoder got far enough to report its name; failing that, whether
+        // the device has any hardware decoder for the mime at all. The second reading is what a decoder
+        // that never opened needs — it never reaches onVideoDecoderInitialized, which is exactly the
+        // case where being told the reason matters most.
+        if (!(videoDecoderName != null ? decodedInSoftware(video) : hasNoHardwareDecoder(video))) {
+            return null;
+        }
+        // Deliberately says what happened rather than what the device lacks: software decoding is also
+        // where a track ends up when the user asked for app decoders, or when enableDecoderFallback hands
+        // it on after a hardware codec failed. Both happen on devices that do have a hardware decoder,
+        // and naming the hardware there would be telling the user something untrue about their box.
+        return getString(R.string.error_software_video_too_slow,
+                resolutionClass(video.width, video.height), shortCodec(video.sampleMimeType));
+    }
+
+    // Above 1080p, written with the same numbers resolutionClass uses for its 1440p step so the gate and
+    // the label the message carries can never disagree — 2048x1080 reads as "1080p" and is left alone.
+    // Both sides have to be known (Format.NO_VALUE is -1): resolutionClass returns null for a missing
+    // one, and half a size is not enough to tell the user what their stream is anyway.
+    private static boolean isAbove1080p(final Format video) {
+        if (video.width <= 0 || video.height <= 0) {
+            return false;
+        }
+        return Math.max(video.width, video.height) >= 2560
+                || Math.min(video.width, video.height) >= 1440;
+    }
+
+    // Whether the decoder that opened for this format decodes in software. Media3's bundled decoders
+    // report a plain library name ("libdav1d" for the AV1 extension this app ships) while every platform
+    // codec carries a prefix the CDD requires ("c2.android.*", "OMX.<vendor>.*"), so a name with no dot
+    // in it never came from MediaCodec and is software by construction. Anything else is looked up, so
+    // that verdict is the platform's own (MediaCodecInfo.softwareOnly) rather than a guess at prefixes.
+    private boolean decodedInSoftware(final Format video) {
+        if (!videoDecoderName.contains(".")) {
+            return true;
+        }
+        try {
+            for (MediaCodecInfo info : MediaCodecUtil.getDecoderInfos(
+                    video.sampleMimeType, /* secure= */ false, /* tunneling= */ false)) {
+                if (videoDecoderName.equals(info.name)) {
+                    return info.softwareOnly;
+                }
+            }
+        } catch (MediaCodecUtil.DecoderQueryException | RuntimeException ignored) {
+        }
+        return false;
+    }
+
+    // Whether the platform lists decoders for this mime and none of them is hardware accelerated. An
+    // empty list is not the same answer: it means the platform cannot decode the mime at all, and
+    // reading "software only" out of that would be inventing a verdict. A failed query is treated the
+    // same way — an unknown answer must not become a claim about the device.
+    private static boolean hasNoHardwareDecoder(final Format video) {
+        boolean listed = false;
+        try {
+            for (MediaCodecInfo info : MediaCodecUtil.getDecoderInfos(
+                    video.sampleMimeType, /* secure= */ false, /* tunneling= */ false)) {
+                if (info.hardwareAccelerated) {
+                    return false;
+                }
+                listed = true;
+            }
+        } catch (MediaCodecUtil.DecoderQueryException | RuntimeException ignored) {
+            return false;
+        }
+        return listed;
+    }
+
+    /**
+     * Swap the stream for the highest separate-URL variant at 1080p or below, where the sender supplied
+     * any — the one answer that plays the film instead of explaining why it did not. Goes through the
+     * manual picker's own path (applyVideoQuality with a SOURCE choice), so the pinned mode, the sticky
+     * preference that carries the choice into following episodes, the position and the play state are all
+     * handled exactly as when the user picks a quality by hand, and the original stays one tap away in
+     * the quality menu. Scheduled on the next loop, since that path releases the player and this runs
+     * inside the player's own listener. Returns true when a downgrade was scheduled.
+     */
+    private boolean recoverByLoweringQuality() {
+        if (player == null || softwareVideoDowngraded) {
+            return false;
+        }
+        final LinkedHashMap<String, String> quality = currentQualityMap();
+        if (quality == null || quality.isEmpty()) {
+            return false;
+        }
+        final Uri playing = currentPlayingUri();
+        String bestLabel = null;
+        String bestUrl = null;
+        int bestLines = 0;
+        for (Map.Entry<String, String> entry : quality.entrySet()) {
+            final int lines = qualityNumber(entry.getKey());
+            final String url = entry.getValue();
+            // An unlabelled variant is skipped rather than guessed at: switching to what may be the same
+            // 4K stream under another name would spend the one attempt for nothing.
+            if (lines <= 0 || lines > 1080 || lines <= bestLines
+                    || url == null || url.trim().isEmpty() || Uri.parse(url).equals(playing)) {
+                continue;
+            }
+            bestLabel = entry.getKey();
+            bestUrl = url;
+            bestLines = lines;
+        }
+        if (bestUrl == null) {
+            return false;
+        }
+        softwareVideoDowngraded = true;
+        final String label = bestLabel;
+        final String url = bestUrl;
+        playerView.post(() -> {
+            // Announced next to the switch it describes rather than before it, so a player torn down in
+            // between (the user leaving) says nothing instead of promising a quality that never loads.
+            // A Toast rather than showSnack: on a TV box showSnack is a modal dialog, and an automatic
+            // recovery must not stop to be acknowledged (same as recoverByDisablingTunneling).
+            if (player == null) {
+                return;
+            }
+            Toast.makeText(this, getString(R.string.notice_quality_lowered, label),
+                    Toast.LENGTH_LONG).show();
+            applyVideoQuality(VideoQualityChoice.source(label, url));
         });
         return true;
     }
@@ -12378,8 +12560,12 @@ public class PlayerActivity extends Activity {
 
     void showError(ExoPlaybackException error) {
         // A fatal playback error: go straight to the full error screen (friendly explanation + report),
-        // rather than a dismissible toast the user has to expand.
-        showErrorScreen(errorSummary(error), errorReport(error));
+        // rather than a dismissible toast the user has to expand. Only DECODER_INIT_FAILED gets the
+        // software-decoding explanation: DECODING_FAILED also comes from a corrupt stream, and blaming
+        // the device for that would mislead on hardware that would have coped.
+        showErrorScreen(errorSummary(error), errorReport(error),
+                error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+                        ? softwareVideoMessage(error.rendererFormat) : null);
     }
 
     // Whether a SAF grant we took ourselves still covers this uri, i.e. it is ours to retry later.
@@ -12588,6 +12774,10 @@ public class PlayerActivity extends Activity {
         final Format audioFormat = player.getAudioFormat();
         if (videoFormat != null) {
             scope.setTag("media.video_mime", String.valueOf(videoFormat.sampleMimeType));
+            // Whether the device can decode this mime in hardware at all. Without it a report from a box
+            // that only ever had a software decoder reads the same as one from a device with a good
+            // decoder that still failed — the difference this whole path exists for.
+            scope.setTag("media.video_hw_decoder", String.valueOf(!hasNoHardwareDecoder(videoFormat)));
         }
         if (audioFormat != null) {
             scope.setTag("media.audio_mime", String.valueOf(audioFormat.sampleMimeType));
@@ -12677,12 +12867,23 @@ public class PlayerActivity extends Activity {
     }
 
     private void showErrorScreen(final String summary, final String report) {
+        showErrorScreen(summary, report, null);
+    }
+
+    // message replaces the screen's generic explanation when the cause is known well enough to name it.
+    // Deliberately not EXTRA_TITLE, which would also swap the error glyph for the logo mark — this is
+    // a failure, it just has a better description than usual.
+    private void showErrorScreen(final String summary, final String report, final String message) {
         // Every full-screen report from the player passes through here, so this is the one place that has
         // to keep the next resume from walking straight back into the failure (see the field's comment).
         skipMediaAfterFatalError = true;
-        startActivity(new Intent(this, ErrorActivity.class)
+        final Intent intent = new Intent(this, ErrorActivity.class)
                 .putExtra(ErrorActivity.EXTRA_SUMMARY, summary)
-                .putExtra(ErrorActivity.EXTRA_REPORT, report));
+                .putExtra(ErrorActivity.EXTRA_REPORT, report);
+        if (message != null) {
+            intent.putExtra(ErrorActivity.EXTRA_MESSAGE, message);
+        }
+        startActivity(intent);
     }
 
     void reportScrubbing(long position) {

@@ -463,6 +463,30 @@ public class PlayerActivity extends Activity {
             initializePlayer();
         }
     };
+    // A video renderer that stops handing output over while the playback clock runs on: the picture
+    // stands still and the sound plays. Nothing else in the player can see that — Media3 judges being
+    // stuck by the position, and the position comes off the audio clock — so it is counted here.
+    // Counted rather than timed: an ordinary rebuffer stops both tracks, and a paused player is not polled.
+    // Floor for the window, and the reason it is not shorter: a codec re-init produces no output either,
+    // for up to about a second on a cheap box, while the clock runs on — and a recovery fired into one
+    // makes a stutter worse instead of curing anything.
+    private static final long VIDEO_FREEZE_MS = 1_500L;
+    // How far the clock has to have moved inside that window for the picture to be provably behind it.
+    private static final long VIDEO_FREEZE_POSITION_MS = 1_000L;
+    // What the window really measures, for content slower than the floor: a 5 fps stream hands over a
+    // frame every 200 ms, so twenty of them are four seconds and judging it at one and a half would be
+    // judging healthy playback. Normal content is far faster than the floor and never reaches this.
+    private static final int VIDEO_FREEZE_FRAMES = 20;
+    private static final int MAX_VIDEO_FREEZE_RECOVERIES = 2;
+    // -1 matches no counter value, so the next poll re-baselines. Reset wherever playback starts.
+    private int frameOutputSeen = -1;
+    private long framesSeenAtMs;
+    private long framesSeenAtPositionMs;
+    // Per item, like the other recovery budgets: a cure that does not hold must not loop for ever.
+    private int videoFreezeRecoveries;
+    // When the passthrough reselect last asked for a fresh audio track, so a freeze landing right after
+    // one is reported as such — that is the difference between the two suspects (see reportVideoFreeze).
+    private long audioReselectAtMs;
     public static boolean controllerVisible;
     public static boolean controllerVisibleFully;
     // Whether the chrome that floats beside the controls (the stats panel, the room pill) belongs on screen.
@@ -982,6 +1006,9 @@ public class PlayerActivity extends Activity {
         @Override
         public void run() {
             skipTick();
+            // This poll runs exactly while playback does, which is exactly when a frozen picture can
+            // happen, so the frame watchdog rides it instead of owning a second timer.
+            videoFreezeTick();
             if (player != null && player.isPlaying()) {
                 playerView.postDelayed(this, SKIP_POLL_INTERVAL_MS);
             }
@@ -9735,6 +9762,8 @@ public class PlayerActivity extends Activity {
         sourceRetries = 0;
         decoderRetries = 0;
         liveStallRecoveries = 0;
+        videoFreezeRecoveries = 0;
+        frameOutputSeen = -1;
         playerStartPositionMs = C.TIME_UNSET;
         videoDecoderName = null;
         audioDecoderName = null;
@@ -9743,6 +9772,7 @@ public class PlayerActivity extends Activity {
         audioRestartInFlight = false;
         audioRestartSettling = false;
         audioEverStarted = false;
+        audioReselectAtMs = 0;
         playerView.removeCallbacks(rebufferArmRunnable);
         audioRestartPending = false;
 
@@ -10322,6 +10352,100 @@ public class PlayerActivity extends Activity {
         playerView.postDelayed(loadTimeoutRunnable, VIDEO_LOAD_TIMEOUT_MS);
     }
 
+    /**
+     * Everything the video renderer has done with an output buffer, or -1 when there is no video renderer.
+     * Not only the frames that reached the screen: a device under load drops or skips them instead, which
+     * counting rendered frames alone cannot tell from a freeze, while a renderer that lost its output
+     * format does none of the three. Input is deliberately left out — a codec wedged on its output can
+     * still be fed, and counting that would hide the very failure this exists to find.
+     */
+    private int videoOutputCount() {
+        final DecoderCounters counters = player != null ? player.getVideoDecoderCounters() : null;
+        return counters == null ? -1 : counters.renderedOutputBufferCount + counters.droppedBufferCount
+                + counters.skippedOutputBufferCount;
+    }
+
+    /**
+     * The picture stopped while the sound went on. Asks two things at once: the renderer has done
+     * nothing at all with an output buffer for {@link #VIDEO_FREEZE_MS}, and the clock moved on by
+     * {@link #VIDEO_FREEZE_POSITION_MS} inside that window. Either alone is ordinary — a very low frame
+     * rate answers the first, a seek the second — and both together are the one failure no other
+     * watchdog here can see: Media3 measures being stuck by the position, and the position comes off the
+     * audio clock, so a wedged video renderer reports full progress. Audio-only media has no video
+     * format, so it is exempt.
+     */
+    private void videoFreezeTick() {
+        if (player == null || isScrubbing || player.getVideoFormat() == null) {
+            return;
+        }
+        final int output = videoOutputCount();
+        if (output < 0) {
+            return;
+        }
+        final long now = SystemClock.elapsedRealtime();
+        final long position = player.getCurrentPosition();
+        if (output != frameOutputSeen) {
+            frameOutputSeen = output;
+            framesSeenAtMs = now;
+            framesSeenAtPositionMs = position;
+            return;
+        }
+        final float frameRate = videoFrameRate();
+        final long window = frameRate > 0
+                ? Math.max(VIDEO_FREEZE_MS, (long) (VIDEO_FREEZE_FRAMES * 1000 / frameRate))
+                : VIDEO_FREEZE_MS;
+        if (now - framesSeenAtMs < window
+                || position - framesSeenAtPositionMs < VIDEO_FREEZE_POSITION_MS) {
+            return;
+        }
+        // Start a fresh window whatever happens below, so a cure gets the same window to prove itself
+        // and a spent budget does not re-ask on every poll.
+        frameOutputSeen = -1;
+        if (videoFreezeRecoveries >= MAX_VIDEO_FREEZE_RECOVERIES) {
+            return;
+        }
+        videoFreezeRecoveries++;
+        // Cheap rung first: a seek flushes the renderer, which is what a codec that lost the queued entry
+        // for its output format needs (see isUnexpectedPlaybackError — this is that same failure without
+        // the exception), and it lands inside the buffer the session already holds, so it costs no refill
+        // and no black wait. Unseekable media has no such rung and goes straight to the re-read.
+        if (videoFreezeRecoveries == 1 && player.isCurrentMediaItemSeekable()) {
+            reportVideoFreeze("seek");
+            // Both lines are load-bearing. A same-position seek is a no-op — seekToInternal compares the
+            // target with the current position in whole milliseconds and, in BUFFERING/READY, reports a
+            // discontinuity without touching the renderers — so the target has to differ. And the seek
+            // parameters are sticky on the player (the swipe and D-pad paths each set their own), so
+            // without EXACT the one millisecond back would land on the previous sync sample instead,
+            // rewinding the picture by seconds.
+            player.setSeekParameters(SeekParameters.EXACT);
+            player.seekTo(Math.max(0, position - 1));
+            return;
+        }
+        // Still frozen: re-read the source. prepare() keeps the media item, the position, the surface and
+        // the track selection (same as recoverFromSourceError), so nothing that lives on the player
+        // instance is lost — only the buffer, which is why it is the second rung and not the first.
+        reportVideoFreeze("prepare");
+        updateLoading(true);
+        player.prepare();
+    }
+
+    /**
+     * A freeze nothing else in the player reports, so this report is the only way to learn which piece of
+     * resume-time work wedged the renderer: the passthrough reselect (freeze_after_reselect, together with
+     * audio.sink_passthrough from the shared scope) or something on the video path alone (media.video_mime).
+     * INFO, like a recovered stall — playback carries on, so it is not a crash.
+     */
+    private void reportVideoFreeze(final String recoveredAs) {
+        io.sentry.Sentry.captureMessage("Video frozen while audio plays", scope -> {
+            scope.setFingerprint(Arrays.asList("video-freeze", recoveredAs));
+            scope.setTag("player.freeze_recovery", recoveredAs);
+            scope.setTag("player.freeze_after_reselect", String.valueOf(audioReselectAtMs != 0
+                    && SystemClock.elapsedRealtime() - audioReselectAtMs < 10_000L));
+            scope.setLevel(io.sentry.SentryLevel.INFO);
+            enrichPlaybackScope(null, scope);
+        });
+    }
+
     private void reportVideoLoadTimeout() {
         if (player == null) {
             return;
@@ -10615,6 +10739,8 @@ public class PlayerActivity extends Activity {
             audioRestartPending = false;
             audioRestartSettling = false;
             audioEverStarted = false;
+            // A new item decodes through a fresh codec, so it gets the freeze budget over again.
+            videoFreezeRecoveries = 0;
             updateTopInfo();
             hideSkipButton();
             cancelSegmentFinder();
@@ -10747,6 +10873,9 @@ public class PlayerActivity extends Activity {
                 secondarySubtitleOffset.wake();
             }
             if (isPlaying) {
+                // Fresh baseline for the freeze watchdog: nothing is output while paused, and whatever
+                // the last window measured belongs to a playback that has since stopped.
+                frameOutputSeen = -1;
                 playerView.removeCallbacks(rebufferArmRunnable);
                 audioRestartSettling = false;
                 if (audioEverStarted) {
@@ -11472,6 +11601,7 @@ public class PlayerActivity extends Activity {
         audioRestartPending = false;
         audioRestartInFlight = true;
         audioRestartSettling = true;
+        audioReselectAtMs = SystemClock.elapsedRealtime();
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
     }
@@ -12261,9 +12391,13 @@ public class PlayerActivity extends Activity {
     /**
      * Playback context for a report: the values worth grouping and filtering on as tags, and the same
      * detail the error screen shows as one extra — appendPlayerState is the single source for that text.
+     * The error is null for a report with no exception behind it (see reportVideoFreeze): everything
+     * but the first tag describes the session rather than the failure, which is what those come for.
      */
     private void enrichPlaybackScope(final PlaybackException error, final io.sentry.IScope scope) {
-        scope.setTag("player.error_code", error.getErrorCodeName());
+        if (error != null) {
+            scope.setTag("player.error_code", error.getErrorCodeName());
+        }
         final Uri uri = currentMediaUri();
         if (Utils.isSupportedNetworkUri(uri)) {
             scope.setExtra("media_uri", Utils.uriToReportString(uri));

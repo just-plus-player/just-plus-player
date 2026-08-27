@@ -239,6 +239,17 @@ public class SettingsActivity extends AppCompatActivity
                 // Same reason: there is no finger to hold on the picture.
                 preferenceHoldSpeed.setVisible(false);
             }
+            Preference preferenceSingleBack = findPreference("tvSingleBack");
+            if (preferenceSingleBack != null && !Utils.isTvBox(getContext())) {
+                // Only the remote gets asked for a second Back; touch already leaves on the first one.
+                preferenceSingleBack.setVisible(false);
+            }
+            Preference preferenceKeepAwake = findPreference("keepAwakeOnPause");
+            if (preferenceKeepAwake != null && !Utils.isTvBox(getContext())) {
+                // Holding a phone awake through a pause drains it for no one's benefit: the complaint is
+                // the TV's screensaver, which takes the audio output and the process down with it.
+                preferenceKeepAwake.setVisible(false);
+            }
             ListPreference listPreferenceFileAccess = findPreference("fileAccess");
             if (listPreferenceFileAccess != null) {
                 List<String> entries = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.file_access_entries)));

@@ -56,6 +56,9 @@
     <string name="pref_auto_pip_off">Do not automatically switch to PiP</string>
     <string name="pref_repeat_toggle">Repeat toggle</string>
     <string name="pref_repeat_toggle_summary">Extra control to allow indefinitely loop video (requires app restart)</string>
+    <string name="pref_tv_single_back">Leave with one Back press</string>
+    <string name="pref_tv_single_back_on">Back leaves the player as soon as there is nothing left to close</string>
+    <string name="pref_tv_single_back_off">Back asks for a second press before leaving the player</string>
     <string name="pref_disable_volume_brightness_gestures">Turn off volume and brightness swipes</string>
     <string name="pref_disable_volume_brightness_gestures_on">Swiping up and down does nothing; seeking, zoom and the volume buttons still work</string>
     <string name="pref_disable_volume_brightness_gestures_off">Swipe up and down to change brightness on the left of the screen and volume on the right</string>
@@ -232,6 +235,9 @@
     <string name="stats_report_message">Send these playback details when reporting a problem with picture or sound.</string>
     <string name="pref_show_stats_on">Buffer, decoders and dropped frames are shown with the player controls</string>
     <string name="pref_show_stats_off">Playback details stay hidden</string>
+    <string name="pref_keep_awake_on_pause">Keep the screen on while paused</string>
+    <string name="pref_keep_awake_on_pause_on">The device screensaver stays away; the picture dims after a minute and the screen is released after two hours</string>
+    <string name="pref_keep_awake_on_pause_off">A pause is left to the device, and its screensaver comes on as usual</string>
     <string name="volume_high_warning">High volume may damage your hearing</string>
     <string name="pref_file_access">File access</string>
     <string name="pref_file_access_auto">Auto</string>

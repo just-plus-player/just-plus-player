@@ -280,6 +280,13 @@
             app:summary="@string/pref_repeat_toggle_summary"
             app:title="@string/pref_repeat_toggle" />
 
+        <SwitchPreferenceCompat
+            app:key="tvSingleBack"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_tv_single_back_on"
+            app:summaryOff="@string/pref_tv_single_back_off"
+            app:title="@string/pref_tv_single_back" />
+
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_onscreen_header">
@@ -304,6 +311,13 @@
             app:summaryOn="@string/pref_show_stats_on"
             app:summaryOff="@string/pref_show_stats_off"
             app:title="@string/stats_title" />
+
+        <SwitchPreferenceCompat
+            app:key="keepAwakeOnPause"
+            app:defaultValue="true"
+            app:summaryOn="@string/pref_keep_awake_on_pause_on"
+            app:summaryOff="@string/pref_keep_awake_on_pause_off"
+            app:title="@string/pref_keep_awake_on_pause" />
 
     </PreferenceCategory>
 

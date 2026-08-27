@@ -181,13 +181,11 @@ final class OffsetPanel {
         reset.setFocusable(true);
         reset.setPadding(Utils.dpToPx(28), Utils.dpToPx(11), Utils.dpToPx(28), Utils.dpToPx(11));
         reset.setMinHeight(ui.dpS(48)); // a pill this small is missed as often as it is hit
-        final GradientDrawable resetContent = new GradientDrawable();
-        resetContent.setCornerRadius(Utils.dpToPx(22));
-        resetContent.setColor(0x1AFFFFFF);
-        final GradientDrawable resetMask = new GradientDrawable();
-        resetMask.setCornerRadius(Utils.dpToPx(22));
-        resetMask.setColor(Color.WHITE);
-        reset.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), resetContent, resetMask));
+        // The same focus edge the pills take: a ripple is touch feedback, not something a remote across
+        // a room can find, and this pill is the last stop of the D-pad path through here.
+        final int resetCorner = Utils.dpToPx(22);
+        reset.setBackground(new RippleDrawable(ColorStateList.valueOf(0x20FFFFFF),
+                pillFill(accent, false, resetCorner), roundMask(resetCorner)));
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         resetLp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -259,7 +257,7 @@ final class OffsetPanel {
         final Runnable render = () -> {
             for (int i = 0; i < pills.length; i++) {
                 final boolean on = i == picked[0];
-                pills[i].setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF),
+                pills[i].setBackground(new RippleDrawable(ColorStateList.valueOf(0x20FFFFFF),
                         pillFill(accent, on, corner), roundMask(corner)));
                 pills[i].setTextColor(on ? 0xFF141414 : 0xB3FFFFFF);
                 pills[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
@@ -301,11 +299,6 @@ final class OffsetPanel {
                 render.run();
                 choice.listener.onPicked(choice.values[index]);
             });
-            // The same focus the Skip pill grows by, because this panel is used from a remote across a
-            // room, where a ripple is not a focus indicator. The white edge is in pillFill.
-            pill.setOnFocusChangeListener((v, hasFocus) -> v.animate()
-                    .scaleX(hasFocus ? 1.06f : 1f).scaleY(hasFocus ? 1.06f : 1f)
-                    .setDuration(150).start());
             pills[i] = pill;
             row.addView(pill);
         }
@@ -344,7 +337,10 @@ final class OffsetPanel {
         shape.setCornerRadius(corner);
         shape.setColor(on ? accent : 0x14FFFFFF);
         if (focused) {
-            shape.setStroke(Utils.dpToPx(2), Color.WHITE);
+            // The accent, like the Skip pill's own focus ring — and white only on the pill that is
+            // already the accent, where a coral edge would not show. One signal and one language: an
+            // edge appears, nothing moves and nothing changes size, so the row keeps its rhythm.
+            shape.setStroke(Utils.dpToPx(2), on ? Color.WHITE : accent);
         }
         return shape;
     }

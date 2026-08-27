@@ -122,6 +122,11 @@ android {
     }
     lint {
         disable 'MissingTranslation'
+        // The mirror of the line above, and Weblate's to reconcile either way: a string deleted here
+        // stays in the translations until they are synced, and lintVital — which runs inside
+        // assembleRelease — treats every one of those leftovers as a fatal error. It failed the
+        // release build on translations of strings this app stopped having months ago.
+        disable 'ExtraTranslation'
         disable 'UnsafeOptInUsageError'
     }
 }

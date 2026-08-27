@@ -84,7 +84,17 @@
     <string name="pref_skip_hide_locked_off">The Skip button and auto-skip notification remain visible while the screen is locked</string>
     <string name="skip_offset_title">Skip offset</string>
     <string name="skip_offset_reset">Reset</string>
-    <string name="button_skip_offset">Skip offset</string>
+    <!-- Offset readout and summaries: the number is formatted in the viewer's locale, the unit
+         belongs to the language. -->
+    <string name="offset_seconds">%1$s s</string>
+    <!-- The player's skip panel: a mode per kind of segment for this session only, plus the offset.
+         Short labels because four of them share the width of the panel; the settings screen is where
+         each mode is spelled out in full. -->
+    <string name="skip_session_title">Skips in this session</string>
+    <string name="skip_mode_brief_short">5 s</string>
+    <string name="skip_mode_button_short">Button</string>
+    <string name="skip_mode_auto_short">Auto</string>
+    <string name="skip_mode_off_short">Never</string>
     <string name="button_skip">Skip</string>
     <string name="button_skip_countdown">Skip %1$d</string>
     <string name="notification_skipped">Skipped</string>
@@ -192,13 +202,13 @@
     <string name="subtitle_secondary_title">Secondary subtitles</string>
     <string name="subtitle_main_title">Main subtitles</string>
     <string name="subtitle_search_found_secondary">Secondary subtitles: %1$s</string>
-    <string name="subtitle_secondary_unavailable">This track cannot be shown as a second line</string>
+    <string name="subtitle_secondary_unavailable">This track cannot be shown as secondary subtitles</string>
     <string name="subtitle_secondary_peek_hint">Secondary subtitles appear when you pause</string>
     <string name="pref_subtitle_secondary_header">Secondary subtitles</string>
     <string name="pref_subtitle_secondary_mode">When to show</string>
-    <string name="pref_subtitle_secondary_mode_off">Never — no second line at all</string>
-    <string name="pref_subtitle_secondary_mode_always">Always — under the first line</string>
-    <string name="pref_subtitle_secondary_mode_demand">On demand — shown when asked for, then gone</string>
+    <string name="pref_subtitle_secondary_mode_off">Never — no secondary subtitles at all</string>
+    <string name="pref_subtitle_secondary_mode_always">Always — under the main subtitles</string>
+    <string name="pref_subtitle_secondary_mode_demand">On demand — above the main subtitles when you pause</string>
     <string name="speed_title">Playback speed</string>
     <string name="speed_normal">Normal</string>
     <string name="audio_track_number">Track %1$d</string>
@@ -274,7 +284,7 @@
     <string name="pref_language_subtitle">Default subtitle track</string>
     <string name="pref_language_subtitle_none">Not set — subtitles stay off until you turn them on</string>
     <string name="pref_language_subtitle_secondary">Secondary subtitle track</string>
-    <string name="pref_language_subtitle_secondary_none">Not set — the second line is only ever chosen during playback</string>
+    <string name="pref_language_subtitle_secondary_none">Not set — secondary subtitles are only ever chosen during playback</string>
     <string name="pref_subtitle_search_screen">Search online</string>
     <string name="pref_subtitle_search_when">When to search</string>
     <string name="pref_subtitle_search_never">Never — only when I ask</string>
@@ -299,7 +309,7 @@
     <string name="subtitle_search_season">Season %1$d</string>
     <string name="subtitle_search_episode">Episode %1$d</string>
     <string name="pref_subtitle_translate">Machine translation</string>
-    <string name="pref_subtitle_translate_on">The text goes to Google Translate</string>
+    <string name="pref_subtitle_translate_on">The text goes to an online translation service</string>
     <string name="pref_subtitle_translate_off">Subtitles are shown in the language they were found in</string>
     <string name="pref_subtitle_translate_backends">Translation services</string>
     <string name="pref_subtitle_translate_backends_none">Not set — subtitles are never translated</string>

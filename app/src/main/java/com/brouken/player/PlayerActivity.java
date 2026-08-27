@@ -772,6 +772,12 @@ public class PlayerActivity extends Activity {
     // Skip-segment timing offset (seconds) — in-session only, never persisted; applies to all
     // playlist items and is reset on a new media session (resetApiAccess).
     private double skipOffsetSec = 0;
+    // How this session offers segments, or null to follow the settings. One value for both kinds,
+    // because the viewer mid-film holds one intention and not two — "stop interrupting me in this
+    // series" — and two rows of it were two rows of the same answer. Same life as the offset above and
+    // set from the same panel: a series that matches the same way in every episode is a session, not a
+    // change of mind about every film after it.
+    private String skipModeSession;
     // True once any skip segment has appeared this session; keeps the offset button available
     // afterwards even on an item that itself has no segments.
     private boolean skipSeenThisSession;
@@ -1252,7 +1258,7 @@ public class PlayerActivity extends Activity {
         buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonSkipOffset.setImageResource(R.drawable.ic_skip_offset_24dp);
         buttonSkipOffset.setId(View.generateViewId());
-        buttonSkipOffset.setContentDescription(getString(R.string.button_skip_offset));
+        buttonSkipOffset.setContentDescription(getString(R.string.skip_session_title));
         buttonSkipOffset.setVisibility(View.GONE);
         buttonSkipOffset.setOnClickListener(view -> showSkipOffsetDialog());
 
@@ -1575,6 +1581,18 @@ public class PlayerActivity extends Activity {
         // stretched to full width inside the CoordinatorLayout and pinned the pill to the left edge — is gone.
         // Modern TV focus: a coral ring on the pill (state-driven stroke) plus a slight scale-up, replacing
         // the dated flat grey selectableItemBackground wash.
+        buttonSkip.setOnLongClickListener(v -> {
+            // The panel from the one place where the question comes up by itself: the segment is on
+            // screen, this is the button that would be pressed for it, and holding it says "do this
+            // yourself from now on" without going looking for anywhere. The offset button in the bottom
+            // bar opens the same panel for when there is no button to hold — after the mode has been set
+            // to automatic, chiefly.
+            if (PlayerActivity.locked) {
+                return false;
+            }
+            showSkipOffsetDialog();
+            return true;
+        });
         buttonSkip.setOnFocusChangeListener((v, hasFocus) -> {
             skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, brandColor());
             final float scale = hasFocus ? 1.06f : 1f;
@@ -2089,11 +2107,6 @@ public class PlayerActivity extends Activity {
                     controllerChromeVisible = false;
                 }
 
-                // The bar has come or gone over the band the hint sits in, so the lines re-place
-                // themselves. Posted, because the bar's height is only measurable once it is laid out.
-                if (controllerVisible != wasVisible) {
-                    playerView.post(PlayerActivity.this::updateSubtitleLayout);
-                }
                 if (controllerVisible) {
                     updateMediaInfo();
                     startEndsAtUpdates();
@@ -3079,8 +3092,11 @@ public class PlayerActivity extends Activity {
         cancelSegmentFinder();
         cancelSubtitleSearch();
         hideSkipButton();
-        // Skip offset is session-scoped: a new media session resets it and hides its control.
+        // The offset and the session's skip modes go the same way, and "session" here is the film rather
+        // than the player: the next file in the folder keeps both, which is the whole point of them,
+        // while a film picked afresh starts from the settings again.
         skipOffsetSec = 0;
+        skipModeSession = null;
         skipSeenThisSession = false;
         if (skipOffsetDialog != null && skipOffsetDialog.isShowing()) {
             skipOffsetDialog.dismiss();
@@ -3187,7 +3203,62 @@ public class PlayerActivity extends Activity {
         rebuildSkip();
     }
 
-    /** Session-only skip-offset panel — the shared {@link OffsetPanel} bound to {@link #skipOffsetSec}. */
+    /** The four ways a segment can be offered, as the session panel lists them, with their labels. */
+    private static final String[] SKIP_MODE_VALUES = {
+            Prefs.SKIP_MODE_BRIEF, Prefs.SKIP_MODE_BUTTON, Prefs.SKIP_MODE_AUTO, Prefs.SKIP_MODE_OFF };
+    private static final int[] SKIP_MODE_LABELS = {
+            R.string.skip_mode_brief_short, R.string.skip_mode_button_short,
+            R.string.skip_mode_auto_short, R.string.skip_mode_off_short };
+
+    /**
+     * Whether this film has anything the session could be asked about: a segment somebody might be
+     * offered. Ads are skipped silently whatever anyone says, so a file carrying only those gets the
+     * offset and nothing else.
+     */
+    private boolean hasSkipSegment() {
+        if (skipManager == null) {
+            return false;
+        }
+        for (final SkipSegment segment : skipManager.getSegments()) {
+            if (segment.type != SkipSegment.Type.AD) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The session's row: the four ways a segment can be offered, the one in force lit.
+     *
+     * <p>Nothing is lit in the one case where there is no single answer to light — the settings ask for
+     * one thing at the start of an episode and another at its end, and this session has not been told
+     * otherwise. Lighting either of them would be a claim about the other.
+     */
+    private OffsetPanel.Choice skipModeChoice() {
+        final CharSequence[] labels = new CharSequence[SKIP_MODE_VALUES.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = getString(SKIP_MODE_LABELS[i]);
+        }
+        final String settings = mPrefs.skipMode.equals(mPrefs.skipModeCredits) ? mPrefs.skipMode : null;
+        return new OffsetPanel.Choice(labels, SKIP_MODE_VALUES,
+                skipModeSession != null ? skipModeSession : settings, settings,
+                this::setSessionSkipMode);
+    }
+
+    /**
+     * Everything this session's skipping is, in one panel: how each kind of segment is offered, and how
+     * far the marks are shifted. Both are the session's and neither is written to the preferences —
+     * which is what makes this the right place for them and the settings screen the wrong one. A series
+     * matches the same way in every episode, and that is a fact about the series, not about the player.
+     *
+     * <p>One row for both kinds of segment, not one each: asked what they want mid-film, the answer is
+     * "stop interrupting me in this series" rather than two separate policies for the start of an
+     * episode and its end. The settings keep the two apart for anyone who does want that.
+     *
+     * <p>Reached by holding the Skip button, where the question arises, and from the bottom bar for when
+     * there is no button to hold. Its reset clears both halves — the choice goes back to following the
+     * settings and the offset to zero — because everything in here belongs to this session only.
+     */
     private void showSkipOffsetDialog() {
         if (player == null) {
             return;
@@ -3195,10 +3266,14 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null) {
             skipOffsetDialog.dismiss();
         }
+        final OffsetPanel.Choice[] choices = hasSkipSegment()
+                ? new OffsetPanel.Choice[]{ skipModeChoice() } : new OffsetPanel.Choice[0];
         skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
                 brandColor(),   // coral, matches the skip timeline highlight
-                getString(R.string.skip_offset_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC,
-                new OffsetPanel.Line(null, skipOffsetSec, this::applySkipOffset));
+                getString(R.string.skip_session_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC, choices,
+                // Captioned only while it shares the panel with the row above it; alone it is the panel.
+                new OffsetPanel.Line(choices.length == 0 ? null : getString(R.string.skip_offset_title),
+                        skipOffsetSec, this::applySkipOffset));
         showPickerDialog(skipOffsetDialog);
     }
 
@@ -3275,17 +3350,17 @@ public class PlayerActivity extends Activity {
      */
     private String subtitleOffsetSummary() {
         if (!secondaryOffsetShiftable()) {
-            return subtitleOffsetSec == 0 ? null : OffsetPanel.format(subtitleOffsetSec);
+            return subtitleOffsetSec == 0 ? null : OffsetPanel.format(this, subtitleOffsetSec);
         }
         if (!subtitleOffsetShiftable()) {
             return secondarySubtitleOffsetSec == 0
-                    ? null : OffsetPanel.format(secondarySubtitleOffsetSec);
+                    ? null : OffsetPanel.format(this, secondarySubtitleOffsetSec);
         }
         if (subtitleOffsetSec == 0 && secondarySubtitleOffsetSec == 0) {
             return null;
         }
-        return OffsetPanel.format(subtitleOffsetSec) + " · "
-                + OffsetPanel.format(secondarySubtitleOffsetSec);
+        return OffsetPanel.format(this, subtitleOffsetSec) + " · "
+                + OffsetPanel.format(this, secondarySubtitleOffsetSec);
     }
 
     // Online skip-segment lookup (FIND_INTO.MD): when the current item has no intent-provided segments,
@@ -3630,7 +3705,7 @@ public class PlayerActivity extends Activity {
             // (see SKIP_LEAD_SEC): as the Skip button when the user is asked, as the pill when the jump
             // is automatic and there is no button to offer.
             final SkipSegment upcoming = skipManager.upcomingSegment(posSec, SKIP_LEAD_SEC);
-            if (upcoming == null || autoSkipUndone(posSec)) {
+            if (upcoming == null || isSkipOff(upcoming) || autoSkipUndone(posSec)) {
                 hideSkipButton();
                 hideSkipHeadsUp();
             } else if (isAutoSkip(upcoming)) {
@@ -3648,6 +3723,12 @@ public class PlayerActivity extends Activity {
                 updateSkipButtonProgress(upcoming);
                 showSkipButton(upcoming);
             }
+            return;
+        }
+        if (isSkipOff(segment)) {
+            // Left alone for this session: no button and no jump. The highlight on the time bar stays —
+            // the segment is still there, it is only nobody's business to act on it.
+            hideSkipButton();
             return;
         }
         if (isAutoSkip(segment) && !autoSkipUndone(posSec)) {
@@ -3671,7 +3752,43 @@ public class PlayerActivity extends Activity {
         if (segment.type == SkipSegment.Type.AD) {
             return true;
         }
-        return Prefs.SKIP_MODE_AUTO.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+        return Prefs.SKIP_MODE_AUTO.equals(effectiveSkipMode(segment.credits));
+    }
+
+    /**
+     * How segments of this kind are offered right now: what the skip panel was told for this session, or
+     * the setting where it was told nothing. Credits carry their own answer, as they do in the settings.
+     *
+     * <p>The one place either is read, so a session's choice cannot apply to one half of the machinery
+     * and not the other — which is what happened while the mode was read straight off the preferences in
+     * two places and the panel had to know about both.
+     */
+    private String effectiveSkipMode(final boolean credits) {
+        if (skipModeSession != null) {
+            return skipModeSession;
+        }
+        return credits ? mPrefs.skipModeCredits : mPrefs.skipMode;
+    }
+
+    /**
+     * Whether this session has been told to leave this kind of segment alone — the mirror of asking for
+     * automatic skips, and the reason the panel offers both: a series whose intro is found in the wrong
+     * place is this session's problem, not a reason to change the setting for every film after it. Ads
+     * are nobody's choice.
+     */
+    private boolean isSkipOff(final SkipSegment segment) {
+        return segment.type != SkipSegment.Type.AD
+                && Prefs.SKIP_MODE_OFF.equals(effectiveSkipMode(segment.credits));
+    }
+
+    /**
+     * Takes the session's choice, or gives it back with {@code null} — which is what the panel's reset
+     * does, leaving the settings in charge again. Nothing is written to the preferences, and the segment
+     * on screen follows the new answer at once rather than at the next one.
+     */
+    private void setSessionSkipMode(final String mode) {
+        skipModeSession = mode;
+        skipTick();
     }
 
     /**
@@ -3994,7 +4111,7 @@ public class PlayerActivity extends Activity {
 
     /** Whether this segment's position is set to offer the Skip button briefly rather than throughout. */
     private boolean isBriefSkip(SkipSegment segment) {
-        return Prefs.SKIP_MODE_BRIEF.equals(segment.credits ? mPrefs.skipModeCredits : mPrefs.skipMode);
+        return Prefs.SKIP_MODE_BRIEF.equals(effectiveSkipMode(segment.credits));
     }
 
     /** True while brief mode's timed offer is on screen and owns the pill. */
@@ -6804,8 +6921,8 @@ public class PlayerActivity extends Activity {
         if (!secondaryOnDemand()) {
             return SecondarySubtitles.State.SHOWN;
         }
-        // Nothing stands where the hint would be: a pause is what asks for it, and until it is asked
-        // for the first line keeps its usual place.
+        // A pause is what asks for it, and until it is asked for its slot above the first line stands
+        // empty. The first line keeps its usual place either way.
         return locked || !secondarySubtitles.isPeeking()
                 ? SecondarySubtitles.State.HIDDEN : SecondarySubtitles.State.SHOWN;
     }
@@ -8391,8 +8508,10 @@ public class PlayerActivity extends Activity {
                     false, this::showSubtitleOffsetDialog));
         }
         if (skipOffsetReachable()) {
-            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.button_skip_offset),
-                    skipOffsetSec == 0 ? null : OffsetPanel.format(skipOffsetSec),
+            // Named after the panel it opens, which is no longer only the offset: the row that said
+            // "Skip offset" now leads to how each kind of segment is offered as well.
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.skip_session_title),
+                    skipOffsetSec == 0 ? null : OffsetPanel.format(this, skipOffsetSec),
                     false, this::showSkipOffsetDialog));
         }
         if (player != null) {
@@ -11618,6 +11737,40 @@ public class PlayerActivity extends Activity {
         return null;
     }
 
+    /**
+     * Where the hint is drawn: in a band of its own, under the first line while the second line is
+     * simply on and above it while it is asked for. Both lines sit at the bottom of the picture either
+     * way, and in both modes the band is reserved — so nothing moves when the hint arrives or goes.
+     *
+     * <p>Which line the band is taken out of is the whole difference between the two modes. With the
+     * hint always on it comes out from under the first line, which then sits a band higher for the whole
+     * film — the price of reading both lines all the time. On demand the first line is read on its own
+     * for almost all of the film, so it keeps the place every other mode gives it and the room is
+     * reserved above it instead: {@code gap + mainRoom}.
+     *
+     * <p>Reserved, not measured, and for the same reason as the band itself. Tucking the hint exactly
+     * against the first line's painted top edge is not possible — media3 does not report where it drew
+     * the glyphs, and a slot that follows the text is a first line that jumps. So {@code mainRoom} is
+     * the room two lines of the main size take and the hint's slot begins above that. The ceiling: a cue
+     * that wraps to a third line grows into the slot.
+     *
+     * @param gap      the resting distance from the bottom edge, the one the first line keeps
+     * @param mainRoom the room held for the first line to grow into, or 0 when the hint sits under it
+     */
+    private void placeHint(final int gap, final int mainRoom) {
+        final View hint = playerView.findViewById(R.id.subtitle_secondary);
+        if (hint == null) {
+            return;
+        }
+        final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) hint.getLayoutParams();
+        // Set rather than left to the layout: the mode can be changed while the player is up, and the
+        // hint used to be placed against the top edge on demand.
+        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = 0;
+        lp.bottomMargin = gap + mainRoom;
+        hint.setLayoutParams(lp);
+    }
+
     /** Line box as a multiple of the text size, for reserving the band without measuring anything. */
     private static final float SECONDARY_LINE_HEIGHT = 1.3f;
     /** Matches SecondarySubtitles.MAX_LINES: the band has to hold whatever the line may grow to. */
@@ -11697,21 +11850,12 @@ public class PlayerActivity extends Activity {
         // was the first attempt and only moves cues that carry no position of their own — a track muxed
         // into MP4 or HLS usually does carry one, and those landed on top of the hint.
         // CanvasSubtitleOutput lays every cue out inside the padding, positioned or not.
-        // Both lines move up together while the control bar is over the place the hint sits in. Only
-        // while a hint is actually drawn: on demand the bar is what the peek arrives on top of — a pause
-        // is what asks for the hint and a pause is what shows the controller — and lifting the main line
-        // whenever the controller appears would make ordinary subtitles jump on every tap.
-        final int lift = controllerLift(gap);
-        Utils.setViewParams(subtitleView, 0, 0, 0, band + lift,
+        Utils.setViewParams(subtitleView, 0, 0, 0, band,
                 subtitleSideMargin(orientation), 0, subtitleSideMargin(orientation), 0);
 
-        final View hint = playerView.findViewById(R.id.subtitle_secondary);
-        if (hint != null) {
-            final ViewGroup.MarginLayoutParams lp =
-                    (ViewGroup.MarginLayoutParams) hint.getLayoutParams();
-            lp.bottomMargin = gap + lift;
-            hint.setLayoutParams(lp);
-        }
+        // On demand the hint sits above the first line, so what has to be reserved is a line of the
+        // main size rather than of its own; the band under the first line is then nothing.
+        placeHint(gap, secondaryOnDemand() ? secondaryBandPx(mainPx) : 0);
         if (secondarySubtitles != null) {
             secondarySubtitles.style(mPrefs.subtitleSecondaryTextColor,
                     mPrefs.subtitleSecondaryBackgroundColor, hintPx,
@@ -11719,10 +11863,10 @@ public class PlayerActivity extends Activity {
                             mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL),
                     ui.dpS(6), ui.dpS(8), ui.dpS(4));
         }
-        // Translation rather than more padding: a hint that comes and goes would otherwise relayout the
-        // subtitle view on every frame of the move, and the number the text size is derived from is the
-        // height minus that padding — the very coupling phase 3a took out.
-        slideSubtitles(subtitleView, secondaryPeekShiftPx(hintPx));
+        // Zero, and it stays zero: the band under the first line is reserved for as long as a second
+        // line is chosen, so neither line has anywhere to travel to. Still called, because a rebuilt
+        // view can come back carrying a translation from before.
+        slideSubtitles(subtitleView, 0);
     }
 
     /**
@@ -11743,39 +11887,6 @@ public class PlayerActivity extends Activity {
         }
         subtitleShift = target;
         subtitleView.setTranslationY(target);
-    }
-
-    /**
-     * How far the two lines rise to clear the control bar, or 0 when there is nothing to clear.
-     *
-     * <p>The hint sits a fixed gap off the bottom edge, and that is exactly where the bar's row of
-     * buttons is — so a hint and a visible controller land on top of each other. On demand that is not
-     * an edge case but the normal course of events: the pause that asks for the hint is the same press
-     * that puts the controller up, and the controller does not hide again while playback is stopped.
-     *
-     * @param gap the resting distance from the bottom edge, already counted once
-     */
-    private int controllerLift(final int gap) {
-        if (!controllerVisible || secondarySubtitles == null || !secondarySubtitles.isVisible()) {
-            return 0;
-        }
-        // Measured off the chrome itself rather than from one view's height: the block to clear is the
-        // time bar and the button row together, and they are siblings with margins between them, so a
-        // single height came out short and left the hint's plate resting on the progress line.
-        final Rect window = new Rect();
-        if (!playerView.getGlobalVisibleRect(window)) {
-            return 0;
-        }
-        int top = window.bottom;
-        for (final int id : new int[] { R.id.exo_bottom_bar, androidx.media3.ui.R.id.exo_progress }) {
-            final View view = findViewById(id);
-            final Rect bounds = new Rect();
-            if (view != null && view.getVisibility() == View.VISIBLE
-                    && view.getGlobalVisibleRect(bounds)) {
-                top = Math.min(top, bounds.top);
-            }
-        }
-        return Math.max(0, window.bottom - top + ui.dpS(16) - gap);
     }
 
     private int subtitleViewHeightPx(final SubtitleView subtitleView) {
@@ -11828,40 +11939,39 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * Height reserved for the second line while it is on.
+     * The height a line of subtitles at {@code textPx} is given — the band the second line sits in, and
+     * on demand the room held under that band for the first line.
      *
      * <p>Fixed rather than measured, and that is the whole design. The main line is bottom-anchored
-     * inside a full-bleed {@code SubtitleView}, so placing anything exactly above it would mean
-     * measuring the cue it is currently drawing — and a band that follows the hint is a main line that
-     * jumps every time the hint appears. So the band is reserved for as long as a second line is
-     * chosen, and the main line's position becomes a function of one boolean instead of of the text.
+     * inside a full-bleed {@code SubtitleView}, so placing anything exactly against it would mean
+     * measuring the cue it is currently drawing — and a band that follows the text is a line that jumps
+     * every time the other one appears. So the room is reserved for as long as a second line is chosen,
+     * and where each line sits becomes a function of one boolean instead of of the text.
      */
-    private int secondaryBandPx(final float hintPx) {
-        return Math.round(SECONDARY_MAX_LINES * hintPx * SECONDARY_LINE_HEIGHT)
+    private int secondaryBandPx(final float textPx) {
+        return Math.round(SECONDARY_MAX_LINES * textPx * SECONDARY_LINE_HEIGHT)
                 + 2 * ui.dpS(4) + ui.dpS(12);
     }
 
     /**
-     * What the band holds when nothing has been asked for: two lines of hint while the second line is
-     * simply on, and nothing at all while it is waiting to be asked for. On demand that is the whole
-     * point — the first line keeps its usual place, and the seventh of the screen the band costs is
-     * spent for the seconds the hint is being read rather than for the film.
+     * The band under the first line: held for as long as a second line is chosen and whether or not the
+     * hint is being drawn at this moment, and nothing at all on demand.
+     *
+     * <p>On demand it was tried both ways and it is neither. Opened by the peek and closed after it, the
+     * band cost the picture nothing while nobody was reading it — a real saving and the wrong trade,
+     * because the peek is asked for with a pause, so every pause moved both lines up and back down
+     * again. Held for the whole film instead, nothing moved, but the line being read sat a band higher
+     * from the first frame to the last for the sake of a hint that is on screen for seconds of it. So on
+     * demand the first line is left exactly where every other mode puts it, and the hint's slot is
+     * reserved above it — see {@link #placeHint}.
      */
     private int secondaryRestingBandPx(final float hintPx) {
-        if (secondarySubtitles == null || !secondarySubtitles.isVisible() || secondaryOnDemand()) {
+        if (secondarySubtitles == null || !secondaryActive() || secondaryOnDemand()) {
             return 0;
         }
         return secondaryBandPx(hintPx);
     }
 
-    /** How far the lines travel while a hint that was asked for is on screen. */
-    private int secondaryPeekShiftPx(final float hintPx) {
-        if (secondarySubtitles == null || !secondaryOnDemand()
-                || secondarySubtitles.getState() != SecondarySubtitles.State.SHOWN) {
-            return 0;
-        }
-        return secondaryBandPx(hintPx);
-    }
 
     @TargetApi(26)
     boolean updatePictureInPictureActions(final int iconId, final int resTitle, final int controlType, final int requestCode) {

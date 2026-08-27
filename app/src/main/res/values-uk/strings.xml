@@ -285,7 +285,7 @@
     <string name="subtitle_search_season">Сезон %1$d</string>
     <string name="subtitle_search_episode">Епізод %1$d</string>
     <string name="pref_subtitle_translate">Машинний переклад</string>
-    <string name="pref_subtitle_translate_on">Текст надсилається до Google Перекладача</string>
+    <string name="pref_subtitle_translate_on">Текст надсилається до онлайн-сервісу перекладу</string>
     <string name="pref_subtitle_translate_off">Субтитри показуються тією мовою, якою їх знайдено</string>
     <string name="pref_subtitle_translate_backends">Сервіси перекладу</string>
     <string name="pref_subtitle_translate_backends_none">Не задано — субтитри не перекладаються</string>

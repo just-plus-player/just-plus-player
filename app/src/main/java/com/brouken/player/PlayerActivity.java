@@ -273,6 +273,14 @@ public class PlayerActivity extends Activity {
 
     public CustomPlayerView playerView;
     public static ExoPlayer player;
+    // The session lives in statics (player, haveMedia, locked, boostLevel, ...), so only one screen may
+    // own it — and the system does not guarantee that. A launcher api start (Lampa) goes through
+    // startActivityForResult, which lands the activity inside the caller's task and skips looking for a
+    // task to reuse, so singleTask stops deduplicating: a tap on the icon then finds no task rooted at
+    // this activity and builds a second screen beside the running one. live is whoever owns the session;
+    // handedOver marks a screen that has given it away and must keep its hands off what the new one builds.
+    private static PlayerActivity live;
+    private boolean handedOver;
     // Live handle to the current player's audio sink wrapper, for recoverByRevokingAudioMime().
     private AudioPassthroughDenylistSink audioSink;
     private YouTubeOverlay youTubeOverlay;
@@ -1040,6 +1048,17 @@ public class PlayerActivity extends Activity {
     @RequiresApi(api = Build.VERSION_CODES.O)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // A screen that already owns the session hands it over first, before anything below touches the
+        // statics it is holding. Read while the player is still its own, through the same pair that
+        // carries a session across an activity kill.
+        Intent inheritedIntent = null;
+        Bundle inheritedState = null;
+        if (live != null && live != this && !live.isFinishing()) {
+            inheritedIntent = live.getIntent();
+            inheritedState = new Bundle();
+            live.saveApiSession(inheritedState);
+            live.handOver();
+        }
         // Rotate ASAP, before super/inflating to avoid glitches with activity launch animation
         mPrefs = new Prefs(this);
         systemVolume = mPrefs.systemVolume;
@@ -1111,13 +1130,19 @@ public class PlayerActivity extends Activity {
             }
         } else if (launchIntent.getData() != null) {
             handleViewIntent(launchIntent);
+        } else if (inheritedIntent != null && inheritedIntent.getData() != null) {
+            // The icon was tapped while a session was playing. The screen that owned it cannot be brought
+            // forward — it sits in the launcher app's task, which needs REORDER_TASKS to raise — so carry
+            // that session on here instead of opening the empty state over a video that is still running.
+            setIntent(inheritedIntent);
+            handleViewIntent(inheritedIntent);
         } else {
             // Nothing came in — a launcher start opens on the empty state instead of resuming
             // whatever was last watched.
             mPrefs.suppressResume = true;
         }
         // After the intent, so a session being restored wins over the launch extras it was started with.
-        restoreApiSession(savedInstanceState);
+        restoreApiSession(savedInstanceState != null ? savedInstanceState : inheritedState);
 
         coordinatorLayout = findViewById(R.id.coordinatorLayout);
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -2241,6 +2266,8 @@ public class PlayerActivity extends Activity {
         }
 
         maybeCheckForUpdate(launchIntent);
+        // Built and holding the statics now, so this is the screen a later launch has to take them from.
+        live = this;
     }
 
     // Silent, non-intrusive self-update check. Only the sideloaded universal build self-updates
@@ -2365,6 +2392,9 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (handedOver) {
+            return;
+        }
         savePlayer();
     }
 
@@ -2383,6 +2413,11 @@ public class PlayerActivity extends Activity {
         // viewer reaching for the button, and the room must not be told to stop with us.
         if (together != null) {
             together.suspend();
+        }
+        // The player is a newer screen's now (see handOver), so nothing below may touch it: this screen
+        // has already saved and released what was its own.
+        if (handedOver) {
+            return;
         }
         // With no session worth keeping (leaving for good, or nothing loaded) tear down as before —
         // the empty state and its pulse are only ever (re)built by initializePlayer.
@@ -2425,6 +2460,9 @@ public class PlayerActivity extends Activity {
      */
     @Override
     protected void onDestroy() {
+        if (live == this) {
+            live = null;
+        }
         if (secondarySubtitles != null) {
             secondarySubtitles.clear();
         }
@@ -2446,6 +2484,10 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
+        saveApiSession(outState);
+    }
+
+    private void saveApiSession(Bundle outState) {
         if (!apiAccess || !haveMedia) {
             return;
         }
@@ -2527,6 +2569,17 @@ public class PlayerActivity extends Activity {
         if (state.containsKey("position")) {
             mPrefs.updatePosition(state.getLong("position"));
         }
+    }
+
+    /**
+     * Give the session up to a newer screen. finish() runs first and still sees the live player, so the
+     * launcher that started this screen is told the exact position, as leaving the video would; the
+     * teardown then frees the statics before the new screen builds its own player on them.
+     */
+    private void handOver() {
+        handedOver = true;
+        finish();
+        releasePlayer(true);
     }
 
     @SuppressLint("GestureBackNavigation")

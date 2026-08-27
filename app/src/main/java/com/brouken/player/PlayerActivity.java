@@ -895,6 +895,13 @@ public class PlayerActivity extends Activity {
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
     boolean playbackFinished;
+    // The last state worth handing a launcher back: an item that really played, where it was left and
+    // how long it is. An item that stalled or failed has neither a position nor a duration of its own,
+    // and a launcher given neither throws the whole result away — with it every episode watched before
+    // it, which it only ever learns about from the one result finish() sends.
+    private Uri reportUri;
+    private long reportPosition;
+    private long reportDuration;
 
     DisplayManager displayManager;
     DisplayManager.DisplayListener displayListener;
@@ -1009,6 +1016,8 @@ public class PlayerActivity extends Activity {
             // This poll runs exactly while playback does, which is exactly when a frozen picture can
             // happen, so the frame watchdog rides it instead of owning a second timer.
             videoFreezeTick();
+            // And for the same reason on the same tick: what a launcher gets back is what played.
+            rememberReport();
             if (player != null && player.isPlaying()) {
                 playerView.postDelayed(this, SKIP_POLL_INTERVAL_MS);
             }
@@ -2565,29 +2574,63 @@ public class PlayerActivity extends Activity {
         super.onBackPressed();
     }
 
+    /**
+     * Latch what the session could report if it ended right now. Polled while playback runs, so it holds
+     * the item that actually played rather than whatever happens to be on screen when the viewer leaves.
+     */
+    private void rememberReport() {
+        if (!intentReturnResult || player == null || !player.isCurrentMediaItemSeekable()) {
+            return;
+        }
+        final long duration = player.getDuration();
+        final long position = player.getCurrentPosition();
+        final Uri uri = currentMediaUri();
+        if (duration == C.TIME_UNSET || duration <= 0 || position <= 0 || uri == null) {
+            return;
+        }
+        reportUri = uri;
+        reportPosition = position;
+        reportDuration = duration;
+    }
+
     @Override
     public void finish() {
         if (intentReturnResult) {
             Intent intent = new Intent("com.mxtech.intent.result.VIEW");
             // Report which item finished so the launcher can attribute the position to the
             // correct playlist entry (and mark preceding ones watched), not just the launched one.
-            if (player != null) {
-                final MediaItem currentMediaItem = player.getCurrentMediaItem();
-                if (currentMediaItem != null && currentMediaItem.localConfiguration != null) {
-                    intent.setData(currentMediaItem.localConfiguration.uri);
-                }
-            }
+            Uri uri = currentMediaUri();
             intent.putExtra(API_END_BY, playbackFinished ? "playback_completion" : "user");
             if (!playbackFinished) {
+                long duration = 0;
+                long position = 0;
                 if (player != null) {
-                    long duration = player.getDuration();
-                    if (duration != C.TIME_UNSET) {
-                        intent.putExtra(API_DURATION, (int) player.getDuration());
+                    final long currentDuration = player.getDuration();
+                    if (currentDuration != C.TIME_UNSET) {
+                        duration = currentDuration;
                     }
                     if (player.isCurrentMediaItemSeekable()) {
-                        intent.putExtra(API_POSITION, (int) player.getCurrentPosition());
+                        position = player.getCurrentPosition();
                     }
                 }
+                // An item still loading (or one that failed) answers with neither, and a launcher handed
+                // neither drops the result whole — the episodes watched earlier in the session with it,
+                // since this is the only report it ever gets. Hand back the last item that did play; the
+                // one that never started is then reported as what it is, unwatched.
+                if ((position <= 0 || duration <= 0) && reportDuration > 0) {
+                    uri = reportUri;
+                    position = reportPosition;
+                    duration = reportDuration;
+                }
+                if (duration > 0) {
+                    intent.putExtra(API_DURATION, (int) duration);
+                }
+                if (position > 0) {
+                    intent.putExtra(API_POSITION, (int) position);
+                }
+            }
+            if (uri != null) {
+                intent.setData(uri);
             }
             setResult(Activity.RESULT_OK, intent);
         }

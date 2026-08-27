@@ -303,6 +303,13 @@ public class PlayerActivity extends Activity {
     // Progress below this over a whole window is not a load: 8 KB/s is far under anything playable, so it
     // is a socket dribbling keepalives rather than a source that is still working. Wait only for real bytes.
     private static final long LOAD_PROGRESS_MIN_BYTES = 256 * 1024;
+    // How much has to be buffered before playback resumes after a stall, on network media only. Media3
+    // asks for two seconds, which a torrent backend eats with its next pause to fetch pieces from peers:
+    // the player stops again, refills two seconds, stops again — the sawtooth users report as an endless
+    // load on a big remux that no error ever comes out of. Refilling properly costs one wait instead of
+    // twenty. It cannot become unreachable: a high-bitrate file caps its own buffer by bytes long before
+    // this, and shouldStartPlayback starts playing as soon as that cap is hit.
+    private static final int BUFFER_AFTER_REBUFFER_MS = 15_000;
     // Buffering that resolves this fast is not worth an indicator: the spinner would replace the play button
     // for a frame or two and read as a glitch. Recreating the audio track (restartPassthroughAudio) takes
     // about 35 ms, a track switch or a seek inside the buffer are the same order, and a real wait is always
@@ -9963,6 +9970,16 @@ public class PlayerActivity extends Activity {
         playerBuilder.setMediaSourceFactory(
                 new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
                         .setDataSourceFactory(dataSourceFactory));
+        // Everything but the last figure is Media3's own default; only the wait after a stall changes,
+        // and only for streams (file:// and content:// keep their separate, shorter defaults, where a
+        // stall means a slow disk rather than a source that fills in bursts).
+        playerBuilder.setLoadControl(new DefaultLoadControl.Builder()
+                .setBufferDurationsMsForStreaming(
+                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                        BUFFER_AFTER_REBUFFER_MS)
+                .build());
 
         player = playerBuilder.build();
 

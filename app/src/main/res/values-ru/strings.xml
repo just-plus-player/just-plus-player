@@ -54,6 +54,9 @@
     <string name="pref_title">Настройки</string>
     <string name="pref_repeat_toggle">Переключение повтора</string>
     <string name="pref_repeat_toggle_summary">Дополнительное управление, позволяющее бесконечно зацикливать видео (требуется перезапуск приложения)</string>
+    <string name="pref_tv_single_back">Выход одним нажатием «Назад»</string>
+    <string name="pref_tv_single_back_on">«Назад» выходит из проигрывателя, как только закрывать больше нечего</string>
+    <string name="pref_tv_single_back_off">«Назад» просит нажать ещё раз, прежде чем выйти из проигрывателя</string>
     <string name="pref_disable_volume_brightness_gestures">Отключить жесты громкости и яркости</string>
     <string name="pref_disable_volume_brightness_gestures_on">Свайпы вверх и вниз ничего не делают; перемотка, масштаб и кнопки громкости работают</string>
     <string name="pref_disable_volume_brightness_gestures_off">Проведите вверх или вниз, чтобы изменить яркость в левой части экрана и громкость в правой</string>
@@ -204,6 +207,9 @@
     <string name="stats_report_message">Отправьте эти подробности воспроизведения, сообщая о проблеме с изображением или звуком.</string>
     <string name="pref_show_stats_on">Буфер, декодеры и пропущенные кадры показываются с элементами управления</string>
     <string name="pref_show_stats_off">Подробности воспроизведения скрыты</string>
+    <string name="pref_keep_awake_on_pause">Не гасить экран на паузе</string>
+    <string name="pref_keep_awake_on_pause_on">Заставка устройства не включается; изображение затемняется через минуту, а через два часа экран отдаётся системе</string>
+    <string name="pref_keep_awake_on_pause_off">Пауза остаётся на усмотрение устройства, и его заставка включается как обычно</string>
     <string name="volume_high_warning">Высокая громкость может повредить слух</string>
     <string name="pref_file_access_auto">Авто</string>
     <string name="pref_file_access">Доступ к файлам</string>

@@ -55,6 +55,9 @@
     <string name="pref_auto_pip_off">Не перемикатися автоматично на режим PiP</string>
     <string name="pref_repeat_toggle">Переключення повтору</string>
     <string name="pref_repeat_toggle_summary">Додатковий контроль, що дозволяє необмежений цикл відео (потрібно перезапустити додаток)</string>
+    <string name="pref_tv_single_back">Вихід одним натисканням «Назад»</string>
+    <string name="pref_tv_single_back_on">«Назад» виходить із програвача, щойно не лишається чого закрити</string>
+    <string name="pref_tv_single_back_off">«Назад» просить натиснути ще раз, перш ніж вийти з програвача</string>
     <string name="pref_disable_volume_brightness_gestures">Вимкнути жести гучності та яскравості</string>
     <string name="pref_disable_volume_brightness_gestures_on">Проведення вгору та вниз нічого не робить; перемотування, масштаб і кнопки гучності працюють</string>
     <string name="pref_disable_volume_brightness_gestures_off">Проведіть вгору або вниз, щоб змінити яскравість у лівій частині екрана та гучність у правій</string>
@@ -211,6 +214,9 @@
     <string name="stats_report_message">Надішліть ці подробиці відтворення, повідомляючи про проблему із зображенням чи звуком.</string>
     <string name="pref_show_stats_on">Буфер, декодери та пропущені кадри показуються з елементами керування</string>
     <string name="pref_show_stats_off">Подробиці відтворення приховані</string>
+    <string name="pref_keep_awake_on_pause">Не вимикати екран на паузі</string>
+    <string name="pref_keep_awake_on_pause_on">Заставка пристрою не вмикається; зображення тьмяніє через хвилину, а через дві години екран віддається системі</string>
+    <string name="pref_keep_awake_on_pause_off">Пауза лишається на розсуд пристрою, і його заставка вмикається як завжди</string>
     <string name="volume_high_warning">Висока гучність може зашкодити слуху</string>
     <string name="pref_file_access">Доступ до файлів</string>
     <string name="pref_file_access_auto">Автоматично</string>

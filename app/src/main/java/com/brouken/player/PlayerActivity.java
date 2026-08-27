@@ -594,6 +594,20 @@ public class PlayerActivity extends Activity {
     // Same guard on TV, once Back has nothing left to close: a stray press on a remote must not drop
     // out of the player.
     private boolean backPressedOnce;
+    // Holding the screen through a pause is what keeps the box's screensaver away, and the screensaver
+    // is what takes the audio output — and, with the memory pressure behind it, sometimes the process —
+    // down with it. What it costs is a still picture and a control bar that never hides (a pause sets
+    // the controller timeout to -1) burnt into a panel for as long as the pause lasts. So the hold comes
+    // with a black sheet faded over everything once the pause has stood a minute, and is given up
+    // altogether once it has stood two hours: whoever fell asleep does not need the television on.
+    private static final long DIM_DELAY_MS = 60_000L;
+    private static final long KEEP_AWAKE_MAX_MS = 2 * 60 * 60 * 1000L;
+    private static final float DIM_ALPHA = 0.85f;
+    private static final int DIM_IN_MS = 800;
+    private static final int DIM_OUT_MS = 300;
+    private View dimOverlay;
+    private final Runnable dimRunnable = this::dim;
+    private final Runnable keepAwakeGiveUpRunnable = () -> playerView.setKeepScreenOn(false);
     // Set while a Down press is opening the controls, so focus lands on the time bar instead of play/pause.
     private boolean focusTimeBarOnShow;
     // The page shown when there is nothing to play; owns its own views, reveal and pulse.
@@ -1145,6 +1159,7 @@ public class PlayerActivity extends Activity {
         restoreApiSession(savedInstanceState != null ? savedInstanceState : inheritedState);
 
         coordinatorLayout = findViewById(R.id.coordinatorLayout);
+        dimOverlay = findViewById(R.id.dim_overlay);
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         playerView = findViewById(R.id.video_view);
         // Built with the view rather than with the player: it paints from a file and asks for the
@@ -2384,6 +2399,9 @@ public class PlayerActivity extends Activity {
     public void onResume() {
         super.onResume();
         restorePlayStateAllowed = true;
+        // Coming back is a sign of life, and it is also where a setting turned off while we were away
+        // stops applying.
+        resetDim();
         // Back in front, so nothing we launched can still need the device's auto-rotate. onActivityResult
         // normally beats us to this; it does not run for a picker that finishes without handing back a result.
         restoreRotationLock();
@@ -2598,9 +2616,10 @@ public class PlayerActivity extends Activity {
         }
         // On TV the remote's Back is pressed mid-interaction all the time, so it has to consume what is
         // open before it means "leave": a pending key-seek, then the controls. Only with nothing left to
-        // close does it ask for a second press. This lives here rather than in onKeyDown because
-        // enableOnBackInvokedCallback routes Back straight to onBackPressed on Android 13+, where it
-        // never arrives as a key event at all.
+        // close does it ask for a second press — which the viewer can turn off, keeping the two steps that
+        // consume something and dropping only the confirmation. This lives here rather than in onKeyDown
+        // because enableOnBackInvokedCallback routes Back straight to onBackPressed on Android 13+, where
+        // it never arrives as a key event at all.
         if (isTvBox && haveMedia && !locked) {
             if (keyScrubTarget >= 0) {
                 playerView.removeCallbacks(keyScrubCommit);
@@ -2616,7 +2635,7 @@ public class PlayerActivity extends Activity {
                 playerView.hideController();
                 return;
             }
-            if (!backPressedOnce) {
+            if (!mPrefs.tvSingleBack && !backPressedOnce) {
                 backPressedOnce = true;
                 Utils.showText(playerView, getString(R.string.press_back_again), 2000);
                 playerView.postDelayed(() -> backPressedOnce = false, 2000);
@@ -3001,6 +3020,13 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // Before anything else, including the locked early-return below: a dimmed screen that a locked
+        // player cannot wake is a screen with no way back. The first press only brings the picture back
+        // and is swallowed, the way waking a screen anywhere else does not also press what was under it.
+        if (resetDim()) {
+            return true;
+        }
+
         // While locked, swallow every key at the earliest point — before the view hierarchy,
         // onKeyDown, and the window's default (MediaSession-backed) volume handling — so hardware
         // volume/media/seek keys can't act. BACK is excluded so the normal lock-aware exit path
@@ -9722,6 +9748,7 @@ public class PlayerActivity extends Activity {
             updateSubtitleStyle(this);
             updateOverlayClock();
             updateStats();
+            resetDim();
             // Coming back from the settings screen no longer rebuilds the player by itself (see onStop),
             // but options like the decoder priority or tunneling are baked into it at build time. So
             // rebuild when the screen actually changed something — going in for a look costs nothing.
@@ -10994,7 +11021,7 @@ public class PlayerActivity extends Activity {
                         || player.getPlaybackState() == Player.STATE_READY)) {
                 playerView.postDelayed(rebufferArmRunnable, REBUFFER_ARM_MS);
             }
-            playerView.setKeepScreenOn(isPlaying);
+            resetDim();
 
             if (Utils.isPiPSupported(PlayerActivity.this)) {
                 if (isPlaying) {
@@ -12250,6 +12277,50 @@ public class PlayerActivity extends Activity {
             e.printStackTrace();
         }
         return false;
+    }
+
+    /** Whether a pause is currently entitled to hold the screen awake. */
+    private boolean keepAwakeOnPause() {
+        return mPrefs != null && mPrefs.keepAwakeOnPause && isTvBox && haveMedia && !isInPip();
+    }
+
+    /**
+     * Every sign of life comes through here: it takes the sheet away and re-arms it, and it is the one
+     * place that decides whether the screen is held. Returns true when the caller's event did nothing but
+     * wake the screen, so it can be swallowed — Back on a dimmed screen would otherwise leave the player.
+     */
+    private boolean resetDim() {
+        if (dimOverlay == null) {
+            return false;
+        }
+        playerView.removeCallbacks(dimRunnable);
+        playerView.removeCallbacks(keepAwakeGiveUpRunnable);
+
+        final boolean wasDim = dimOverlay.getVisibility() == View.VISIBLE;
+        if (wasDim) {
+            dimOverlay.animate().cancel();
+            dimOverlay.animate().alpha(0f).setDuration(DIM_OUT_MS)
+                    .withEndAction(() -> dimOverlay.setVisibility(View.GONE));
+        }
+
+        final boolean playing = player != null && player.isPlaying();
+        final boolean holding = keepAwakeOnPause();
+        playerView.setKeepScreenOn(playing || holding);
+        if (holding && !playing) {
+            playerView.postDelayed(dimRunnable, DIM_DELAY_MS);
+            playerView.postDelayed(keepAwakeGiveUpRunnable, KEEP_AWAKE_MAX_MS);
+        }
+        return wasDim;
+    }
+
+    private void dim() {
+        if (!keepAwakeOnPause() || (player != null && player.isPlaying())) {
+            return;
+        }
+        dimOverlay.animate().cancel();
+        dimOverlay.setAlpha(0f);
+        dimOverlay.setVisibility(View.VISIBLE);
+        dimOverlay.animate().alpha(DIM_ALPHA).setDuration(DIM_IN_MS).withEndAction(null);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)

@@ -19,6 +19,7 @@
     <string name="error_playback_timeout">Відтворення надто довго не починається. Спробуйте ще раз.</string>
     <string name="error_playback_stalled">Відтворення зупинилося і не продовжилося. Спробуйте ще раз.</string>
     <string name="error_stream_interrupted">Ефір постійно переривається, продовжити не вдалося. Спробуйте пізніше.</string>
+    <string name="error_software_video_too_slow">%1$s %2$s на цьому пристрої декодується програмно, і процесор не встигає. Спробуйте копію з меншою роздільною здатністю.</string>
     <string name="error_stream_broken">Потік відео пошкоджено або недоступний. Спробуйте ще раз.</string>
     <string name="error_stream_http_status">Помилка сервера %1$d на %2$s</string>
     <string name="error_media_access_expired">Доступ до цього відео закінчився. Відкрийте його знову із застосунку, звідки поділилися.</string>
@@ -50,6 +51,7 @@
     <string name="pref_tunneling">Тунельне відтворення</string>
     <string name="pref_tunneling_summary">На частині ТВ-приставок зображення повністю зупиняється без жодної помилки — тоді додаток вимкне цей параметр сам. Де працює, покращує відтворення 4K/HDR</string>
     <string name="notice_tunneling_disabled">Тунельне відтворення вимкнено — на цьому пристрої воно зупиняє зображення</string>
+    <string name="notice_quality_lowered">Перемкнено на %1$s — оригіналу потрібен апаратний декодер, якого на цьому пристрої немає</string>
     <string name="pref_auto_pip">Автоматичний режим PiP</string>
     <string name="pref_auto_pip_on">Перемикати автоматично на режим PiP при виході з додатку</string>
     <string name="pref_auto_pip_off">Не перемикатися автоматично на режим PiP</string>

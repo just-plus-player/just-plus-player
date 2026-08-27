@@ -84,7 +84,17 @@
     <string name="pref_skip_hide_locked_off">The Skip button and auto-skip notification remain visible while the screen is locked</string>
     <string name="skip_offset_title">Skip offset</string>
     <string name="skip_offset_reset">Reset</string>
-    <string name="button_skip_offset">Skip offset</string>
+    <!-- Offset readout and summaries: the number is formatted in the viewer's locale, the unit
+         belongs to the language. -->
+    <string name="offset_seconds">%1$s s</string>
+    <!-- The player's skip panel: a mode per kind of segment for this session only, plus the offset.
+         Short labels because four of them share the width of the panel; the settings screen is where
+         each mode is spelled out in full. -->
+    <string name="skip_session_title">Skips in this session</string>
+    <string name="skip_mode_brief_short">5 s</string>
+    <string name="skip_mode_button_short">Button</string>
+    <string name="skip_mode_auto_short">Auto</string>
+    <string name="skip_mode_off_short">Never</string>
     <string name="button_skip">Skip</string>
     <string name="button_skip_countdown">Skip %1$d</string>
     <string name="notification_skipped">Skipped</string>

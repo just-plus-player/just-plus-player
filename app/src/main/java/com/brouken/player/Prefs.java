@@ -125,6 +125,12 @@ class Prefs {
     public static final String SKIP_MODE_BRIEF = "brief";
     public static final String SKIP_MODE_BUTTON = "button";
     public static final String SKIP_MODE_AUTO = "auto";
+    /**
+     * Offer nothing: the session's mute for segments. Only ever a choice made in the player's skip
+     * panel — deliberately not in the settings list, where switching skipping off is a switch for the
+     * whole feature rather than one film's worth of it.
+     */
+    public static final String SKIP_MODE_OFF = "off";
 
     // Which skips offer the "go back" pill afterwards.
     // When the online subtitle search runs. One choice, because the two switches this replaced were

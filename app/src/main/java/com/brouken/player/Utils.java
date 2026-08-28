@@ -31,6 +31,7 @@ import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
 import android.view.Display;
@@ -72,6 +73,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ArrayDeque;
 import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
@@ -579,9 +581,64 @@ class Utils {
         return (bitrate / 1000) + " kbps";
     }
 
+    /**
+     * Every line the app traces about itself. Kept in memory in every build, not only a debug one: the
+     * subtitle search, the fetchers and the title lookup already say what they asked and what came back,
+     * and that is exactly what a report about "it finds nothing for me" has to carry — but Log.d reaches
+     * nobody who is not holding an adb cable. The report screen appends recentLog(), so the trace leaves
+     * a phone by the Upload button and a TV box by its QR.
+     *
+     * <p>Bounded, and consecutive duplicates are folded: onTracksChanged fires several times per item,
+     * so the same "not searching" line would otherwise push everything useful out of the window.
+     */
+    private static final int LOG_LINES = 200;
+    private static final ArrayDeque<String> LOG = new ArrayDeque<>();
+    private static final long LOG_BASE_MS = SystemClock.elapsedRealtime();
+    private static String lastLogged;
+    private static int lastLoggedRepeats;
+
     public static void log(final String text) {
         if (BuildConfig.DEBUG) {
             Log.d("JustPlayer", text);
+        }
+        synchronized (LOG) {
+            if (text.equals(lastLogged)) {
+                lastLoggedRepeats++;
+                // Rewrite the tail rather than grow: the count is the information, the repetition is not.
+                LOG.removeLast();
+                LOG.addLast(logLine(text) + " (x" + (lastLoggedRepeats + 1) + ")");
+                return;
+            }
+            lastLogged = text;
+            lastLoggedRepeats = 0;
+            while (LOG.size() >= LOG_LINES) {
+                LOG.removeFirst();
+            }
+            LOG.addLast(logLine(text));
+        }
+    }
+
+    // Seconds since the process started rather than a wall clock: what a reader needs from this is how
+    // long a source took and where a fifteen-second budget ran out, not what time it was.
+    private static String logLine(final String text) {
+        final long ms = SystemClock.elapsedRealtime() - LOG_BASE_MS;
+        return String.format(Locale.US, "%6.2f %s", ms / 1000f, text);
+    }
+
+    /** The trace so far, oldest first; empty string when nothing has been traced. */
+    public static String recentLog() {
+        synchronized (LOG) {
+            if (LOG.isEmpty()) {
+                return "";
+            }
+            final StringBuilder sb = new StringBuilder();
+            for (String line : LOG) {
+                if (sb.length() > 0) {
+                    sb.append('\n');
+                }
+                sb.append(line);
+            }
+            return sb.toString();
         }
     }
 

@@ -136,6 +136,12 @@ dependencies {
     def androidxCoreVersion = '1.8.0'
     implementation "androidx.media3:media3-session:$media3_version"
     implementation "androidx.media3:media3-datasource:$media3_version"
+    // Media reads go through OkHttp rather than HttpURLConnection, for the connection pool (see
+    // MEDIA_HTTP_CLIENT). Excludes media3-exoplayer like every other media3 module here, so it resolves
+    // against the local prebuilt AAR.
+    implementation("androidx.media3:media3-datasource-okhttp:$media3_version") {
+        exclude group: "androidx.media3", module: "media3-exoplayer"
+    }
     implementation "androidx.media3:media3-decoder:$media3_version"
     implementation "androidx.media3:media3-common:$media3_version"
     implementation "androidx.media3:media3-container:$media3_version"

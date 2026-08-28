@@ -69,6 +69,7 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.Window;
@@ -114,6 +115,7 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.util.StuckPlayerException;
 import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
@@ -312,13 +314,6 @@ public class PlayerActivity extends Activity {
     // Progress below this over a whole window is not a load: 8 KB/s is far under anything playable, so it
     // is a socket dribbling keepalives rather than a source that is still working. Wait only for real bytes.
     private static final long LOAD_PROGRESS_MIN_BYTES = 256 * 1024;
-    // How much has to be buffered before playback resumes after a stall, on network media only. Media3
-    // asks for two seconds, which a torrent backend eats with its next pause to fetch pieces from peers:
-    // the player stops again, refills two seconds, stops again — the sawtooth users report as an endless
-    // load on a big remux that no error ever comes out of. Refilling properly costs one wait instead of
-    // twenty. It cannot become unreachable: a high-bitrate file caps its own buffer by bytes long before
-    // this, and shouldStartPlayback starts playing as soon as that cap is hit.
-    private static final int BUFFER_AFTER_REBUFFER_MS = 15_000;
     // Buffering that resolves this fast is not worth an indicator: the spinner would replace the play button
     // for a frame or two and read as a glitch. Recreating the audio track (restartPassthroughAudio) takes
     // about 35 ms, a track switch or a seek inside the buffer are the same order, and a real wait is always
@@ -368,12 +363,36 @@ public class PlayerActivity extends Activity {
     // thread by the analytics listener, reset per player build.
     private String videoDecoderName;
     private String audioDecoderName;
+    // Audio mimes this run has dropped from passthrough to a decoder (see recoverByRevokingAudioMime).
+    // Deliberately not reset by initializePlayer: that recovery rebuilds the player, and the rebuild has
+    // to come up with the fallback already in force or it fails again on the same frame.
+    private final Set<String> sessionRevokedAudioMimes = new HashSet<>();
     // One-shot guard for recoverByLoweringQuality(). Deliberately not reset by initializePlayer: the
     // downgrade itself rebuilds the player, and a variant that is still beyond the device has to fail
     // once rather than walk the whole list.
     private boolean softwareVideoDowngraded;
     // Loader's throughput estimate — the one stats figure the player itself cannot be asked for.
     private long bandwidthBitrate;
+    /**
+     * The client the media path reads through. OkHttp rather than HttpURLConnection for one reason:
+     * DefaultHttpDataSource calls disconnect() on every close and pools nothing, so each of the four
+     * cold range requests a container re-read costs is a fresh connection — and a torrent backend spawns
+     * a reader and a preload window per connection, then tears it down. A pool holds the socket instead.
+     * Static, so the pool survives the player rebuilds the recovery ladder does.
+     *
+     * <p>Patient on purpose: a torrent backend goes quiet while it fetches pieces from peers, and the old
+     * thirty-second read timeout turned that silence into a source error and a re-read of the whole
+     * container. Nothing is lost by waiting — the load watchdog still stops the player at thirty seconds
+     * of no progress and says so, which is the message the viewer needs; what goes away is the retry
+     * storm behind it. The same figures the reference player uses (dddplayer, PlayerManager.kt).
+     */
+    private static final okhttp3.OkHttpClient MEDIA_HTTP_CLIENT = new okhttp3.OkHttpClient.Builder()
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build();
     private final AnalyticsListener playbackInfoListener = new AnalyticsListener() {
         @Override
         public void onVideoDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
@@ -402,6 +421,8 @@ public class PlayerActivity extends Activity {
     // Re-reads spent on network source errors this session (see recoverFromSourceError), reset per player
     // build so a chronically bad stream costs a bounded number of re-prepares instead of one per resume.
     private int sourceRetries;
+    // The stream the budget above was spent on, so a rebuild of the same one does not refill it.
+    private String sourceRetriesUri;
     private static final int MAX_SOURCE_RETRIES = 3;
     // Held in a field (like loadTimeoutRunnable) so releasePlayer can drop a re-read that no longer has a
     // session to belong to.
@@ -605,6 +626,18 @@ public class PlayerActivity extends Activity {
     // the controller timeout to -1) burnt into a panel for as long as the pause lasts. So the hold comes
     // with a black sheet faded over everything once the pause has stood a minute, and is given up
     // altogether once it has stood two hours: whoever fell asleep does not need the television on.
+    /**
+     * How long a pause may hold the source open. Nothing on the pause path closes it: the loader is
+     * blocked at the byte cap with a read half-issued, so the connection stays established and silent —
+     * measured at four minutes and counting, zero bytes, while 144 MB of buffer stays allocated. A
+     * torrent backend has a reader registered for that socket the whole time.
+     *
+     * <p>Long on purpose. player.stop() keeps the timeline and the position but drops the buffer, so
+     * resuming pays a fresh container read (four cold range requests on a 56 GB Matroska) plus the
+     * refill — which for a short pause costs the server more than the idle socket does. Five minutes is
+     * past the point where the viewer is coming straight back.
+     */
+    private static final long PAUSE_RELEASE_MS = 5 * 60 * 1000L;
     private static final long DIM_DELAY_MS = 60_000L;
     private static final long KEEP_AWAKE_MAX_MS = 2 * 60 * 60 * 1000L;
     private static final float DIM_ALPHA = 0.85f;
@@ -612,7 +645,20 @@ public class PlayerActivity extends Activity {
     private static final int DIM_OUT_MS = 300;
     private View dimOverlay;
     private final Runnable dimRunnable = this::dim;
-    private final Runnable keepAwakeGiveUpRunnable = () -> playerView.setKeepScreenOn(false);
+    // Set while the source was let go under a standing pause, so the next play re-prepares rather than
+    // leaving an idle player with a play button that does nothing.
+    private boolean stoppedForPause;
+    private final Runnable pauseReleaseRunnable = () -> {
+        if (player == null || player.getPlayWhenReady() || player.isPlaying()) {
+            return;
+        }
+        Utils.log("pause: releasing the source after " + PAUSE_RELEASE_MS / 1000 + "s");
+        stoppedForPause = true;
+        // Not releasePlayer(): stop() leaves the item, the position and the surface in place, so this
+        // costs one prepare() on resume and nothing else.
+        player.stop();
+    };
+    private final Runnable keepAwakeGiveUpRunnable = () -> holdScreen(false);
     // Set while a Down press is opening the controls, so focus lands on the time bar instead of play/pause.
     private boolean focusTimeBarOnShow;
     // The page shown when there is nothing to play; owns its own views, reveal and pulse.
@@ -1855,6 +1901,17 @@ public class PlayerActivity extends Activity {
 
         controlView = playerView.findViewById(R.id.exo_controller);
 
+        // Media3 scrubbing mode, which PlayerControlView switches on while the time bar is being dragged,
+        // off on TV boxes. It deselects the audio track for the duration of the scrub and suppresses
+        // playback (PLAYBACK_SUPPRESSION_REASON_SCRUBBING, seen as suppress=4 in a field trace), and on a
+        // tunnelled decoder that pair is what puts a picture on screen at all: the report was that
+        // scrubbing the bar with a remote leaves no image, while the key-scrub this app implements itself
+        // (left/right) is fine. The optimisation is for a finger dragging continuously, which is not how a
+        // remote seeks, so a TV loses nothing by asking for plain seeks instead.
+        if (isTvBox) {
+            controlView.setTimeBarScrubbingEnabled(false);
+        }
+
         // The right-hand slot of the bottom bar shows the total duration, or counts down what is left when
         // the setting says so. PlayerControlView writes that TextView itself, so rewrite it after every
         // progress tick — updateTimeline() ends with updateProgress(), so its own value never lingers.
@@ -2464,6 +2521,19 @@ public class PlayerActivity extends Activity {
             displayManager.unregisterDisplayListener(displayListener);
         }
         player.pause();
+        // Give the bitstream output back before leaving. A passthrough AudioTrack holds the receiver's
+        // AC3/DTS route for as long as the player owns it, and that route is exclusive: while it is ours
+        // no other app can open one. Pausing does not release it — MediaCodecAudioRenderer.onStopped only
+        // pauses the sink — so until this screen let the player go, minutes later, every other player on
+        // the box met "AudioTrack init failed" for AC3 and wrote the refusal down as a verdict about the
+        // hardware, which is why clearing their data was what it took to get them bitstreaming again.
+        // stop() keeps the item, the position and the surface, so the return costs one prepare() — the
+        // same trade the standing pause already makes, through the same latch.
+        if (audioSink != null && audioSink.isPassthrough()) {
+            Utils.log("background: releasing the passthrough output");
+            stoppedForPause = true;
+            player.stop();
+        }
         // The load watchdog only ever ran while the activity was on screen by accident: nothing cancelled it
         // on this path, so an item still buffering when the user left would time out in the background —
         // stopping a session they may come straight back to, and posting a snackbar nobody can see. onStart
@@ -5083,7 +5153,7 @@ public class PlayerActivity extends Activity {
         // reading. On a local file this is always full, which is itself the answer.
         final long bufferedMs = player.getTotalBufferedDuration();
         text.append(getString(R.string.stats_buffer, bufferedMs / 1000,
-                (int) Math.min(100, bufferedMs * 100 / DefaultLoadControl.DEFAULT_MAX_BUFFER_MS)));
+                (int) Math.min(100, bufferedMs * 100 / bufferCeilingMs())));
         if (bandwidthBitrate > 0) {
             text.append('\n').append(getString(R.string.stats_network,
                     getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f)));
@@ -5151,6 +5221,24 @@ public class PlayerActivity extends Activity {
     }
 
     /** The whole file's average bitrate in Mbit/s, or 0 while either its length or duration is unknown. */
+    /**
+     * The most the buffer can hold for what is playing, in milliseconds. The load control stops on
+     * whichever comes first, fifty seconds or its byte budget, and on a high-bitrate file the bytes come
+     * first by a long way: 144 MB is about 21 s of a 53 Mbps remux. Reporting the fill against the fifty
+     * seconds it can never reach is what made a full buffer read as "50 % and not growing", and had
+     * viewers reporting a download that never finishes.
+     */
+    private long bufferCeilingMs() {
+        final float overall = overallBitrate();
+        if (overall <= 0f) {
+            return DefaultLoadControl.DEFAULT_MAX_BUFFER_MS;
+        }
+        // Bytes to milliseconds at this bitrate: bytes * 8 / (Mbit/s * 1e6) * 1000.
+        final long byteCeilingMs = (long) ((DefaultLoadControl.DEFAULT_VIDEO_BUFFER_SIZE
+                + DefaultLoadControl.DEFAULT_AUDIO_BUFFER_SIZE) * 8L / (overall * 1000f));
+        return Math.max(1_000L, Math.min(DefaultLoadControl.DEFAULT_MAX_BUFFER_MS, byteCeilingMs));
+    }
+
     private float overallBitrate() {
         final long durationMs = player.getDuration();
         if (durationMs <= 0 || mPrefs.mediaUri == null) {
@@ -9886,11 +9974,23 @@ public class PlayerActivity extends Activity {
             forceHevcForDolbyVision = false;
         }
 
-        // Fresh player — the source re-read budget starts over.
-        sourceRetries = 0;
-        decoderRetries = 0;
+        // A fresh player, but not a fresh budget when it is the same stream: the rebuild rungs
+        // (tunneling, Dolby Vision, an audio mime) go through here, and each one used to hand the source
+        // three more re-reads. Every re-read costs the server a container re-parse — four cold range
+        // requests on a big Matroska, one of them at the file tail — so a cascade could spend fifteen
+        // connections on a stream that was never going to answer. Keyed by URI, so the next film starts
+        // clean; the same one keeps whatever it has spent until it actually plays, which is where the
+        // budget is refilled (STATE_READY, below).
+        // Same for the decoder re-reads and the freeze recoveries: both end in prepare() on the same
+        // stream, and both used to be handed a full budget again by every rebuild rung.
+        final String retryUri = mPrefs.mediaUri != null ? mPrefs.mediaUri.toString() : null;
+        if (retryUri == null || !retryUri.equals(sourceRetriesUri)) {
+            sourceRetriesUri = retryUri;
+            sourceRetries = 0;
+            decoderRetries = 0;
+            videoFreezeRecoveries = 0;
+        }
         liveStallRecoveries = 0;
-        videoFreezeRecoveries = 0;
         frameOutputSeen = -1;
         playerStartPositionMs = C.TIME_UNSET;
         videoDecoderName = null;
@@ -9964,7 +10064,10 @@ public class PlayerActivity extends Activity {
         // Audio sample mimes this device has already proven cannot passthrough (see
         // recoverByRevokingAudioMime()) — denied at the sink only; the platform decoder for the same
         // mime is left alone since it is an independent subsystem that may work fine.
-        final Set<String> revokedAudioMimes = mPrefs.revokedAudioMimes;
+        // The persisted list plus whatever this run has already fallen back on: a rebuild must not hand
+        // passthrough back to a mime that just failed, or the failure repeats on the same frame.
+        final Set<String> revokedAudioMimes = new HashSet<>(mPrefs.revokedAudioMimes);
+        revokedAudioMimes.addAll(sessionRevokedAudioMimes);
         // Always subclassed (not only for blockHeavyMkvAudio/an existing revocation) so buildAudioSink
         // below can install the live AudioPassthroughDenylistSink from a device's very first play —
         // it needs to be present before any revocation exists, so a first stall can revoke into it
@@ -10097,14 +10200,6 @@ public class PlayerActivity extends Activity {
                 headers.put("Authorization", "Basic " + Base64.encodeToString(userInfo.getBytes(), Base64.NO_WRAP));
             }
 
-            // Some proxies (Telegram-stream bridges among them) answer range requests only: a GET with
-            // no Range header gets no response at all, not even headers, so nothing is ever transferred
-            // and the load watchdog reports a timeout on a stream that is working. Media3 is the client
-            // that opens without one — HttpUtil.buildRangeRequestHeader returns null at position 0 with
-            // an unbounded length — so seed the whole-file range every browser sends. A default request
-            // property is the lowest priority DefaultHttpDataSource has: it overwrites this whenever it
-            // computes a real range, leaving seeks and byte-range segments alone.
-            headers.put("Range", "bytes=0-");
 
             // Always our own factory, headers or not, for the read timeout. Media3 defaults it to 8 s,
             // which is a verdict a torrent-backed server cannot meet: it answers the range request at
@@ -10114,14 +10209,33 @@ public class PlayerActivity extends Activity {
             // files over a connection that never dropped. Give a read the same patience the load watchdog
             // gives the load: past that, the watchdog stops the player with a message that says what to
             // do, instead of a retry storm ending in a broken-stream error.
-            final DefaultHttpDataSource.Factory defaultHttpDataSourceFactory = new DefaultHttpDataSource.Factory()
-                    .setAllowCrossProtocolRedirects(true)
-                    .setReadTimeoutMs((int) VIDEO_LOAD_TIMEOUT_MS);
+            final OkHttpDataSource.Factory httpDataSourceFactory =
+                    new OkHttpDataSource.Factory(MEDIA_HTTP_CLIENT);
             if (userAgent != null) {
-                defaultHttpDataSourceFactory.setUserAgent(userAgent);
+                httpDataSourceFactory.setUserAgent(userAgent);
             }
-            defaultHttpDataSourceFactory.setDefaultRequestProperties(headers);
-            upstreamFactory = new DefaultDataSource.Factory(this, defaultHttpDataSourceFactory);
+            httpDataSourceFactory.setDefaultRequestProperties(headers);
+            // Some proxies (Telegram-stream bridges among them) answer range requests only: a GET with no
+            // Range header gets no response at all, not even headers, so nothing is ever transferred and
+            // the load watchdog reports a timeout on a stream that is working. Media3 is the client that
+            // opens without one — HttpUtil.buildRangeRequestHeader returns null at position 0 with an
+            // unbounded length — so seed the whole-file range every browser sends.
+            //
+            // Per open, and only for that one case. It used to ride along as a default request property,
+            // which was harmless while DefaultHttpDataSource wrote the computed range with
+            // setRequestProperty (replacing it); OkHttpDataSource uses Request.Builder.addHeader, which
+            // appends, so every seek went out with both "bytes=0-" and its real range and the server
+            // answered the first one. That is what stopped torrent streams from loading when the media path first moved to OkHttp.
+            final androidx.media3.datasource.DataSource.Factory rangeSeeded =
+                    new androidx.media3.datasource.ResolvingDataSource.Factory(
+                            new DefaultDataSource.Factory(this, httpDataSourceFactory),
+                            dataSpec -> dataSpec.position == 0 && dataSpec.length == C.LENGTH_UNSET
+                                    ? dataSpec.withAdditionalHeaders(
+                                            Collections.singletonMap("Range", "bytes=0-"))
+                                    : dataSpec);
+            // The container head and the Cues come off disk on every play after the first, so a
+            // re-prepare asks the network for one range instead of four — see MediaCache.
+            upstreamFactory = MediaCache.wrap(this, rangeSeeded);
         }
 
         final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
@@ -10135,16 +10249,24 @@ public class PlayerActivity extends Activity {
         playerBuilder.setMediaSourceFactory(
                 new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
                         .setDataSourceFactory(dataSourceFactory));
-        // Everything but the last figure is Media3's own default; only the wait after a stall changes,
-        // and only for streams (file:// and content:// keep their separate, shorter defaults, where a
-        // stall means a slow disk rather than a source that fills in bursts).
-        playerBuilder.setLoadControl(new DefaultLoadControl.Builder()
-                .setBufferDurationsMsForStreaming(
-                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
-                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                        BUFFER_AFTER_REBUFFER_MS)
-                .build());
+        // Bounded by time rather than by bytes, for streams only. On the defaults the byte budget binds
+        // first on anything high-bitrate — 144 MB is about 21 s of a 53 Mbps remux, well short of the 50 s
+        // window — so the loader sits on that ceiling and is switched on and off around it about eleven
+        // times a second (measured: 1070 flips in two minutes), while the buffer costs 144 MB of a 512 MB
+        // heap. prioritizeTimeOverSizeThresholds moves the limit to the fifteen-second minimum and hands
+        // the memory question to Media3's own heap-headroom check, which is what it is for.
+        //
+        // The figures follow the two players that stream the same torrent backends on the same boxes
+        // without knocking them over (dddplayer: 15/50/500/5000 with the same flag; alpac: 30/60/2500/5000)
+        // — and both chose five seconds after a stall, which is the middle ground between Media3's two and
+        // the fifteen that 4c3d62e tried here and had to be reverted for turning every seek out of the
+        // buffered range into a 99 MB haul.
+        //
+        // Streaming only: local playback keeps its own, smaller byte budget, where none of this applies.
+        final DefaultLoadControl.Builder loadControlBuilder = new DefaultLoadControl.Builder()
+                .setBufferDurationsMsForStreaming(15_000, 50_000, 500, 5_000)
+                .setPrioritizeTimeOverSizeThresholdsForStreaming(true);
+        playerBuilder.setLoadControl(loadControlBuilder.build());
 
         player = playerBuilder.build();
 
@@ -10631,6 +10753,8 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(resumeWatchdogRunnable);
             playerView.removeCallbacks(passthroughRestartRunnable);
             playerView.removeCallbacks(rebufferArmRunnable);
+            playerView.removeCallbacks(pauseReleaseRunnable);
+            stoppedForPause = false;
             audioRestartPending = false;
             audioRestartInFlight = false;
             audioRestartSettling = false;
@@ -10978,6 +11102,13 @@ public class PlayerActivity extends Activity {
         // by the sink no longer reporting passthrough.
         @Override
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+            if (playWhenReady && stoppedForPause) {
+                stoppedForPause = false;
+                if (player != null && player.getPlaybackState() == Player.STATE_IDLE) {
+                    Utils.log("pause: re-preparing after the source was let go");
+                    player.prepare();
+                }
+            }
             if (playWhenReady) {
                 return;
             }
@@ -11027,6 +11158,13 @@ public class PlayerActivity extends Activity {
                 playerView.postDelayed(rebufferArmRunnable, REBUFFER_ARM_MS);
             }
             resetDim();
+
+            // A pause by the viewer, not a stall: playWhenReady is what separates them, and only the
+            // first should start the clock on letting the source go.
+            playerView.removeCallbacks(pauseReleaseRunnable);
+            if (!isPlaying && player != null && !player.getPlayWhenReady()) {
+                playerView.postDelayed(pauseReleaseRunnable, PAUSE_RELEASE_MS);
+            }
 
             if (Utils.isPiPSupported(PlayerActivity.this)) {
                 if (isPlaying) {
@@ -11330,7 +11468,9 @@ public class PlayerActivity extends Activity {
                     // renderer in for good.
                     final Format stalledAudioFormat = player != null ? player.getAudioFormat() : null;
                     if (audioSink != null && audioSink.isPassthrough()
-                            && recoverByRevokingAudioMime(stalledAudioFormat != null ? stalledAudioFormat.sampleMimeType : null)) {
+                            && recoverByRevokingAudioMime(
+                                    stalledAudioFormat != null ? stalledAudioFormat.sampleMimeType : null,
+                                    false)) {
                         return;
                     }
                 }
@@ -11350,8 +11490,18 @@ public class PlayerActivity extends Activity {
             // The device claims Dolby/DTS passthrough support it doesn't actually have: AudioTrack
             // opening for that mime throws outright instead of just never draining. Same fix, reached
             // from the loud symptom instead of the silent one.
-            if (error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
-                    && recoverByRevokingAudioMime(audioTrackInitFailureMime(error))) {
+            // ERROR_CODE_AUDIO_TRACK_WRITE_FAILED joins it: a bitstream AudioTrack can die under a
+            // player that has been feeding it for an hour (write returns ERROR_DEAD_OBJECT when the audio
+            // server restarts or the HDMI route drops). That used to fall through to the source re-read
+            // below, and the trace says why it was the wrong answer: the re-read re-opens the container
+            // from four cold offsets of a 56 GB Matroska (header, cues at the far end, 357 KB in, then the
+            // playback position) and arrives 1.2 s later at an AudioTrack that is still dead — four more
+            // init failures, a second re-read, eight seconds of frozen picture. Answering on the audio
+            // path costs one prepare() and the sound comes back decoded.
+            if ((error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
+                    || error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
+                    && recoverByRevokingAudioMime(audioFailureMime(error),
+                            error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED)) {
                 return;
             }
             // The decoder never opened for a format software decoding was never going to carry — 4K on
@@ -11363,16 +11513,7 @@ public class PlayerActivity extends Activity {
                     && recoverByLoweringQuality()) {
                 return;
             }
-            // A bitstream's AudioTrack can also die under a player that was happily feeding it for an hour
-            // (AudioTrack.write returns ERROR_DEAD_OBJECT: the audio server restarted, or the HDMI route to
-            // the receiver dropped). Media3 calls that recoverable but spends its single attempt at the front
-            // of the message queue — milliseconds after the output died, so it fails again and ends playback.
-            // The same delayed re-read is what this needs: by then the route is usually back, and prepare()
-            // keeps the item, position, surface and track selection. Not a reason to revoke the mime as the
-            // branch above does — this device had been bitstreaming it fine until the output went away, and
-            // if it comes back without passthrough the reselect falls to ffmpeg on its own.
-            if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error)
-                    || error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
+            if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error))
                     && recoverFromDecoderFailure()) {
                 return;
             }
@@ -11553,7 +11694,10 @@ public class PlayerActivity extends Activity {
         }
         sourceRetries++;
         updateLoading(true);
-        playerView.postDelayed(sourceRetryRunnable, 1_000);
+        // Doubling, not a flat second: a server that just failed a read is often a server under load, and
+        // three re-reads a second apart are three container re-parses inside the window it needed to
+        // recover. 1 s, 2 s, 4 s gives it that room and still gives up inside eight seconds.
+        playerView.postDelayed(sourceRetryRunnable, 1_000L << (sourceRetries - 1));
         return true;
     }
 
@@ -11855,14 +11999,26 @@ public class PlayerActivity extends Activity {
     // so the player is always STATE_IDLE here: prepare() re-reads the source keeping the media item,
     // the position, the surface and the track selection (same as recoverFromSourceError), and the
     // already-installed sink now denies the mime, so the track falls back to decoding. No player
-    // rebuild, so it does not read as a restart. One-way (until the user resets it in Settings),
+    // rebuild, so it does not read as a restart. One-way for as long as the verdict lasts,
     // guarded by mPrefs.revokedAudioMimes itself, so a repeat failure on the same mime after the
     // switch falls through to the normal error screen instead of looping.
-    private boolean recoverByRevokingAudioMime(String mime) {
-        if (mime == null || mPrefs.revokedAudioMimes.contains(mime) || player == null || audioSink == null) {
+    private boolean recoverByRevokingAudioMime(String mime, boolean persist) {
+        if (mime == null || player == null || audioSink == null
+                || mPrefs.revokedAudioMimes.contains(mime) || sessionRevokedAudioMimes.contains(mime)) {
             return false;
         }
-        mPrefs.revokeAudioMime(mime);
+        // Remembered across runs only when the AudioTrack refused to open — that is a property of the
+        // route and does not change between films, so paying the failure again on every launch buys
+        // nothing. A track that died mid-playback is the opposite, and a field trace from a Google TV
+        // Streamer shows why it may not be written down: AudioTrack.write returned -6 (ERROR_DEAD_OBJECT)
+        // after five clean minutes of bitstreaming AC-3, the route was back seconds later, and the
+        // verdict would have stayed for good — the box would decode AC-3 in software in every film after
+        // one dropped HDMI route. Those keep to their own run, and the user can clear the remembered ones
+        // from Settings.
+        sessionRevokedAudioMimes.add(mime);
+        if (persist) {
+            mPrefs.revokeAudioMime(mime);
+        }
         audioSink.revoke(mime);
         if (mPrefs.decoderPriority == DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF) {
             // "Device decoders only", and this is the first revocation: the ffmpeg audio renderer the
@@ -11925,15 +12081,27 @@ public class PlayerActivity extends Activity {
         playerView.post(passthroughRestartRunnable);
     }
 
-    // AudioSink.InitializationException.format is a public field in this build — no reflection needed.
-    private static String audioTrackInitFailureMime(PlaybackException error) {
-        if (error.errorCode != PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED) {
+    /**
+     * The audio sample mime behind an AudioTrack failure, or null when the error is not one.
+     * AudioSink.InitializationException.format is a public field in this build — no reflection needed —
+     * and a write failure carries no such cause, so it is read from the renderer format the exception was
+     * raised for instead.
+     */
+    private static String audioFailureMime(PlaybackException error) {
+        if (error.errorCode != PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
+                && error.errorCode != PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED) {
             return null;
         }
         for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
             if (cause instanceof AudioSink.InitializationException) {
                 Format format = ((AudioSink.InitializationException) cause).format;
                 return format != null ? format.sampleMimeType : null;
+            }
+        }
+        if (error instanceof ExoPlaybackException) {
+            final Format format = ((ExoPlaybackException) error).rendererFormat;
+            if (format != null && MimeTypes.isAudio(format.sampleMimeType)) {
+                return format.sampleMimeType;
             }
         }
         return null;
@@ -12461,6 +12629,23 @@ public class PlayerActivity extends Activity {
         return false;
     }
 
+    /**
+     * Holds or releases the screen, on the window rather than on the player view. A view flag reaches the
+     * same wake lock through ViewRootImpl, but only while that view is attached and drawing — and a box
+     * was reported going to sleep a quarter of an hour into a film, which is what an unheld screen looks
+     * like on Android TV, where the inactivity timeout is of that order. Both reference players set the
+     * window flag (dddplayer in onCreate, alpac on the view for the whole session) and neither ties it to
+     * anything; here it stays tied to playback, which is what the give-up above needs, but the flag now
+     * sits where nothing about the view hierarchy can silently drop it.
+     */
+    private void holdScreen(final boolean hold) {
+        if (hold) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
     /** Whether a pause is currently entitled to hold the screen awake. */
     private boolean keepAwakeOnPause() {
         return mPrefs != null && mPrefs.keepAwakeOnPause && isTvBox && haveMedia && !isInPip();
@@ -12472,25 +12657,33 @@ public class PlayerActivity extends Activity {
      * wake the screen, so it can be swallowed — Back on a dimmed screen would otherwise leave the player.
      */
     private boolean resetDim() {
-        if (dimOverlay == null) {
-            return false;
-        }
         playerView.removeCallbacks(dimRunnable);
         playerView.removeCallbacks(keepAwakeGiveUpRunnable);
 
+        // Before anything to do with the sheet, and never behind a null check on it. The dim overlay only
+        // exists in the ordinary layout; a Mi Box on Android 9 is served activity_player_textureview,
+        // which has no such view — so with the hold below sitting after that null check, the screen was
+        // never held there at all and the box took its own sleep timeout mid-film, fifteen minutes in.
+        // Holding the screen is not a detail of the dim sheet; it is the one thing this method owes the
+        // playback.
+        final boolean playing = player != null && player.isPlaying();
+        final boolean holding = keepAwakeOnPause();
+        holdScreen(playing || holding);
+        if (holding && !playing) {
+            playerView.postDelayed(keepAwakeGiveUpRunnable, KEEP_AWAKE_MAX_MS);
+        }
+
+        if (dimOverlay == null) {
+            return false;
+        }
         final boolean wasDim = dimOverlay.getVisibility() == View.VISIBLE;
         if (wasDim) {
             dimOverlay.animate().cancel();
             dimOverlay.animate().alpha(0f).setDuration(DIM_OUT_MS)
                     .withEndAction(() -> dimOverlay.setVisibility(View.GONE));
         }
-
-        final boolean playing = player != null && player.isPlaying();
-        final boolean holding = keepAwakeOnPause();
-        playerView.setKeepScreenOn(playing || holding);
         if (holding && !playing) {
             playerView.postDelayed(dimRunnable, DIM_DELAY_MS);
-            playerView.postDelayed(keepAwakeGiveUpRunnable, KEEP_AWAKE_MAX_MS);
         }
         return wasDim;
     }

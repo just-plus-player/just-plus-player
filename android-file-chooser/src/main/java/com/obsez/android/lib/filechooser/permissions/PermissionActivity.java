@@ -23,10 +23,23 @@ public class PermissionActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         Intent intent = getIntent();
+        // Both extras can be missing, and then there is nothing to ask for. It happens when the system
+        // relaunches this activity from a task it restored rather than from PermissionsUtil: a task that
+        // survived a reboot keeps only the persistable part of its intent, so the permission array is
+        // gone. A field crash arrived exactly that way — the process started straight into this activity
+        // nine minutes after the device booted. Closing is the whole correct response; the original code
+        // called length on null and took the app down with it, and its finish() calls had no return, so
+        // even an empty array walked on into the "there are no permissions" throw below.
         String[] permissions = intent.getStringArrayExtra(INTENT_EXTRA_PERMISSIONS);
-        if (permissions.length == 0) finish();
+        if (permissions == null || permissions.length == 0) {
+            finish();
+            return;
+        }
         _requestCode = intent.getIntExtra(INTENT_EXTRA_REQUEST_CODE, -1);
-        if (_requestCode == -1) finish();
+        if (_requestCode == -1) {
+            finish();
+            return;
+        }
         _permissionListener = PermissionsUtil.getPermissionListener(_requestCode);
 
         for (String permission : permissions) {
@@ -59,6 +72,7 @@ public class PermissionActivity extends AppCompatActivity {
         @NonNull int[] grantResults) {
         if (requestCode != _requestCode) {
             finish();
+            return;
         }
         _permissions_denied.clear();
         for (int i = permissions.length - 1; i >= 0; --i) {

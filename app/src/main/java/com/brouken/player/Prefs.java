@@ -119,7 +119,7 @@ class Prefs {
     private static final String PREF_KEY_UPDATE_SKIPPED = "updateSkippedVersionCode";
     private static final String PREF_KEY_UPDATE_PENDING = "updatePending";
     private static final String PREF_KEY_REVOKED_AUDIO_MIMES = "revokedAudioMimes";
-    private static final String PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED = "revokedAudioMimesRelearned";
+    private static final String PREF_KEY_REVOKED_AUDIO_MIMES_RELEARNED = "revokedAudioMimesRelearned3";
 
     // How a skippable segment is offered. BRIEF shows the Skip button for PlayerActivity.SKIP_NOTICE_MS and
     // then leaves the picture alone; the option's name says "5 seconds", so that constant and the
@@ -301,7 +301,11 @@ class Prefs {
 
     /**
      * Clears the learned passthrough denylist once, so entries left by builds whose stall recovery blamed
-     * whichever mime happened to be playing do not stay for good. Those entries deny nothing (the track was
+     * whichever mime happened to be playing do not stay for good. Nothing writes the list any more — a
+     * failed AudioTrack now falls back for the current run only (PlayerActivity.recoverByRevokingAudioMime),
+     * because a field trace showed a transient HDMI route loss taking AC-3 bitstreaming away from a box for
+     * good. The key this one-shot is remembered under was bumped with that change, so every device gets one
+     * clean slate; after it the list stays empty unless an older build filled it. Those entries deny nothing (the track was
      * being decoded, not bitstreamed) but keep the set non-empty, which forces the ffmpeg audio renderer in
      * for "device decoders only" and puts a misleading line in every error report.
      *
@@ -756,13 +760,18 @@ class Prefs {
         mSharedPreferences.edit().putBoolean(PREF_KEY_TUNNELING, false).apply();
     }
 
+    /**
+     * Remembers that this device cannot bitstream {@code mime}, so the next run does not pay the failure
+     * again. Only written for an AudioTrack that refused to open at all — see
+     * PlayerActivity.recoverByRevokingAudioMime, which keeps a track that died mid-playback to its own run.
+     */
     public void revokeAudioMime(final String mime) {
         final Set<String> updated = new HashSet<>(revokedAudioMimes);
         updated.add(mime);
         revokedAudioMimes = updated;
-        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
-        sharedPreferencesEditor.putStringSet(PREF_KEY_REVOKED_AUDIO_MIMES, updated);
-        sharedPreferencesEditor.apply();
+        mSharedPreferences.edit()
+                .putStringSet(PREF_KEY_REVOKED_AUDIO_MIMES, updated)
+                .apply();
     }
 
     public static void resetRevokedAudioMimes(final Context context) {

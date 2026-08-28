@@ -5,9 +5,11 @@ import android.net.Uri;
 import androidx.media3.common.C;
 
 import java.io.File;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +36,7 @@ import okhttp3.ResponseBody;
 class SubtitleFetcher {
 
     private final PlayerActivity activity;
-    private final List<Uri> urls;
+    private final Collection<Uri> urls;
     private final String cacheName;
     /** Length of what is playing, or {@link C#TIME_UNSET} when it is not known — see {@link #fitsMedia}. */
     private final long durationMs;
@@ -74,7 +76,7 @@ class SubtitleFetcher {
     /** The name the file was uploaded under, out of {@code attachment; filename="…"}. */
     private static final Pattern ATTACHMENT_NAME = Pattern.compile("filename[^=]*=\"?([^\";]+)");
 
-    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls) {
+    public SubtitleFetcher(PlayerActivity activity, Collection<Uri> urls) {
         this(activity, urls, null, C.TIME_UNSET);
     }
 
@@ -86,7 +88,7 @@ class SubtitleFetcher {
      *                   Read on the caller's thread and passed in, because this runs on a worker and
      *                   the player is not its to ask.
      */
-    public SubtitleFetcher(PlayerActivity activity, List<Uri> urls, String cacheName,
+    public SubtitleFetcher(PlayerActivity activity, Collection<Uri> urls, String cacheName,
                            long durationMs) {
         this.activity = activity;
         this.urls = urls;
@@ -133,6 +135,35 @@ class SubtitleFetcher {
         return null;
     }
 
+    /**
+     * The stream, failing once more than {@code max} bytes have been read. An IOException rather than a
+     * silent end of stream: a truncated subtitle file is worse than none, and the caller already treats
+     * a failed read as "try the next candidate".
+     */
+    private static InputStream limited(final InputStream stream, final long max) {
+        return new FilterInputStream(stream) {
+            private long read;
+
+            @Override
+            public int read() throws IOException {
+                final int b = super.read();
+                if (b != -1 && ++read > max) {
+                    throw new IOException("subtitle candidate larger than " + max + " bytes");
+                }
+                return b;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) throws IOException {
+                final int count = super.read(buffer, offset, length);
+                if (count > 0 && (read += count) > max) {
+                    throw new IOException("subtitle candidate larger than " + max + " bytes");
+                }
+                return count;
+            }
+        };
+    }
+
     /** @return the local copy, or null to try the next candidate. */
     private Uri fetch(OkHttpClient client, Uri url) {
         // Prevents IllegalArgumentException in okhttp3.Request.Builder.
@@ -158,7 +189,11 @@ class SubtitleFetcher {
                 Utils.log("subtitle download: forced track, skipping " + name);
                 return null;
             }
-            InputStream stream = body.byteStream();
+            // Bounded by what arrives, because contentLength() is -1 for a chunked response and -1 is
+            // not greater than MAX_BYTES: the guard above lets such a body through, and the reader below
+            // takes it to the end of the stream. A host that answers a guessed subtitle name with the
+            // film itself would have been downloaded whole, into a String.
+            InputStream stream = limited(body.byteStream(), MAX_BYTES);
             // The legacy OpenSubtitles API hands back a gzipped file rather than a gzipped response,
             // so nothing below the socket unpacks it for us.
             if (url.getPath() != null && url.getPath().endsWith(".gz")) {

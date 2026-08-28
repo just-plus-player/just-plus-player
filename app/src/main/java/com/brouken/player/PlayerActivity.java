@@ -2545,14 +2545,23 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * The room is anchored to this screen, so it cannot outlive it. onStop only leaves the room when the
-     * activity is finishing, which is the ordinary way out — but a screen destroyed from the background
-     * (low-memory reclaim, or "don't keep activities") is not finishing, and its socket stayed open:
-     * pinging every twenty seconds, reconnecting for ever, and holding the whole player view tree
-     * reachable, while the room went on listing a member whose heartbeats had stopped.
+     * The room and the player are anchored to this screen, so neither can outlive it. onStop only lets
+     * them go when the activity is finishing, which is the ordinary way out — but a screen destroyed
+     * from the background (low-memory reclaim, or "don't keep activities") is not finishing. Its socket
+     * stayed open: pinging every twenty seconds, reconnecting for ever, and holding the whole player
+     * view tree reachable, while the room went on listing a member whose heartbeats had stopped. The
+     * player it kept for a quick return stayed too, and with it a bitstream AudioTrack that owns the
+     * receiver's AC3/DTS route exclusively — the very thing every other player on the box then failed to
+     * open. Nothing was left to hand it back: the five-minute release is posted on a view tree that goes
+     * away with the screen. The position is already saved, by onPause. Not for a screen that handed the
+     * session over: the player behind that static is a newer screen's by now, and releasing it here
+     * would tear down a session that has already started playing.
      */
     @Override
     protected void onDestroy() {
+        if (!handedOver) {
+            releasePlayer(false);
+        }
         if (live == this) {
             live = null;
         }

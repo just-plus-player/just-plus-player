@@ -4,7 +4,6 @@ import android.net.Uri;
 
 import androidx.media3.common.C;
 
-import java.io.File;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,6 +39,8 @@ class SubtitleFetcher {
     private final String cacheName;
     /** Length of what is playing, or {@link C#TIME_UNSET} when it is not known — see {@link #fitsMedia}. */
     private final long durationMs;
+    /** The last copy {@link #fitsMedia} turned away, kept as the answer of last resort. */
+    private Uri lastRejected;
 
     private static final int CONNECT_TIMEOUT_SEC = 10;
     private static final int READ_TIMEOUT_SEC = 20;
@@ -57,9 +58,6 @@ class SubtitleFetcher {
 
     /** Subtitles are text; anything this size is not one, and is not worth the memory to find out. */
     private static final long MAX_BYTES = 2_000_000;
-
-    /** How far past the end of the media a file's last line may still sit. See {@link #fitsMedia}. */
-    private static final long FIT_MARGIN_MS = 10_000;
 
     /**
      * Candidates already turned away, as url + the length they were turned away for. The answer depends
@@ -132,7 +130,12 @@ class SubtitleFetcher {
                 return file;
             }
         }
-        return null;
+        // Nothing fitted, so the choice is no longer between a good file and a bad one but between a
+        // bad file and none. Out of sync is visible and one tap from being replaced; empty is not.
+        if (lastRejected != null) {
+            Utils.log("subtitle download: nothing fitted, taking the wrong-cut file anyway");
+        }
+        return lastRejected;
     }
 
     /**
@@ -202,6 +205,10 @@ class SubtitleFetcher {
             final Uri file = Utils.convertInputStreamToUTF(activity, url, stream, cacheName);
             if (file != null && !fitsMedia(file)) {
                 WRONG_CUT.add(wrongCutKey(url));
+                // Left on disk rather than deleted, and remembered: if no candidate fits, this is what
+                // the viewer gets instead of nothing. Every download writes over the same cacheName, so
+                // the copy still there when the list runs out is the one this points at.
+                lastRejected = file;
                 return null;
             }
             return file;
@@ -227,8 +234,19 @@ class SubtitleFetcher {
      * <p>Only a file that runs past the end of the video is turned away, which is the half that
      * proves itself. The opposite — a theatrical file over an extended cut — ends early, and so does
      * any honest file whose last line comes well before the credits do, so there is nothing to tell
-     * those two apart by. {@link #FIT_MARGIN_MS} is for the few seconds a re-encode can lose off the
-     * tail, not for a difference in cut.
+     * those two apart by.
+     *
+     * <p>How many lines are out there decides it, not how far the last one sits, because the whole
+     * file is in hand here and the count is what actually separates the two. Measured on real files:
+     * the Ukrainian file for Wicked Little Letters that started all this has <b>one</b> line past the
+     * end, 39 s out, and it reads "Переклад субтитрів: Elena Astankova"; the Russian theatrical file
+     * for The Martian has <b>two</b>, 23 s and 25 s out; the Russian file for the extended cut of the
+     * same film has <b>61</b>, spread from 19 s to 282 s out. No single distance separates those —
+     * 282 s sits inside any margin wide enough for the first two — while 1, 2 and 61 separate cleanly.
+     *
+     * <p>{@link SubtitleSearch#cutMargin} still bounds it, for the stray line hours out that a count of
+     * one would otherwise wave through, and {@link SubtitleSearch#TAIL_GRACE_MS} still passes a trivial
+     * overhang whatever its count: a copy trimmed by a few seconds can leave several lines over.
      */
     private boolean fitsMedia(Uri file) {
         if (durationMs == C.TIME_UNSET || durationMs <= 0) {
@@ -242,14 +260,19 @@ class SubtitleFetcher {
         // The last cue's start, not its end: a line shown over the final seconds legitimately runs on
         // past the last frame, and rejecting for that would throw away files that are perfectly synced.
         final long lastMs = timeline.startUs(timeline.size() - 1) / 1000;
-        if (lastMs <= durationMs + FIT_MARGIN_MS) {
+        final long over = lastMs - durationMs;
+        if (over <= SubtitleSearch.TAIL_GRACE_MS) {
             return true;
         }
-        Utils.log("subtitle download: last cue " + lastMs + "ms past a " + durationMs
-                + "ms media, wrong cut — skipping");
-        // Deleted, or the next search would find it in the cache and hand over the same bad file for
-        // good: the cached copy is named after the title and the language, not after this candidate.
-        new File(String.valueOf(file.getPath())).delete();
+        int past = 0;
+        for (int i = timeline.size() - 1; i >= 0 && timeline.startUs(i) / 1000 > durationMs; i--) {
+            past++;
+        }
+        if (past <= 2 && over <= SubtitleSearch.cutMargin(durationMs)) {
+            return true;
+        }
+        Utils.log("subtitle download: " + past + " cue(s) past the end, last " + (over / 1000)
+                + "s past a " + durationMs + "ms media, wrong cut — skipping");
         return false;
     }
 

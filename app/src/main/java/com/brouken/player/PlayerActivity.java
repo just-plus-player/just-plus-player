@@ -5255,15 +5255,21 @@ public class PlayerActivity extends Activity {
      * both, and the dump leaves a TV box by QR instead of a clipboard nothing there can paste from.
      */
     private void showPlayerState() {
-        final StringBuilder state = new StringBuilder();
-        appendPlayerState(state);
-        if (state.length() == 0) {
+        final String state = playerStateReport();
+        if (state.isEmpty()) {
             return;
         }
         final Format video = player == null ? null : player.getVideoFormat();
         ErrorActivity.showReport(this, getString(R.string.stats_report_title),
                 getString(R.string.stats_report_message),
-                video == null ? null : Format.toLogString(video), state.toString().trim());
+                video == null ? null : Format.toLogString(video), state);
+    }
+
+    /** The dump the report screen shows, also handed to any message worth a "Details" button. */
+    private String playerStateReport() {
+        final StringBuilder state = new StringBuilder();
+        appendPlayerState(state);
+        return state.toString().trim();
     }
 
     // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
@@ -6559,11 +6565,14 @@ public class PlayerActivity extends Activity {
                 // the guess.
                 final String device = Utils.toIso3Language(Locale.getDefault().getLanguage());
                 if (device == null) {
+                    Utils.log("subtitles: no language list and no device language, not searching");
                     return;
                 }
                 preferred = Collections.singletonList(device);
             } else if (forSecondary
                     || Utils.splitLanguages(mPrefs.languageSubtitleSecondary).isEmpty()) {
+                Utils.log("subtitles: no subtitle language set, not searching"
+                        + (mPrefs.subtitleSearch ? "" : " (online search is off too)"));
                 return;
             }
             // Falls through with an empty list on purpose: the first line wanting nothing is not the end
@@ -6594,6 +6603,8 @@ public class PlayerActivity extends Activity {
         }
         if (missing.isEmpty() && secondary.isEmpty()) {
             if (!manual) {
+                Utils.log("subtitles: nothing wanted (want=" + preferred
+                        + " already satisfied by the tracks present), not searching");
                 return;
             }
             // Asked for regardless: whatever track outranked the list is evidently not doing the job.
@@ -6603,6 +6614,15 @@ public class PlayerActivity extends Activity {
                 missing = preferred;
             }
         }
+        Utils.log("subtitles: search " + (manual ? "manual" : "auto")
+                + ", online=" + mPrefs.subtitleSearch
+                + ", strict=" + mPrefs.subtitleSearchStrict
+                + ", translate=" + mPrefs.subtitleTranslate
+                + ", sources=" + (mPrefs.subtitleSourceOpenSubtitles ? "os " : "")
+                + (mPrefs.subtitleSourceRest ? "rest " : "")
+                + (mPrefs.subtitleSourceStremio ? "stremio " : "")
+                + (mPrefs.subtitleSourceShegu ? "shegu" : "")
+                + ", list=" + mPrefs.languageSubtitle + "/" + mPrefs.languageSubtitleSecondary);
         final MediaId id = mediaIdAt(player.getCurrentMediaItemIndex());
         if (id.isEmpty()) {
             // Nothing to ask the sources about. Every one of them is keyed by imdb or tmdb, so a file
@@ -6610,8 +6630,9 @@ public class PlayerActivity extends Activity {
             Utils.log("subtitles: no title id, not searching");
             if (manual) {
                 // Asked for out loud, so it is answered out loud. Silence here reads as a search that
-                // is still running, and this one never started.
-                Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+                // is still running, and this one never started. Carries the dump so "it finds nothing"
+                // can be reported with the trace behind it instead of from memory.
+                showSnack(getString(R.string.subtitle_search_none), playerStateReport());
             }
             return;
         }
@@ -6677,9 +6698,13 @@ public class PlayerActivity extends Activity {
         final List<String> secondaryTargets =
                 secondaryCached ? Collections.<String>emptyList() : secondary;
         if (mainTargets.isEmpty() && secondaryTargets.isEmpty()) {
+            Utils.log("subtitles: already cached for this item, not searching");
             return;
         }
         if (offline) {
+            // Silent until now, and the likeliest reason a search "finds nothing": the switch is off by
+            // default, so an automatic search never goes to the network and never says why.
+            Utils.log("subtitles: online search is off, only the cache was asked");
             return; // the cache has been asked, and that is as far as the switch allows
         }
 
@@ -6737,7 +6762,7 @@ public class PlayerActivity extends Activity {
                         return;
                     }
                     subtitleSearchNotice(0);
-                    Toast.makeText(this, R.string.subtitle_search_none, Toast.LENGTH_SHORT).show();
+                    showSnack(getString(R.string.subtitle_search_none), playerStateReport());
                 });
             }
         }, "SubtitleSearch");
@@ -12932,6 +12957,12 @@ public class PlayerActivity extends Activity {
         }
         if (!mPrefs.revokedAudioMimes.isEmpty()) {
             sb.append("\nAudio passthrough revoked: ").append(mPrefs.revokedAudioMimes);
+        }
+        // Last, and after a blank line: it is many lines long, and everything above is the
+        // one-glance summary somebody reads before deciding whether to read the trace at all.
+        final String trace = Utils.recentLog();
+        if (!trace.isEmpty()) {
+            sb.append("\n\nTrace:\n").append(trace);
         }
     }
 

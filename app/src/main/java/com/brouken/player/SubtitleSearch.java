@@ -157,6 +157,9 @@ final class SubtitleSearch {
     static Result find(MediaId identifier, List<String> preferred, Prefs prefs, long durationMs,
                        Sink sink, AtomicBoolean answered) {
         if (identifier == null || identifier.isEmpty() || preferred.isEmpty()) {
+            Utils.log("subtitles: nothing to ask with (id="
+                    + (identifier == null ? "null" : identifier.isEmpty() ? "empty" : "ok")
+                    + ", want=" + preferred + ")");
             return null;
         }
         // A series whose episode number never arrived would be searched as "any episode of this
@@ -293,8 +296,38 @@ final class SubtitleSearch {
         return null;
     }
 
-    /** Anything past the end of the media, with the few seconds a re-encode can lose off the tail. */
-    private static final long CUT_MARGIN_MS = 10_000;
+    /**
+     * How far past the end of the media a file's last line may sit and still be for this cut.
+     *
+     * <p>Ten flat seconds once, which turned out to reject perfectly good files: a report from a viewer
+     * who "never finds subtitles" showed a 100-minute film whose only Ukrainian file — the same one from
+     * all four sources — ends 39 s after the video does, so every source was refused and the search came
+     * back empty. Nothing about that file is for another cut. A last line sits past the final frame
+     * whenever the translator credited themselves after the picture, whenever the release the file was
+     * timed to carried a distributor logo this copy does not, and whenever the copy is trimmed at the
+     * tail.
+     *
+     * <p>A share of the length rather than a number of seconds, because that is what the difference
+     * actually scales with: 39 s over a 100-minute film is 0.65 % and plainly the same cut, while the
+     * same 39 s over a 22-minute episode is 3 % and worth a second look. Four per cent is four minutes
+     * for a feature and under a minute for an episode, and it stays well below what a real second cut
+     * costs — an extended feature runs ten to thirty minutes longer, so it is still turned away. The
+     * floor is for the shortest clips, where a percentage is no margin at all.
+     *
+     * <p>The two mistakes are not worth the same: a file wrongly refused leaves the viewer with no
+     * subtitles at all, while one wrongly taken is visibly out of sync and one tap from being replaced.
+     * Which is also why nothing here is final — see {@link #ofOneCut} and SubtitleFetcher.fitsMedia.
+     */
+    static long cutMargin(long durationMs) {
+        return Math.max(30_000L, durationMs / 25);
+    }
+
+    /**
+     * An overhang too small to mean anything: the few seconds a re-encode loses off the tail. Kept
+     * separate from {@link #cutMargin} because the two are asked different questions — this one is
+     * "is there anything to look at", the other "how far out may a tail artefact sit".
+     */
+    static final long TAIL_GRACE_MS = 10_000;
 
     /**
      * How far apart two files' last lines may be and still be the same cut. Generous, because within
@@ -322,21 +355,31 @@ final class SubtitleSearch {
         if (durationMs <= 0) {
             return inLanguage;
         }
+        final long margin = cutMargin(durationMs);
+        // The anchor is drawn only from files that plainly fit, TAIL_GRACE_MS and no more.
+        // Drawn from everything the margin allows instead, a file for a longer cut sets the anchor and
+        // then evicts the correct ones through CUT_TOLERANCE_MS below: for The Martian's theatrical cut
+        // the extended file's 2:25:35 would anchor the whole language and drop all four files that end
+        // around 2:15, which is every honest one there is.
         long latest = 0;
         for (Candidate candidate : inLanguage) {
-            if (candidate.lastMs > 0 && candidate.lastMs <= durationMs + CUT_MARGIN_MS) {
+            if (candidate.lastMs > 0 && candidate.lastMs <= durationMs + TAIL_GRACE_MS) {
                 latest = Math.max(latest, candidate.lastMs);
             }
         }
         final List<Candidate> kept = new ArrayList<>(inLanguage.size());
         for (Candidate candidate : inLanguage) {
             if (candidate.lastMs <= 0
-                    || (candidate.lastMs <= durationMs + CUT_MARGIN_MS
+                    || (candidate.lastMs <= durationMs + margin
                         && candidate.lastMs >= latest - CUT_TOLERANCE_MS)) {
                 kept.add(candidate);
             }
         }
-        return kept;
+        // Nothing left means every file in this language looks like another cut, and the choice is no
+        // longer between a good file and a bad one — it is between a bad file and none. Hand them all
+        // back: out of sync is one tap from being replaced, and the download still gets the closer look
+        // that SubtitleFetcher.fitsMedia gives it.
+        return kept.isEmpty() ? inLanguage : kept;
     }
 
     /** {@code "03:57:34"} as ms, or 0 for anything else — the field is often absent or empty. */
@@ -442,19 +485,30 @@ final class SubtitleSearch {
      * answer arrives to a player that no longer exists.
      */
     private static Result fromOpenSubtitles(MediaId id, List<String> preferred, boolean allowMachine) {
+        // Every exit here used to be silent, and this is the one source that does not go through best():
+        // so when it won, the trace jumped from its quota line straight to a file being painted, and when
+        // it lost there was nothing at all. It is also the source most likely to answer, being the keyed
+        // one, which made its silence the largest hole in a report about subtitles.
         final List<String> codes = OpenSubtitles.toIso639_1(preferred);
         if (codes.isEmpty()) {
+            Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has no 639-1 code for " + preferred);
             return null;
         }
-        final OpenSubtitles.Candidate best =
-                OpenSubtitles.pick(OpenSubtitles.search(id, codes), codes, allowMachine);
+        final List<OpenSubtitles.Candidate> found = OpenSubtitles.search(id, codes);
+        final OpenSubtitles.Candidate best = OpenSubtitles.pick(found, codes, allowMachine);
         if (best == null || cancelled()) {
+            Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has " + found.size()
+                    + " file(s), none taken" + (allowMachine ? "" : " (machine translations refused)"));
             return null;
         }
         final String link = OpenSubtitles.link(best.fileId);
         if (link == null) {
+            Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " picked " + best.language
+                    + " but the download link was refused");
             return null;
         }
+        Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has 1 " + best.language
+                + (best.machine ? " machine-translated" : "") + " of " + found.size());
         return new Result(SOURCE_OPENSUBTITLES, Utils.toIso3Language(best.language),
                 Collections.singletonList(link), best.machine);
     }

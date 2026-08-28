@@ -57,6 +57,9 @@ public class SettingsActivity extends AppCompatActivity
 
     static RecyclerView recyclerView;
 
+    /** Key of the sub-screen row last opened, so Back can put the list back on it. */
+    private String openedScreenKey;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
@@ -131,6 +134,7 @@ public class SettingsActivity extends AppCompatActivity
         final Bundle arguments = new Bundle();
         arguments.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, screen.getKey());
         fragment.setArguments(arguments);
+        openedScreenKey = screen.getKey();
         getSupportFragmentManager()
                 .beginTransaction()
                 .replace(R.id.settings, fragment)
@@ -431,11 +435,26 @@ public class SettingsActivity extends AppCompatActivity
             if (Build.VERSION.SDK_INT >= 29) {
                 recyclerView = getListView();
             }
-            // Long-pressing a player button lands on the section that button is about, the way a
-            // quick-settings tile opens its own page. Only on the way in: coming back from a
-            // sub-screen must not yank the list somewhere the user did not ask for.
-            if (savedInstanceState == null && getArguments() == null) {
-                final String key = requireActivity().getIntent().getStringExtra(EXTRA_SCROLL_TO);
+            if (getArguments() != null) {
+                // A sub-screen is a replaced fragment, and a replaced fragment starts with nothing
+                // focused: the first D-pad press then goes wherever the view root guesses instead
+                // of into the list. Hand it the first row.
+                if (savedInstanceState == null) {
+                    openAtPosition(0, 3);
+                }
+                return;
+            }
+            final SettingsActivity activity = (SettingsActivity) requireActivity();
+            final String returning = activity.openedScreenKey;
+            activity.openedScreenKey = null;
+            if (returning != null) {
+                // Back from a sub-screen rebuilt this list from scratch, so it would open at the
+                // top with no row focused. Put it back on the row the sub-screen was opened from.
+                openAtPreference(returning, 3);
+            } else if (savedInstanceState == null) {
+                // Long-pressing a player button lands on the section that button is about, the way
+                // a quick-settings tile opens its own page.
+                final String key = activity.getIntent().getStringExtra(EXTRA_SCROLL_TO);
                 if (key != null) {
                     openAtPreference(key, 3);
                 }
@@ -454,13 +473,18 @@ public class SettingsActivity extends AppCompatActivity
         private void openAtPreference(final String key, final int attemptsLeft) {
             final RecyclerView list = getListView();
             final RecyclerView.Adapter<?> adapter = list == null ? null : list.getAdapter();
-            if (attemptsLeft <= 0 || !(adapter instanceof PreferenceGroup.PreferencePositionCallback)
-                    || !(list.getLayoutManager() instanceof LinearLayoutManager)) {
+            if (!(adapter instanceof PreferenceGroup.PreferencePositionCallback)) {
                 return;
             }
-            final int position = ((PreferenceGroup.PreferencePositionCallback) adapter)
-                    .getPreferenceAdapterPosition(key);
-            if (position == RecyclerView.NO_POSITION) {
+            openAtPosition(((PreferenceGroup.PreferencePositionCallback) adapter)
+                    .getPreferenceAdapterPosition(key), attemptsLeft);
+        }
+
+        /** Same, for a row known by its place in the list rather than by a key. */
+        private void openAtPosition(final int position, final int attemptsLeft) {
+            final RecyclerView list = getListView();
+            if (attemptsLeft <= 0 || position == RecyclerView.NO_POSITION || list == null
+                    || !(list.getLayoutManager() instanceof LinearLayoutManager)) {
                 return;
             }
             final LinearLayoutManager manager = (LinearLayoutManager) list.getLayoutManager();
@@ -468,7 +492,7 @@ public class SettingsActivity extends AppCompatActivity
             OneShotPreDrawListener.add(list, () -> {
                 final RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(position);
                 if (holder == null) {
-                    openAtPreference(key, attemptsLeft - 1);
+                    openAtPosition(position, attemptsLeft - 1);
                     return;
                 }
                 holder.itemView.requestFocus();

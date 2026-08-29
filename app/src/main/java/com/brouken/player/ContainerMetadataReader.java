@@ -68,6 +68,11 @@ final class ContainerMetadataReader {
         return null;
     }
 
+    /** Whether the first {@link #SIGNATURE_BYTES} bytes announce a Matroska container. */
+    static boolean isMatroska(byte[] header) {
+        return signature(header) == Container.MATROSKA;
+    }
+
     /**
      * Bytes of the front of the stream worth collecting for the matching parser, or 0 for a container
      * this does not parse — an HLS manifest, an MPEG-TS segment, anything whose header is not at offset

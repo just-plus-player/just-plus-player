@@ -752,7 +752,7 @@ public class PlayerActivity extends Activity {
     // this the trigger feeds itself: the reselect stops the audio renderer, playback stops, that arms the
     // latch, and the next start recreates again — forever. Causal rather than timed on purpose. A window
     // measured from when the reselect was requested only holds while the playback thread answers promptly,
-    // and the boxes this feature is for are the ones that do not (see blockHeavyMkvAudio); this is cleared by
+    // and the boxes this feature is for are the ones that do not (see the heavy-audio block); this is cleared by
     // the return to playing itself, however late that is.
     private boolean audioRestartSettling;
     // Whether the current item has ever actually played. The first start of an item opens its own fresh
@@ -9907,18 +9907,26 @@ public class PlayerActivity extends Activity {
         addSubtitleTrack(uri);
     }
 
-    // Whether the current media is a Matroska container, detected from the resolved MIME type or the
-    // URI extension. Extensionless streams that never reveal a matroska type are not matched.
-    private boolean isMatroskaMedia() {
-        if (MimeTypes.VIDEO_MATROSKA.equals(mPrefs.mediaType)) {
+    // Whether the current media is a Matroska container: the resolved MIME type, the URI extension, or
+    // the stream's own first bytes. The last one is what covers a resolver URL, which carries neither —
+    // a hashed path with no extension and no mime, answered by a real Matroska remux.
+    private static boolean isMatroskaMedia(final Uri uri, final String mediaType) {
+        if (MimeTypes.VIDEO_MATROSKA.equals(mediaType)) {
             return true;
         }
-        if (mPrefs.mediaUri == null) {
+        if (uri == null) {
             return false;
         }
-        final String path = mPrefs.mediaUri.getPath();
+        if (TrackNameParsingDataSource.isMatroska(uri)) {
+            return true;
+        }
+        final String path = uri.getPath();
         // Case-insensitive ".mkv" suffix test without allocating a lower-cased copy of the path.
         return path != null && path.regionMatches(true, path.length() - 4, ".mkv", 0, 4);
+    }
+
+    private boolean isMatroskaMedia() {
+        return isMatroskaMedia(mPrefs.mediaUri, mPrefs.mediaType);
     }
 
     // Denies passthrough only for mimes this device has already proven broken (see
@@ -10088,13 +10096,22 @@ public class PlayerActivity extends Activity {
                 .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE);
         // On TV boxes the platform MediaCodec decoder for the heavy codecs common in MKV remuxes
         // (DTS/EAC3/TrueHD) can wedge during init on the playback thread — no exception is thrown, so
-        // the load never reaches a ready state (JPP-1005). Instead of blanket-forcing software audio
-        // (which also kills Atmos/passthrough on every TV), hide only those codecs from the platform
-        // decoder via the combined MediaCodecSelector below. MediaCodecAudioRenderer consults the sink
-        // first, so where the receiver advertises passthrough the compressed bitstream still goes out
-        // (Atmos preserved); where it does not, the track falls through to the ffmpeg software
-        // renderer. Only MKV audio on a TV is affected; video keeps the user's decoder priority.
-        final boolean blockHeavyMkvAudio = isTvBox && isMatroskaMedia();
+        // the load never reaches a ready state (JPP-1005) — and where it does run, it is the decoder a
+        // box without the matching Dolby/DTS licence answers with silence. Instead of blanket-forcing
+        // software audio (which also kills Atmos/passthrough on every TV), hide only those codecs from
+        // the platform decoder via the combined MediaCodecSelector below. MediaCodecAudioRenderer
+        // consults the sink first, so where the receiver advertises passthrough the compressed bitstream
+        // still goes out (Atmos preserved); where it does not, the track falls through to the ffmpeg
+        // software renderer. Only MKV audio on a TV is affected; video keeps the user's decoder priority.
+        //
+        // Decided inside the selector rather than here, because here it cannot be known yet: a stream
+        // whose URL carries no extension and no mime only reveals its container when its first bytes are
+        // read, which happens while this player prepares. That is after the factory is built, but still
+        // before any track exists — so before the selector is ever consulted. Freezing the answer at
+        // build time is what let a Matroska remux behind a hashed resolver URL reach the platform
+        // decoder (JPP-B: a TV box played the picture in silence, its own eac3 decoder in the report).
+        final Uri mediaUri = mPrefs.mediaUri;
+        final String mediaType = mPrefs.mediaType;
         // Audio sample mimes this device has already proven cannot passthrough (see
         // recoverByRevokingAudioMime()) — denied at the sink only; the platform decoder for the same
         // mime is left alone since it is an independent subsystem that may work fine.
@@ -10102,7 +10119,7 @@ public class PlayerActivity extends Activity {
         // passthrough back to a mime that just failed, or the failure repeats on the same frame.
         final Set<String> revokedAudioMimes = new HashSet<>(mPrefs.revokedAudioMimes);
         revokedAudioMimes.addAll(sessionRevokedAudioMimes);
-        // Always subclassed (not only for blockHeavyMkvAudio/an existing revocation) so buildAudioSink
+        // Always subclassed (not only for the heavy-audio block/an existing revocation) so buildAudioSink
         // below can install the live AudioPassthroughDenylistSink from a device's very first play —
         // it needs to be present before any revocation exists, so a first stall can revoke into it
         // without a player rebuild (see recoverByRevokingAudioMime()).
@@ -10118,8 +10135,11 @@ public class PlayerActivity extends Activity {
                 // hidden from the platform decoder or a mime has been revoked — even when the user
                 // chose "device decoders only". Keep it behind the platform renderer (ON, not PREFER)
                 // so passthrough/decode still wins when available. An explicit PREFER stands.
+                // isTvBox rather than the block itself: that is decided per mime while the player runs
+                // (see mediaUri above), and by then this list is fixed — so on a TV the fallback has to
+                // be in it already or a hidden platform decoder would leave the track with nothing.
                 super.buildAudioRenderers(context,
-                        (blockHeavyMkvAudio || !revokedAudioMimes.isEmpty())
+                        (isTvBox || !revokedAudioMimes.isEmpty())
                                 && extensionRendererMode == EXTENSION_RENDERER_MODE_OFF
                                 ? EXTENSION_RENDERER_MODE_ON : extensionRendererMode,
                         mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler,
@@ -10182,15 +10202,16 @@ public class PlayerActivity extends Activity {
                 // of letting the next candidate try.
                 .setEnableDecoderFallback(true)
                 .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
-        if (forceHevcForDolbyVision || blockHeavyMkvAudio) {
+        if (forceHevcForDolbyVision || isTvBox) {
             // One combined codec selector for two independent needs:
-            // - blockHeavyMkvAudio: no platform decoder for the heavy MKV audio codecs, so they
-            //   passthrough (if the sink supports it) or fall back to ffmpeg (see above).
+            // - heavy MKV audio on a TV: no platform decoder for those codecs, so they passthrough (if
+            //   the sink supports it) or fall back to ffmpeg (see above).
             // - forceHevcForDolbyVision: route a Dolby Vision track to the plain HEVC decoder (its base
             //   layer is HEVC), bypassing a device DV decoder that wedged or failed while decoding.
             //   Picture stays HDR10.
             renderersFactory.setMediaCodecSelector((mimeType, requiresSecureDecoder, requiresTunnelingDecoder) -> {
-                if (blockHeavyMkvAudio && HEAVY_MKV_AUDIO_MIMES.contains(mimeType)) {
+                if (isTvBox && HEAVY_MKV_AUDIO_MIMES.contains(mimeType)
+                        && isMatroskaMedia(mediaUri, mediaType)) {
                     return Collections.emptyList();
                 }
                 return MediaCodecSelector.DEFAULT.getDecoderInfos(

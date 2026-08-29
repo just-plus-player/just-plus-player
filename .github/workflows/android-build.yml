@@ -32,9 +32,16 @@ jobs:
           -Pandroid.injected.signing.key.alias=key
           -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }}
 
+      # A second copy under a name that never changes. It is what makes
+      # releases/latest/download/JustPlus.Player.apk resolve after every release — the fixed URL a
+      # Downloader short code points at, since GitHub can only redirect to an exact asset name. Same
+      # build as the versioned asset beside it, so whichever one anything picks is the same file.
+      - run: cp app/build/outputs/apk/latestUniversal/release/*.apk JustPlus.Player.apk
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             app/build/outputs/apk/latestUniversal/release/*.apk
+            JustPlus.Player.apk
           prerelease: true
           draft: true

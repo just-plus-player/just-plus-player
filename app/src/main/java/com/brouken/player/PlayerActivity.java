@@ -10269,7 +10269,23 @@ public class PlayerActivity extends Activity {
                                     : dataSpec);
             // The container head and the Cues come off disk on every play after the first, so a
             // re-prepare asks the network for one range instead of four — see MediaCache.
-            upstreamFactory = MediaCache.wrap(this, rangeSeeded);
+            //
+            // Progressive media only. A manifest is read through this same factory, and the cache knows
+            // nothing of HTTP freshness: the first copy of a playlist is kept and served from disk on
+            // every reload after it. A live playlist lists only its current window — three two-second
+            // segments on the stream this was reported on — so the player played those six seconds and
+            // then waited forever for a playlist that could no longer change. Nothing is lost by staying
+            // out of the way: HLS and DASH read each segment once and never re-read a container head.
+            final String mediaMime = mPrefs.mediaType != null
+                    ? mPrefs.mediaType : resolvedMediaTypes.get(mPrefs.mediaUri.toString());
+            // Either signal is enough. A .m3u8 carrying a video/* mime is still HLS — that mime only
+            // sends it down the progressive path first, where it fails and is recovered as HLS
+            // (recoverFromContainerError) without this factory being rebuilt.
+            final boolean adaptive =
+                    Util.inferContentType(mPrefs.mediaUri) != C.CONTENT_TYPE_OTHER
+                            || Util.inferContentTypeForUriAndMimeType(mPrefs.mediaUri, mediaMime)
+                                    != C.CONTENT_TYPE_OTHER;
+            upstreamFactory = adaptive ? rangeSeeded : MediaCache.wrap(this, rangeSeeded);
         }
 
         final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);

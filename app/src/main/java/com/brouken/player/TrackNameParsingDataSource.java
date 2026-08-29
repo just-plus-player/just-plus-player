@@ -48,6 +48,22 @@ final class TrackNameParsingDataSource implements DataSource {
      */
     static final AtomicLong bytesRead = new AtomicLong();
 
+    /**
+     * The media URI whose own first bytes announced a Matroska container, or null. Written on a load
+     * thread the moment the signature is read — the tee sits upstream of the extractor, so this is set
+     * before a single track exists and therefore before anything asks which decoder should take the
+     * audio. The URI a stream is served from often says nothing about what it holds (a resolver hands
+     * out a hashed path with no extension and no mime), and that is exactly where the container has to
+     * be read rather than guessed. One slot, not a map: only the item being opened is ever asked about,
+     * and a URI that does not match simply answers no.
+     */
+    private static volatile String matroskaUri;
+
+    /** Whether {@code uri}'s own bytes announced Matroska. */
+    static boolean isMatroska(Uri uri) {
+        return uri != null && uri.toString().equals(matroskaUri);
+    }
+
     /** Receives parsed track metadata (on a load thread) and reports whether it already has it. */
     interface Listener {
         /**
@@ -330,6 +346,9 @@ final class TrackNameParsingDataSource implements DataSource {
                     return;
                 }
                 budget = ContainerMetadataReader.headerBudget(signature);
+                if (uri != null && ContainerMetadataReader.isMatroska(signature)) {
+                    matroskaUri = uri.toString();
+                }
                 if (budget == 0) {
                     // Nothing here any parser reads — an HLS manifest, an MPEG-TS segment. Every segment
                     // of a streaming playback opens at offset 0, and this is what keeps them free: the

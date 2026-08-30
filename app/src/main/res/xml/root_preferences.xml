@@ -267,12 +267,13 @@
             app:summaryOff="@string/pref_disable_volume_brightness_gestures_off"
             app:title="@string/pref_disable_volume_brightness_gestures" />
 
-        <SwitchPreferenceCompat
-            app:key="holdSpeed"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_hold_speed_on"
-            app:summaryOff="@string/pref_hold_speed_off"
-            app:title="@string/pref_hold_speed" />
+        <ListPreference
+            app:key="holdSpeedMode"
+            app:defaultValue="adjust"
+            app:entries="@array/hold_speed_entries"
+            app:entryValues="@array/hold_speed_values"
+            app:title="@string/pref_hold_speed"
+            app:useSimpleSummaryProvider="true" />
 
         <SwitchPreferenceCompat
             app:key="repeatToggle"

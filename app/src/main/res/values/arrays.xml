@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <string-array name="hold_speed_entries">
+    <item>@string/pref_hold_speed_adjust</item>
+    <item>@string/pref_hold_speed_fixed</item>
+    <item>@string/pref_hold_speed_none</item>
+  </string-array>
+
+  <string-array name="hold_speed_values">
+    <item>adjust</item>
+    <item>fixed</item>
+    <item>off</item>
+  </string-array>
+
   <string-array name="file_access_entries">
     <item>@string/pref_file_access_auto</item>
     <item>Storage Access Framework</item>

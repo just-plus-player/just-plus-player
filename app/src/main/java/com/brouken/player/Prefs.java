@@ -57,6 +57,7 @@ class Prefs {
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
     private static final String PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES = "disableVolumeBrightnessGestures";
     private static final String PREF_KEY_HOLD_SPEED = "holdSpeed";
+    private static final String PREF_KEY_HOLD_SPEED_MODE = "holdSpeedMode";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
     private static final String PREF_KEY_ALLOW_SYSTEM_FRAMERATE = "allowSystemFrameRate";
@@ -137,6 +138,10 @@ class Prefs {
     // Which skips offer the "go back" pill afterwards.
     // When the online subtitle search runs. One choice, because the two switches this replaced were
     // not independent: the second meant nothing while the first was off.
+    public static final String HOLD_SPEED_OFF = "off";
+    public static final String HOLD_SPEED_ADJUST = "adjust";
+    public static final String HOLD_SPEED_FIXED = "fixed";
+
     public static final String SEARCH_OFF = "off";
     public static final String SEARCH_FIRST = "first";
     public static final String SEARCH_NONE = "none";
@@ -192,8 +197,9 @@ class Prefs {
     public boolean autoPiP = false;
     // Off means the vertical swipes work as they always have; on takes them away entirely.
     public boolean disableVolumeBrightnessGestures = false;
-    // Off takes the whole hold gesture away: a long press on the picture then does nothing at all.
-    public boolean holdSpeed = true;
+    // What a long press on the picture does: nothing at all, a fixed 2x, or 2x that the same finger
+    // then drags sideways to change.
+    public String holdSpeedMode = HOLD_SPEED_ADJUST;
 
     public boolean tunneling = false;
     public boolean frameRateMatching = false;
@@ -373,7 +379,7 @@ class Prefs {
         autoPiP = mSharedPreferences.getBoolean(PREF_KEY_AUTO_PIP, autoPiP);
         disableVolumeBrightnessGestures = mSharedPreferences.getBoolean(
                 PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES, disableVolumeBrightnessGestures);
-        holdSpeed = mSharedPreferences.getBoolean(PREF_KEY_HOLD_SPEED, holdSpeed);
+        holdSpeedMode = getHoldSpeedMode(mContext);
         tunneling = mSharedPreferences.getBoolean(PREF_KEY_TUNNELING, tunneling);
         frameRateMatching = mSharedPreferences.getBoolean(PREF_KEY_FRAMERATE_MATCHING, frameRateMatching);
         allowSystemFrameRate = mSharedPreferences.getBoolean(PREF_KEY_ALLOW_SYSTEM_FRAMERATE, !Utils.isTvBox(mContext));
@@ -541,6 +547,25 @@ class Prefs {
         preferences.edit().putString(PREF_KEY_SUBTITLE_SEARCH_MODE, migrated)
                 .remove(PREF_KEY_SUBTITLE_SEARCH)
                 .remove(PREF_KEY_SUBTITLE_SEARCH_STRICT)
+                .apply();
+        return migrated;
+    }
+
+    /**
+     * What the hold-to-speed gesture does, migrated once from the switch it replaced. Read before the
+     * settings screen inflates as well as on playback, so a viewer who had the gesture off is not shown
+     * it back on.
+     */
+    public static String getHoldSpeedMode(final Context context) {
+        final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        final String stored = preferences.getString(PREF_KEY_HOLD_SPEED_MODE, null);
+        if (stored != null) {
+            return stored;
+        }
+        final String migrated = preferences.getBoolean(PREF_KEY_HOLD_SPEED, true)
+                ? HOLD_SPEED_ADJUST : HOLD_SPEED_OFF;
+        preferences.edit().putString(PREF_KEY_HOLD_SPEED_MODE, migrated)
+                .remove(PREF_KEY_HOLD_SPEED)
                 .apply();
         return migrated;
     }

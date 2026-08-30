@@ -155,6 +155,7 @@ public class SettingsActivity extends AppCompatActivity
 
             // Before inflation: the preferences below read these keys, and either value may still be
             // living in the shape it was stored in two versions ago.
+            Prefs.getHoldSpeedMode(requireContext());
             Prefs.getSubtitleSearchMode(requireContext());
             Prefs.getSubtitleTranslate(requireContext());
 
@@ -238,7 +239,7 @@ public class SettingsActivity extends AppCompatActivity
                 // A remote has no swipes to give up, so there is nothing here to turn off.
                 preferenceDisableGestures.setVisible(false);
             }
-            Preference preferenceHoldSpeed = findPreference("holdSpeed");
+            Preference preferenceHoldSpeed = findPreference("holdSpeedMode");
             if (preferenceHoldSpeed != null && Utils.isTvBox(getContext())) {
                 // Same reason: there is no finger to hold on the picture.
                 preferenceHoldSpeed.setVisible(false);

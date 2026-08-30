@@ -4805,7 +4805,7 @@ public class PlayerActivity extends Activity {
             return;
         }
         final Format video = player.getVideoFormat();
-        setInfoLine(videoInfoView, buildVideoInfo(video));
+        setInfoLine(videoInfoView, buildVideoInfo(video, videoFrameRate()));
         setInfoLine(audioInfoView, buildAudioInfo(getSelectedAudioFormat()));
     }
 
@@ -4821,7 +4821,7 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    private static String buildVideoInfo(Format video) {
+    private static String buildVideoInfo(Format video, float frameRate) {
         if (video == null) {
             return null;
         }
@@ -4829,6 +4829,12 @@ public class PlayerActivity extends Activity {
         appendField(b, resolutionClass(video.width, video.height));
         appendField(b, codecName(video));
         appendField(b, hdrName(video.colorInfo));
+        // Alongside its neighbours rather than in the stats panel: like them it is a property of the file
+        // and does not move during playback, and it is the one the frame-rate matching setting is about —
+        // which made it the only reason to open a panel over the picture.
+        if (frameRate > 0) {
+            appendField(b, String.format(Locale.US, "%.2f fps", frameRate));
+        }
         return b.toString();
     }
 
@@ -5193,6 +5199,12 @@ public class PlayerActivity extends Activity {
      * The stats panel's text. Deliberately only what the header does not already say — it is on screen at
      * the same time, and repeating "1080p H264" there would be noise. What is left is the figures that
      * move and the decoder names the coarse codec label hides.
+     *
+     * <p>Splitting the transfer figures (buffer, network, bitrate) out of here onto a line of their own,
+     * under a second switch, was tried and put back: everything they say is already on this panel, and
+     * the bottom bar has no band wide enough for them — the time is short, the button cluster is not, so
+     * a centred line is capped at twice the narrower side and loses the bitrate to an ellipsis on a TV.
+     * Worth revisiting only if the controls are laid out differently.
      */
     private void updateStats() {
         if (statsView == null) {
@@ -5215,12 +5227,6 @@ public class PlayerActivity extends Activity {
         final Format video = player.getVideoFormat();
         if (video != null) {
             text.append('\n').append(video.width).append('×').append(video.height);
-            // Media3 fills the rate in from MP4 only; for MKV and AVI it reads the container's own figure
-            // for its timing but never publishes it, so the parser we already run picks it up instead.
-            final float frameRate = videoFrameRate();
-            if (frameRate > 0) {
-                text.append(String.format(Locale.US, " · %.2f fps", frameRate));
-            }
             // Its own line rather than a third field: the panel has to stay narrower than the gap to the
             // centred transport buttons, and every line here is kept short enough to never wrap.
             if (video.bitrate != Format.NO_VALUE) {
@@ -5245,12 +5251,41 @@ public class PlayerActivity extends Activity {
         if (audioDecoderName != null) {
             text.append('\n').append(audioDecoderName);
         }
+        final String dolbyVision = dolbyVisionStatus();
+        if (dolbyVision != null) {
+            text.append('\n').append(dolbyVision);
+        }
         final DecoderCounters counters = player.getVideoDecoderCounters();
         if (counters != null) {
             text.append('\n').append(getString(R.string.stats_dropped, counters.droppedBufferCount));
         }
         statsView.setText(text);
         fadeChrome(statsView, true);
+    }
+
+
+    /**
+     * What became of a Dolby Vision track, for the stats panel — null when there is nothing to say, which
+     * is every SDR and ordinary HDR10 file. The header can only ever say "Dolby Vision": that is what the
+     * mime says whether the rewrite worked or not, so a file whose base layer is what actually reaches
+     * the panel is labelled the same as one that converted. This is the line that tells them apart, and
+     * on the two boxes this was chased across it was the only instrument that did.
+     */
+    @Nullable
+    private String dolbyVisionStatus() {
+        // Outranks the rest: if the recovery fired there was no conversion by definition, and the whole
+        // session past it is the base layer whatever the converter had decided before.
+        if (forceHevcForDolbyVision) {
+            return "DV → HDR10 · decoder failed";
+        }
+        if (dv7Converter != null) {
+            return dv7Converter.shortStatus();
+        }
+        // No converter built at all: the setting hands profile 7 to the decoder as its base layer. Read
+        // from the format, since nothing parsed the profile this time round.
+        final Format video = player != null ? player.getVideoFormat() : null;
+        return video != null && Dv7Converter.isDolbyVisionProfile7(video)
+                ? "DV 7 → HDR10 · by setting" : null;
     }
 
     /**

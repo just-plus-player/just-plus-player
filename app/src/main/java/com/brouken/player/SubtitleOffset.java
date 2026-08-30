@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.text.TextOutput;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -68,6 +69,8 @@ final class SubtitleOffset implements TextOutput {
     private int next;
     /** The whole subtitle file, when the selected track is one we can hold. Read on the playback thread. */
     private volatile SubtitleTimeline timeline;
+    /** Whether the last group emitted put something on screen — see {@link #hide()}. */
+    private boolean showing;
     /** Blocks of {@link #timeline} currently on screen, or null when what is on screen is unknown. */
     private int[] painted;
 
@@ -96,6 +99,7 @@ final class SubtitleOffset implements TextOutput {
             groups.clear();
             next = 0;
             painted = null;
+            hide();
         }
         release();
     }
@@ -122,7 +126,25 @@ final class SubtitleOffset implements TextOutput {
         groups.clear();
         next = 0;
         painted = null;
+        hide();
         release();
+    }
+
+    /**
+     * Takes off whatever is still on screen, if anything is.
+     *
+     * <p>Nothing downstream of here keeps a clock: a cue stands until another one replaces it. So the
+     * moment this stops having anything to hand out, it has to say so — and it did not. Dropping the
+     * timeline dropped the held groups and the record of what was painted, and then {@link #release}
+     * found nothing to send, which is exactly the shape of sending nothing. Turning subtitles off left
+     * the last line standing over the rest of the film.
+     */
+    void hide() {
+        if (!showing) {
+            return;
+        }
+        final long nowMs = position.currentMs();
+        emit(new CueGroup(Collections.emptyList(), nowMs == C.TIME_UNSET ? 0 : nowMs * 1000));
     }
 
     @Override
@@ -195,6 +217,7 @@ final class SubtitleOffset implements TextOutput {
      */
     private void emit(CueGroup group) {
         final CueGroup uniform = SubtitleUtils.withoutEmbeddedLook(group);
+        showing = !uniform.cues.isEmpty();
         output.onCues(uniform.cues);
         output.onCues(uniform);
     }

@@ -8123,6 +8123,16 @@ public class PlayerActivity extends Activity {
         // subtitles off would leave a lone hint floating at the bottom of a subtitle-free picture.
         chooseSecondarySubtitle(null);
         clearPaintedSubtitle();
+        // Said here rather than left to the renderer to say by going quiet. A disabled renderer does
+        // clear its own output, but that empty group is then held back by a positive offset like any
+        // other, and a subtitle painted from a file has no renderer to go quiet in the first place.
+        // "Off" is an instruction about the screen, so it is given to the screen.
+        if (subtitleOffset != null) {
+            subtitleOffset.hide();
+        }
+        if (secondarySubtitleOffset != null) {
+            secondarySubtitleOffset.hide();
+        }
         mainLineOff = true;
         // Off is this line's renderer, not the whole track type. setTrackTypeDisabled(TEXT) is the
         // selector's last word — applyRendererDisableOverrides runs after every override it applies —

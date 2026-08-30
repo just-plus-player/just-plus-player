@@ -233,7 +233,7 @@
     <string name="stats_dropped">Dropped frames: %1$d</string>
     <string name="stats_network">Network: %1$s</string>
     <string name="stats_stream">Stream: %1$s</string>
-    <string name="stats_overall">Overall: %1$s</string>
+    <string name="stats_overall">Average: %1$s</string>
     <string name="stats_report_title">Playback report</string>
     <string name="stats_report_message">Send these playback details when reporting a problem with picture or sound.</string>
     <string name="pref_show_stats_on">Buffer, decoders and dropped frames are shown with the player controls</string>

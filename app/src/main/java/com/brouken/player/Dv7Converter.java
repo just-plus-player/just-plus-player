@@ -88,6 +88,14 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
     @Nullable
     private volatile String status;
 
+    /**
+     * The same verdict in the stats panel's words, written wherever {@link #status} is. Kept apart rather
+     * than shortened on read: the dump's phrasing is a sentence and the panel's lines are held short
+     * enough never to wrap, and deriving one from the other would mean parsing prose.
+     */
+    @Nullable
+    private volatile String shortStatus;
+
     /** Cached answer to "does this device list a profile 8 decoder"; see deviceListsProfile8(). */
     @Nullable
     private static volatile Boolean profile8Listed;
@@ -108,6 +116,12 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
     @Nullable
     String status() {
         return status;
+    }
+
+    /** The same, for the stats panel; null until a track decides. */
+    @Nullable
+    String shortStatus() {
+        return shortStatus;
     }
 
     @Override
@@ -333,6 +347,7 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                         && (transformer = newTransformer()) != null;
                 if (isDolbyVisionProfile7(format) && !converting) {
                     owner.status = "profile 7, unchanged (no profile 8 decoder or no libdovi here)";
+                    owner.shortStatus = "DV 7 → HDR10 · no P8 decoder";
                 }
             }
             publishedFormat = format;
@@ -483,6 +498,7 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                 owner.status = "profile 7 → 8.1 ("
                         + (dualLayer ? "RPU from the enhancement layer" : "in-band RPU")
                         + (length > base ? ", enhancement layer dropped" : "") + ")";
+                owner.shortStatus = "DV 7 → 8.1 · " + (dualLayer ? "RPU from EL" : "in-band RPU");
             }
             ((Buffer) buffer).position(0);
             copyFrameOut(converted);
@@ -614,6 +630,9 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
             runCount = 0;
             if (!codecsRewritten) {
                 owner.status = reason;
+                // Every reason to stop is one line in the panel: which frame it choked on is a question
+                // for the dump, and what the viewer sees is the same picture either way.
+                owner.shortStatus = "DV 7 → HDR10 · rewrite refused";
             }
         }
     }
@@ -658,7 +677,7 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
         return supported;
     }
 
-    private static boolean isDolbyVisionProfile7(Format format) {
+    static boolean isDolbyVisionProfile7(Format format) {
         return MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)
                 && format.codecs != null
                 && (format.codecs.startsWith("dvhe.07") || format.codecs.startsWith("dvh1.07"));

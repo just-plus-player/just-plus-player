@@ -179,6 +179,7 @@
     <string name="update_stops_playback">The player will close to install — your position is saved.</string>
     <string name="time_ends_at">Ends at %s</string>
     <string name="time_ends_at_inline">until %1$s</string>
+    <string name="time_live">● LIVE</string>
     <string name="playlist">Playlist</string>
     <string name="pref_map_dv7">Dolby Vision profile 7 fallback</string>
     <string name="pref_map_dv7_on">Play Dolby Vision profile 7 content on HDR displays</string>

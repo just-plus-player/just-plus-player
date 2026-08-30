@@ -707,8 +707,9 @@ public class PlayerActivity extends Activity {
     private boolean restoreOrientationLock;
     private boolean restorePlayState;
     private boolean restorePlayStateAllowed;
-    // "Start playing once the player is ready". Read live by Utils.playIfCan, whose frame-rate probe runs on
-    // a background thread: a snapshot taken before it started would still play after onStop cleared this.
+    // "Start playing once the player is ready". Read live by frameRateSettled, which Utils.handleFrameRate
+    // can reach from a frame-rate probe running on a background thread: a snapshot taken before it started
+    // would still play after onStop cleared this.
     boolean play;
     private float subtitlesScale;
     private float secondarySubtitlesScale;
@@ -10614,8 +10615,14 @@ public class PlayerActivity extends Activity {
      * Nothing more to wait for from the display: disarm the listener armed for a mode change and spend
      * the play the loading player is holding. Every path that does not request a new mode ends here, the
      * ones that give up early included — those used to leave the play pending for good.
+     *
+     * <p>Including the one inside {@link Utils#handleFrameRate}, which decided no mode change was needed.
+     * That used to spend the play itself, and its own version of this did not consult the room: a client
+     * joining a room that was standing still played straight through the hold, and was dragged back when
+     * it lifted. Reached whenever the display cannot offer a better mode than the one it is on — a single
+     * mode, which is an emulator and a box with a fixed output, or a phone already at its top rate.
      */
-    private void frameRateSettled() {
+    void frameRateSettled() {
         playerView.removeCallbacks(frameRateGiveUpRunnable);
         if (displayManager != null && displayListener != null) {
             displayManager.unregisterDisplayListener(displayListener);

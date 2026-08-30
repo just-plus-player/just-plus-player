@@ -777,7 +777,7 @@ class Utils {
         activity.runOnUiThread(() -> {
             boolean switchingModes = false;
 
-            // A detached decor view answers null. Falling through to playIfCan rather than returning:
+            // A detached decor view answers null. Falling through to the settled path rather than returning:
             // the caller has already told the player a switch is pending, so bailing out here left the
             // file on its first frame with no spinner and no error. Unreachable until the rate started
             // coming from Format — before that a stream had no rate at all and never entered this block.
@@ -845,25 +845,11 @@ class Utils {
             }
 
             if (!switchingModes) {
-                playIfCan(activity);
+                activity.frameRateSettled();
             }
         });
     }
 
-    // Reads activity.play now rather than a value captured before the frame-rate probe ran: that probe takes
-    // seconds on a network file, and the user may have left in the meantime (onStop clears it).
-    static void playIfCan(final PlayerActivity activity) {
-        if (activity.play) {
-            // Spending it, so mark it spent: the caller waiting for a display mode uses this flag to tell
-            // "playback has not started" from "it started without a mode change", and left set it would
-            // let a later display event start playback a second time, on its own.
-            activity.play = false;
-            if (PlayerActivity.player != null)
-                PlayerActivity.player.play();
-            if (activity.playerView != null)
-                activity.playerView.hideController();
-        }
-    }
 
     public static boolean alternativeChooser(PlayerActivity activity, Uri initialUri, boolean video) {
         String startPath;

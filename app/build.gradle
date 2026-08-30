@@ -66,6 +66,17 @@ android {
         release {
             minifyEnabled false
             //proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // The two Intel ABIs are 23 of the 54 MB this APK used to weigh, and nothing that plays video
+            // runs on them: every phone, tablet and TV box is ARM, and the x86 Chromebooks that exist
+            // translate ARM anyway. Release only, so a debug build still installs on the x86_64 emulator
+            // that local checks run on. A whitelist, so what stays is stated rather than inferred.
+            // Not the same thing as -PabiFilter above: this is still one universal APK with the plain
+            // versionCode, which is what keeps updates working for everyone already on one.
+            if (!project.hasProperty('abiFilter')) {
+                ndk {
+                    abiFilters 'arm64-v8a', 'armeabi-v7a'
+                }
+            }
         }
     }
     flavorDimensions "targetSdk", "distribution"

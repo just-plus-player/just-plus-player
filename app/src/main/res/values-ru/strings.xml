@@ -156,6 +156,7 @@
     <string name="pref_crash_reporting_off">Данные о сбоях и ошибках не покидают устройство</string>
     <string name="time_ends_at">Закончится в %s</string>
     <string name="time_ends_at_inline">до %1$s</string>
+    <string name="time_live">● ЭФИР</string>
     <string name="playlist">Плейлист</string>
     <string name="shortcut_videos">Видео</string>
     <string name="button_open">Открыть</string>

@@ -229,6 +229,11 @@ public class PlayerActivity extends Activity {
     // whose request URL had no telling extension. Keyed by the requested URI (== MediaItem URI).
     // Written from a load thread, read on the player thread — hence concurrent.
     private final java.util.Map<String, String> resolvedMediaTypes = new java.util.concurrent.ConcurrentHashMap<>();
+    // The source factory of the live player, and the same data source chain without MediaCache in it —
+    // null when the chain never had it. Both only so dropMediaCache() can correct the chain of a player
+    // that is already built.
+    private DefaultMediaSourceFactory mediaSourceFactory;
+    private androidx.media3.datasource.DataSource.Factory uncachedUpstream;
     // Byte length of each media item as its data source reported it, keyed the same way. Feeds the
     // stats panel's average bitrate for the containers that state no bitrate at all.
     private final java.util.Map<String, Long> contentLengths = new java.util.concurrent.ConcurrentHashMap<>();
@@ -575,6 +580,12 @@ public class PlayerActivity extends Activity {
     private TextView videoInfoView;
     private TextView audioInfoView;
     private TextView endsAtView;
+    // Longest window still read as a live broadcast rather than a recording — see isLiveStream().
+    private static final long LIVE_WINDOW_MAX_MS = 10 * 60_000L;
+    // The end time is a qualifier beside the clock, so it is written a step down from white. The live
+    // label takes the brand colour instead: it is a state, not a reading, and the only one this row ever
+    // reports — see updateEndsAt.
+    private static final int ENDS_AT_COLOR = 0xB3FFFFFF;
     private TextView roomPill;
     private TextView statsView;
     private OutlineTextClock overlayClock;
@@ -979,6 +990,9 @@ public class PlayerActivity extends Activity {
     DisplayManager displayManager;
     DisplayManager.DisplayListener displayListener;
     SubtitleFinder subtitleFinder;
+    // The media whose neighbouring subtitle names are still to be guessed, or null when there is nothing
+    // waiting. Set while the intent is read, spent on the first track change — see startSubtitleGuess().
+    private Uri pendingSubtitleGuessUri;
 
     Runnable barsHider = () -> {
         if (playerView != null && !controllerVisible) {
@@ -1554,7 +1568,7 @@ public class PlayerActivity extends Activity {
         timeRow.setLayoutParams(timeRowLp);
 
         endsAtView = new TextView(this);
-        endsAtView.setTextColor(0xB3FFFFFF);
+        endsAtView.setTextColor(ENDS_AT_COLOR);
         // A step below the clock: the clock is the anchor, the end time is the qualifier next to it.
         endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAtView.setVisibility(View.GONE);
@@ -5006,12 +5020,43 @@ public class PlayerActivity extends Activity {
         return language;
     }
 
+    /**
+     * Whether what is playing is a broadcast rather than a recording. Media3's own flag cannot be taken
+     * on its own: {@code isCurrentMediaItemLive()} is true for any HLS playlist without an
+     * {@code #EXT-X-ENDLIST}, and the proxy and torrent remuxes this app plays are served exactly like
+     * that (the same trap {@link #recoverFromSourceError} documents), so it says yes to ordinary films
+     * too. What separates them is the window: a broadcast offers the few segments it has to hand — 24 s
+     * on the stream this was written for — while a remux offers the whole film. Ten minutes sits well
+     * above any live window and well below any feature; a genuinely short recording served without an
+     * end tag is the one thing this reads wrongly, and all it costs there is a label.
+     */
+    private boolean isLiveStream() {
+        if (player == null || !player.isCurrentMediaItemLive()) {
+            return false;
+        }
+        final long duration = player.getDuration();
+        return duration == C.TIME_UNSET || duration < LIVE_WINDOW_MAX_MS;
+    }
+
     void updateEndsAt() {
         if (player == null || endsAtView == null) {
             return;
         }
+        if (!controllerVisible) {
+            endsAtView.setVisibility(View.GONE);
+            return;
+        }
+        // A broadcast has no end to name. The clock time computed below would be the end of whatever
+        // window the stream is offering right now — a minute from now, and about nothing.
+        if (isLiveStream()) {
+            endsAtView.setText(R.string.time_live);
+            endsAtView.setTextColor(brandColor());
+            endsAtView.setVisibility(View.VISIBLE);
+            return;
+        }
+        endsAtView.setTextColor(ENDS_AT_COLOR);
         final long duration = player.getDuration();
-        if (!controllerVisible || duration == C.TIME_UNSET || duration <= 0) {
+        if (duration == C.TIME_UNSET || duration <= 0) {
             endsAtView.setVisibility(View.GONE);
             return;
         }
@@ -6555,6 +6600,15 @@ public class PlayerActivity extends Activity {
         // read. Searching then asks the internet for subtitles the file is about to expose by itself.
         if (player == null || tracks.getGroups().isEmpty()
                 || player.getPlaybackState() == Player.STATE_IDLE) {
+            return;
+        }
+        // Nothing to look for over a broadcast: there is no release to match, and an id arriving with a
+        // channel says nothing about what is on air — Lampa fills imdb_id/id from whatever card its
+        // screen was showing (getCardFromActivity), so a channel opened from a series page arrives
+        // labelled as that series and would be given its subtitles. Asked for by name it still runs:
+        // somebody typing a title is saying they know better than this.
+        if (!manual && isLiveStream()) {
+            Utils.log("subtitles: live stream, not searching");
             return;
         }
         // With the search switched off this still runs, and stops at the cache: a copy downloaded for
@@ -10228,6 +10282,7 @@ public class PlayerActivity extends Activity {
         // launch-intent HTTP headers/User-Agent, then wrap it so we can tap the byte stream and
         // read rich track names straight from the container (see TrackNameParsingDataSource).
         androidx.media3.datasource.DataSource.Factory upstreamFactory = new DefaultDataSource.Factory(this);
+        uncachedUpstream = null;
 
         if (haveMedia && isNetworkUri && mPrefs.mediaUri.getScheme().toLowerCase().startsWith("http")) {
             HashMap<String, String> headers = new HashMap<>();
@@ -10300,13 +10355,21 @@ public class PlayerActivity extends Activity {
             final String mediaMime = mPrefs.mediaType != null
                     ? mPrefs.mediaType : resolvedMediaTypes.get(mPrefs.mediaUri.toString());
             // Either signal is enough. A .m3u8 carrying a video/* mime is still HLS — that mime only
-            // sends it down the progressive path first, where it fails and is recovered as HLS
-            // (recoverFromContainerError) without this factory being rebuilt.
+            // sends it down the progressive path first, where it fails and is recovered as HLS.
             final boolean adaptive =
                     Util.inferContentType(mPrefs.mediaUri) != C.CONTENT_TYPE_OTHER
                             || Util.inferContentTypeForUriAndMimeType(mPrefs.mediaUri, mediaMime)
                                     != C.CONTENT_TYPE_OTHER;
+            // Whatever was cached for other media is of no use to anyone now, and nothing in that cache
+            // expires on its own — see MediaCache.keepOnly. Also for an adaptive stream, which keeps
+            // nothing itself but is just as good a moment to sweep.
+            MediaCache.keepOnly(this, mPrefs.mediaUri.toString());
             upstreamFactory = adaptive ? rangeSeeded : MediaCache.wrap(this, rangeSeeded);
+            // Neither signal has to be there at all: a launcher that sends video/* for everything (Lampa
+            // does) over a URL with no telling extension leaves a live HLS stream looking progressive
+            // until its first response arrives, and only recoverFromContainerError finds out otherwise.
+            // Kept so that recovery can take the cache back out — see dropMediaCache().
+            uncachedUpstream = adaptive ? null : rangeSeeded;
         }
 
         final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
@@ -10317,9 +10380,9 @@ public class PlayerActivity extends Activity {
         // Dolby Vision decoder altogether.
         final boolean convertDV7 = !mPrefs.mapDV7ToHevc && !forceHevcForDolbyVision;
         dv7Converter = convertDV7 ? new Dv7Converter(extractorsFactory, subtitleParserFactory) : null;
-        playerBuilder.setMediaSourceFactory(
-                new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
-                        .setDataSourceFactory(dataSourceFactory));
+        mediaSourceFactory = new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
+                .setDataSourceFactory(dataSourceFactory);
+        playerBuilder.setMediaSourceFactory(mediaSourceFactory);
         // Bounded by time rather than by bytes, for streams only. On the defaults the byte budget binds
         // first on anything high-bitrate — 144 MB is about 21 s of a 53 Mbps remux, well short of the 50 s
         // window — so the loader sits on that ceiling and is switched on and off around it about eleven
@@ -11152,6 +11215,10 @@ public class PlayerActivity extends Activity {
             // A file the second line wants may have arrived with this very change — the search attaches
             // one as a track. Before the search, so a file already here is used instead of fetched.
             autoFillSecondarySubtitle();
+            // Both searches wait for this moment, and the cheap one goes first: a file lying next to the
+            // media costs one request and no quota, and finding it can leave the online search with
+            // nothing to look for.
+            startSubtitleGuess();
             // The track list is what decides whether anything is missing, so this is the first moment
             // the question can be asked at all.
             maybeSearchSubtitlesOnline(tracks);
@@ -11718,6 +11785,7 @@ public class PlayerActivity extends Activity {
             return false;
         }
 
+        dropMediaCache();
         final long position = player.getCurrentPosition();
         final List<MediaItem> items = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
@@ -11732,6 +11800,27 @@ public class PlayerActivity extends Activity {
         // recovery override every reason not to: the pause of a room holding for somebody who has just
         // joined, and the viewer's own pause during a load.
         return true;
+    }
+
+    /**
+     * Takes the disk cache back out of the data source chain of a player that is already built, for a
+     * stream that has just turned out to be a manifest after all. The cache is chosen from the URL, and
+     * a URL that says nothing chooses it wrongly: every segment of an adaptive stream would then have its
+     * first megabyte written to the box's flash for nothing — segments are read once and never re-read —
+     * and a channel left running would evict the container heads the cache exists for, over and over.
+     * (Keeping a live playlist, the far worse half of that mistake, MediaCache now refuses on its own.)
+     *
+     * <p>Correcting the factory in place rather than rebuilding the player, because the caller re-prepares
+     * on the same instance: setDataSourceFactory drops the sources DefaultMediaSourceFactory has already
+     * made, so the next setMediaItems builds them through the new chain.
+     */
+    private void dropMediaCache() {
+        if (uncachedUpstream == null || mediaSourceFactory == null) {
+            return;
+        }
+        mediaSourceFactory.setDataSourceFactory(
+                new TrackNameParsingDataSource.Factory(uncachedUpstream, trackNameListener));
+        uncachedUpstream = null;
     }
 
     // Re-read after a source error on network media. A streaming server can hand back bytes that are not
@@ -13206,11 +13295,9 @@ public class PlayerActivity extends Activity {
             return;
 
         if (Utils.isSupportedNetworkUri(mPrefs.mediaUri) && Utils.isProgressiveContainerUri(mPrefs.mediaUri)) {
-            SubtitleUtils.clearCache(this);
-            if (SubtitleFinder.isUriCompatible(mPrefs.mediaUri)) {
-                subtitleFinder = new SubtitleFinder(PlayerActivity.this, mPrefs.mediaUri);
-                subtitleFinder.start();
-            }
+            // Armed rather than fired: this runs while the intent is being read, when there is no player
+            // to ask what the URL actually leads to. See startSubtitleGuess().
+            pendingSubtitleGuessUri = mPrefs.mediaUri;
             return;
         }
 
@@ -13251,6 +13338,37 @@ public class PlayerActivity extends Activity {
                 }
             }
         }
+    }
+
+    /**
+     * The volley of guessed sidecar names armed by {@link #searchSubtitles()}, now that the player can say
+     * what it is playing. Deferred to here for one reason: a broadcast has no file to sit next to, and an
+     * IPTV endpoint whose path ends in .ts looks exactly like a file to the URL test that arms this — so
+     * the guesses used to go out anyway, twenty misses per opened channel that the provider still pays
+     * for. The same argument SubtitleFinder.isStreamEndpoint already makes for torrent backends, applied
+     * to the one case only the timeline can name.
+     *
+     * <p>Once per opened item, whatever the outcome: the trigger fires on every track change.
+     */
+    private void startSubtitleGuess() {
+        final Uri uri = pendingSubtitleGuessUri;
+        if (uri == null || player == null) {
+            return;
+        }
+        pendingSubtitleGuessUri = null;
+        // The janitor runs for every network media opened, as it did when this was the first thing the
+        // branch did: it clears the temporary files of earlier downloads, which is nobody's business but
+        // its own, and the guesses below may well not happen at all.
+        SubtitleUtils.clearCache(this);
+        if (isLiveStream()) {
+            Utils.log("subtitles: live stream, not guessing sidecar names");
+            return;
+        }
+        if (!SubtitleFinder.isUriCompatible(uri)) {
+            return;
+        }
+        subtitleFinder = new SubtitleFinder(PlayerActivity.this, uri);
+        subtitleFinder.start();
     }
 
     Uri findNext() {

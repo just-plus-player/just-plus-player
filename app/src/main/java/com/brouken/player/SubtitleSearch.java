@@ -104,12 +104,24 @@ final class SubtitleSearch {
          * here means "not known to be", not "human".
          */
         final boolean machine;
+        /**
+         * OpenSubtitles' file id, or 0 when {@link #urls} is already the whole answer. That index hands
+         * out a download link rather than a URL, and asking for one is the metered call — one of the
+         * hundred a day, spent even when it fails. So this source alone answers with an id, and
+         * {@link #delivered} turns it into a link at the moment the file is about to be taken.
+         */
+        final long fileId;
 
         Result(String source, String language, List<String> urls, boolean machine) {
+            this(source, language, urls, machine, 0L);
+        }
+
+        Result(String source, String language, List<String> urls, boolean machine, long fileId) {
             this.source = source;
             this.language = language;
             this.urls = urls;
             this.machine = machine;
+            this.fileId = fileId;
         }
     }
 
@@ -432,7 +444,19 @@ final class SubtitleSearch {
         if (result == null || cancelled()) {
             return false;
         }
-        if (sink.accept(result)) {
+        Result taken = result;
+        if (result.fileId != 0) {
+            // The metered call, and the only place it is made: this result is the one about to be used.
+            final String link = OpenSubtitles.link(result.fileId);
+            if (link == null) {
+                Utils.log("subtitles: " + result.source + " picked " + result.language
+                        + " but the download link was refused");
+                return false;
+            }
+            taken = new Result(result.source, result.language,
+                    Collections.singletonList(link), result.machine);
+        }
+        if (sink.accept(taken)) {
             return true;
         }
         Utils.log("subtitles: " + result.source + " listed but would not download");
@@ -501,16 +525,14 @@ final class SubtitleSearch {
                     + " file(s), none taken" + (allowMachine ? "" : " (machine translations refused)"));
             return null;
         }
-        final String link = OpenSubtitles.link(best.fileId);
-        if (link == null) {
-            Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " picked " + best.language
-                    + " but the download link was refused");
-            return null;
-        }
         Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has 1 " + best.language
                 + (best.machine ? " machine-translated" : "") + " of " + found.size());
+        // The id, not a link: see Result.fileId. Every other source is asked and answered for free, and
+        // this one used to spend a download here, inside the parallel sweep — so a search that stremio
+        // or shegu.st went on to win still cost one of the hundred, as did a hit in a language that was
+        // held back and never taken.
         return new Result(SOURCE_OPENSUBTITLES, Utils.toIso3Language(best.language),
-                Collections.singletonList(link), best.machine);
+                Collections.<String>emptyList(), best.machine, best.fileId);
     }
 
     /**

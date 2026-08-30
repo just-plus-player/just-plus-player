@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The default the qualified copy in values-sw360dp overrides, and the one lintVital wants to
+         exist: androidx.preference declares this same false in its own base values, so a device
+         narrower than 360dp keeps exactly the behaviour it already had. -->
+    <bool name="config_materialPreferenceIconSpaceReserved">false</bool>
+</resources>

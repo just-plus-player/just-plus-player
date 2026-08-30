@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- androidx.preference reserves a 56dp icon column on every device this wide, on the assumption
+         that a settings screen has icons. This one has none, so the column is empty and the rows sit
+         72dp from the left against 16dp on the right. Overridden here rather than per row: the value
+         has to carry the sw360dp qualifier to win against the library's own. -->
+    <bool name="config_materialPreferenceIconSpaceReserved">false</bool>
+</resources>

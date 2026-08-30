@@ -3073,8 +3073,8 @@ public class PlayerActivity extends Activity {
         if (duration <= 0) {
             // Live, unseekable, or a duration not known yet (C.TIME_UNSET): nothing to clamp the target
             // against — clamping to a zero duration would throw every press to the start of the file, so
-            // keep the plain 10s step per press.
-            final long seekTo = Math.max(0, pos + (forward ? 10_000 : -10_000));
+            // keep the plain single-press step, without the ladder.
+            final long seekTo = Math.max(0, pos + (forward ? 3_000 : -3_000));
             player.setSeekParameters(forward ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
             player.seekTo(seekTo);
             showKeySeekMessage(seekTo);
@@ -3093,13 +3093,20 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
-    /** 10s → 30s → 1m → 2% of the duration (≈2.5 min per press in a 2-hour film). */
+    /**
+     * 3s → 10s → 30s → 1m → 2% of the duration (≈2.5 min per press in a 2-hour film). The first rung is
+     * what a single click is worth: small enough to land back on the line of dialogue that was missed,
+     * which is most of what a click is for. The rungs above it are reached two presses later than they
+     * used to be, and a held key still climbs the whole ladder in well under a second.
+     */
     private long keyScrubStep(long duration) {
-        if (keyScrubSteps < 1)
+        if (keyScrubSteps < 2)
+            return 3_000;
+        if (keyScrubSteps < 4)
             return 10_000;
-        if (keyScrubSteps < 5)
+        if (keyScrubSteps < 8)
             return 30_000;
-        if (keyScrubSteps < 12)
+        if (keyScrubSteps < 15)
             return 60_000;
         return Math.max(120_000, duration / 50);
     }

@@ -10336,10 +10336,18 @@ public class PlayerActivity extends Activity {
             // setRequestProperty (replacing it); OkHttpDataSource uses Request.Builder.addHeader, which
             // appends, so every seek went out with both "bytes=0-" and its real range and the server
             // answered the first one. That is what stopped torrent streams from loading when the media path first moved to OkHttp.
+            //
+            // Never on a playlist or a manifest, which is not a byte range and is read whole. Asking for
+            // one invites an answer that states a length, and a generated playlist is where that length
+            // is least likely to be right: a CDN was seen answering "bytes 0-3941/3942" for a master
+            // playlist whose UTF-8 body is 4910 bytes long, having counted characters rather than bytes.
+            // Media3 believes Content-Range, so the playlist arrived cut mid-line and every variant was
+            // lost with it. Without the header the same server answers 200 and streams all of it.
             final androidx.media3.datasource.DataSource.Factory rangeSeeded =
                     new androidx.media3.datasource.ResolvingDataSource.Factory(
                             new DefaultDataSource.Factory(this, httpDataSourceFactory),
                             dataSpec -> dataSpec.position == 0 && dataSpec.length == C.LENGTH_UNSET
+                                    && Util.inferContentType(dataSpec.uri) == C.CONTENT_TYPE_OTHER
                                     ? dataSpec.withAdditionalHeaders(
                                             Collections.singletonMap("Range", "bytes=0-"))
                                     : dataSpec);

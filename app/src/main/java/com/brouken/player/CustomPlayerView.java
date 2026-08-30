@@ -63,7 +63,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     // Hold-to-speed: a long press during playback jumps to 2x, and dragging sideways without letting go
     // moves along one axis - right for more speed, left down to 1x and then on into rewind. The previous
-    // speed is restored on release.
+    // speed is restored on release. The drag is what the "fixed" mode drops: there the hold is a plain 2x.
     private static final float SPEED_BOOST = 2.f;
     private static final float SPEED_MAX = 4.f;
     private static final float SPEED_REWIND_MIN = 2.f;
@@ -229,7 +229,8 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         // GestureDetector drops every move once it has fired a long press, so the drag of a hold is read
         // straight from here - which also keeps it clear of the seek and volume/brightness scrolls.
         if (speedBoostActive && ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            updateHoldSpeed(ev.getX());
+            if (Prefs.HOLD_SPEED_ADJUST.equals(holdSpeedMode()))
+                updateHoldSpeed(ev.getX());
             return true;
         }
 
@@ -290,13 +291,13 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         return prefs != null && prefs.disableVolumeBrightnessGestures;
     }
 
-    // True when the viewer has turned the hold-to-speed gesture off in the settings.
-    private boolean holdSpeedGestureOff() {
+    // What the viewer picked for the hold gesture: off, a fixed 2x, or 2x the finger can drag.
+    private String holdSpeedMode() {
         if (!(getContext() instanceof PlayerActivity)) {
-            return false;
+            return Prefs.HOLD_SPEED_ADJUST;
         }
         final Prefs prefs = ((PlayerActivity) getContext()).mPrefs;
-        return prefs != null && !prefs.holdSpeed;
+        return prefs == null ? Prefs.HOLD_SPEED_ADJUST : prefs.holdSpeedMode;
     }
 
     // One seek in flight at a time, the same gate the time bar scrubs behind. A swipe fires a seek every
@@ -430,7 +431,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
             return;
         if (!PlayerActivity.haveMedia || PlayerActivity.player == null || !PlayerActivity.player.isPlaying())
             return;
-        if (holdSpeedGestureOff())
+        if (Prefs.HOLD_SPEED_OFF.equals(holdSpeedMode()))
             return;
         speedBeforeBoost = PlayerActivity.player.getPlaybackParameters().speed;
         speedBoostActive = true;

@@ -3061,6 +3061,9 @@ public class PlayerActivity extends Activity {
         if (player == null)
             return false;
         playerView.removeCallbacks(playerView.textClearRunnable);
+        // The bar the touch gestures raise is what lets their readout carry only the delta; the one path
+        // where the readout is all there is got the least of it.
+        playerView.showSeekProgress();
         final long pos = player.getCurrentPosition();
         if (playerView.keySeekStart == -1) {
             playerView.keySeekStart = pos;
@@ -3101,8 +3104,17 @@ public class PlayerActivity extends Activity {
     }
 
     private void showKeySeekMessage(long target) {
+        // The offset answers "how far", not "where in the film" — and against a duration that is not on
+        // screen at that moment, an absolute time is a division done in the head. Checked here rather
+        // than at the call site: the live and unknown-duration branch reaches this too, and there is
+        // nothing to divide by there.
+        final long duration = player != null ? player.getDuration() : C.TIME_UNSET;
+        final StringBuilder position = new StringBuilder(Utils.formatMilis(target));
+        if (duration > 0) {
+            position.append(" · ").append(Math.round(target * 100f / duration)).append('%');
+        }
         playerView.setCustomErrorMessage(Utils.formatMilisSign(target - playerView.keySeekStart)
-                + "\n" + Utils.formatMilis(target));
+                + "\n" + position);
     }
 
     private void commitKeyScrub() {

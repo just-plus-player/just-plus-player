@@ -99,7 +99,35 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         setCustomErrorMessage(null);
         clearIcon();
         keySeekStart = -1;
+        // The readout going is the end of the seek as far as the screen is concerned, and the bar the
+        // key path raised has no gesture to end it — this is its ACTION_UP.
+        hideSeekProgress();
     };
+
+    /**
+     * Raise the progress bar for the duration of a seek, so the position is visible and the readout only
+     * has to carry the delta. Not when the controls are already up: they are the user's then, not ours.
+     */
+    public void showSeekProgress() {
+        if (!isControllerFullyVisible()) {
+            seekProgress = true;
+            showProgress();
+        }
+    }
+
+    /**
+     * Take the bar down again — but only if it is still ours. A seek can outlast the press that started
+     * it, and in that second the user may open the controls; shutting them under the hand that opened
+     * them is worse than leaving a bar up to time out.
+     */
+    private void hideSeekProgress() {
+        if (seekProgress) {
+            seekProgress = false;
+            if (!isControllerFullyVisible()) {
+                hideControllerImmediately();
+            }
+        }
+    }
 
     private final AudioManager mAudioManager;
     private BrightnessControl brightnessControl;
@@ -193,10 +221,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
                     setControllerAutoShow(true);
 
-                    if (seekProgress) {
-                        seekProgress = false;
-                        hideControllerImmediately();
-                    }
+                    hideSeekProgress();
                     break;
                 }
         }
@@ -325,10 +350,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                     seekChange = 0L;
                     seekMax = PlayerActivity.player.getDuration();
 
-                    if (!isControllerFullyVisible()) {
-                        seekProgress = true;
-                        showProgress();
-                    }
+                    showSeekProgress();
                 }
 
                 gestureOrientation = Orientation.HORIZONTAL;
@@ -466,10 +488,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         PlayerActivity.player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
         rewindPosition = PlayerActivity.player.getCurrentPosition();
         rewindLastTime = SystemClock.uptimeMillis();
-        if (!isControllerFullyVisible()) {
-            seekProgress = true;
-            showProgress();
-        }
+        showSeekProgress();
         post(rewindRunnable);
     }
 

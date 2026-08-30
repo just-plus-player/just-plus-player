@@ -125,6 +125,14 @@ class EmptyState {
                     .setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(15));
         }
 
+        // The controls are still up behind this page: showController() is what keeps the system bars
+        // with them (see the controller visibility listener), and this page is laid out around those
+        // bars. A covered view is still a focusable one, though, so a remote walking down this column
+        // carried on into the control bar's icons and clicked on things nobody could see. Fenced off
+        // rather than hidden, so the bars stay where they are. Before the early return below, because
+        // a page that comes back already visible needs the fence just as much.
+        activity.playerView.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+
         final boolean wasVisible = overlay.getVisibility() == View.VISIBLE;
         overlay.setVisibility(View.VISIBLE);
         if (!wasVisible) {
@@ -191,6 +199,9 @@ class EmptyState {
     }
 
     void hide() {
+        // The controls own the remote again. FOCUS_AFTER_DESCENDANTS is the value PlayerView sets on
+        // itself, so this puts back what was there rather than a guess at it.
+        activity.playerView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         // Media is taking the screen, so the preferences apply again — including after an empty state
         // relaxed them. No video format yet, so VIDEO lands on landscape and STATE_READY corrects it.
         Utils.setOrientation(activity, activity.mPrefs.orientation);

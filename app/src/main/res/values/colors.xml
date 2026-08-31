@@ -53,8 +53,7 @@
     <color name="divider">#1AFFFFFF</color>
     <color name="track_white">#33FFFFFF</color>
     <color name="pill_off_fill">#14FFFFFF</color>
-    <!-- Buffered lead, brightened on network sources only: a local file reports the whole file as
-         buffered (ExoPlayer #5765), where a bright lead would flood the bar. -->
+    <!-- Buffered lead ahead of the playhead; used on network sources only, see the call site. -->
     <color name="buffered_white">#C0FFFFFF</color>
 
     <!-- Press feedback. Three tones today, one per surface family; they are independent knobs
@@ -63,9 +62,12 @@
     <color name="ripple_medium">#33FFFFFF</color>
     <color name="ripple_soft">#20FFFFFF</color>
 
-    <!-- Timeline segments. These carry meaning — skipped run vs advertisement — so they stay off the
-         brand accent, which on the same bar means "played". Opaque: the old translucent band picked
-         up whatever was under it and read as two colours along one segment. -->
+    <!-- Segment highlights (see CustomDefaultTimeBar): a *_fill band across the segment plus a crisp
+         boundary hairline in the lighter *_edge colour. Three-colour timeline system — coral =
+         playback (hue 354, @color/timebar_played), blue = skip, amber = ad (hue 38). The blue
+         (hue 192) sits opposite the warm coral, so it never merges over the played track and stays
+         legible over the dark unplayed track. The skip band is opaque, so it reads as the same blue
+         over both. -->
     <color name="skip_edge">#FFEAF6FF</color>
     <color name="skip_fill">#FF0696BB</color>
     <color name="ad_edge">#FFFFD27A</color>

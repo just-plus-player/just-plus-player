@@ -23,6 +23,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+
 import java.util.Date;
 import java.util.Locale;
 
@@ -142,7 +144,7 @@ final class DurationPanel {
         // Where the duration lands in wall-clock terms — the same phrasing the header uses for the end of
         // the video, since it answers the same question.
         final TextView endsAt = new TextView(activity);
-        endsAt.setTextColor(0xB3FFFFFF);
+        endsAt.setTextColor(ContextCompat.getColor(activity, R.color.ink_medium));
         endsAt.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAt.setPadding(0, 0, 0, Utils.dpToPx(6));
         readoutColumn.addView(endsAt);
@@ -151,7 +153,7 @@ final class DurationPanel {
         final View divider = new View(activity);
         divider.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1)));
-        divider.setBackgroundColor(0x1AFFFFFF);
+        divider.setBackgroundColor(ContextCompat.getColor(activity, R.color.divider));
         readoutColumn.addView(divider);
 
         final Runnable render = () -> {
@@ -279,7 +281,8 @@ final class DurationPanel {
             // OxygenOS treat the panel as immersive and demand two back swipes.
             window.setLayout(ui.pickerWidthPx(cfg), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new ColorDrawable(0xF0141414));
+            window.setBackgroundDrawable(
+                    new ColorDrawable(ContextCompat.getColor(activity, R.color.panel_surface)));
         }
         // Only where there is a D-pad. In touch mode this scrolls the title out of sight for nothing, since
         // a focus ring is not drawn there anyway.
@@ -344,7 +347,9 @@ final class DurationPanel {
         // them in pixels instead is what once squeezed this keypad down to its middle column.
         key.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        key.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), null, null));
+        key.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_strong)),
+                null, null));
         key.setOnClickListener(v -> onTap.run());
         return key;
     }
@@ -367,7 +372,9 @@ final class DurationPanel {
         final GradientDrawable mask = new GradientDrawable();
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
-        action.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), null, mask));
+        action.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_strong)),
+                null, mask));
         return action;
     }
 }

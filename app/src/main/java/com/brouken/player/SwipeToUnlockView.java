@@ -45,7 +45,7 @@ public class SwipeToUnlockView extends FrameLayout {
 
         // Single line, centered, and inset on both sides so it clears the resting icon and never wraps.
         swipeText = new TextView(context);
-        swipeText.setTextColor(0xFFFFFFFF);
+        swipeText.setTextColor(ContextCompat.getColor(context, R.color.white));
         swipeText.setTextSize(13);
         swipeText.setSingleLine(true);
         swipeText.setMaxLines(1);

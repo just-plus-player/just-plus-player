@@ -2,7 +2,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="brand">#fe6f61</color>
+    <color name="brand">#FFFE6F61</color>
     <!-- The mark's ramp (see design/just+.svg); the vector drawables carry these same two stops. -->
     <color name="brand_ramp_start">#FFFF6E3C</color>
     <color name="brand_ramp_end">#FFFF0D63</color>
@@ -26,6 +26,52 @@
     <!-- Volume/brightness OSD bar (LevelBar); the boost segment is everything above 100%. -->
     <color name="level_bar_track">#4DFFFFFF</color>
     <color name="volume_boost">#FFF57C00</color>
+
+    <!-- Player chrome ink. The player UI is built in code over video, so its text is white at an
+         emphasis rather than a theme colour: the frame behind is unknown, and a theme's onSurface
+         would be picked for a surface that isn't there. Named by the role, not by the alpha. -->
+    <color name="ink_high">#E6FFFFFF</color>
+    <color name="ink_clock">#C2FFFFFF</color>
+    <color name="ink_medium">#B3FFFFFF</color>
+    <color name="ink_secondary">#99FFFFFF</color>
+    <color name="ink_tertiary">#80FFFFFF</color>
+    <!-- A row that is not the current one: opaque grey, not white at an alpha, so it stays a step
+         below the current row even where the fill behind them differs. -->
+    <color name="ink_row_inactive">#FFDDDDDD</color>
+    <!-- Ink on a brand-filled control, e.g. a selected offset pill. -->
+    <color name="ink_on_accent">#FF141414</color>
+
+    <!-- Player chrome surfaces, all translucent so the picture keeps showing through. -->
+    <color name="panel_surface">#F0141414</color>
+    <color name="pill_surface">#F0161616</color>
+    <color name="pill_scrim">#99000000</color>
+    <color name="badge_scrim">#CC000000</color>
+    <color name="placeholder_card">#FF333333</color>
+    <color name="thumb_box">#FF2A2A2A</color>
+
+    <!-- Hairlines, grooves and the unfilled part of a track. -->
+    <color name="divider">#1AFFFFFF</color>
+    <color name="track_white">#33FFFFFF</color>
+    <color name="pill_off_fill">#14FFFFFF</color>
+    <!-- Buffered lead ahead of the playhead; used on network sources only, see the call site. -->
+    <color name="buffered_white">#C0FFFFFF</color>
+
+    <!-- Press feedback. Three tones today, one per surface family; they are independent knobs
+         rather than a deliberate scale. -->
+    <color name="ripple_strong">#40FFFFFF</color>
+    <color name="ripple_medium">#33FFFFFF</color>
+    <color name="ripple_soft">#20FFFFFF</color>
+
+    <!-- Segment highlights (see CustomDefaultTimeBar): a *_fill band across the segment plus a crisp
+         boundary hairline in the lighter *_edge colour. Three-colour timeline system — coral =
+         playback (hue 354, @color/timebar_played), blue = skip, amber = ad (hue 38). The blue
+         (hue 192) sits opposite the warm coral, so it never merges over the played track and stays
+         legible over the dark unplayed track. The skip band is opaque, so it reads as the same blue
+         over both. -->
+    <color name="skip_edge">#FFEAF6FF</color>
+    <color name="skip_fill">#FF0696BB</color>
+    <color name="ad_edge">#FFFFD27A</color>
+    <color name="ad_fill">#C7FFA000</color>
 
     <color name="ui_controls_background">#98000000</color>
     <color name="exo_bottom_bar_background" tools:keep="@color/exo_bottom_bar_background">@color/ui_controls_background</color>

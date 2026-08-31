@@ -740,22 +740,22 @@ class Utils {
      */
     public static Context dialogContext(final Context base) {
         String mode = Prefs.getThemeMode(base);
-        if (Prefs.THEME_SYSTEM.equals(mode) && isTvBox(base)) {
-            // A TV box has no system theme worth following, and PlayerActivity makes dark the default
-            // there — so on TV a dialog follows the app rather than the box.
-            mode = Prefs.THEME_DARK;
+        if (Prefs.THEME_SYSTEM.equals(mode)) {
+            if (isTvBox(base)) {
+                // A TV box has no system theme worth following, and PlayerActivity makes dark the
+                // default there — so on TV a dialog follows the app rather than the box.
+                mode = Prefs.THEME_DARK;
+            } else {
+                final int night = base.getResources().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK;
+                mode = night == Configuration.UI_MODE_NIGHT_YES ? Prefs.THEME_DARK : Prefs.THEME_LIGHT;
+            }
         }
-        Context configured = base;
-        if (!Prefs.THEME_SYSTEM.equals(mode)) {
-            final Configuration override = new Configuration(base.getResources().getConfiguration());
-            override.uiMode = (override.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
-                    | (Prefs.THEME_LIGHT.equals(mode) ? Configuration.UI_MODE_NIGHT_NO
-                    : Configuration.UI_MODE_NIGHT_YES);
-            configured = base.createConfigurationContext(override);
-        }
-        // Theme.Settings is where the DayNight parent and the brand roles already live. It is used here
-        // for what it resolves, not as a window theme, so it is not worth a second name.
-        return new android.view.ContextThemeWrapper(configured, R.style.Theme_Settings);
+        // Wrapped straight around whatever it was handed — an Activity, in every real call — because a
+        // ContextThemeWrapper keeps its base's window token and a dialog needs one to exist at all.
+        return new android.view.ContextThemeWrapper(base,
+                Prefs.THEME_LIGHT.equals(mode) ? R.style.Theme_Dialogs_Light
+                        : R.style.Theme_Dialogs_Dark);
     }
 
     public static boolean isTvBox(Context context) {

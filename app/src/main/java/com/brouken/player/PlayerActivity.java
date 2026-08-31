@@ -7574,10 +7574,10 @@ public class PlayerActivity extends Activity {
     private void showSubtitleSearchDialog(final boolean forSecondary) {
         final Context dialogContext = Utils.dialogContext(this);
         subtitleSearchForSecondary = forSecondary;
-        final EditText query = new EditText(dialogContext);
+        final LinearLayout fields = Utils.dialogFields(dialogContext);
+        final EditText query = Utils.textField(fields, getString(R.string.subtitle_search_label),
+                getString(R.string.subtitle_search_hint));
         query.setInputType(InputType.TYPE_CLASS_TEXT);
-        query.setSingleLine(true);
-        query.setHint(R.string.subtitle_search_hint);
         // Without this the keyboard takes the whole screen in landscape — its extract mode — and covers
         // the dialog it belongs to, list and all. The list is the point of this dialog: it fills in while
         // the name is still being typed, and a player is always in landscape.
@@ -7590,11 +7590,6 @@ public class PlayerActivity extends Activity {
         final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(results);
 
-        final LinearLayout fields = new LinearLayout(dialogContext);
-        fields.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(16);
-        fields.setPadding(pad, 0, pad, 0);
-        fields.addView(query);
         // Capped rather than free: the list has to leave the field and the keyboard on screen, because
         // the next thing typed is what narrows it down. Half the window is the ceiling because the
         // player is landscape — a fixed height that fits a phone upright pushes the field off it.
@@ -7771,31 +7766,24 @@ public class PlayerActivity extends Activity {
         final Context dialogContext = Utils.dialogContext(this);
         final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
 
-        final EditText season = new EditText(dialogContext);
+        // Labelled, not hinted: prefilling is the normal case here — the whole point is to correct one
+        // digit of what is already believed — and a hint leaves the moment a field is filled, so both
+        // rows would read as a bare "1" and "2" with nothing to say which is which. The Material label
+        // rides the outline and stays.
+        final LinearLayout fields = Utils.dialogFields(dialogContext);
+        final EditText season =
+                Utils.textField(fields, getString(R.string.subtitle_search_season_label));
         season.setInputType(InputType.TYPE_CLASS_NUMBER);
-        season.setSingleLine(true);
         if (current != null && current.season >= 0) {
             season.setText(String.valueOf(current.season));
         }
 
-        final EditText episode = new EditText(dialogContext);
+        final EditText episode =
+                Utils.textField(fields, getString(R.string.subtitle_search_episode_label));
         episode.setInputType(InputType.TYPE_CLASS_NUMBER);
-        episode.setSingleLine(true);
         if (current != null && current.episode >= 1) {
             episode.setText(String.valueOf(current.episode));
         }
-
-        final LinearLayout fields = new LinearLayout(dialogContext);
-        fields.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(16);
-        fields.setPadding(pad, 0, pad, 0);
-        // Labelled above the fields, not only as hints: prefilling is the normal case here — the whole
-        // point is to correct one digit of what is already believed — and a filled field shows no hint,
-        // so both rows read as a bare "1" and "2" with nothing to say which is which.
-        fields.addView(fieldLabel(dialogContext, R.string.subtitle_search_season_label));
-        fields.addView(season);
-        fields.addView(fieldLabel(dialogContext, R.string.subtitle_search_episode_label));
-        fields.addView(episode);
 
         new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.subtitle_search_type)
@@ -7805,15 +7793,6 @@ public class PlayerActivity extends Activity {
                         number(episode.getText().toString(), -1), episodes))
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
-    }
-
-    /** A caption over a text field, in the register the dialog's own hints use. */
-    private TextView fieldLabel(final Context context, final int textRes) {
-        final TextView label = new TextView(context);
-        label.setText(textRes);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
-        label.setPadding(0, Utils.dpToPx(8), 0, 0);
-        return label;
     }
 
     /** A typed number, or {@code fallback} for anything that is not one. */
@@ -9084,10 +9063,8 @@ public class PlayerActivity extends Activity {
     /** A room from the list said it has a password; the code we already know. */
     private void askRoomPassword(final String code) {
         final Context dialogContext = Utils.dialogContext(this);
-        final EditText input = new EditText(dialogContext);
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        input.setSingleLine(true);
-        input.setHint(getString(R.string.together_password_hint));
+        final LinearLayout fields = Utils.dialogFields(dialogContext);
+        final EditText input = Utils.textField(fields, getString(R.string.together_password));
         // The room has said it is locked, so the default is worth offering here exactly as it is offered
         // when creating one: people watching together tend to reuse one password, and this is the only
         // dialog that knows for certain a password is wanted. Not offered when joining by code, where
@@ -9098,7 +9075,7 @@ public class PlayerActivity extends Activity {
         input.setSelection(input.getText().length());
         new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(code)
-                .setView(input)
+                .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> joinRoom(code, input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)
@@ -9124,16 +9101,13 @@ public class PlayerActivity extends Activity {
                 ? getString(R.string.together_room_default_name, code)
                 : card.optString("title");
 
-        final EditText name = new EditText(dialogContext);
-        name.setInputType(InputType.TYPE_CLASS_TEXT);
-        name.setSingleLine(true);
+        final LinearLayout fields = Utils.dialogFields(dialogContext);
+
+        final EditText name = Utils.textField(fields, getString(R.string.together_room_name));
         name.setText(suggested);
         name.setSelection(name.getText().length());
 
-        final EditText password = new EditText(dialogContext);
-        password.setInputType(InputType.TYPE_CLASS_TEXT);
-        password.setSingleLine(true);
-        password.setHint(getString(R.string.together_password_hint));
+        final EditText password = Utils.textField(fields, getString(R.string.together_password));
         password.setText(mPrefs.togetherPassword);
 
         final CheckBox listed = new CheckBox(dialogContext);
@@ -9150,12 +9124,6 @@ public class PlayerActivity extends Activity {
         note.setPadding(0, 0, 0, Utils.dpToPx(4));
         note.setVisibility(View.GONE);
 
-        final LinearLayout fields = new LinearLayout(dialogContext);
-        fields.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(16);
-        fields.setPadding(pad, 0, pad, 0);
-        fields.addView(name);
-        fields.addView(password);
         fields.addView(listed);
         fields.addView(note);
 
@@ -9213,27 +9181,16 @@ public class PlayerActivity extends Activity {
      *  nothing is playing yet — the gear menu lives in the player's controls. */
     void askRoomCode() {
         final Context dialogContext = Utils.dialogContext(this);
-        final EditText code = new EditText(dialogContext);
+        final LinearLayout fields = Utils.dialogFields(dialogContext);
         // Text, not digits: a room made in Lampa has a letter code, and the same six characters
         // have to be typeable here.
+        final EditText code = Utils.textField(fields, getString(R.string.together_code), "ABC234");
         code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-        code.setSingleLine(true);
-        code.setHint("ABC234");
 
         // Rooms made in Lampa carry a password whenever that setting is on there, and it goes into
         // the room's address — so without it we would land somewhere else entirely and report, quite
         // truthfully and quite uselessly, that no such room exists.
-        final EditText password = new EditText(dialogContext);
-        password.setInputType(InputType.TYPE_CLASS_TEXT);
-        password.setSingleLine(true);
-        password.setHint(getString(R.string.together_password_hint));
-
-        final LinearLayout fields = new LinearLayout(dialogContext);
-        fields.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(16);
-        fields.setPadding(pad, 0, pad, 0);
-        fields.addView(code);
-        fields.addView(password);
+        final EditText password = Utils.textField(fields, getString(R.string.together_password));
 
         new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.together_join)

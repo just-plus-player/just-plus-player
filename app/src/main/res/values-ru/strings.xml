@@ -137,6 +137,7 @@
     <string name="together_public">Показывать комнату в списке</string>
     <string name="together_public_needs_password">Публичная комната должна быть с паролем</string>
     <string name="together_room_default_name">Комната %1$s</string>
+    <string name="together_room_name">Название комнаты</string>
     <string name="together_badge">Комната %1$s · %2$d</string>
     <string name="together_offline">Комната %1$s · переподключение…</string>
     <string name="together_connecting">Комната %1$s · подключение…</string>

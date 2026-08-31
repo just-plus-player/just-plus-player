@@ -144,6 +144,7 @@
     <string name="together_public">List the room publicly</string>
     <string name="together_public_needs_password">A public room needs a password</string>
     <string name="together_room_default_name">Room %1$s</string>
+    <string name="together_room_name">Room name</string>
     <string name="together_badge">Room %1$s · %2$d</string>
     <string name="together_offline">Room %1$s · reconnecting…</string>
     <string name="together_connecting">Room %1$s · connecting…</string>

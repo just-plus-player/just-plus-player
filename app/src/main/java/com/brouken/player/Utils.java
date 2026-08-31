@@ -35,13 +35,17 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
 import android.view.Display;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
@@ -53,6 +57,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 
+import com.google.android.material.textfield.TextInputLayout;
 import com.obsez.android.lib.filechooser.ChooserDialog;
 import com.sigpwned.chardet4j.Chardet;
 import com.sigpwned.chardet4j.io.DecodedInputStreamReader;
@@ -750,6 +755,30 @@ class Utils {
         return new android.view.ContextThemeWrapper(base,
                 Prefs.THEME_LIGHT.equals(mode) ? R.style.Theme_Dialogs_Light
                         : R.style.Theme_Dialogs_Dark);
+    }
+
+    /**
+     * The strip a dialog's fields stand in, inset to the dialog's own text margin so a field lines
+     * up with the title above it.
+     */
+    static LinearLayout dialogFields(final Context context) {
+        final LinearLayout fields = new LinearLayout(context);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = dpToPx(24);
+        fields.setPadding(pad, 0, pad, 0);
+        return fields;
+    }
+
+    /**
+     * Adds a Material text field to {@link #dialogFields} and hands back the editor, which is what
+     * the dialog reads and writes; the box around it needs nothing further said to it.
+     */
+    static EditText textField(final ViewGroup fields, final CharSequence hint) {
+        final TextInputLayout field = (TextInputLayout) LayoutInflater.from(fields.getContext())
+                .inflate(R.layout.dialog_text_field, fields, false);
+        field.setHint(hint);
+        fields.addView(field);
+        return field.getEditText();
     }
 
     public static boolean isTvBox(Context context) {

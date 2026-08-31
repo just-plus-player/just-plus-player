@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One text field of a dialog. Outlined rather than filled because a dialog panel is already a
+     raised surface: a filled box on top of it reads as a second card. The label rides the outline,
+     so a prefilled field still says what it is - which a hint alone cannot do. -->
+<com.google.android.material.textfield.TextInputLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="text" />
+
+</com.google.android.material.textfield.TextInputLayout>

@@ -220,10 +220,9 @@ class EmptyState {
     // menu, which is why this is not private.
     void askForLink() {
         final Context dialogContext = Utils.dialogContext(activity);
-        final EditText input = new EditText(dialogContext);
+        final ViewGroup fields = Utils.dialogFields(dialogContext);
+        final EditText input = Utils.textField(fields, "https://");
         input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
-        input.setSingleLine(true);
-        input.setHint("https://");
         final Uri pasted = clipboardUri();
         if (pasted != null) {
             input.setText(pasted.toString());
@@ -231,7 +230,7 @@ class EmptyState {
         }
         new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.empty_state_link)
-                .setView(input)
+                .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> openLink(input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)

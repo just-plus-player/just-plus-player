@@ -404,6 +404,7 @@
             app:title="@string/together_title">
 
             <EditTextPreference
+                app:dialogLayout="@layout/preference_dialog_text_field"
                 app:key="togetherNick"
                 app:title="@string/pref_together_nick"
                 app:dialogTitle="@string/pref_together_nick"
@@ -415,18 +416,21 @@
                 app:summary="@string/pref_together_nick_random_summary" />
 
             <EditTextPreference
+                app:dialogLayout="@layout/preference_dialog_text_field"
                 app:key="togetherPassword"
                 app:title="@string/pref_together_password"
                 app:dialogTitle="@string/pref_together_password"
                 app:dialogMessage="@string/pref_together_password_summary" />
 
             <EditTextPreference
+                app:dialogLayout="@layout/preference_dialog_text_field"
                 app:key="togetherRelay"
                 app:title="@string/pref_together_relay"
                 app:dialogTitle="@string/pref_together_relay"
                 app:dialogMessage="@string/pref_together_relay_summary" />
 
             <EditTextPreference
+                app:dialogLayout="@layout/preference_dialog_text_field"
                 app:key="togetherInvitePage"
                 app:title="@string/pref_together_invite_page"
                 app:dialogTitle="@string/pref_together_invite_page"

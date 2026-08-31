@@ -131,7 +131,8 @@
     <string name="together_searching">Шукаємо кімнати…</string>
     <string name="together_none_found">Публічних кімнат не знайдено</string>
     <string name="together_room_summary">%1$s · дивляться: %2$d</string>
-    <string name="together_password_hint">Пароль, якщо кімната з паролем</string>
+    <string name="together_password">Пароль</string>
+    <string name="together_code">Код</string>
     <string name="together_no_room">Кімнати з таким кодом немає — або потрібен пароль</string>
     <string name="together_badge_named">%1$s [%2$s] · %3$d</string>
     <string name="together_create_title">Нова кімната %1$s</string>
@@ -139,6 +140,7 @@
     <string name="together_public_needs_password">Публічна кімната має бути із паролем</string>
     <string name="together_room_default_name">Кімната %1$s</string>
     <string name="together_room_name">Назва кімнати</string>
+    <string name="field_url">URL</string>
     <string name="together_badge">Кімната %1$s · %2$d</string>
     <string name="together_offline">Кімната %1$s · перепідключення…</string>
     <string name="together_connecting">Кімната %1$s · підключення…</string>
@@ -287,6 +289,7 @@
     <string name="pref_subtitle_search_language_summary">Ручний пошук спершу пропонує список мов — лише для цього пошуку</string>
     <string name="subtitle_search_found">Знайдено субтитри: %1$s</string>
     <string name="subtitle_search_manual">Знайти субтитри онлайн</string>
+    <string name="subtitle_search_label">Назва або id</string>
     <string name="subtitle_search_hint">Назва або id з tmdb / imdb</string>
     <string name="subtitle_search_language_title">Вибір мови</string>
     <string name="subtitle_search_none">Нічого не знайдено</string>

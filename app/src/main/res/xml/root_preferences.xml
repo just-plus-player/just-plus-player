@@ -452,7 +452,10 @@
 
     <PreferenceCategory app:title="@string/pref_dangerous_header">
 
+        <!-- Keyed so SettingsActivity can make it focusable on a remote: unselectable, a D-pad steps
+             from the header straight to the decoder rows and never lands on the warning about them. -->
         <Preference
+            app:key="dangerousWarning"
             app:selectable="false"
             app:summary="@string/pref_dangerous_warning" />
 

@@ -9,4 +9,9 @@
     <style name="Theme.Error" parent="BaseTheme.Error">
         <item name="colorControlHighlight">@color/white</item>
     </style>
+    <!-- The settings list is where a remote spends most of its presses, and the default M3
+         highlight is barely a shade over the card it sits on. Same white as the other two. -->
+    <style name="Theme.Settings" parent="BaseTheme.Settings">
+        <item name="colorControlHighlight">@color/white</item>
+    </style>
 </resources>

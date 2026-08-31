@@ -1000,6 +1000,12 @@ public class SettingsActivity extends AppCompatActivity
 
         private static final int RADIUS = Utils.dpToPx(20);
         private final int inset = Utils.dpToPx(16);
+        /**
+         * How wide the cards are allowed to get. A settings row is a label on the left and a control
+         * on the right; let the row have a whole television and the two end up a screen apart with
+         * nothing in between, which is why a wide layout reads as broken rather than roomy.
+         */
+        private final int maxContentWidth = Utils.dpToPx(640);
         private final int headerGap = Utils.dpToPx(8);
         private final int hairlineInset = Utils.dpToPx(16);
         private final Paint card = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1032,8 +1038,11 @@ public class SettingsActivity extends AppCompatActivity
         @Override
         public void getItemOffsets(@NonNull Rect outRect, @NonNull View view,
                                    @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-            outRect.left = inset;
-            outRect.right = inset;
+            // Centred once the list is wider than a card is allowed to be. The cards are drawn from
+            // the rows' own bounds, so they follow this without knowing about it.
+            final int side = Math.max(inset, (parent.getWidth() - maxContentWidth) / 2);
+            outRect.left = side;
+            outRect.right = side;
             // The header sits above its card, not against the one before it.
             if (isCategory(parent, parent.getChildAdapterPosition(view))) {
                 outRect.top = headerGap;

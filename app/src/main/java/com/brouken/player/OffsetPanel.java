@@ -23,6 +23,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.widget.TextViewCompat;
 
@@ -184,8 +185,9 @@ final class OffsetPanel {
         // The same focus edge the pills take: a ripple is touch feedback, not something a remote across
         // a room can find, and this pill is the last stop of the D-pad path through here.
         final int resetCorner = Utils.dpToPx(22);
-        reset.setBackground(new RippleDrawable(ColorStateList.valueOf(0x20FFFFFF),
-                pillFill(accent, false, resetCorner), roundMask(resetCorner)));
+        reset.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_soft)),
+                pillFill(activity, accent, false, resetCorner), roundMask(resetCorner)));
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         resetLp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -221,7 +223,8 @@ final class OffsetPanel {
             window.setLayout(ui.pickerWidthPx(activity.getResources().getConfiguration()),
                     ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new ColorDrawable(0xF0141414));
+            window.setBackgroundDrawable(
+                    new ColorDrawable(ContextCompat.getColor(activity, R.color.panel_surface)));
         }
         // The choice, not the slider: it is the panel's first decision and it is at the top, so a
         // remote lands on it and the scroller stays where the title is. Focusing the slider scrolled
@@ -257,9 +260,11 @@ final class OffsetPanel {
         final Runnable render = () -> {
             for (int i = 0; i < pills.length; i++) {
                 final boolean on = i == picked[0];
-                pills[i].setBackground(new RippleDrawable(ColorStateList.valueOf(0x20FFFFFF),
-                        pillFill(accent, on, corner), roundMask(corner)));
-                pills[i].setTextColor(on ? 0xFF141414 : 0xB3FFFFFF);
+                pills[i].setBackground(new RippleDrawable(
+                        ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_soft)),
+                        pillFill(activity, accent, on, corner), roundMask(corner)));
+                pills[i].setTextColor(ContextCompat.getColor(activity,
+                        on ? R.color.ink_on_accent : R.color.ink_medium));
                 pills[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
                 // Said again without colour, for a screen reader and for anyone who cannot tell these
                 // two shades apart.
@@ -324,18 +329,20 @@ final class OffsetPanel {
     }
 
     /** Pill background: filled with the accent while in force, and edged in white while focused. */
-    private static Drawable pillFill(final int accent, final boolean on, final int corner) {
+    private static Drawable pillFill(final Context context, final int accent, final boolean on,
+                                     final int corner) {
         final StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_focused}, pillShape(accent, on, corner, true));
-        states.addState(StateSet.WILD_CARD, pillShape(accent, on, corner, false));
+        states.addState(new int[]{android.R.attr.state_focused},
+                pillShape(context, accent, on, corner, true));
+        states.addState(StateSet.WILD_CARD, pillShape(context, accent, on, corner, false));
         return states;
     }
 
-    private static Drawable pillShape(final int accent, final boolean on, final int corner,
-                                      final boolean focused) {
+    private static Drawable pillShape(final Context context, final int accent, final boolean on,
+                                      final int corner, final boolean focused) {
         final GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(corner);
-        shape.setColor(on ? accent : 0x14FFFFFF);
+        shape.setColor(on ? accent : ContextCompat.getColor(context, R.color.pill_off_fill));
         if (focused) {
             // The accent, like the Skip pill's own focus ring — and white only on the pill that is
             // already the accent, where a coral edge would not show. One signal and one language: an
@@ -357,7 +364,7 @@ final class OffsetPanel {
                                    final int accent, final Line line, final double maxSec,
                                    final double stepSec, final float valueSp,
                                    final List<Runnable> resets) {
-        final int trackBg = 0x33FFFFFF;
+        final int trackBg = ContextCompat.getColor(activity, R.color.track_white);
         final int progressMax = (int) Math.round(2 * maxSec / stepSec);
         final int mid = progressMax / 2;
         final int dragSnap = Math.max(1, (int) Math.round(1 / stepSec)); // drag resolution: 1 s
@@ -366,7 +373,7 @@ final class OffsetPanel {
         if (line.caption != null) {
             final TextView caption = new TextView(activity);
             caption.setText(line.caption);
-            caption.setTextColor(0xB3FFFFFF);
+            caption.setTextColor(ContextCompat.getColor(activity, R.color.ink_medium));
             caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
             caption.setGravity(Gravity.CENTER);
             // Asymmetric on purpose, and fixed rather than left to the weighted spacers: a caption

@@ -714,10 +714,6 @@ public class PlayerActivity extends Activity {
     private TextView endsAtView;
     // Longest window still read as a live broadcast rather than a recording — see isLiveStream().
     private static final long LIVE_WINDOW_MAX_MS = 10 * 60_000L;
-    // The end time is a qualifier beside the clock, so it is written a step down from white. The live
-    // label takes the brand colour instead: it is a state, not a reading, and the only one this row ever
-    // reports — see updateEndsAt.
-    private static final int ENDS_AT_COLOR = 0xB3FFFFFF;
     private TextView roomPill;
     private TextView statsView;
     private TextView transferView;
@@ -1189,17 +1185,7 @@ public class PlayerActivity extends Activity {
     // pref_skip_mode_brief option names these seconds out loud ("Skip button for 3 seconds"), so changing
     // this means changing that string in every locale too.
     static final long SKIP_NOTICE_MS = 5000;
-    // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
-    static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
-    // Segment highlights (see CustomDefaultTimeBar): a *_FILL band across the segment plus a crisp boundary
-    // hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral = playback (hue 354,
-    // @color/timebar_played), blue = skip, amber = ad (hue 38). The blue (hue 192) sits opposite the warm
-    // coral, so it never merges over the played track and stays legible over the dark unplayed track. The
-    // skip band is opaque, so it reads as the same blue over both.
-    static final int SKIP_HIGHLIGHT_COLOR = 0xFFEAF6FF;
-    static final int SKIP_FILL_COLOR = 0xFF0696BB;
-    static final int AD_HIGHLIGHT_COLOR = 0xFFFFD27A;
-    static final int AD_FILL_COLOR = 0xC7FFA000;
+    // Segment highlights live in colors.xml as @color/skip_* and @color/ad_*; see the note there.
     // Watch together: one room per screen, alive across the player rebuilds a session accumulates.
     TogetherManager together;
     /** True only while the room's own media change is being applied — see checkRoomMedia. */
@@ -1660,7 +1646,7 @@ public class PlayerActivity extends Activity {
         slotParams.setMarginEnd(ui.dpS(16));
         slotParams.gravity = Gravity.TOP;
         posterSlot.setLayoutParams(slotParams);
-        posterSlot.setBackgroundColor(0xFF333333); // bg_placeholder_card
+        posterSlot.setBackgroundColor(ContextCompat.getColor(this, R.color.placeholder_card));
         final int posterCornerRadius = Utils.dpToPx(4);
         posterSlot.setClipToOutline(true);
         posterSlot.setOutlineProvider(new ViewOutlineProvider() {
@@ -1683,7 +1669,7 @@ public class PlayerActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         posterPlaceholderView.setMinWidth(Utils.dpToPx(54));
         posterPlaceholderView.setGravity(Gravity.CENTER);
-        posterPlaceholderView.setTextColor(0x80FFFFFF); // text_tertiary
+        posterPlaceholderView.setTextColor(ContextCompat.getColor(this, R.color.ink_tertiary));
         posterPlaceholderView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textPlaceholder());
         posterPlaceholderView.setTypeface(Typeface.DEFAULT_BOLD);
         posterPlaceholderView.setVisibility(View.GONE);
@@ -1749,7 +1735,7 @@ public class PlayerActivity extends Activity {
         timeRow.setLayoutParams(timeRowLp);
 
         endsAtView = new TextView(this);
-        endsAtView.setTextColor(ENDS_AT_COLOR);
+        endsAtView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
         // A step below the clock: the clock is the anchor, the end time is the qualifier next to it.
         endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAtView.setVisibility(View.GONE);
@@ -1760,7 +1746,7 @@ public class PlayerActivity extends Activity {
         headerClock.setFormat24Hour("HH:mm");
         // A step above the "until …" text but short of pure white, which read as too harsh; the black outline
         // and bold weight carry the rest of the legibility. The overlay clock must use the same value.
-        headerClock.setTextColor(0xC2FFFFFF);
+        headerClock.setTextColor(ContextCompat.getColor(this, R.color.ink_clock));
         headerClock.setTypeface(Typeface.DEFAULT_BOLD);
         headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
@@ -1864,10 +1850,11 @@ public class PlayerActivity extends Activity {
         final int skipBarHeight = Utils.dpToPx(3);
         final int skipBarCorner = Utils.dpToPx(2);
         final GradientDrawable skipPillFill = new GradientDrawable();
-        skipPillFill.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        skipPillFill.setColor(ContextCompat.getColor(this, R.color.pill_surface));
         skipPillFill.setCornerRadius(skipCornerRadius);
         skipPillGroove = new GradientDrawable();
-        skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
+        // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
+        skipPillGroove.setColor(ContextCompat.getColor(this, R.color.track_white));
         skipPillGroove.setCornerRadius(skipBarCorner);
         final GradientDrawable skipBarFill = new GradientDrawable();
         skipBarFill.setColor(brandColor()); // accent: this is a countdown, not decoration
@@ -1961,7 +1948,7 @@ public class PlayerActivity extends Activity {
         speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
 
         final GradientDrawable speedBoostBackground = new GradientDrawable();
-        speedBoostBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        speedBoostBackground.setColor(ContextCompat.getColor(this, R.color.pill_surface));
         speedBoostBackground.setCornerRadius(skipCornerRadius);
         speedBoostIndicator.setBackground(speedBoostBackground);
 
@@ -1981,7 +1968,7 @@ public class PlayerActivity extends Activity {
         overlayClock.setFormat12Hour("h:mm a");
         overlayClock.setFormat24Hour("HH:mm");
         // Same white as the header clock — the black outline keeps it readable over bright frames.
-        overlayClock.setTextColor(0xC2FFFFFF);
+        overlayClock.setTextColor(ContextCompat.getColor(this, R.color.ink_clock));
         overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
         // Must match the header clock size (see below) so the two line up exactly when controls toggle.
         overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
@@ -1996,12 +1983,12 @@ public class PlayerActivity extends Activity {
         // endsAtRunnable, hidden by stopEndsAtUpdates), so it is never left sitting over the video, and it
         // carries no touch handling of its own — the left half of the screen is the brightness swipe zone.
         statsView = new TextView(this);
-        statsView.setTextColor(0xB3FFFFFF);
+        statsView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
         statsView.setTypeface(Typeface.MONOSPACE);
         statsView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         // Same corner as the lock button, the time pill and the poster — a floating box in this UI is rounded.
         final GradientDrawable statsBackground = new GradientDrawable();
-        statsBackground.setColor(0x99000000);
+        statsBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
         statsBackground.setCornerRadius(ui.pillCorner());
         statsView.setBackground(statsBackground);
         final int statsPadding = Utils.dpToPx(8);
@@ -2021,10 +2008,10 @@ public class PlayerActivity extends Activity {
         // the Skip pill's corner and the only band that stays free while the controls are up: the header is
         // above, the transport below, the stats panel is centred on the left edge.
         roomPill = new TextView(this);
-        roomPill.setTextColor(0xE6FFFFFF);
+        roomPill.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
         roomPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomPillBackground = new GradientDrawable();
-        roomPillBackground.setColor(0x99000000);
+        roomPillBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
         roomPillBackground.setCornerRadius(ui.pillCorner());
         roomPill.setBackground(roomPillBackground);
         roomPill.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -2078,10 +2065,10 @@ public class PlayerActivity extends Activity {
         // controls are down. It goes under the centre disc, on the loading rate's geometry, because that is
         // where the eye already is when the picture stops.
         roomBadge = new TextView(this);
-        roomBadge.setTextColor(0xE6FFFFFF);
+        roomBadge.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
         roomBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomBackground = new GradientDrawable();
-        roomBackground.setColor(0x99000000);
+        roomBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
         roomBackground.setCornerRadius(ui.pillCorner());
         roomBadge.setBackground(roomBackground);
         roomBadge.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -4249,13 +4236,17 @@ public class PlayerActivity extends Activity {
         final long[] ends = new long[count];
         final int[] colors = new int[count];
         final int[] fillColors = new int[count];
+        final int skipEdge = ContextCompat.getColor(this, R.color.skip_edge);
+        final int skipFill = ContextCompat.getColor(this, R.color.skip_fill);
+        final int adEdge = ContextCompat.getColor(this, R.color.ad_edge);
+        final int adFill = ContextCompat.getColor(this, R.color.ad_fill);
         for (int i = 0; i < count; i++) {
             final SkipSegment segment = segments.get(i);
             final boolean ad = segment.type == SkipSegment.Type.AD;
             starts[i] = segment.startMs();
             ends[i] = segment.endMs();
-            colors[i] = ad ? AD_HIGHLIGHT_COLOR : SKIP_HIGHLIGHT_COLOR;
-            fillColors[i] = ad ? AD_FILL_COLOR : SKIP_FILL_COLOR;
+            colors[i] = ad ? adEdge : skipEdge;
+            fillColors[i] = ad ? adFill : skipFill;
         }
         timeBar.setSkipHighlights(starts, ends, colors, fillColors, durationMs);
     }
@@ -4533,7 +4524,7 @@ public class PlayerActivity extends Activity {
      */
     private void setSkipPillUnderline(double fraction) {
         if (skipPillGroove != null) {
-            skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
+            skipPillGroove.setColor(ContextCompat.getColor(this, R.color.track_white));
         }
         if (skipButtonProgress != null) {
             skipButtonProgress.setLevel((int) Math.round(Math.max(0, Math.min(1, fraction)) * 10000));
@@ -5101,7 +5092,7 @@ public class PlayerActivity extends Activity {
 
     private TextView createInfoLine(int topMargin) {
         final TextView view = new TextView(this);
-        view.setTextColor(0x99FFFFFF); // text_secondary
+        view.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         view.setMaxLines(1);
         view.setEllipsize(TextUtils.TruncateAt.END);
@@ -5369,11 +5360,13 @@ public class PlayerActivity extends Activity {
         // window the stream is offering right now — a minute from now, and about nothing.
         if (isLiveStream()) {
             endsAtView.setText(R.string.time_live);
+            // The live label takes the brand colour: it is a state, not a reading, and the only one
+            // this row ever reports. Every other time the row is a qualifier beside the clock.
             endsAtView.setTextColor(brandColor());
             endsAtView.setVisibility(View.VISIBLE);
             return;
         }
-        endsAtView.setTextColor(ENDS_AT_COLOR);
+        endsAtView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
         final long duration = player.getDuration();
         if (duration == C.TIME_UNSET || duration <= 0) {
             endsAtView.setVisibility(View.GONE);
@@ -5760,7 +5753,7 @@ public class PlayerActivity extends Activity {
         lp.setMargins(Utils.dpToPx(3), Utils.dpToPx(3), 0, 0);
         badge.setLayoutParams(lp);
         final GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xCC000000);
+        bg.setColor(ContextCompat.getColor(this, R.color.badge_scrim));
         bg.setCornerRadius(Utils.dpToPx(3));
         badge.setBackground(bg);
         badge.setGravity(Gravity.CENTER);
@@ -5853,7 +5846,7 @@ public class PlayerActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         dividerLp.bottomMargin = Utils.dpToPx(4);
         divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(0x1AFFFFFF);
+        divider.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
         listLayout.addView(divider);
 
         for (int i = 0; i < count; i++) {
@@ -5881,7 +5874,9 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            row.setBackground(new RippleDrawable(
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
@@ -5893,7 +5888,7 @@ public class PlayerActivity extends Activity {
             boxLp.gravity = Gravity.CENTER_VERTICAL;
             box.setLayoutParams(boxLp);
             box.setMinimumWidth(Utils.dpToPx(40));
-            box.setBackgroundColor(0xFF2A2A2A);
+            box.setBackgroundColor(ContextCompat.getColor(this, R.color.thumb_box));
             box.setClipToOutline(true);
             box.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
@@ -5924,7 +5919,7 @@ public class PlayerActivity extends Activity {
                         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
                 number.setGravity(Gravity.CENTER);
                 number.setMinWidth(Utils.dpToPx(40));
-                number.setTextColor(0x99FFFFFF);
+                number.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
                 number.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textListNumber());
                 box.addView(number);
             }
@@ -5932,7 +5927,7 @@ public class PlayerActivity extends Activity {
 
             final TextView titleText = new TextView(this);
             titleText.setText(title);
-            titleText.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            titleText.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
             titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
             if (isCurrent) {
                 titleText.setTypeface(Typeface.DEFAULT_BOLD);
@@ -5988,7 +5983,8 @@ public class PlayerActivity extends Activity {
             // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                    ContextCompat.getColor(this, R.color.panel_surface)));
         }
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
@@ -6140,7 +6136,7 @@ public class PlayerActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         dividerLp.bottomMargin = Utils.dpToPx(4);
         divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(0x1AFFFFFF);
+        divider.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
         listLayout.addView(divider);
 
         for (int i = 0; i < choices.size(); i++) {
@@ -6160,7 +6156,9 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            row.setBackground(new RippleDrawable(
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
@@ -6174,7 +6172,7 @@ public class PlayerActivity extends Activity {
 
             final TextView title = new TextView(this);
             title.setText(qualityChoiceTitle(choice));
-            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            title.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -6186,7 +6184,7 @@ public class PlayerActivity extends Activity {
             if (subtitle != null && !subtitle.isEmpty()) {
                 details = new TextView(this);
                 details.setText(subtitle);
-                details.setTextColor(0x99FFFFFF);
+                details.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
@@ -6196,7 +6194,7 @@ public class PlayerActivity extends Activity {
             if (choice.bitrateText != null && !choice.bitrateText.isEmpty()) {
                 final TextView bitrate = new TextView(this);
                 bitrate.setText(choice.bitrateText);
-                bitrate.setTextColor(0x99FFFFFF);
+                bitrate.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
                 bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 bitrate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
                 bitrate.setSingleLine(true);
@@ -6233,7 +6231,8 @@ public class PlayerActivity extends Activity {
             // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                    ContextCompat.getColor(this, R.color.panel_surface)));
         }
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
@@ -6339,7 +6338,7 @@ public class PlayerActivity extends Activity {
         lp.topMargin = topPx;
         lp.bottomMargin = bottomPx;
         rule.setLayoutParams(lp);
-        rule.setBackgroundColor(0x1AFFFFFF);
+        rule.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
         return rule;
     }
 
@@ -6351,7 +6350,7 @@ public class PlayerActivity extends Activity {
     private View menuCaption(CharSequence text) {
         final TextView caption = new TextView(this);
         caption.setText(text);
-        caption.setTextColor(0x99FFFFFF);
+        caption.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
         caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
         caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
         return caption;
@@ -6414,7 +6413,9 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            row.setBackground(new RippleDrawable(
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
@@ -6431,7 +6432,7 @@ public class PlayerActivity extends Activity {
                 art.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 // Same placeholder as the header's poster slot, so a slow load is a quiet grey card
                 // rather than a hole that shifts the text when it fills.
-                art.setBackgroundColor(0xFF333333);
+                art.setBackgroundColor(ContextCompat.getColor(this, R.color.placeholder_card));
                 final int artCorner = Utils.dpToPx(4);
                 art.setClipToOutline(true);
                 art.setOutlineProvider(new ViewOutlineProvider() {
@@ -6449,7 +6450,8 @@ public class PlayerActivity extends Activity {
             } else if (item.iconRes != 0) {
                 final ImageView icon = new ImageView(this);
                 icon.setImageResource(item.iconRes);
-                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                icon.setImageTintList(ColorStateList.valueOf(
+                        isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive)));
                 final int iconSize = Utils.dpToPx(22);
                 final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
                 iconLp.setMarginEnd(Utils.dpToPx(16));
@@ -6466,7 +6468,7 @@ public class PlayerActivity extends Activity {
 
             final TextView title = new TextView(this);
             title.setText(item.title);
-            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            title.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -6479,7 +6481,8 @@ public class PlayerActivity extends Activity {
                 if (mark != null) {
                     final int markBox = Math.round(title.getTextSize());
                     mark.setBounds(0, 0, markBox, markBox);
-                    mark.setTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                    mark.setTintList(ColorStateList.valueOf(
+                            isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive)));
                     title.setCompoundDrawablesRelative(mark, null, null, null);
                     title.setCompoundDrawablePadding(Utils.dpToPx(6));
                 }
@@ -6490,7 +6493,7 @@ public class PlayerActivity extends Activity {
             if (item.subtitle != null && item.subtitle.length() > 0) {
                 details = new TextView(this);
                 details.setText(item.subtitle);
-                details.setTextColor(0x99FFFFFF);
+                details.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
@@ -6524,7 +6527,8 @@ public class PlayerActivity extends Activity {
             // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                    ContextCompat.getColor(this, R.color.panel_surface)));
         }
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
@@ -8260,7 +8264,7 @@ public class PlayerActivity extends Activity {
     private TextView searchNote(CharSequence text) {
         final TextView note = new TextView(this);
         note.setText(text);
-        note.setTextColor(0x99FFFFFF);
+        note.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
         note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
         return note;
@@ -8286,13 +8290,15 @@ public class PlayerActivity extends Activity {
         final GradientDrawable mask = new GradientDrawable();
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
-        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), content, mask));
+        row.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)), content, mask));
 
         final ImageView art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         // Grey only while something is on its way. A title the catalogue has no poster for led with a
         // grey card standing in for an image that was never coming — the row should lead with nothing.
-        art.setBackgroundColor(imageUrl != null ? 0xFF333333 : Color.TRANSPARENT);
+        art.setBackgroundColor(
+                imageUrl != null ? ContextCompat.getColor(this, R.color.placeholder_card) : Color.TRANSPARENT);
         final int corner = Utils.dpToPx(4);
         art.setClipToOutline(true);
         art.setOutlineProvider(new ViewOutlineProvider() {
@@ -8315,14 +8321,14 @@ public class PlayerActivity extends Activity {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         final TextView titleView = new TextView(this);
         titleView.setText(name);
-        titleView.setTextColor(0xFFDDDDDD);
+        titleView.setTextColor(ContextCompat.getColor(this, R.color.ink_row_inactive));
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
         textBlock.addView(titleView);
         TextView detailView = null;
         if (detail != null && detail.length() > 0) {
             detailView = new TextView(this);
             detailView.setText(detail);
-            detailView.setTextColor(0x99FFFFFF);
+            detailView.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
             detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
             textBlock.addView(detailView);
         }
@@ -9891,7 +9897,7 @@ public class PlayerActivity extends Activity {
                 // Losing the relay does not stop the picture, so it is stated rather than alarmed about —
                 // but on the brand colour, because the room has stopped being in step and nothing else says so.
                 final int tint = together.connected()
-                        ? 0xE6FFFFFF
+                        ? ContextCompat.getColor(this, R.color.ink_high)
                         : ContextCompat.getColor(this, R.color.brand);
                 roomPill.setTextColor(tint);
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
@@ -10910,11 +10916,11 @@ public class PlayerActivity extends Activity {
             emptyState.hide();
             if (isNetworkUri) {
                 // Reads as a light rail ahead of the playhead, the way the design shows a buffering stream.
-                timeBar.setBufferedColor(0xC0FFFFFF);
+                timeBar.setBufferedColor(ContextCompat.getColor(this, R.color.buffered_white));
             } else {
                 // Local files report the whole file as buffered, so anything brighter floods the bar:
                 // https://github.com/google/ExoPlayer/issues/5765
-                timeBar.setBufferedColor(0x33FFFFFF);
+                timeBar.setBufferedColor(ContextCompat.getColor(this, R.color.track_white));
             }
 
             playerView.setResizeMode(mPrefs.resizeMode);
@@ -14378,7 +14384,7 @@ public class PlayerActivity extends Activity {
         final GradientDrawable mask = new GradientDrawable();
         mask.setShape(GradientDrawable.OVAL);
         mask.setColor(Color.WHITE);
-        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF),
+        return new RippleDrawable(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_medium)),
                 new InsetDrawable((Drawable) ring, discInset / 2),
                 new InsetDrawable((Drawable) mask, discInset));
     }

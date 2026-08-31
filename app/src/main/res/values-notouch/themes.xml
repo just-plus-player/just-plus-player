@@ -2,4 +2,11 @@
     <style name="Theme.Player" parent="BaseTheme.Player">
         <item name="colorControlHighlight">@color/white</item>
     </style>
+
+    <!-- The error screen's action buttons ride on selectableItemBackgroundBorderless, so their focus
+         wash is whatever the theme highlight happens to be. On a remote it has to be the same white the
+         player uses. -->
+    <style name="Theme.Error" parent="BaseTheme.Error">
+        <item name="colorControlHighlight">@color/white</item>
+    </style>
 </resources>

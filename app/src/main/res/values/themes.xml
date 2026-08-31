@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <style name="BaseTheme.Player" parent="Theme.AppCompat.NoActionBar">
+    <style name="BaseTheme.Player" parent="Theme.Material3.Dark.NoActionBar">
         <!-- Transparent so the OS-toggled status bar doesn't paint its own @color/ui_controls_background strip,
              which desyncs from the controller fade. The controller-synced exo_top scrim (given a height on all
              SDKs in PlayerActivity's insets listener) provides the darkening behind the status-bar icons. -->
@@ -9,6 +9,9 @@
         <item name="android:windowBackground">@color/black</item>
         <item name="android:windowLayoutInDisplayCutoutMode" tools:ignore="NewApi">shortEdges</item>
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
         <item name="colorAccent">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
@@ -27,21 +30,47 @@
         <item name="android:focusable">true</item>
     </style>
 
-    <style name="Theme.Error" parent="Theme.AppCompat.NoActionBar">
+    <style name="BaseTheme.Error" parent="Theme.Material3.Dark.NoActionBar">
         <!-- The wash is the window background, not the layout's, so the one gradient covers the
              system bars too — a bar painted in a flat colour would cut a seam across it. -->
         <item name="android:windowBackground">@drawable/bg_brand_wash</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
         <item name="colorAccent">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
 
-    <style name="Theme.Settings" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Split like Theme.Player, so values-television and values-notouch can give the error screen the
+         same white focus highlight the player already gets there. -->
+    <style name="Theme.Error" parent="BaseTheme.Error">
+    </style>
+
+    <style name="Theme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
+             primary colour, which with a coral primary is a red band across the top of the screen.
+             SettingsActivity sets the icon appearance to match. -->
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
         <item name="colorAccent">@color/brand</item>
         <item name="colorControlActivated">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
+    </style>
+
+    <!-- androidx.preference builds its list and text dialogs with a plain AlertDialog.Builder, so they
+         get none of what MaterialAlertDialogBuilder applies in code: an AppCompat row with the radio
+         parked on the right, in a square container. Hand it the Material pieces through the theme.
+         The parent must be ThemeOverlay.Material3.MaterialAlertDialog — ThemeOverlay.Material3.Dialog.Alert
+         sets only the button style, and m3_alert_dialog_title.xml needs materialAlertDialogTitlePanelStyle,
+         without which the first preference dialog to open throws InflateException. -->
+    <style name="ThemeOverlay.JustPlus.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:windowBackground">@drawable/bg_dialog_material3</item>
     </style>
 
     <style name="ExoStyledControls.Button.Center.Secondary" parent="ExoStyledControls.Button.Center">
@@ -50,7 +79,10 @@
         <item name="android:visibility">gone</item>
     </style>
 
-    <style name="Transparent" parent="@android:style/Theme.Material.NoActionBar">
+    <!-- MediaStoreChooserActivity has no content view — it only shows dialogs. The parent is a Material
+         one so that the context those dialogs are built against resolves the attributes
+         MaterialAlertDialogBuilder reads from it (materialAlertDialogTheme among them). -->
+    <style name="Transparent" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowContentOverlay">@null</item>
@@ -59,7 +91,7 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
-    <style name="MediaStoreChooserDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+    <style name="MediaStoreChooserDialog" parent="Theme.Material3.Dark.Dialog.Alert">
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
         <item name="android:singleLine">true</item> <!-- When focused, line scrolls -->

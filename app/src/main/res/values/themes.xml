@@ -51,6 +51,7 @@
 
     <style name="BaseTheme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
              primary colour, which with a coral primary is a red band across the top of the screen.
              SettingsActivity sets the icon appearance to match. -->
@@ -74,9 +75,25 @@
          parked on the right, in a square container. Hand it the Material pieces through the theme.
          The parent must be ThemeOverlay.Material3.MaterialAlertDialog — ThemeOverlay.Material3.Dialog.Alert
          sets only the button style, and m3_alert_dialog_title.xml needs materialAlertDialogTitlePanelStyle,
-         without which the first preference dialog to open throws InflateException. -->
+         without which the first preference dialog to open throws InflateException.
+         Every theme that raises a dialog points both `alertDialogTheme` and `materialAlertDialogTheme`
+         here: a plain AlertDialog.Builder reads the first, while MaterialAlertDialogBuilder never looks
+         at it - it applies the second itself, and whatever that names wins over the theme underneath. -->
     <style name="ThemeOverlay.JustPlus.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="android:windowBackground">@drawable/bg_dialog_material3</item>
+        <!-- Only the confirming action is coral. The ripple is left as it was: on a television the
+             focus wash of these buttons comes from it. -->
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.JustPlus.Button.Dialog.Dismissive</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.JustPlus.Button.Dialog.Neutral</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Dialog.Dismissive" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/dialog_button_dismissive</item>
+    </style>
+
+    <!-- The third action sits at the far edge, so it keeps Material's flush geometry. -->
+    <style name="Widget.JustPlus.Button.Dialog.Neutral" parent="Widget.Material3.Button.TextButton.Dialog.Flush">
+        <item name="android:textColor">@color/dialog_button_dismissive</item>
     </style>
 
     <!-- AMOLED: the M3 dark scheme with its greys taken out, for a panel that costs nothing to leave
@@ -94,6 +111,7 @@
          token, and a dialog built against one cannot add its window at all. -->
     <style name="Theme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
@@ -101,6 +119,7 @@
 
     <style name="Theme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>

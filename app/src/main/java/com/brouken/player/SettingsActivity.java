@@ -489,7 +489,7 @@ public class SettingsActivity extends AppCompatActivity
                                 return;
                             }
                             if (info != null) {
-                                UpdateUi.showAvailableDialog(activity, info, null, false);
+                                UpdateUi.showAvailableDialog(activity, activity, info, null, false);
                             } else {
                                 Toast.makeText(activity, R.string.update_none, Toast.LENGTH_SHORT).show();
                             }
@@ -594,6 +594,16 @@ public class SettingsActivity extends AppCompatActivity
             }
             final MaterialButtonToggleGroup group = (MaterialButtonToggleGroup) holder.itemView;
             final Context context = group.getContext();
+            // A TV box has no system theme of its own to follow — PlayerActivity makes dark the default
+            // there, so "System" resolves to dark and does exactly what the button next to it does. An
+            // option that duplicates its neighbour is worse than one fewer option, so it goes; a choice
+            // stored from a phone becomes the Dark it already behaves as.
+            if (Utils.isTvBox(context)) {
+                group.findViewById(R.id.theme_mode_system).setVisibility(View.GONE);
+                if (Prefs.THEME_SYSTEM.equals(Prefs.getThemeMode(context))) {
+                    Prefs.setThemeMode(context, Prefs.THEME_DARK);
+                }
+            }
             // The holder is recycled, so the listener from its last binding has to go first.
             group.clearOnButtonCheckedListeners();
             group.check(buttonFor(Prefs.getThemeMode(context)));

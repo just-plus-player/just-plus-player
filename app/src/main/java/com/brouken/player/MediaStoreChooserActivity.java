@@ -151,10 +151,10 @@ public class MediaStoreChooserActivity extends Activity {
         if (buckets.size() == 0) {
             // Same theme as the populated branch: this activity's own theme carries no dialog style,
             // so without it the "no media" message would come out looking like a different app.
-            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
+            alertDialogBuilder = new MaterialAlertDialogBuilder(Utils.dialogContext(this), R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setMessage(R.string.mediastore_empty);
         } else {
-            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
+            alertDialogBuilder = new MaterialAlertDialogBuilder(Utils.dialogContext(this), R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setTitle(getString(R.string.choose_file));
             alertDialogBuilder.setItems(bucketDisplayNames, (dialogInterface, i) -> {
                 Intent intent = new Intent(MediaStoreChooserActivity.this, MediaStoreChooserActivity.class);
@@ -181,7 +181,7 @@ public class MediaStoreChooserActivity extends Activity {
         Integer[] ids = files.keySet().toArray(new Integer[0]);
         String[] displayNames = files.values().toArray(new String[0]);
 
-        AlertDialog.Builder alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
+        AlertDialog.Builder alertDialogBuilder = new MaterialAlertDialogBuilder(Utils.dialogContext(this), R.style.MediaStoreChooserDialog);
         if (title != null) {
             alertDialogBuilder.setTitle(title);
         }

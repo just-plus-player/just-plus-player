@@ -2,7 +2,6 @@ package com.brouken.player;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ContentUris;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -15,6 +14,9 @@ import android.provider.MediaStore;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AlertDialog;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -147,10 +149,12 @@ public class MediaStoreChooserActivity extends Activity {
 
         AlertDialog.Builder alertDialogBuilder;
         if (buckets.size() == 0) {
-            alertDialogBuilder = new AlertDialog.Builder(this);
+            // Same theme as the populated branch: this activity's own theme carries no dialog style,
+            // so without it the "no media" message would come out looking like a different app.
+            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setMessage(R.string.mediastore_empty);
         } else {
-            alertDialogBuilder = new AlertDialog.Builder(this, R.style.MediaStoreChooserDialog);
+            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setTitle(getString(R.string.choose_file));
             alertDialogBuilder.setItems(bucketDisplayNames, (dialogInterface, i) -> {
                 Intent intent = new Intent(MediaStoreChooserActivity.this, MediaStoreChooserActivity.class);
@@ -177,7 +181,7 @@ public class MediaStoreChooserActivity extends Activity {
         Integer[] ids = files.keySet().toArray(new Integer[0]);
         String[] displayNames = files.values().toArray(new String[0]);
 
-        AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(this, R.style.MediaStoreChooserDialog);
+        AlertDialog.Builder alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
         if (title != null) {
             alertDialogBuilder.setTitle(title);
         }

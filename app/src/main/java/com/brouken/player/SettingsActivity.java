@@ -23,6 +23,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
 import androidx.core.view.OneShotPreDrawListener;
+import androidx.core.view.WindowCompat;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
@@ -68,19 +69,16 @@ public class SettingsActivity extends AppCompatActivity
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             );
             getWindow().setNavigationBarColor(Color.TRANSPARENT);
-
-            if (Build.VERSION.SDK_INT >= 35) {
-                int nightModeFlags = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-
-                if (nightModeFlags == Configuration.UI_MODE_NIGHT_YES) {
-                    getWindow().getDecorView().setSystemUiVisibility(0);
-                } else if (nightModeFlags == Configuration.UI_MODE_NIGHT_NO) {
-                    getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-                }
-            }
         }
 
         super.onCreate(savedInstanceState);
+
+        // The status bar takes the window's own surface colour (see Theme.Settings), so its icons have to
+        // follow the theme in force instead of staying light. This sets only the light-icon bit, and on
+        // every SDK — the block above replaces the whole flag set, which is why it cannot do this too.
+        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView())
+                .setAppearanceLightStatusBars(night != Configuration.UI_MODE_NIGHT_YES);
 
         setContentView(R.layout.settings_activity);
         if (savedInstanceState == null) {

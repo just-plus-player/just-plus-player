@@ -5,7 +5,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -22,6 +21,8 @@ import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.PathInterpolator;
 import android.widget.EditText;
 import android.widget.TextView;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 /**
  * The branded page shown while there is no clip to play: an animated brand-mark reveal, the "Open
@@ -227,7 +228,7 @@ class EmptyState {
             input.setText(pasted.toString());
             input.setSelection(input.getText().length());
         }
-        new AlertDialog.Builder(activity)
+        new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.empty_state_link)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok,

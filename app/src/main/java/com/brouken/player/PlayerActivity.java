@@ -7944,7 +7944,8 @@ public class PlayerActivity extends Activity {
         final Context dialogContext = Utils.dialogContext(this);
         subtitleSearchForSecondary = forSecondary;
         final LinearLayout fields = Utils.dialogFields(dialogContext);
-        final EditText query = Utils.textField(fields, getString(R.string.subtitle_search_hint));
+        final EditText query = Utils.textField(fields, getString(R.string.subtitle_search_label),
+                getString(R.string.subtitle_search_hint));
         query.setInputType(InputType.TYPE_CLASS_TEXT);
         // Without this the keyboard takes the whole screen in landscape — its extract mode — and covers
         // the dialog it belongs to, list and all. The list is the point of this dialog: it fills in while
@@ -9432,7 +9433,7 @@ public class PlayerActivity extends Activity {
     private void askRoomPassword(final String code) {
         final Context dialogContext = Utils.dialogContext(this);
         final LinearLayout fields = Utils.dialogFields(dialogContext);
-        final EditText input = Utils.textField(fields, getString(R.string.together_password_hint));
+        final EditText input = Utils.textField(fields, getString(R.string.together_password));
         // The room has said it is locked, so the default is worth offering here exactly as it is offered
         // when creating one: people watching together tend to reuse one password, and this is the only
         // dialog that knows for certain a password is wanted. Not offered when joining by code, where
@@ -9475,8 +9476,7 @@ public class PlayerActivity extends Activity {
         name.setText(suggested);
         name.setSelection(name.getText().length());
 
-        final EditText password =
-                Utils.textField(fields, getString(R.string.together_password_hint));
+        final EditText password = Utils.textField(fields, getString(R.string.together_password));
         password.setText(mPrefs.togetherPassword);
 
         final CheckBox listed = new CheckBox(dialogContext);
@@ -9553,14 +9553,13 @@ public class PlayerActivity extends Activity {
         final LinearLayout fields = Utils.dialogFields(dialogContext);
         // Text, not digits: a room made in Lampa has a letter code, and the same six characters
         // have to be typeable here.
-        final EditText code = Utils.textField(fields, "ABC234");
+        final EditText code = Utils.textField(fields, getString(R.string.together_code), "ABC234");
         code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
 
         // Rooms made in Lampa carry a password whenever that setting is on there, and it goes into
         // the room's address — so without it we would land somewhere else entirely and report, quite
         // truthfully and quite uselessly, that no such room exists.
-        final EditText password =
-                Utils.textField(fields, getString(R.string.together_password_hint));
+        final EditText password = Utils.textField(fields, getString(R.string.together_password));
 
         new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.together_join)

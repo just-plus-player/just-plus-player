@@ -780,9 +780,20 @@ class Utils {
      * the dialog reads and writes; the box around it needs nothing further said to it.
      */
     static EditText textField(final ViewGroup fields, final CharSequence hint) {
+        return textField(fields, hint, null);
+    }
+
+    /**
+     * The same, with an example of what to type. A label has to be a word or two because it shrinks
+     * onto the outline and stays there for good; an example is longer and is only worth reading with
+     * the field empty and in front of you, which is exactly when a placeholder shows.
+     */
+    static EditText textField(final ViewGroup fields, final CharSequence hint,
+                              final CharSequence placeholder) {
         final TextInputLayout field = (TextInputLayout) LayoutInflater.from(fields.getContext())
                 .inflate(R.layout.dialog_text_field, fields, false);
         field.setHint(hint);
+        field.setPlaceholderText(placeholder);
         fields.addView(field);
         return field.getEditText();
     }

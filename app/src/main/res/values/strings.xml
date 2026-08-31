@@ -137,7 +137,8 @@
     <string name="together_searching">Looking for rooms…</string>
     <string name="together_none_found">No public rooms found</string>
     <string name="together_room_summary">%1$s · %2$d watching</string>
-    <string name="together_password_hint">Password, if the room has one</string>
+    <string name="together_password">Password</string>
+    <string name="together_code">Code</string>
     <string name="together_no_room">No room with that code — or it needs a password</string>
     <string name="together_badge_named">%1$s [%2$s] · %3$d</string>
     <string name="together_create_title">New room %1$s</string>
@@ -145,6 +146,7 @@
     <string name="together_public_needs_password">A public room needs a password</string>
     <string name="together_room_default_name">Room %1$s</string>
     <string name="together_room_name">Room name</string>
+    <string name="field_url">URL</string>
     <string name="together_badge">Room %1$s · %2$d</string>
     <string name="together_offline">Room %1$s · reconnecting…</string>
     <string name="together_connecting">Room %1$s · connecting…</string>
@@ -317,6 +319,7 @@
     <string name="pref_subtitle_search_language_summary">A manual search offers the language list first, for that search only</string>
     <string name="subtitle_search_found">Subtitles found: %1$s</string>
     <string name="subtitle_search_manual">Find subtitles online</string>
+    <string name="subtitle_search_label">Title or id</string>
     <string name="subtitle_search_hint">Name, or a tmdb / imdb id</string>
     <string name="subtitle_search_language_title">Choose language</string>
     <string name="subtitle_search_none">Nothing found</string>

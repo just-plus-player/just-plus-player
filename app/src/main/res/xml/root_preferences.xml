@@ -437,14 +437,14 @@
                 app:dialogMessage="@string/pref_together_password_summary" />
 
             <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_text_field"
+                app:dialogLayout="@layout/preference_dialog_url_field"
                 app:key="togetherRelay"
                 app:title="@string/pref_together_relay"
                 app:dialogTitle="@string/pref_together_relay"
                 app:dialogMessage="@string/pref_together_relay_summary" />
 
             <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_text_field"
+                app:dialogLayout="@layout/preference_dialog_url_field"
                 app:key="togetherInvitePage"
                 app:title="@string/pref_together_invite_page"
                 app:dialogTitle="@string/pref_together_invite_page"

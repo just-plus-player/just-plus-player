@@ -221,7 +221,8 @@ class EmptyState {
     void askForLink() {
         final Context dialogContext = Utils.dialogContext(activity);
         final ViewGroup fields = Utils.dialogFields(dialogContext);
-        final EditText input = Utils.textField(fields, "https://");
+        final EditText input =
+                Utils.textField(fields, activity.getString(R.string.field_url), "https://");
         input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         final Uri pasted = clipboardUri();
         if (pasted != null) {

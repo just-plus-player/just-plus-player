@@ -49,6 +49,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
+import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
 
@@ -140,6 +141,20 @@ public class SettingsActivity extends AppCompatActivity
             }
         });
 
+        // The title belongs over the column, not at the far edge of a 4K window.
+        final MaterialToolbar bar = findViewById(R.id.toolbar);
+        final View settingsRoot = findViewById(R.id.settings_layout);
+        settingsRoot.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> {
+            // Padding rather than content insets: those move the title and leave the up arrow at the
+            // window edge, which reads as two different left margins. On a TV it also brings the arrow
+            // inside the overscan-safe strip, where a remote can be sure of finding it.
+            // Only the part the toolbar does not already inset by itself, or a phone — where the two
+            // are the same 16dp — would indent the title twice.
+            final int extra = Math.max(0,
+                    contentSideInset(this, r - l) - bar.getContentInsetStart());
+            bar.setPadding(extra, bar.getPaddingTop(), extra, bar.getPaddingBottom());
+        });
+
         if (Build.VERSION.SDK_INT >= 29) {
             LinearLayout layout = findViewById(R.id.settings_layout);
             layout.setOnApplyWindowInsetsListener((view, windowInsets) -> {
@@ -154,6 +169,27 @@ public class SettingsActivity extends AppCompatActivity
                 return windowInsets;
             });
         }
+    }
+
+    /**
+     * Side inset that holds the content to one readable column, given the room there is.
+     *
+     * Material asks for a maximum width rather than letting content stretch, and hands widths past
+     * 840dp to layouts with more than one pane. This screen is deliberately one pane — the switches
+     * are meant to be read, not hidden behind rows — so the honest single-pane answer is to stop the
+     * column at the width a label-and-control row still reads as one thing and centre it. 720dp sits
+     * inside Material's medium window, which is the widest a single pane is meant to get.
+     *
+     * A 4K monitor therefore gets the same column with a lot of space around it. Filling that space
+     * properly needs a second pane, which is a different screen, not a wider inset.
+     *
+     * On a TV the floor is the overscan margin the TV guidance asks for (48dp horizontally, 5% of
+     * 960dp) rather than the phone's 16dp: a set narrow enough to miss the cap — 1280x720 at 320 dpi
+     * is exactly 640dp across — would otherwise put rows in the strip a TV may not show.
+     */
+    static int contentSideInset(final Context context, final int availableWidth) {
+        final int base = Utils.isTvBox(context) ? Utils.dpToPx(48) : Utils.dpToPx(16);
+        return Math.max(base, (availableWidth - Utils.dpToPx(720)) / 2);
     }
 
     /**
@@ -1000,12 +1036,7 @@ public class SettingsActivity extends AppCompatActivity
 
         private static final int RADIUS = Utils.dpToPx(20);
         private final int inset = Utils.dpToPx(16);
-        /**
-         * How wide the cards are allowed to get. A settings row is a label on the left and a control
-         * on the right; let the row have a whole television and the two end up a screen apart with
-         * nothing in between, which is why a wide layout reads as broken rather than roomy.
-         */
-        private final int maxContentWidth = Utils.dpToPx(640);
+
         private final int headerGap = Utils.dpToPx(8);
         private final int hairlineInset = Utils.dpToPx(16);
         private final Paint card = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1038,9 +1069,9 @@ public class SettingsActivity extends AppCompatActivity
         @Override
         public void getItemOffsets(@NonNull Rect outRect, @NonNull View view,
                                    @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-            // Centred once the list is wider than a card is allowed to be. The cards are drawn from
-            // the rows' own bounds, so they follow this without knowing about it.
-            final int side = Math.max(inset, (parent.getWidth() - maxContentWidth) / 2);
+            // Centred once the list is wider than the column is allowed to be. The cards are drawn
+            // from the rows' own bounds, so they follow this without knowing about it.
+            final int side = contentSideInset(parent.getContext(), parent.getWidth());
             outRect.left = side;
             outRect.right = side;
             // The header sits above its card, not against the one before it.

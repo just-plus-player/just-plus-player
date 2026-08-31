@@ -11,6 +11,9 @@
     <color name="brand_container">#FF7A2019</color>
     <!-- M3 on-primary: the ink that sits on the brand, e.g. the switch handle when it is on. -->
     <color name="brand_on">#FF5F1411</color>
+    <!-- AMOLED: the card tone over a pure black window, still a shade above it so cards read as cards. -->
+    <color name="amoled_card">#FF141416</color>
+
     <color name="shortcut_background">#F5F5F5</color>
 
     <!-- Error screen (ErrorActivity): a calm dark surface, not an alarming full-red state. -->

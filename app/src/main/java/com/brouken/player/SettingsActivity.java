@@ -174,6 +174,10 @@ public class SettingsActivity extends AppCompatActivity
     }
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
+
+        /** SwitchCompat's own thumb animation, which it keeps to itself as a private constant. */
+        private static final long SWITCH_ANIMATION_MS = 250;
+
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             // Inflation materializes switch defaults, so record whether the key was already
@@ -193,9 +197,20 @@ public class SettingsActivity extends AppCompatActivity
             final Preference preferenceAmoled = findPreference("amoledBlack");
             if (preferenceAmoled != null) {
                 preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
-                    // Posted, so the new value is persisted — returning true is what does that —
-                    // before the window that reads it is built again.
-                    new Handler(Looper.getMainLooper()).post(() -> requireActivity().recreate());
+                    // Held past the switch's own animation, so the thumb finishes travelling before the
+                    // window is rebuilt. Rebuilding it straight away cut that animation off mid-way and
+                    // the toggle read as a jerk, which no other switch on this screen does. SwitchCompat
+                    // animates the thumb for 250 ms and keeps the figure to itself.
+                    // The host is taken now rather than looked up later: by the time this runs the
+                    // fragment may have been detached, and asking it for its activity then would either
+                    // throw or, guarded, silently skip the rebuild.
+                    // Returning true is what persists the new value; the rebuilt window reads it.
+                    final Activity host = requireActivity();
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (!host.isFinishing() && !host.isDestroyed()) {
+                            host.recreate();
+                        }
+                    }, SWITCH_ANIMATION_MS);
                     return true;
                 });
             }

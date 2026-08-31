@@ -1,7 +1,8 @@
 package com.brouken.player.update;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.app.Activity;
-import android.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog;
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -56,7 +57,7 @@ public final class UpdateUi {
         scroll.setPadding(padH, dp(activity, 8), padH, 0);
         scroll.addView(message);
 
-        final AlertDialog.Builder builder = new AlertDialog.Builder(activity)
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.pref_update_header)
                 .setView(scroll)
                 .setPositiveButton(R.string.update_now, (dialog, which) -> startDownload(activity, info))
@@ -86,7 +87,7 @@ public final class UpdateUi {
         // dismiss it — so the cancel action reaches it through this holder. Nothing can read it before it
         // is assigned: show() only posts, and the assignment happens before this returns to the looper.
         final Thread[] download = new Thread[1];
-        final AlertDialog dialog = new AlertDialog.Builder(activity)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.update_downloading)
                 .setView(layout)
                 // Without this the dialog had no way out at all: a download that stalls without failing

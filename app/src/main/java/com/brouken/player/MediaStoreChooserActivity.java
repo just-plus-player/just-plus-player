@@ -1,8 +1,9 @@
 package com.brouken.player;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog;
 import android.content.ContentUris;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -147,10 +148,10 @@ public class MediaStoreChooserActivity extends Activity {
 
         AlertDialog.Builder alertDialogBuilder;
         if (buckets.size() == 0) {
-            alertDialogBuilder = new AlertDialog.Builder(this);
+            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setMessage(R.string.mediastore_empty);
         } else {
-            alertDialogBuilder = new AlertDialog.Builder(this, R.style.MediaStoreChooserDialog);
+            alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
             alertDialogBuilder.setTitle(getString(R.string.choose_file));
             alertDialogBuilder.setItems(bucketDisplayNames, (dialogInterface, i) -> {
                 Intent intent = new Intent(MediaStoreChooserActivity.this, MediaStoreChooserActivity.class);
@@ -177,7 +178,7 @@ public class MediaStoreChooserActivity extends Activity {
         Integer[] ids = files.keySet().toArray(new Integer[0]);
         String[] displayNames = files.values().toArray(new String[0]);
 
-        AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(this, R.style.MediaStoreChooserDialog);
+        AlertDialog.Builder alertDialogBuilder = new MaterialAlertDialogBuilder(this, R.style.MediaStoreChooserDialog);
         if (title != null) {
             alertDialogBuilder.setTitle(title);
         }

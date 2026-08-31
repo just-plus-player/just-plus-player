@@ -42,6 +42,12 @@
     <string name="delete_confirmation">Видалити</string>
     <string name="pref_title">Налаштування</string>
     <string name="pref_general_header">Загальні</string>
+    <string name="pref_appearance_header">Вигляд</string>
+    <string name="pref_theme_dark">Темна</string>
+    <string name="pref_theme_light">Світла</string>
+    <string name="pref_theme_system">Системна</string>
+    <string name="pref_amoled">AMOLED-чорний</string>
+    <string name="pref_amoled_summary">Чисто чорне тло в темній темі</string>
     <string name="pref_framerate_matching">Автоматичне узгодження частоти кадрів</string>
     <string name="pref_framerate_matching_on">Переключати частоту оновлення екрану відповідно до частоти кадрів відеосигналу</string>
     <string name="pref_framerate_matching_off">Не змінювати частоту оновлення екрану</string>

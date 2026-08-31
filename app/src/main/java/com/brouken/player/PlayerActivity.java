@@ -7,7 +7,7 @@ import android.animation.AnimatorListenerAdapter;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
-import android.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
@@ -174,6 +174,7 @@ import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
 import org.json.JSONObject;
@@ -7596,7 +7597,7 @@ public class PlayerActivity extends Activity {
         fields.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
 
-        final AlertDialog dialog = new AlertDialog.Builder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.subtitle_search_manual)
                 .setView(fields)
                 .setNegativeButton(android.R.string.cancel, null)
@@ -7789,7 +7790,7 @@ public class PlayerActivity extends Activity {
         fields.addView(fieldLabel(R.string.subtitle_search_episode_label));
         fields.addView(episode);
 
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.subtitle_search_type)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
@@ -9084,7 +9085,7 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle(code)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok,
@@ -9146,7 +9147,7 @@ public class PlayerActivity extends Activity {
         fields.addView(listed);
         fields.addView(note);
 
-        final AlertDialog dialog = new AlertDialog.Builder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.together_create_title, code))
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (d, which) -> {
@@ -9221,7 +9222,7 @@ public class PlayerActivity extends Activity {
         fields.addView(code);
         fields.addView(password);
 
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.together_join)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -9474,7 +9475,7 @@ public class PlayerActivity extends Activity {
         image.setAdjustViewBounds(true);
         final int padding = Math.round(16 * metrics.density);
         image.setPadding(padding, padding, padding, padding);
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.together_qr_title, together.code()))
                 .setMessage(getString(R.string.together_qr_hint))
                 .setView(image)
@@ -13287,7 +13288,7 @@ public class PlayerActivity extends Activity {
         // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
         // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
         if (isTvBox) {
-            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(this);
             builder.setMessage(textPrimary);
             builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
             if (textSecondary != null) {
@@ -13490,7 +13491,7 @@ public class PlayerActivity extends Activity {
     }
 
     void askForScope(boolean loadSubtitlesOnCancel, boolean skipToNextOnCancel) {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(PlayerActivity.this);
         builder.setMessage(String.format(getString(R.string.request_scope), getString(R.string.app_name)));
         builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> requestDirectoryAccess()
         );
@@ -13811,7 +13812,7 @@ public class PlayerActivity extends Activity {
     }
 
     void askDeleteMedia() {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(PlayerActivity.this);
         builder.setMessage(getString(R.string.delete_query));
         builder.setPositiveButton(R.string.delete_confirmation, (dialogInterface, i) -> {
             releasePlayer();
@@ -14014,7 +14015,7 @@ public class PlayerActivity extends Activity {
             if (isCurrentAspectMode(modes.get(i)))
                 checked = i;
         }
-        final AlertDialog dialog = new AlertDialog.Builder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.button_crop)
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     applyAspectMode(which);

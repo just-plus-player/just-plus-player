@@ -4,35 +4,52 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ImageSpan;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.StaticLayout;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import android.app.Activity;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
 import androidx.core.view.OneShotPreDrawListener;
+import androidx.core.view.WindowCompat;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceGroupAdapter;
 import androidx.preference.PreferenceScreen;
+import androidx.preference.PreferenceViewHolder;
 import androidx.preference.SwitchPreferenceCompat;
+import androidx.preference.TwoStatePreference;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.SimpleItemAnimator;
+
+import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.color.MaterialColors;
 
 import com.brouken.player.together.AliasGenerator;
 import com.brouken.player.together.Relay;
@@ -68,19 +85,24 @@ public class SettingsActivity extends AppCompatActivity
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             );
             getWindow().setNavigationBarColor(Color.TRANSPARENT);
-
-            if (Build.VERSION.SDK_INT >= 35) {
-                int nightModeFlags = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-
-                if (nightModeFlags == Configuration.UI_MODE_NIGHT_YES) {
-                    getWindow().getDecorView().setSystemUiVisibility(0);
-                } else if (nightModeFlags == Configuration.UI_MODE_NIGHT_NO) {
-                    getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-                }
-            }
         }
 
+        // Before super.onCreate, or AppCompat applies the old mode first and then recreates.
+        getDelegate().setLocalNightMode(Prefs.getNightMode(this));
+
         super.onCreate(savedInstanceState);
+
+        // After super, so the configuration already carries the night mode set above, and before any
+        // view is inflated. Pure black is a dark-theme idea only.
+        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
+            getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
+        }
+
+        // The bar takes the window's own colour (see Theme.Settings), so its icons have to follow the
+        // theme actually in force — which is the one chosen above, not the system's.
+        WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView())
+                .setAppearanceLightStatusBars(night != Configuration.UI_MODE_NIGHT_YES);
 
         setContentView(R.layout.settings_activity);
         if (savedInstanceState == null) {
@@ -89,6 +111,7 @@ public class SettingsActivity extends AppCompatActivity
                     .replace(R.id.settings, new SettingsFragment())
                     .commit();
         }
+        setSupportActionBar(findViewById(R.id.toolbar));
         ActionBar actionBar = getSupportActionBar();
         if (actionBar != null) {
             actionBar.setDisplayHomeAsUpEnabled(true);
@@ -160,6 +183,17 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+            final Preference preferenceAmoled = findPreference("amoledBlack");
+            if (preferenceAmoled != null) {
+                preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
+                    // Posted, so the new value is persisted — returning true is what does that —
+                    // before the window that reads it is built again.
+                    new Handler(Looper.getMainLooper()).post(() -> requireActivity().recreate());
+                    return true;
+                });
+            }
+            syncAmoledEnabled();
 
             Preference preferenceAutoPiP = findPreference("autoPiP");
             if (preferenceAutoPiP != null) {
@@ -430,9 +464,166 @@ public class SettingsActivity extends AppCompatActivity
             };
         }
 
+        /**
+         * Rows are corner-clipped to the card they sit in, so a ripple — and the focus highlight a
+         * D-pad leaves on TV — stops at the rounded corner instead of squaring it off.
+         */
+        @Override
+        protected RecyclerView.Adapter onCreateAdapter(@NonNull PreferenceScreen preferenceScreen) {
+            return new PreferenceGroupAdapter(preferenceScreen) {
+                @Override
+                public void onBindViewHolder(@NonNull PreferenceViewHolder holder, int position) {
+                    super.onBindViewHolder(holder, position);
+                    GroupCards.clip(this, holder.itemView, position);
+                    final TextView title = (TextView) holder.findViewById(android.R.id.title);
+                    if (title != null) {
+                        // The library's row keeps the title on one line and marquees the overflow,
+                        // which on a phone just clips it ("Allow system to adjust refres.."), and the
+                        // card's side insets make the line shorter still. Let it wrap instead.
+                        title.setSingleLine(false);
+                        title.setEllipsize(null);
+                    }
+                    reserveTallerSummary(holder, getItem(position));
+                    bindThemeMode(holder, getItem(position));
+                }
+            };
+        }
+
+        /**
+         * A switch whose summaryOn and summaryOff wrap to a different number of lines makes its row —
+         * and everything below it — jump the moment it is toggled. Reserve the taller of the two up
+         * front, so flipping the switch only changes the words.
+         */
+        private static void reserveTallerSummary(final PreferenceViewHolder holder,
+                                                 final Preference preference) {
+            final View view = holder.findViewById(android.R.id.summary);
+            if (!(view instanceof TextView)) {
+                return;
+            }
+            final TextView summary = (TextView) view;
+            final CharSequence on = preference instanceof TwoStatePreference
+                    ? ((TwoStatePreference) preference).getSummaryOn() : null;
+            final CharSequence off = preference instanceof TwoStatePreference
+                    ? ((TwoStatePreference) preference).getSummaryOff() : null;
+            if (on == null || off == null || on.toString().equals(off.toString())) {
+                summary.setMinLines(0);
+                return;
+            }
+            // Straight away where the row already has a width — a re-bind after the switch was flipped
+            // does — because clearing the reservation and restoring it before the draw is itself the
+            // jump this is here to prevent.
+            applyTallerSummary(summary, on, off);
+            // A holder bound for the first time has no width yet, but it has one before the draw.
+            OneShotPreDrawListener.add(summary, () -> applyTallerSummary(summary, on, off));
+        }
+
+        private static void applyTallerSummary(final TextView summary, final CharSequence on,
+                                               final CharSequence off) {
+            // The summary is laid out wrap_content, so its own width is the width of whichever text it
+            // happens to hold — measuring the other one against that is what reserved a line for rows
+            // where both fit on one. The room either text may wrap into is the column it sits in.
+            if (!(summary.getParent() instanceof View)) {
+                return;
+            }
+            final View column = (View) summary.getParent();
+            final int width = column.getWidth() - column.getPaddingLeft() - column.getPaddingRight()
+                    - summary.getPaddingLeft() - summary.getPaddingRight();
+            if (width <= 0) {
+                return;
+            }
+            final int lines = Math.max(lineCount(summary, on, width), lineCount(summary, off, width));
+            if (summary.getMinLines() != lines) {
+                summary.setMinLines(lines);
+            }
+        }
+
+        private static int lineCount(final TextView view, final CharSequence text, final int width) {
+            return new StaticLayout(text, view.getPaint(), width, Layout.Alignment.ALIGN_NORMAL,
+                    view.getLineSpacingMultiplier(), view.getLineSpacingExtra(), false).getLineCount();
+        }
+
+        /**
+         * The theme row is a segmented control rather than a dialog behind a row: three choices, all
+         * worth seeing without opening anything. Bound here because the row is a plain Preference
+         * carrying a custom layout, which is one class fewer than a Preference subclass would be.
+         */
+        private void bindThemeMode(final PreferenceViewHolder holder, final Preference preference) {
+            if (preference == null || !Prefs.THEME_MODE_KEY.equals(preference.getKey())) {
+                return;
+            }
+            // The row itself, not a child: Preference.onBindViewHolder resets the id of the view it
+            // binds, so an id on the layout root would not survive to be looked up here.
+            if (!(holder.itemView instanceof MaterialButtonToggleGroup)) {
+                return;
+            }
+            final MaterialButtonToggleGroup group = (MaterialButtonToggleGroup) holder.itemView;
+            final Context context = group.getContext();
+            // The holder is recycled, so the listener from its last binding has to go first.
+            group.clearOnButtonCheckedListeners();
+            group.check(buttonFor(Prefs.getThemeMode(context)));
+            group.addOnButtonCheckedListener((checkedGroup, checkedId, isChecked) -> {
+                if (!isChecked) {
+                    return;
+                }
+                Prefs.setThemeMode(context, modeFor(checkedId));
+                // Light and dark can share a configuration, in which case the delegate below has
+                // nothing to recreate and this row has to be brought up to date here.
+                syncAmoledEnabled();
+                // Recreates the activity by itself, and only when the mode actually differs.
+                ((SettingsActivity) requireActivity()).getDelegate()
+                        .setLocalNightMode(Prefs.getNightMode(context));
+            });
+        }
+
+        /**
+         * Pure black is something only a dark theme can be, so with Light chosen the row is greyed
+         * rather than hidden: it says the option exists and what it waits for. Under System it stays
+         * live — it takes effect whenever the system turns dark.
+         */
+        private void syncAmoledEnabled() {
+            final Preference amoled = findPreference("amoledBlack");
+            if (amoled != null) {
+                amoled.setEnabled(!Prefs.THEME_LIGHT.equals(Prefs.getThemeMode(requireContext())));
+            }
+        }
+
+        private static int buttonFor(final String mode) {
+            if (Prefs.THEME_DARK.equals(mode)) {
+                return R.id.theme_mode_dark;
+            }
+            if (Prefs.THEME_LIGHT.equals(mode)) {
+                return R.id.theme_mode_light;
+            }
+            return R.id.theme_mode_system;
+        }
+
+        private static String modeFor(final int buttonId) {
+            if (buttonId == R.id.theme_mode_dark) {
+                return Prefs.THEME_DARK;
+            }
+            if (buttonId == R.id.theme_mode_light) {
+                return Prefs.THEME_LIGHT;
+            }
+            return Prefs.THEME_SYSTEM;
+        }
+
         @Override
         public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
+            final RecyclerView cardList = getListView();
+            if (cardList != null) {
+                // The card's own hairlines replace the list's full-width dividers, which would cut
+                // across the card edges.
+                setDivider(null);
+                setDividerHeight(0);
+                cardList.addItemDecoration(new GroupCards(cardList.getContext()));
+                // Toggling a switch re-binds its row, and cross-fading the old text over the new one
+                // reads as a flicker in a list that is otherwise still.
+                if (cardList.getItemAnimator() instanceof SimpleItemAnimator) {
+                    ((SimpleItemAnimator) cardList.getItemAnimator())
+                            .setSupportsChangeAnimations(false);
+                }
+            }
             if (Build.VERSION.SDK_INT >= 29) {
                 recyclerView = getListView();
             }
@@ -735,4 +926,140 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         }
+
+    /**
+     * Groups the list the way a Material settings screen is grouped: every run of rows under one
+     * category is one rounded card, inset from the edges, with a hairline between its rows.
+     *
+     * Drawn behind the rows instead of being set as their background, so each row keeps the ripple
+     * and the D-pad focus highlight that androidx.preference gives it — replacing the background is
+     * what costs a TV remote its focus indicator.
+     */
+    private static final class GroupCards extends RecyclerView.ItemDecoration {
+
+        private static final int RADIUS = Utils.dpToPx(20);
+        private final int inset = Utils.dpToPx(16);
+        private final int headerGap = Utils.dpToPx(8);
+        private final int hairlineInset = Utils.dpToPx(16);
+        private final Paint card = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint hairline = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF bounds = new RectF();
+
+        GroupCards(final Context context) {
+            card.setColor(MaterialColors.getColor(context, R.attr.colorSurfaceContainer, Color.DKGRAY));
+            hairline.setColor(MaterialColors.getColor(context, R.attr.colorOutlineVariant, Color.GRAY));
+            hairline.setStrokeWidth(Utils.dpToPx(1));
+        }
+
+        @Override
+        public void getItemOffsets(@NonNull Rect outRect, @NonNull View view,
+                                   @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+            outRect.left = inset;
+            outRect.right = inset;
+            // The header sits above its card, not against the one before it.
+            if (isCategory(parent, parent.getChildAdapterPosition(view))) {
+                outRect.top = headerGap;
+            }
+        }
+
+        @Override
+        public void onDraw(@NonNull Canvas canvas, @NonNull RecyclerView parent,
+                           @NonNull RecyclerView.State state) {
+            final int count = parent.getChildCount();
+            int i = 0;
+            while (i < count) {
+                final View first = parent.getChildAt(i);
+                final int firstPosition = parent.getChildAdapterPosition(first);
+                if (firstPosition == RecyclerView.NO_POSITION || isCategory(parent, firstPosition)) {
+                    i++;
+                    continue;
+                }
+                // Collect the rest of this card: everything up to the next header or the last row on screen.
+                int last = i;
+                while (last + 1 < count) {
+                    final int next = parent.getChildAdapterPosition(parent.getChildAt(last + 1));
+                    if (next == RecyclerView.NO_POSITION || isCategory(parent, next)) {
+                        break;
+                    }
+                    last++;
+                }
+                final View lastView = parent.getChildAt(last);
+                float top = first.getTop();
+                float bottom = lastView.getBottom();
+                // A card scrolled off either edge keeps its corners out of sight, so it does not read
+                // as a card that ends where the viewport does.
+                if (!isCardTop(parent, firstPosition)) {
+                    top -= RADIUS * 2f;
+                }
+                if (!isCardBottom(parent, parent.getChildAdapterPosition(lastView))) {
+                    bottom += RADIUS * 2f;
+                }
+                bounds.set(first.getLeft(), top, first.getRight(), bottom);
+                canvas.drawRoundRect(bounds, RADIUS, RADIUS, card);
+                i = last + 1;
+            }
+        }
+
+        /**
+         * The hairlines go on top of the rows, not under them: a pressed or focused row paints a state
+         * layer over its whole height, and a divider drawn beneath it would vanish for as long as the
+         * touch lasts.
+         */
+        @Override
+        public void onDrawOver(@NonNull Canvas canvas, @NonNull RecyclerView parent,
+                               @NonNull RecyclerView.State state) {
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                final View row = parent.getChildAt(i);
+                final int position = parent.getChildAdapterPosition(row);
+                if (position == RecyclerView.NO_POSITION || isCategory(parent, position)
+                        || isCardBottom(parent, position)) {
+                    continue;
+                }
+                final float y = row.getBottom();
+                canvas.drawLine(row.getLeft() + hairlineInset, y,
+                        row.getRight() - hairlineInset, y, hairline);
+            }
+        }
+
+        /** Corner-clips one row to its card: rounded at the card's ends, square inside it. */
+        static void clip(final PreferenceGroupAdapter adapter, final View row, final int position) {
+            if (adapter.getItem(position) instanceof PreferenceCategory) {
+                row.setClipToOutline(false);
+                row.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                return;
+            }
+            final boolean top = position == 0
+                    || adapter.getItem(position - 1) instanceof PreferenceCategory;
+            final boolean bottom = position == adapter.getItemCount() - 1
+                    || adapter.getItem(position + 1) instanceof PreferenceCategory;
+            row.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(final View view, final Outline outline) {
+                    // An outline carries one radius for all four corners, so the end that has to stay
+                    // square is pushed a radius beyond the row rather than rounded.
+                    outline.setRoundRect(0, top ? 0 : -RADIUS, view.getWidth(),
+                            view.getHeight() + (bottom ? 0 : RADIUS), RADIUS);
+                }
+            });
+            row.setClipToOutline(true);
+        }
+
+        private static boolean isCardTop(final RecyclerView parent, final int position) {
+            return position == 0 || isCategory(parent, position - 1);
+        }
+
+        private static boolean isCardBottom(final RecyclerView parent, final int position) {
+            final RecyclerView.Adapter<?> adapter = parent.getAdapter();
+            return adapter == null || position == adapter.getItemCount() - 1
+                    || isCategory(parent, position + 1);
+        }
+
+        private static boolean isCategory(final RecyclerView parent, final int position) {
+            final RecyclerView.Adapter<?> adapter = parent.getAdapter();
+            if (position == RecyclerView.NO_POSITION || !(adapter instanceof PreferenceGroupAdapter)) {
+                return false;
+            }
+            return ((PreferenceGroupAdapter) adapter).getItem(position) instanceof PreferenceCategory;
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.brouken.player;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.util.TypedValue;
@@ -86,7 +87,7 @@ final class LanguagePriorityDialog {
 
         editor.rebuild(-1, 0);
 
-        new AlertDialog.Builder(context)
+        new MaterialAlertDialogBuilder(context)
                 .setTitle(title)
                 .setView(scroll)
                 .setNegativeButton(android.R.string.cancel, null)
@@ -212,7 +213,7 @@ final class LanguagePriorityDialog {
         for (int i = 0; i < codes.size(); i++) {
             labels[i] = label(allLanguages, codes.get(i));
         }
-        new AlertDialog.Builder(context)
+        new MaterialAlertDialogBuilder(context)
                 .setTitle(addRes)
                 .setItems(labels, (dialog, which) -> {
                     languages.add(codes.get(which));

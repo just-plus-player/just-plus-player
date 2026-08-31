@@ -1,11 +1,12 @@
 package com.brouken.player;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
-import android.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -227,7 +228,7 @@ class EmptyState {
             input.setText(pasted.toString());
             input.setSelection(input.getText().length());
         }
-        new AlertDialog.Builder(activity)
+        new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.empty_state_link)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok,

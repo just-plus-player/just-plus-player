@@ -88,6 +88,24 @@
         <item name="colorSurfaceContainerHigh">@color/amoled_card</item>
     </style>
 
+    <!-- Themes for dialogs raised from the player, which is dark by design and so cannot follow the
+         appearance choice on its own. Two explicit themes rather than one DayNight theme over an
+         overridden configuration: createConfigurationContext returns a context with no activity
+         token, and a dialog built against one cannot add its window at all. -->
+    <style name="Theme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
+    </style>
+
+    <style name="Theme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
+    </style>
+
     <style name="ExoStyledControls.Button.Center.Secondary" parent="ExoStyledControls.Button.Center">
         <item name="android:layout_width">60dp</item>
         <item name="android:layout_height">60dp</item>
@@ -106,8 +124,9 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
-    <!-- DayNight, because the dialog context this is applied over carries the appearance choice. -->
-    <style name="MediaStoreChooserDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
+    <!-- Parentless on purpose: applied as an overlay over the dialog context, which already carries
+         the appearance choice. A parent here would replace that choice with its own. -->
+    <style name="MediaStoreChooserDialog" parent="">
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
         <item name="android:singleLine">true</item> <!-- When focused, line scrolls -->

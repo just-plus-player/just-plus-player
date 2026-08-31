@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cancel, and any neutral third action, in the surface's quieter ink. Both dialog buttons drawn in
+     the brand coral said the two were equal choices; only the confirming one is. Disabled follows the
+     M3 recipe - the surface's own ink at 38% - because the create-a-room dialog greys out OK. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:alpha="0.38" android:color="?attr/colorOnSurface" android:state_enabled="false" />
+    <item android:color="?attr/colorOnSurfaceVariant" />
+</selector>

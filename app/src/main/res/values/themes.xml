@@ -73,6 +73,15 @@
         <item name="android:windowBackground">@drawable/bg_dialog_material3</item>
     </style>
 
+    <!-- AMOLED: the M3 dark scheme with its greys taken out, for a panel that costs nothing to leave
+         black. Applied to the settings window at runtime, and only when the theme is actually dark. -->
+    <style name="ThemeOverlay.JustPlus.Amoled" parent="">
+        <item name="android:windowBackground">@color/black</item>
+        <item name="colorSurface">@color/black</item>
+        <item name="colorSurfaceContainer">@color/amoled_card</item>
+        <item name="colorSurfaceContainerHigh">@color/amoled_card</item>
+    </style>
+
     <style name="ExoStyledControls.Button.Center.Secondary" parent="ExoStyledControls.Button.Center">
         <item name="android:layout_width">60dp</item>
         <item name="android:layout_height">60dp</item>

@@ -16,6 +16,8 @@ import android.text.Spanned;
 import android.text.style.ImageSpan;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.StaticLayout;
 import android.text.TextUtils;
 import android.view.View;
@@ -46,6 +48,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
+import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
 
 import com.brouken.player.together.AliasGenerator;
@@ -77,6 +80,23 @@ public class SettingsActivity extends AppCompatActivity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
+        // Before super.onCreate, or AppCompat applies the old mode first and then recreates.
+        getDelegate().setLocalNightMode(Prefs.getNightMode(this));
+
+        super.onCreate(savedInstanceState);
+
+        // After super, so the configuration already carries the night mode set above, and before
+        // anything asks the window for its decor view: reading getDecorView() builds it, and the decor
+        // takes its background out of the theme exactly as it stands at that moment. Pure black is a
+        // dark-theme idea only.
+        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
+            getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
+        }
+
+        // Hence below the overlay and not above it, where this block used to sit: its getDecorView()
+        // call was building the decor against the un-overlaid theme, which left the window grey while
+        // the cards drawn later came out black.
         if (Build.VERSION.SDK_INT >= 29) {
             getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -84,12 +104,9 @@ public class SettingsActivity extends AppCompatActivity
             getWindow().setNavigationBarColor(Color.TRANSPARENT);
         }
 
-        super.onCreate(savedInstanceState);
-
-        // The status bar takes the window's own surface colour (see Theme.Settings), so its icons have to
-        // follow the theme in force instead of staying light. This sets only the light-icon bit, and on
-        // every SDK — the block above replaces the whole flag set, which is why it cannot do this too.
-        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        // The bar takes the window's own colour (see Theme.Settings), so its icons have to follow the
+        // theme actually in force — which is the one chosen above, not the system's. Only the light-icon
+        // bit, and on every SDK: the block above replaces the whole flag set.
         WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView())
                 .setAppearanceLightStatusBars(night != Configuration.UI_MODE_NIGHT_YES);
 
@@ -172,6 +189,17 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+            final Preference preferenceAmoled = findPreference("amoledBlack");
+            if (preferenceAmoled != null) {
+                preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
+                    // Posted, so the new value is persisted — returning true is what does that —
+                    // before the window that reads it is built again.
+                    new Handler(Looper.getMainLooper()).post(() -> requireActivity().recreate());
+                    return true;
+                });
+            }
+            syncAmoledEnabled();
 
             Preference preferenceAutoPiP = findPreference("autoPiP");
             if (preferenceAutoPiP != null) {
@@ -447,6 +475,7 @@ public class SettingsActivity extends AppCompatActivity
                         title.setEllipsize(null);
                     }
                     reserveTallerSummary(holder, getItem(position));
+                    bindThemeMode(holder, getItem(position));
                 }
             };
         }
@@ -502,6 +531,71 @@ public class SettingsActivity extends AppCompatActivity
         private static int lineCount(final TextView view, final CharSequence text, final int width) {
             return new StaticLayout(text, view.getPaint(), width, Layout.Alignment.ALIGN_NORMAL,
                     view.getLineSpacingMultiplier(), view.getLineSpacingExtra(), false).getLineCount();
+        }
+
+        /**
+         * The theme row is a segmented control rather than a dialog behind a row: three choices, all
+         * worth seeing without opening anything. Bound here because the row is a plain Preference
+         * carrying a custom layout, which is one class fewer than a Preference subclass would be.
+         */
+        private void bindThemeMode(final PreferenceViewHolder holder, final Preference preference) {
+            if (preference == null || !Prefs.THEME_MODE_KEY.equals(preference.getKey())) {
+                return;
+            }
+            // The row itself, not a child: Preference.onBindViewHolder resets the id of the view it
+            // binds, so an id on the layout root would not survive to be looked up here.
+            if (!(holder.itemView instanceof MaterialButtonToggleGroup)) {
+                return;
+            }
+            final MaterialButtonToggleGroup group = (MaterialButtonToggleGroup) holder.itemView;
+            final Context context = group.getContext();
+            // The holder is recycled, so the listener from its last binding has to go first.
+            group.clearOnButtonCheckedListeners();
+            group.check(buttonFor(Prefs.getThemeMode(context)));
+            group.addOnButtonCheckedListener((checkedGroup, checkedId, isChecked) -> {
+                if (!isChecked) {
+                    return;
+                }
+                Prefs.setThemeMode(context, modeFor(checkedId));
+                // Light and dark can share a configuration, in which case the delegate below has
+                // nothing to recreate and this row has to be brought up to date here.
+                syncAmoledEnabled();
+                // Recreates the activity by itself, and only when the mode actually differs.
+                ((SettingsActivity) requireActivity()).getDelegate()
+                        .setLocalNightMode(Prefs.getNightMode(context));
+            });
+        }
+
+        /**
+         * Pure black is something only a dark theme can be, so with Light chosen the row is greyed
+         * rather than hidden: it says the option exists and what it waits for. Under System it stays
+         * live — it takes effect whenever the system turns dark.
+         */
+        private void syncAmoledEnabled() {
+            final Preference amoled = findPreference("amoledBlack");
+            if (amoled != null) {
+                amoled.setEnabled(!Prefs.THEME_LIGHT.equals(Prefs.getThemeMode(requireContext())));
+            }
+        }
+
+        private static int buttonFor(final String mode) {
+            if (Prefs.THEME_DARK.equals(mode)) {
+                return R.id.theme_mode_dark;
+            }
+            if (Prefs.THEME_LIGHT.equals(mode)) {
+                return R.id.theme_mode_light;
+            }
+            return R.id.theme_mode_system;
+        }
+
+        private static String modeFor(final int buttonId) {
+            if (buttonId == R.id.theme_mode_dark) {
+                return Prefs.THEME_DARK;
+            }
+            if (buttonId == R.id.theme_mode_light) {
+                return Prefs.THEME_LIGHT;
+            }
+            return Prefs.THEME_SYSTEM;
         }
 
         // A D-pad can only reach a row that is laid out, and when focus search fails

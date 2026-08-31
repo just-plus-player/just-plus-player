@@ -20,7 +20,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.StaticLayout;
 import android.text.TextUtils;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.LinearLayout;
 
@@ -52,6 +54,7 @@ import androidx.recyclerview.widget.SimpleItemAnimator;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.snackbar.Snackbar;
 
 import com.brouken.player.together.AliasGenerator;
 import com.brouken.player.together.Relay;
@@ -150,8 +153,12 @@ public class SettingsActivity extends AppCompatActivity
             // inside the overscan-safe strip, where a remote can be sure of finding it.
             // Only the part the toolbar does not already inset by itself, or a phone — where the two
             // are the same 16dp — would indent the title twice.
+            // The width the list will get, not the root's: the window insets are applied to this
+            // root as padding, and the list sits inside them. Measuring the outer width put the
+            // title off the column by half the inset wherever a system bar takes a side.
+            final int usable = r - l - v.getPaddingLeft() - v.getPaddingRight();
             final int extra = Math.max(0,
-                    contentSideInset(this, r - l) - bar.getContentInsetStart());
+                    contentSideInset(this, usable) - bar.getContentInsetStart());
             bar.setPadding(extra, bar.getPaddingTop(), extra, bar.getPaddingBottom());
         });
 
@@ -172,6 +179,33 @@ public class SettingsActivity extends AppCompatActivity
     }
 
     /**
+     * Says something back, inside the content column.
+     *
+     * A Toast lands at the bottom of the window, which on a television is the overscan strip this
+     * screen spends 48dp staying out of — so the one row whose only feedback is a message ("Reset
+     * learned audio workarounds") looked inert and invited a second press. A Snackbar over the list
+     * is inset to the same column as the cards and clears the strip.
+     */
+    static void say(final Activity activity, final int textRes) {
+        final View host = activity.findViewById(R.id.settings);
+        if (host == null) {
+            Toast.makeText(activity, textRes, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final Snackbar bar = Snackbar.make(host, textRes, Snackbar.LENGTH_SHORT);
+        final int side = contentSideInset(activity, host.getWidth());
+        final View view = bar.getView();
+        final ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+        lp.leftMargin += side;
+        lp.rightMargin += side;
+        if (Utils.isTvBox(activity)) {
+            lp.bottomMargin += Utils.dpToPx(27);
+        }
+        view.setLayoutParams(lp);
+        bar.show();
+    }
+
+    /**
      * Side inset that holds the content to one readable column, given the room there is.
      *
      * Material asks for a maximum width rather than letting content stretch, and hands widths past
@@ -180,8 +214,11 @@ public class SettingsActivity extends AppCompatActivity
      * column at the width a label-and-control row still reads as one thing and centre it. 720dp sits
      * inside Material's medium window, which is the widest a single pane is meant to get.
      *
-     * A 4K monitor therefore gets the same column with a lot of space around it. Filling that space
-     * properly needs a second pane, which is a different screen, not a wider inset.
+     * Past twice that the column is allowed to grow to 960dp, because a 720dp strip in the middle of
+     * a 1932dp television — what a set rendering its interface at 4K gives you — leaves 63% of the
+     * panel empty and reads as a mistake rather than a margin. 960dp is the ceiling: wider rows put
+     * the switch too far from its label again, and filling more than that properly needs a second
+     * pane, which is a different screen, not a wider inset.
      *
      * On a TV the floor is the overscan margin the TV guidance asks for (48dp horizontally, 5% of
      * 960dp) rather than the phone's 16dp: a set narrow enough to miss the cap — 1280x720 at 320 dpi
@@ -189,7 +226,9 @@ public class SettingsActivity extends AppCompatActivity
      */
     static int contentSideInset(final Context context, final int availableWidth) {
         final int base = Utils.isTvBox(context) ? Utils.dpToPx(48) : Utils.dpToPx(16);
-        return Math.max(base, (availableWidth - Utils.dpToPx(720)) / 2);
+        final int column = Math.max(Utils.dpToPx(720),
+                Math.min(Utils.dpToPx(960), availableWidth / 2));
+        return Math.max(base, (availableWidth - column) / 2);
     }
 
     /**
@@ -263,6 +302,14 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+            final Preference dangerousWarning = findPreference("dangerousWarning");
+            if (dangerousWarning != null && Utils.isTvBox(requireContext())) {
+                // A remote cannot land on an unselectable row, so it stepped over the one piece of
+                // safety text in front of the two settings that can stop video from playing. It does
+                // nothing when pressed, which is the correct amount for a warning.
+                dangerousWarning.setSelectable(true);
+            }
 
             final Preference preferenceAmoled = findPreference("amoledBlack");
             if (preferenceAmoled != null) {
@@ -492,7 +539,7 @@ public class SettingsActivity extends AppCompatActivity
             if (resetAudioWorkarounds != null) {
                 resetAudioWorkarounds.setOnPreferenceClickListener(preference -> {
                     Prefs.resetRevokedAudioMimes(requireContext());
-                    Toast.makeText(getContext(), R.string.pref_reset_audio_workarounds_done, Toast.LENGTH_SHORT).show();
+                    say(requireActivity(), R.string.pref_reset_audio_workarounds_done);
                     return true;
                 });
             }
@@ -519,7 +566,7 @@ public class SettingsActivity extends AppCompatActivity
                         if (activity == null) {
                             return true;
                         }
-                        Toast.makeText(activity, R.string.update_checking, Toast.LENGTH_SHORT).show();
+                        say(activity, R.string.update_checking);
                         Updater.find(info -> activity.runOnUiThread(() -> {
                             if (activity.isFinishing()) {
                                 return;
@@ -527,7 +574,7 @@ public class SettingsActivity extends AppCompatActivity
                             if (info != null) {
                                 UpdateUi.showAvailableDialog(activity, activity, info, null, false);
                             } else {
-                                Toast.makeText(activity, R.string.update_none, Toast.LENGTH_SHORT).show();
+                                say(activity, R.string.update_none);
                             }
                         }));
                         return true;
@@ -714,6 +761,7 @@ public class SettingsActivity extends AppCompatActivity
                 setDivider(null);
                 setDividerHeight(0);
                 cardList.addItemDecoration(new GroupCards(cardList.getContext()));
+                bindCategoryJump(cardList);
                 // Toggling a switch re-binds its row, and cross-fading the old text over the new one
                 // reads as a flicker in a list that is otherwise still.
                 if (cardList.getItemAnimator() instanceof SimpleItemAnimator) {
@@ -746,8 +794,78 @@ public class SettingsActivity extends AppCompatActivity
                 final String key = activity.getIntent().getStringExtra(EXTRA_SCROLL_TO);
                 if (key != null) {
                     openAtPreference(key, 3);
+                } else if (Utils.isTvBox(activity)) {
+                    // Opened from the player menu with no section to land on. A remote needs
+                    // something focused or the first press goes wherever the view root guesses;
+                    // the sub-screen path above has said so for a while, and the root path never
+                    // did the same.
+                    openAtPosition(0, 3);
                 }
             }
+        }
+
+        /**
+         * Left and Right do nothing in a one-column list, and this one is 26 stops deep on a
+         * television with no fast scroll and no search. Give them the jump a category rail would
+         * have given them: to the first row of the previous or next section, nine stops instead of
+         * twenty-six, without a second pane and without undoing the rule that keeps short groups
+         * visible.
+         *
+         * Only on a remote, and never on the theme row, whose segmented control needs Left and
+         * Right for itself.
+         */
+        private void bindCategoryJump(final RecyclerView list) {
+            if (!Utils.isTvBox(list.getContext())) {
+                return;
+            }
+            list.setOnKeyListener((view, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN
+                        || (keyCode != KeyEvent.KEYCODE_DPAD_LEFT
+                        && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                    return false;
+                }
+                final View focused = list.findFocus();
+                if (focused == null || focused instanceof MaterialButtonToggleGroup) {
+                    return false;
+                }
+                final int from = list.getChildAdapterPosition(list.findContainingItemView(focused));
+                if (from == RecyclerView.NO_POSITION) {
+                    return false;
+                }
+                final int target = categoryNeighbour(list, from,
+                        keyCode == KeyEvent.KEYCODE_DPAD_RIGHT);
+                if (target == RecyclerView.NO_POSITION) {
+                    return false;
+                }
+                openAtPosition(target, 3);
+                return true;
+            });
+        }
+
+        /** First row under the section before or after the one holding {@code from}. */
+        private static int categoryNeighbour(final RecyclerView list, final int from,
+                                             final boolean forward) {
+            final RecyclerView.Adapter<?> adapter = list.getAdapter();
+            if (!(adapter instanceof PreferenceGroupAdapter)) {
+                return RecyclerView.NO_POSITION;
+            }
+            final PreferenceGroupAdapter rows = (PreferenceGroupAdapter) adapter;
+            final int step = forward ? 1 : -1;
+            // Walk off the current section first, or Left from its first row would find its own
+            // header and go nowhere.
+            int i = from;
+            if (!forward) {
+                while (i > 0 && !(rows.getItem(i - 1) instanceof PreferenceCategory)) {
+                    i--;
+                }
+                i--;
+            }
+            for (i += step; i >= 0 && i < rows.getItemCount(); i += step) {
+                if (rows.getItem(i) instanceof PreferenceCategory && i + 1 < rows.getItemCount()) {
+                    return i + 1;
+                }
+            }
+            return RecyclerView.NO_POSITION;
         }
 
         /**
@@ -916,7 +1034,7 @@ public class SettingsActivity extends AppCompatActivity
                     || Color.parseColor(textColor) != Color.parseColor(backgroundColor)) {
                 return true;
             }
-            Toast.makeText(getContext(), R.string.pref_subtitle_color_clash, Toast.LENGTH_SHORT).show();
+            say(requireActivity(), R.string.pref_subtitle_color_clash);
             return false;
         }
 
@@ -1035,7 +1153,6 @@ public class SettingsActivity extends AppCompatActivity
     private static final class GroupCards extends RecyclerView.ItemDecoration {
 
         private static final int RADIUS = Utils.dpToPx(20);
-        private final int inset = Utils.dpToPx(16);
 
         private final int headerGap = Utils.dpToPx(8);
         private final int hairlineInset = Utils.dpToPx(16);

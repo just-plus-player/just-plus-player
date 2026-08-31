@@ -49,7 +49,7 @@
     <style name="Theme.Error" parent="BaseTheme.Error">
     </style>
 
-    <style name="Theme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="BaseTheme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
              primary colour, which with a coral primary is a red band across the top of the screen.
@@ -61,6 +61,12 @@
         <item name="colorAccent">@color/brand</item>
         <item name="colorControlActivated">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
+    </style>
+
+    <!-- Split like Theme.Player and Theme.Error, so values-television and values-notouch can give the
+         settings list the white focus highlight a remote needs. This is the screen a remote spends
+         the most presses in, and it was the one theme that never got the override. -->
+    <style name="Theme.Settings" parent="BaseTheme.Settings">
     </style>
 
     <!-- androidx.preference builds its list and text dialogs with a plain AlertDialog.Builder, so they

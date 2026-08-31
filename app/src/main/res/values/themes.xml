@@ -100,7 +100,8 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
-    <style name="MediaStoreChooserDialog" parent="Theme.Material3.Dark.Dialog.Alert">
+    <!-- DayNight, because the dialog context this is applied over carries the appearance choice. -->
+    <style name="MediaStoreChooserDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
         <item name="android:singleLine">true</item> <!-- When focused, line scrolls -->

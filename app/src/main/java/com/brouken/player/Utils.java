@@ -723,6 +723,35 @@ class Utils {
         return sb.toString();
     }
 
+    /**
+     * A context for dialogs raised from the player, themed by the appearance choice instead of by the
+     * window that raises them. The player's own theme is dark by design, so a dialog built against it
+     * cannot follow that choice at all: this wraps the chosen night mode around the configuration and
+     * hands back a DayNight theme carrying the app's colour roles.
+     *
+     * Every view a dialog builds for itself has to come from this context too, or dark text lands on a
+     * light panel.
+     */
+    public static Context dialogContext(final Context base) {
+        String mode = Prefs.getThemeMode(base);
+        if (Prefs.THEME_SYSTEM.equals(mode)) {
+            if (isTvBox(base)) {
+                // A TV box has no system theme worth following, and PlayerActivity makes dark the
+                // default there — so on TV a dialog follows the app rather than the box.
+                mode = Prefs.THEME_DARK;
+            } else {
+                final int night = base.getResources().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK;
+                mode = night == Configuration.UI_MODE_NIGHT_YES ? Prefs.THEME_DARK : Prefs.THEME_LIGHT;
+            }
+        }
+        // Wrapped straight around whatever it was handed — an Activity, in every real call — because a
+        // ContextThemeWrapper keeps its base's window token and a dialog needs one to exist at all.
+        return new android.view.ContextThemeWrapper(base,
+                Prefs.THEME_LIGHT.equals(mode) ? R.style.Theme_Dialogs_Light
+                        : R.style.Theme_Dialogs_Dark);
+    }
+
     public static boolean isTvBox(Context context) {
         final PackageManager pm = context.getPackageManager();
 

@@ -16,9 +16,13 @@ import android.text.Spanned;
 import android.text.style.ImageSpan;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.StaticLayout;
 import android.text.TextUtils;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.LinearLayout;
 
@@ -29,6 +33,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.OneShotPreDrawListener;
 import androidx.core.view.WindowCompat;
 import androidx.appcompat.app.AppCompatActivity;
@@ -46,7 +51,10 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.snackbar.Snackbar;
 
 import com.brouken.player.together.AliasGenerator;
 import com.brouken.player.together.Relay;
@@ -74,9 +82,35 @@ public class SettingsActivity extends AppCompatActivity
     /** Key of the sub-screen row last opened, so Back can put the list back on it. */
     private String openedScreenKey;
 
+    /** The surface tones without the AMOLED overlay, resolved in onCreate before it is applied. */
+    private int plainSurface;
+    private int plainCard;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
+        // Before super.onCreate, or AppCompat applies the old mode first and then recreates.
+        getDelegate().setLocalNightMode(Prefs.getNightMode(this));
+
+        super.onCreate(savedInstanceState);
+
+        // After super, so the configuration already carries the night mode set above, and before
+        // anything asks the window for its decor view: reading getDecorView() builds it, and the decor
+        // takes its background out of the theme exactly as it stands at that moment. Pure black is a
+        // dark-theme idea only.
+        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        // Read before the overlay goes on, because applyStyle cannot be undone and these are the
+        // values AMOLED has to be able to go back to. Taken from this theme in this configuration —
+        // a ContextThemeWrapper built here does not carry the local night mode and answers light.
+        plainSurface = MaterialColors.getColor(this, R.attr.colorSurface, Color.BLACK);
+        plainCard = MaterialColors.getColor(this, R.attr.colorSurfaceContainer, Color.DKGRAY);
+        if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
+            getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
+        }
+
+        // Hence below the overlay and not above it, where this block used to sit: its getDecorView()
+        // call was building the decor against the un-overlaid theme, which left the window grey while
+        // the cards drawn later came out black.
         if (Build.VERSION.SDK_INT >= 29) {
             getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -84,12 +118,9 @@ public class SettingsActivity extends AppCompatActivity
             getWindow().setNavigationBarColor(Color.TRANSPARENT);
         }
 
-        super.onCreate(savedInstanceState);
-
-        // The status bar takes the window's own surface colour (see Theme.Settings), so its icons have to
-        // follow the theme in force instead of staying light. This sets only the light-icon bit, and on
-        // every SDK — the block above replaces the whole flag set, which is why it cannot do this too.
-        final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        // The bar takes the window's own colour (see Theme.Settings), so its icons have to follow the
+        // theme actually in force — which is the one chosen above, not the system's. Only the light-icon
+        // bit, and on every SDK: the block above replaces the whole flag set.
         WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView())
                 .setAppearanceLightStatusBars(night != Configuration.UI_MODE_NIGHT_YES);
 
@@ -113,6 +144,24 @@ public class SettingsActivity extends AppCompatActivity
             }
         });
 
+        // The title belongs over the column, not at the far edge of a 4K window.
+        final MaterialToolbar bar = findViewById(R.id.toolbar);
+        final View settingsRoot = findViewById(R.id.settings_layout);
+        settingsRoot.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> {
+            // Padding rather than content insets: those move the title and leave the up arrow at the
+            // window edge, which reads as two different left margins. On a TV it also brings the arrow
+            // inside the overscan-safe strip, where a remote can be sure of finding it.
+            // Only the part the toolbar does not already inset by itself, or a phone — where the two
+            // are the same 16dp — would indent the title twice.
+            // The width the list will get, not the root's: the window insets are applied to this
+            // root as padding, and the list sits inside them. Measuring the outer width put the
+            // title off the column by half the inset wherever a system bar takes a side.
+            final int usable = r - l - v.getPaddingLeft() - v.getPaddingRight();
+            final int extra = Math.max(0,
+                    contentSideInset(this, usable) - bar.getContentInsetStart());
+            bar.setPadding(extra, bar.getPaddingTop(), extra, bar.getPaddingBottom());
+        });
+
         if (Build.VERSION.SDK_INT >= 29) {
             LinearLayout layout = findViewById(R.id.settings_layout);
             layout.setOnApplyWindowInsetsListener((view, windowInsets) -> {
@@ -127,6 +176,86 @@ public class SettingsActivity extends AppCompatActivity
                 return windowInsets;
             });
         }
+    }
+
+    /**
+     * Says something back, inside the content column.
+     *
+     * A Toast lands at the bottom of the window, which on a television is the overscan strip this
+     * screen spends 48dp staying out of — so the one row whose only feedback is a message ("Reset
+     * learned audio workarounds") looked inert and invited a second press. A Snackbar over the list
+     * is inset to the same column as the cards and clears the strip.
+     */
+    static void say(final Activity activity, final int textRes) {
+        final View host = activity.findViewById(R.id.settings);
+        if (host == null) {
+            Toast.makeText(activity, textRes, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final Snackbar bar = Snackbar.make(host, textRes, Snackbar.LENGTH_SHORT);
+        final int side = contentSideInset(activity, host.getWidth());
+        final View view = bar.getView();
+        final ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+        lp.leftMargin += side;
+        lp.rightMargin += side;
+        if (Utils.isTvBox(activity)) {
+            lp.bottomMargin += Utils.dpToPx(27);
+        }
+        view.setLayoutParams(lp);
+        bar.show();
+    }
+
+    /**
+     * Side inset that holds the content to one readable column, given the room there is.
+     *
+     * Material asks for a maximum width rather than letting content stretch, and hands widths past
+     * 840dp to layouts with more than one pane. This screen is deliberately one pane — the switches
+     * are meant to be read, not hidden behind rows — so the honest single-pane answer is to stop the
+     * column at the width a label-and-control row still reads as one thing and centre it. 720dp sits
+     * inside Material's medium window, which is the widest a single pane is meant to get.
+     *
+     * Past twice that the column is allowed to grow to 960dp, because a 720dp strip in the middle of
+     * a 1932dp television — what a set rendering its interface at 4K gives you — leaves 63% of the
+     * panel empty and reads as a mistake rather than a margin. 960dp is the ceiling: wider rows put
+     * the switch too far from its label again, and filling more than that properly needs a second
+     * pane, which is a different screen, not a wider inset.
+     *
+     * On a TV the floor is the overscan margin the TV guidance asks for (48dp horizontally, 5% of
+     * 960dp) rather than the phone's 16dp: a set narrow enough to miss the cap — 1280x720 at 320 dpi
+     * is exactly 640dp across — would otherwise put rows in the strip a TV may not show.
+     */
+    static int contentSideInset(final Context context, final int availableWidth) {
+        final int base = Utils.isTvBox(context) ? Utils.dpToPx(48) : Utils.dpToPx(16);
+        final int column = Math.max(Utils.dpToPx(720),
+                Math.min(Utils.dpToPx(960), availableWidth / 2));
+        return Math.max(base, (availableWidth - column) / 2);
+    }
+
+    /**
+     * Repaints the surfaces the AMOLED option owns, so toggling it does not need the window rebuilt.
+     * Rebuilding was visible: the pressed row lit, the switch travelled, and only then did the whole
+     * screen cut over in one frame — two beats where the eye expects none.
+     *
+     * ponytail: the theme object itself is left alone, so a dialog opened between a toggle and the
+     * next launch still carries the previous surface tone (a 20/255 difference on its background).
+     * Give the overlay an inverse and apply that here if it ever shows.
+     */
+    void repaintAmoledSurfaces() {
+        final boolean amoled = isNight() && Prefs.isAmoledBlack(this);
+        final int surface = amoled ? ContextCompat.getColor(this, R.color.black) : plainSurface;
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(surface));
+        getWindow().setStatusBarColor(surface);
+        final View toolbar = findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            toolbar.setBackgroundColor(surface);
+        }
+        final int card = amoled ? ContextCompat.getColor(this, R.color.amoled_card) : plainCard;
+        GroupCards.repaint(recyclerView, card);
+    }
+
+    private boolean isNight() {
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
     }
 
     /** Up from a sub-screen goes back one level, not out of the settings altogether. */
@@ -157,6 +286,7 @@ public class SettingsActivity extends AppCompatActivity
     }
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
+
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             // Inflation materializes switch defaults, so record whether the key was already
@@ -172,6 +302,32 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+            final Preference dangerousWarning = findPreference("dangerousWarning");
+            if (dangerousWarning != null && Utils.isTvBox(requireContext())) {
+                // A remote cannot land on an unselectable row, so it stepped over the one piece of
+                // safety text in front of the two settings that can stop video from playing. It does
+                // nothing when pressed, which is the correct amount for a warning.
+                dangerousWarning.setSelectable(true);
+            }
+
+            final Preference preferenceAmoled = findPreference("amoledBlack");
+            if (preferenceAmoled != null) {
+                preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
+                    // Posted, because returning true is what persists the value and repaintAmoledSurfaces
+                    // reads it back. Repainting rather than recreating: the window is the same one, so the
+                    // switch keeps animating over surfaces that have already changed under it.
+                    // getActivity, not requireActivity: a row can be bound on a fragment that is on its
+                    // way out, and throwing there would take the app down over a colour.
+                    final Activity host = getActivity();
+                    if (host instanceof SettingsActivity) {
+                        new Handler(Looper.getMainLooper())
+                                .post(((SettingsActivity) host)::repaintAmoledSurfaces);
+                    }
+                    return true;
+                });
+            }
+            syncAmoledEnabled();
 
             Preference preferenceAutoPiP = findPreference("autoPiP");
             if (preferenceAutoPiP != null) {
@@ -383,7 +539,7 @@ public class SettingsActivity extends AppCompatActivity
             if (resetAudioWorkarounds != null) {
                 resetAudioWorkarounds.setOnPreferenceClickListener(preference -> {
                     Prefs.resetRevokedAudioMimes(requireContext());
-                    Toast.makeText(getContext(), R.string.pref_reset_audio_workarounds_done, Toast.LENGTH_SHORT).show();
+                    say(requireActivity(), R.string.pref_reset_audio_workarounds_done);
                     return true;
                 });
             }
@@ -410,15 +566,15 @@ public class SettingsActivity extends AppCompatActivity
                         if (activity == null) {
                             return true;
                         }
-                        Toast.makeText(activity, R.string.update_checking, Toast.LENGTH_SHORT).show();
+                        say(activity, R.string.update_checking);
                         Updater.find(info -> activity.runOnUiThread(() -> {
                             if (activity.isFinishing()) {
                                 return;
                             }
                             if (info != null) {
-                                UpdateUi.showAvailableDialog(activity, info, null, false);
+                                UpdateUi.showAvailableDialog(activity, activity, info, null, false);
                             } else {
-                                Toast.makeText(activity, R.string.update_none, Toast.LENGTH_SHORT).show();
+                                say(activity, R.string.update_none);
                             }
                         }));
                         return true;
@@ -447,6 +603,7 @@ public class SettingsActivity extends AppCompatActivity
                         title.setEllipsize(null);
                     }
                     reserveTallerSummary(holder, getItem(position));
+                    bindThemeMode(holder, getItem(position));
                 }
             };
         }
@@ -504,6 +661,81 @@ public class SettingsActivity extends AppCompatActivity
                     view.getLineSpacingMultiplier(), view.getLineSpacingExtra(), false).getLineCount();
         }
 
+        /**
+         * The theme row is a segmented control rather than a dialog behind a row: three choices, all
+         * worth seeing without opening anything. Bound here because the row is a plain Preference
+         * carrying a custom layout, which is one class fewer than a Preference subclass would be.
+         */
+        private void bindThemeMode(final PreferenceViewHolder holder, final Preference preference) {
+            if (preference == null || !Prefs.THEME_MODE_KEY.equals(preference.getKey())) {
+                return;
+            }
+            // The row itself, not a child: Preference.onBindViewHolder resets the id of the view it
+            // binds, so an id on the layout root would not survive to be looked up here.
+            if (!(holder.itemView instanceof MaterialButtonToggleGroup)) {
+                return;
+            }
+            final MaterialButtonToggleGroup group = (MaterialButtonToggleGroup) holder.itemView;
+            final Context context = group.getContext();
+            // A TV box has no system theme of its own to follow — PlayerActivity makes dark the default
+            // there, so "System" resolves to dark and does exactly what the button next to it does. An
+            // option that duplicates its neighbour is worse than one fewer option, so it goes; a choice
+            // stored from a phone becomes the Dark it already behaves as.
+            if (Utils.isTvBox(context)) {
+                group.findViewById(R.id.theme_mode_system).setVisibility(View.GONE);
+                if (Prefs.THEME_SYSTEM.equals(Prefs.getThemeMode(context))) {
+                    Prefs.setThemeMode(context, Prefs.THEME_DARK);
+                }
+            }
+            // The holder is recycled, so the listener from its last binding has to go first.
+            group.clearOnButtonCheckedListeners();
+            group.check(buttonFor(Prefs.getThemeMode(context)));
+            group.addOnButtonCheckedListener((checkedGroup, checkedId, isChecked) -> {
+                if (!isChecked) {
+                    return;
+                }
+                Prefs.setThemeMode(context, modeFor(checkedId));
+                // Light and dark can share a configuration, in which case the delegate below has
+                // nothing to recreate and this row has to be brought up to date here.
+                syncAmoledEnabled();
+                // Recreates the activity by itself, and only when the mode actually differs.
+                ((SettingsActivity) requireActivity()).getDelegate()
+                        .setLocalNightMode(Prefs.getNightMode(context));
+            });
+        }
+
+        /**
+         * Pure black is something only a dark theme can be, so with Light chosen the row is greyed
+         * rather than hidden: it says the option exists and what it waits for. Under System it stays
+         * live — it takes effect whenever the system turns dark.
+         */
+        private void syncAmoledEnabled() {
+            final Preference amoled = findPreference("amoledBlack");
+            if (amoled != null) {
+                amoled.setEnabled(!Prefs.THEME_LIGHT.equals(Prefs.getThemeMode(requireContext())));
+            }
+        }
+
+        private static int buttonFor(final String mode) {
+            if (Prefs.THEME_DARK.equals(mode)) {
+                return R.id.theme_mode_dark;
+            }
+            if (Prefs.THEME_LIGHT.equals(mode)) {
+                return R.id.theme_mode_light;
+            }
+            return R.id.theme_mode_system;
+        }
+
+        private static String modeFor(final int buttonId) {
+            if (buttonId == R.id.theme_mode_dark) {
+                return Prefs.THEME_DARK;
+            }
+            if (buttonId == R.id.theme_mode_light) {
+                return Prefs.THEME_LIGHT;
+            }
+            return Prefs.THEME_SYSTEM;
+        }
+
         // A D-pad can only reach a row that is laid out, and when focus search fails
         // LinearLayoutManager extends the layout by a third of a screen and looks again — which is
         // not past a run of unfocusable rows: the group a switched-off "dependency" disables, or the
@@ -529,6 +761,7 @@ public class SettingsActivity extends AppCompatActivity
                 setDivider(null);
                 setDividerHeight(0);
                 cardList.addItemDecoration(new GroupCards(cardList.getContext()));
+                bindCategoryJump(cardList);
                 // Toggling a switch re-binds its row, and cross-fading the old text over the new one
                 // reads as a flicker in a list that is otherwise still.
                 if (cardList.getItemAnimator() instanceof SimpleItemAnimator) {
@@ -536,9 +769,9 @@ public class SettingsActivity extends AppCompatActivity
                             .setSupportsChangeAnimations(false);
                 }
             }
-            if (Build.VERSION.SDK_INT >= 29) {
-                recyclerView = getListView();
-            }
+            // Unconditionally: the inset padding below wants it only on 29+, but repaintAmoledSurfaces
+            // needs the list on every SDK, or the cards keep the old tone on 23-28 until the next launch.
+            recyclerView = getListView();
             if (getArguments() != null) {
                 // A sub-screen is a replaced fragment, and a replaced fragment starts with nothing
                 // focused: the first D-pad press then goes wherever the view root guesses instead
@@ -561,8 +794,78 @@ public class SettingsActivity extends AppCompatActivity
                 final String key = activity.getIntent().getStringExtra(EXTRA_SCROLL_TO);
                 if (key != null) {
                     openAtPreference(key, 3);
+                } else if (Utils.isTvBox(activity)) {
+                    // Opened from the player menu with no section to land on. A remote needs
+                    // something focused or the first press goes wherever the view root guesses;
+                    // the sub-screen path above has said so for a while, and the root path never
+                    // did the same.
+                    openAtPosition(0, 3);
                 }
             }
+        }
+
+        /**
+         * Left and Right do nothing in a one-column list, and this one is 26 stops deep on a
+         * television with no fast scroll and no search. Give them the jump a category rail would
+         * have given them: to the first row of the previous or next section, nine stops instead of
+         * twenty-six, without a second pane and without undoing the rule that keeps short groups
+         * visible.
+         *
+         * Only on a remote, and never on the theme row, whose segmented control needs Left and
+         * Right for itself.
+         */
+        private void bindCategoryJump(final RecyclerView list) {
+            if (!Utils.isTvBox(list.getContext())) {
+                return;
+            }
+            list.setOnKeyListener((view, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN
+                        || (keyCode != KeyEvent.KEYCODE_DPAD_LEFT
+                        && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                    return false;
+                }
+                final View focused = list.findFocus();
+                if (focused == null || focused instanceof MaterialButtonToggleGroup) {
+                    return false;
+                }
+                final int from = list.getChildAdapterPosition(list.findContainingItemView(focused));
+                if (from == RecyclerView.NO_POSITION) {
+                    return false;
+                }
+                final int target = categoryNeighbour(list, from,
+                        keyCode == KeyEvent.KEYCODE_DPAD_RIGHT);
+                if (target == RecyclerView.NO_POSITION) {
+                    return false;
+                }
+                openAtPosition(target, 3);
+                return true;
+            });
+        }
+
+        /** First row under the section before or after the one holding {@code from}. */
+        private static int categoryNeighbour(final RecyclerView list, final int from,
+                                             final boolean forward) {
+            final RecyclerView.Adapter<?> adapter = list.getAdapter();
+            if (!(adapter instanceof PreferenceGroupAdapter)) {
+                return RecyclerView.NO_POSITION;
+            }
+            final PreferenceGroupAdapter rows = (PreferenceGroupAdapter) adapter;
+            final int step = forward ? 1 : -1;
+            // Walk off the current section first, or Left from its first row would find its own
+            // header and go nowhere.
+            int i = from;
+            if (!forward) {
+                while (i > 0 && !(rows.getItem(i - 1) instanceof PreferenceCategory)) {
+                    i--;
+                }
+                i--;
+            }
+            for (i += step; i >= 0 && i < rows.getItemCount(); i += step) {
+                if (rows.getItem(i) instanceof PreferenceCategory && i + 1 < rows.getItemCount()) {
+                    return i + 1;
+                }
+            }
+            return RecyclerView.NO_POSITION;
         }
 
         /**
@@ -731,7 +1034,7 @@ public class SettingsActivity extends AppCompatActivity
                     || Color.parseColor(textColor) != Color.parseColor(backgroundColor)) {
                 return true;
             }
-            Toast.makeText(getContext(), R.string.pref_subtitle_color_clash, Toast.LENGTH_SHORT).show();
+            say(requireActivity(), R.string.pref_subtitle_color_clash);
             return false;
         }
 
@@ -850,7 +1153,7 @@ public class SettingsActivity extends AppCompatActivity
     private static final class GroupCards extends RecyclerView.ItemDecoration {
 
         private static final int RADIUS = Utils.dpToPx(20);
-        private final int inset = Utils.dpToPx(16);
+
         private final int headerGap = Utils.dpToPx(8);
         private final int hairlineInset = Utils.dpToPx(16);
         private final Paint card = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -863,11 +1166,31 @@ public class SettingsActivity extends AppCompatActivity
             hairline.setStrokeWidth(Utils.dpToPx(1));
         }
 
+        /**
+         * Recolours the cards of a list already on screen. The hairlines are left alone — outlineVariant
+         * does not move with the AMOLED option, and they read the same over either card tone.
+         */
+        static void repaint(final RecyclerView list, final int cardColor) {
+            if (list == null) {
+                return;
+            }
+            for (int i = 0; i < list.getItemDecorationCount(); i++) {
+                final RecyclerView.ItemDecoration decoration = list.getItemDecorationAt(i);
+                if (decoration instanceof GroupCards) {
+                    ((GroupCards) decoration).card.setColor(cardColor);
+                }
+            }
+            list.invalidate();
+        }
+
         @Override
         public void getItemOffsets(@NonNull Rect outRect, @NonNull View view,
                                    @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-            outRect.left = inset;
-            outRect.right = inset;
+            // Centred once the list is wider than the column is allowed to be. The cards are drawn
+            // from the rows' own bounds, so they follow this without knowing about it.
+            final int side = contentSideInset(parent.getContext(), parent.getWidth());
+            outRect.left = side;
+            outRect.right = side;
             // The header sits above its card, not against the one before it.
             if (isCategory(parent, parent.getChildAdapterPosition(view))) {
                 outRect.top = headerGap;

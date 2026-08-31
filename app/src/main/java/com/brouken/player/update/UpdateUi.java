@@ -1,6 +1,7 @@
 package com.brouken.player.update;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -33,13 +34,14 @@ public final class UpdateUi {
      * {@code warnPlaybackStops} spells out that installing ends the film: the dialog is reachable
      * mid-playback from the button beside the gear, and the installer takes the process with it.
      */
-    public static void showAvailableDialog(final Activity activity, final UpdateInfo info,
+    public static void showAvailableDialog(final Activity activity, final Context dialogContext,
+                                           final UpdateInfo info,
                                            final Runnable onSkip, final boolean warnPlaybackStops) {
         if (activity.isFinishing()) {
             return;
         }
-        final int padH = dp(activity, 20);
-        final TextView message = new TextView(activity);
+        final int padH = dp(dialogContext, 20);
+        final TextView message = new TextView(dialogContext);
         final String header = activity.getString(R.string.update_available, BuildConfig.VERSION_NAME, info.versionName);
         final String changelog = info.changelog != null ? info.changelog.trim() : "";
 
@@ -54,14 +56,14 @@ public final class UpdateUi {
         message.setText(text);
         message.setMovementMethod(LinkMovementMethod.getInstance());
 
-        final ScrollView scroll = new ScrollView(activity);
-        scroll.setPadding(padH, dp(activity, 8), padH, 0);
+        final ScrollView scroll = new ScrollView(dialogContext);
+        scroll.setPadding(padH, dp(dialogContext, 8), padH, 0);
         scroll.addView(message);
 
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(activity)
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.pref_update_header)
                 .setView(scroll)
-                .setPositiveButton(R.string.update_now, (dialog, which) -> startDownload(activity, info))
+                .setPositiveButton(R.string.update_now, (dialog, which) -> startDownload(activity, dialogContext, info))
                 .setNegativeButton(R.string.update_later, null);
         if (onSkip != null) {
             builder.setNeutralButton(R.string.update_skip, (dialog, which) -> onSkip.run());
@@ -70,16 +72,17 @@ public final class UpdateUi {
     }
 
     /** Downloads the APK with a progress dialog, then launches the system installer. */
-    public static void startDownload(final Activity activity, final UpdateInfo info) {
+    public static void startDownload(final Activity activity, final Context dialogContext,
+                                     final UpdateInfo info) {
         if (activity.isFinishing()) {
             return;
         }
-        final ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        final ProgressBar bar = new ProgressBar(dialogContext, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(100);
         bar.setIndeterminate(info.size <= 0);
 
-        final int pad = dp(activity, 20);
-        final LinearLayout layout = new LinearLayout(activity);
+        final int pad = dp(dialogContext, 20);
+        final LinearLayout layout = new LinearLayout(dialogContext);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(pad, pad, pad, pad);
         layout.addView(bar);
@@ -88,7 +91,7 @@ public final class UpdateUi {
         // dismiss it — so the cancel action reaches it through this holder. Nothing can read it before it
         // is assigned: show() only posts, and the assignment happens before this returns to the looper.
         final Thread[] download = new Thread[1];
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.update_downloading)
                 .setView(layout)
                 // Without this the dialog had no way out at all: a download that stalls without failing
@@ -136,7 +139,7 @@ public final class UpdateUi {
         }
     }
 
-    private static int dp(final Activity activity, final int value) {
-        return Math.round(value * activity.getResources().getDisplayMetrics().density);
+    private static int dp(final Context context, final int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 }

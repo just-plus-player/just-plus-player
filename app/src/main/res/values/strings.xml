@@ -43,6 +43,12 @@
     <string name="delete_confirmation">Delete</string>
     <string name="pref_title">Settings</string>
     <string name="pref_general_header">General</string>
+    <string name="pref_appearance_header">Appearance</string>
+    <string name="pref_theme_dark">Dark</string>
+    <string name="pref_theme_light">Light</string>
+    <string name="pref_theme_system">System</string>
+    <string name="pref_amoled">AMOLED black</string>
+    <string name="pref_amoled_summary">Use a pure black background in the dark theme</string>
     <string name="pref_framerate_matching">Auto frame rate matching</string>
     <string name="pref_framerate_matching_on">Switch display refresh rate to match video frame rate</string>
     <string name="pref_framerate_matching_off">Do not change display refresh rate</string>

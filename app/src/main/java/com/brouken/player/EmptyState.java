@@ -219,7 +219,8 @@ class EmptyState {
     // usual way one arrives here, and the only bearable one with a TV remote. Also offered by the gear
     // menu, which is why this is not private.
     void askForLink() {
-        final EditText input = new EditText(activity);
+        final Context dialogContext = Utils.dialogContext(activity);
+        final EditText input = new EditText(dialogContext);
         input.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         input.setSingleLine(true);
         input.setHint("https://");
@@ -228,7 +229,7 @@ class EmptyState {
             input.setText(pasted.toString());
             input.setSelection(input.getText().length());
         }
-        new MaterialAlertDialogBuilder(activity)
+        new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.empty_state_link)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok,

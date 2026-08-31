@@ -1387,7 +1387,7 @@ public class PlayerActivity extends Activity {
         buttonUpdate.setOnClickListener(view -> {
             final UpdateInfo info = mPrefs.updatePending;
             if (info != null) {
-                UpdateUi.showAvailableDialog(this, info, skipUpdate(info),
+                UpdateUi.showAvailableDialog(this, Utils.dialogContext(this), info, skipUpdate(info),
                         player != null && player.isPlaying());
             }
         });
@@ -2389,7 +2389,8 @@ public class PlayerActivity extends Activity {
             if (haveMedia && player != null && player.isPlaying()) {
                 return;
             }
-            UpdateUi.showAvailableDialog(PlayerActivity.this, info, skipUpdate(info), false);
+            UpdateUi.showAvailableDialog(PlayerActivity.this,
+                    Utils.dialogContext(PlayerActivity.this), info, skipUpdate(info), false);
         }));
     }
 
@@ -7571,8 +7572,9 @@ public class PlayerActivity extends Activity {
      * finds has to go back where it was asked from.
      */
     private void showSubtitleSearchDialog(final boolean forSecondary) {
+        final Context dialogContext = Utils.dialogContext(this);
         subtitleSearchForSecondary = forSecondary;
-        final EditText query = new EditText(this);
+        final EditText query = new EditText(dialogContext);
         query.setInputType(InputType.TYPE_CLASS_TEXT);
         query.setSingleLine(true);
         query.setHint(R.string.subtitle_search_hint);
@@ -7583,12 +7585,12 @@ public class PlayerActivity extends Activity {
         // Deliberately not prefilled from the file name: reaching this dialog means the name is already
         // what failed, and clearing a line of release noise with a remote costs more than typing.
 
-        final LinearLayout results = new LinearLayout(this);
+        final LinearLayout results = new LinearLayout(dialogContext);
         results.setOrientation(LinearLayout.VERTICAL);
         final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(results);
 
-        final LinearLayout fields = new LinearLayout(this);
+        final LinearLayout fields = new LinearLayout(dialogContext);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
         fields.setPadding(pad, 0, pad, 0);
@@ -7601,7 +7603,7 @@ public class PlayerActivity extends Activity {
         fields.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
 
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.subtitle_search_manual)
                 .setView(fields)
                 .setNegativeButton(android.R.string.cancel, null)
@@ -7766,35 +7768,36 @@ public class PlayerActivity extends Activity {
      * reads as an answerable question.
      */
     private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        final Context dialogContext = Utils.dialogContext(this);
         final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
 
-        final EditText season = new EditText(this);
+        final EditText season = new EditText(dialogContext);
         season.setInputType(InputType.TYPE_CLASS_NUMBER);
         season.setSingleLine(true);
         if (current != null && current.season >= 0) {
             season.setText(String.valueOf(current.season));
         }
 
-        final EditText episode = new EditText(this);
+        final EditText episode = new EditText(dialogContext);
         episode.setInputType(InputType.TYPE_CLASS_NUMBER);
         episode.setSingleLine(true);
         if (current != null && current.episode >= 1) {
             episode.setText(String.valueOf(current.episode));
         }
 
-        final LinearLayout fields = new LinearLayout(this);
+        final LinearLayout fields = new LinearLayout(dialogContext);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
         fields.setPadding(pad, 0, pad, 0);
         // Labelled above the fields, not only as hints: prefilling is the normal case here — the whole
         // point is to correct one digit of what is already believed — and a filled field shows no hint,
         // so both rows read as a bare "1" and "2" with nothing to say which is which.
-        fields.addView(fieldLabel(R.string.subtitle_search_season_label));
+        fields.addView(fieldLabel(dialogContext, R.string.subtitle_search_season_label));
         fields.addView(season);
-        fields.addView(fieldLabel(R.string.subtitle_search_episode_label));
+        fields.addView(fieldLabel(dialogContext, R.string.subtitle_search_episode_label));
         fields.addView(episode);
 
-        new MaterialAlertDialogBuilder(this)
+        new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.subtitle_search_type)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
@@ -7805,8 +7808,8 @@ public class PlayerActivity extends Activity {
     }
 
     /** A caption over a text field, in the register the dialog's own hints use. */
-    private TextView fieldLabel(final int textRes) {
-        final TextView label = new TextView(this);
+    private TextView fieldLabel(final Context context, final int textRes) {
+        final TextView label = new TextView(context);
         label.setText(textRes);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
         label.setPadding(0, Utils.dpToPx(8), 0, 0);
@@ -7866,7 +7869,8 @@ public class PlayerActivity extends Activity {
         // Seeded from the priority list every time and never written back: the list is the standing
         // answer, and this is one search that wants a different one. Confirming it costs a press. Which
         // list it is seeded from follows the line the search was opened for.
-        LanguagePriorityDialog.show(this, getString(R.string.subtitle_search_language_title),
+        LanguagePriorityDialog.show(Utils.dialogContext(this),
+                getString(R.string.subtitle_search_language_title),
                 R.string.pref_language_subtitle_none, R.string.pref_language_audio_add,
                 Utils.splitLanguages(forSecondary
                         ? mPrefs.languageSubtitleSecondary : mPrefs.languageSubtitle),
@@ -9079,7 +9083,8 @@ public class PlayerActivity extends Activity {
 
     /** A room from the list said it has a password; the code we already know. */
     private void askRoomPassword(final String code) {
-        final EditText input = new EditText(this);
+        final Context dialogContext = Utils.dialogContext(this);
+        final EditText input = new EditText(dialogContext);
         input.setInputType(InputType.TYPE_CLASS_TEXT);
         input.setSingleLine(true);
         input.setHint(getString(R.string.together_password_hint));
@@ -9091,7 +9096,7 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        new MaterialAlertDialogBuilder(this)
+        new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(code)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok,
@@ -9108,6 +9113,7 @@ public class PlayerActivity extends Activity {
      * room being made, not a standing preference worth hunting for in settings.
      */
     private void createRoom() {
+        final Context dialogContext = Utils.dialogContext(this);
         final JSONObject session = sessionDescription();
         if (session == null) {
             return;
@@ -9118,33 +9124,33 @@ public class PlayerActivity extends Activity {
                 ? getString(R.string.together_room_default_name, code)
                 : card.optString("title");
 
-        final EditText name = new EditText(this);
+        final EditText name = new EditText(dialogContext);
         name.setInputType(InputType.TYPE_CLASS_TEXT);
         name.setSingleLine(true);
         name.setText(suggested);
         name.setSelection(name.getText().length());
 
-        final EditText password = new EditText(this);
+        final EditText password = new EditText(dialogContext);
         password.setInputType(InputType.TYPE_CLASS_TEXT);
         password.setSingleLine(true);
         password.setHint(getString(R.string.together_password_hint));
         password.setText(mPrefs.togetherPassword);
 
-        final CheckBox listed = new CheckBox(this);
+        final CheckBox listed = new CheckBox(dialogContext);
         listed.setText(R.string.together_public);
         listed.setChecked(mPrefs.togetherPublic);
 
         // A listed room without a password is open to whoever reads the list. Said as a quiet line under
         // the tick that put it there, not as an error after the fact: the accent here is already the brand
         // coral, and a red field on top of it reads as alarm rather than as the one thing left to fill in.
-        final TextView note = new TextView(this);
+        final TextView note = new TextView(dialogContext);
         note.setText(R.string.together_public_needs_password);
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         note.setTextColor(ContextCompat.getColor(this, R.color.error_ink_muted));
         note.setPadding(0, 0, 0, Utils.dpToPx(4));
         note.setVisibility(View.GONE);
 
-        final LinearLayout fields = new LinearLayout(this);
+        final LinearLayout fields = new LinearLayout(dialogContext);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
         fields.setPadding(pad, 0, pad, 0);
@@ -9153,7 +9159,7 @@ public class PlayerActivity extends Activity {
         fields.addView(listed);
         fields.addView(note);
 
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(getString(R.string.together_create_title, code))
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (d, which) -> {
@@ -9206,7 +9212,8 @@ public class PlayerActivity extends Activity {
     /** Ask for the six digits. Also the empty state's way in, which is the only one a TV has when
      *  nothing is playing yet — the gear menu lives in the player's controls. */
     void askRoomCode() {
-        final EditText code = new EditText(this);
+        final Context dialogContext = Utils.dialogContext(this);
+        final EditText code = new EditText(dialogContext);
         // Text, not digits: a room made in Lampa has a letter code, and the same six characters
         // have to be typeable here.
         code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
@@ -9216,19 +9223,19 @@ public class PlayerActivity extends Activity {
         // Rooms made in Lampa carry a password whenever that setting is on there, and it goes into
         // the room's address — so without it we would land somewhere else entirely and report, quite
         // truthfully and quite uselessly, that no such room exists.
-        final EditText password = new EditText(this);
+        final EditText password = new EditText(dialogContext);
         password.setInputType(InputType.TYPE_CLASS_TEXT);
         password.setSingleLine(true);
         password.setHint(getString(R.string.together_password_hint));
 
-        final LinearLayout fields = new LinearLayout(this);
+        final LinearLayout fields = new LinearLayout(dialogContext);
         fields.setOrientation(LinearLayout.VERTICAL);
         final int pad = Utils.dpToPx(16);
         fields.setPadding(pad, 0, pad, 0);
         fields.addView(code);
         fields.addView(password);
 
-        new MaterialAlertDialogBuilder(this)
+        new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.together_join)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -9468,6 +9475,7 @@ public class PlayerActivity extends Activity {
     /** The invite as something to point a camera at, for a screen that cannot pass it on itself. The
      *  clipboard gets it too — a box with a keyboard, or a remote-control browser, can still use it. */
     private void showInviteQr(final String invite) {
+        final Context dialogContext = Utils.dialogContext(this);
         copyToClipboard(invite);
         final DisplayMetrics metrics = getResources().getDisplayMetrics();
         final Bitmap qr = Utils.qrBitmap(invite,
@@ -9476,12 +9484,12 @@ public class PlayerActivity extends Activity {
             showSnack(getString(R.string.together_created, together.code()), null);
             return;
         }
-        final ImageView image = new ImageView(this);
+        final ImageView image = new ImageView(dialogContext);
         image.setImageBitmap(qr);
         image.setAdjustViewBounds(true);
         final int padding = Math.round(16 * metrics.density);
         image.setPadding(padding, padding, padding, padding);
-        new MaterialAlertDialogBuilder(this)
+        new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(getString(R.string.together_qr_title, together.code()))
                 .setMessage(getString(R.string.together_qr_hint))
                 .setView(image)
@@ -13291,10 +13299,11 @@ public class PlayerActivity extends Activity {
     }
 
     void showSnack(final String textPrimary, final String textSecondary) {
+        final Context dialogContext = Utils.dialogContext(this);
         // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
         // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
         if (isTvBox) {
-            final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(this);
+            final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
             builder.setMessage(textPrimary);
             builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
             if (textSecondary != null) {
@@ -13497,7 +13506,8 @@ public class PlayerActivity extends Activity {
     }
 
     void askForScope(boolean loadSubtitlesOnCancel, boolean skipToNextOnCancel) {
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(PlayerActivity.this);
+        final Context dialogContext = Utils.dialogContext(this);
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
         builder.setMessage(String.format(getString(R.string.request_scope), getString(R.string.app_name)));
         builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> requestDirectoryAccess()
         );
@@ -13818,7 +13828,8 @@ public class PlayerActivity extends Activity {
     }
 
     void askDeleteMedia() {
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(PlayerActivity.this);
+        final Context dialogContext = Utils.dialogContext(this);
+        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
         builder.setMessage(getString(R.string.delete_query));
         builder.setPositiveButton(R.string.delete_confirmation, (dialogInterface, i) -> {
             releasePlayer();
@@ -14013,6 +14024,7 @@ public class PlayerActivity extends Activity {
     }
 
     private void showAspectModePicker() {
+        final Context dialogContext = Utils.dialogContext(this);
         final List<AspectMode> modes = getAspectModes();
         final String[] labels = new String[modes.size()];
         int checked = -1;
@@ -14021,7 +14033,7 @@ public class PlayerActivity extends Activity {
             if (isCurrentAspectMode(modes.get(i)))
                 checked = i;
         }
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.button_crop)
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     applyAspectMode(which);

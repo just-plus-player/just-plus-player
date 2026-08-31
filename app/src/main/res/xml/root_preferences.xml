@@ -5,6 +5,23 @@
          behind a row of its own (Skip segments, Watch together, subtitle Appearance). Paying a tap to
          reveal three switches is worse than reading them. -->
 
+    <PreferenceCategory app:title="@string/pref_appearance_header">
+
+        <!-- Written by SettingsActivity, which also binds the segmented control this row is. -->
+        <Preference
+            app:key="themeMode"
+            app:layout="@layout/preference_theme_mode"
+            app:persistent="false"
+            app:selectable="false" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="amoledBlack"
+            app:summary="@string/pref_amoled_summary"
+            app:title="@string/pref_amoled" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/pref_general_header">
 
         <ListPreference
@@ -421,7 +438,10 @@
 
     <PreferenceCategory app:title="@string/pref_dangerous_header">
 
+        <!-- Keyed so SettingsActivity can make it focusable on a remote: unselectable, a D-pad steps
+             from the header straight to the decoder rows and never lands on the warning about them. -->
         <Preference
+            app:key="dangerousWarning"
             app:selectable="false"
             app:summary="@string/pref_dangerous_warning" />
 

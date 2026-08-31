@@ -12,6 +12,7 @@ import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 import android.text.TextUtils;
 
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.CaptionStyleCompat;
@@ -57,6 +58,13 @@ class Prefs {
     private static final String PREF_KEY_AUTO_PIP = "autoPiP";
     private static final String PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES = "disableVolumeBrightnessGestures";
     private static final String PREF_KEY_HOLD_SPEED = "holdSpeed";
+    /** Settings-screen appearance. The player and the error screen are dark by design, so these two
+     *  reach only the settings window. */
+    public static final String THEME_MODE_KEY = "themeMode";
+    private static final String PREF_KEY_AMOLED = "amoledBlack";
+    public static final String THEME_DARK = "dark";
+    public static final String THEME_LIGHT = "light";
+    public static final String THEME_SYSTEM = "system";
     private static final String PREF_KEY_HOLD_SPEED_MODE = "holdSpeedMode";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
@@ -549,6 +557,39 @@ class Prefs {
                 .remove(PREF_KEY_SUBTITLE_SEARCH_STRICT)
                 .apply();
         return migrated;
+    }
+
+    public static String getThemeMode(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(THEME_MODE_KEY, THEME_SYSTEM);
+    }
+
+    public static void setThemeMode(final Context context, final String mode) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(THEME_MODE_KEY, mode).apply();
+    }
+
+    /**
+     * The stored choice as the night mode AppCompat wants. "System" is UNSPECIFIED rather than
+     * FOLLOW_SYSTEM: a local mode outranks the default one, and on a TV box PlayerActivity sets that
+     * default to dark on purpose. Asking to follow the system there would quietly hand a TV whose
+     * system is light a light settings screen, which is not what "System" is being offered for.
+     * UNSPECIFIED defers to whatever default is in force — the TV's dark, the phone's system.
+     */
+    public static int getNightMode(final Context context) {
+        switch (getThemeMode(context)) {
+            case THEME_DARK:
+                return AppCompatDelegate.MODE_NIGHT_YES;
+            case THEME_LIGHT:
+                return AppCompatDelegate.MODE_NIGHT_NO;
+            default:
+                return AppCompatDelegate.MODE_NIGHT_UNSPECIFIED;
+        }
+    }
+
+    public static boolean isAmoledBlack(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_KEY_AMOLED, false);
     }
 
     /**

@@ -31,6 +31,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.OneShotPreDrawListener;
 import androidx.core.view.WindowCompat;
 import androidx.appcompat.app.AppCompatActivity;
@@ -77,6 +78,10 @@ public class SettingsActivity extends AppCompatActivity
     /** Key of the sub-screen row last opened, so Back can put the list back on it. */
     private String openedScreenKey;
 
+    /** The surface tones without the AMOLED overlay, resolved in onCreate before it is applied. */
+    private int plainSurface;
+    private int plainCard;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
@@ -90,6 +95,11 @@ public class SettingsActivity extends AppCompatActivity
         // takes its background out of the theme exactly as it stands at that moment. Pure black is a
         // dark-theme idea only.
         final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        // Read before the overlay goes on, because applyStyle cannot be undone and these are the
+        // values AMOLED has to be able to go back to. Taken from this theme in this configuration —
+        // a ContextThemeWrapper built here does not carry the local night mode and answers light.
+        plainSurface = MaterialColors.getColor(this, R.attr.colorSurface, Color.BLACK);
+        plainCard = MaterialColors.getColor(this, R.attr.colorSurfaceContainer, Color.DKGRAY);
         if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
             getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
         }
@@ -146,6 +156,33 @@ public class SettingsActivity extends AppCompatActivity
         }
     }
 
+    /**
+     * Repaints the surfaces the AMOLED option owns, so toggling it does not need the window rebuilt.
+     * Rebuilding was visible: the pressed row lit, the switch travelled, and only then did the whole
+     * screen cut over in one frame — two beats where the eye expects none.
+     *
+     * ponytail: the theme object itself is left alone, so a dialog opened between a toggle and the
+     * next launch still carries the previous surface tone (a 20/255 difference on its background).
+     * Give the overlay an inverse and apply that here if it ever shows.
+     */
+    void repaintAmoledSurfaces() {
+        final boolean amoled = isNight() && Prefs.isAmoledBlack(this);
+        final int surface = amoled ? ContextCompat.getColor(this, R.color.black) : plainSurface;
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(surface));
+        getWindow().setStatusBarColor(surface);
+        final View toolbar = findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            toolbar.setBackgroundColor(surface);
+        }
+        final int card = amoled ? ContextCompat.getColor(this, R.color.amoled_card) : plainCard;
+        GroupCards.repaint(recyclerView, card);
+    }
+
+    private boolean isNight() {
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+    }
+
     /** Up from a sub-screen goes back one level, not out of the settings altogether. */
     @Override
     public boolean onSupportNavigateUp() {
@@ -175,9 +212,6 @@ public class SettingsActivity extends AppCompatActivity
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
 
-        /** SwitchCompat's own thumb animation, which it keeps to itself as a private constant. */
-        private static final long SWITCH_ANIMATION_MS = 250;
-
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             // Inflation materializes switch defaults, so record whether the key was already
@@ -197,20 +231,16 @@ public class SettingsActivity extends AppCompatActivity
             final Preference preferenceAmoled = findPreference("amoledBlack");
             if (preferenceAmoled != null) {
                 preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
-                    // Held past the switch's own animation, so the thumb finishes travelling before the
-                    // window is rebuilt. Rebuilding it straight away cut that animation off mid-way and
-                    // the toggle read as a jerk, which no other switch on this screen does. SwitchCompat
-                    // animates the thumb for 250 ms and keeps the figure to itself.
-                    // The host is taken now rather than looked up later: by the time this runs the
-                    // fragment may have been detached, and asking it for its activity then would either
-                    // throw or, guarded, silently skip the rebuild.
-                    // Returning true is what persists the new value; the rebuilt window reads it.
-                    final Activity host = requireActivity();
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        if (!host.isFinishing() && !host.isDestroyed()) {
-                            host.recreate();
-                        }
-                    }, SWITCH_ANIMATION_MS);
+                    // Posted, because returning true is what persists the value and repaintAmoledSurfaces
+                    // reads it back. Repainting rather than recreating: the window is the same one, so the
+                    // switch keeps animating over surfaces that have already changed under it.
+                    // getActivity, not requireActivity: a row can be bound on a fragment that is on its
+                    // way out, and throwing there would take the app down over a colour.
+                    final Activity host = getActivity();
+                    if (host instanceof SettingsActivity) {
+                        new Handler(Looper.getMainLooper())
+                                .post(((SettingsActivity) host)::repaintAmoledSurfaces);
+                    }
                     return true;
                 });
             }
@@ -645,9 +675,9 @@ public class SettingsActivity extends AppCompatActivity
                             .setSupportsChangeAnimations(false);
                 }
             }
-            if (Build.VERSION.SDK_INT >= 29) {
-                recyclerView = getListView();
-            }
+            // Unconditionally: the inset padding below wants it only on 29+, but repaintAmoledSurfaces
+            // needs the list on every SDK, or the cards keep the old tone on 23-28 until the next launch.
+            recyclerView = getListView();
             if (getArguments() != null) {
                 // A sub-screen is a replaced fragment, and a replaced fragment starts with nothing
                 // focused: the first D-pad press then goes wherever the view root guesses instead
@@ -970,6 +1000,23 @@ public class SettingsActivity extends AppCompatActivity
             card.setColor(MaterialColors.getColor(context, R.attr.colorSurfaceContainer, Color.DKGRAY));
             hairline.setColor(MaterialColors.getColor(context, R.attr.colorOutlineVariant, Color.GRAY));
             hairline.setStrokeWidth(Utils.dpToPx(1));
+        }
+
+        /**
+         * Recolours the cards of a list already on screen. The hairlines are left alone — outlineVariant
+         * does not move with the AMOLED option, and they read the same over either card tone.
+         */
+        static void repaint(final RecyclerView list, final int cardColor) {
+            if (list == null) {
+                return;
+            }
+            for (int i = 0; i < list.getItemDecorationCount(); i++) {
+                final RecyclerView.ItemDecoration decoration = list.getItemDecorationAt(i);
+                if (decoration instanceof GroupCards) {
+                    ((GroupCards) decoration).card.setColor(cardColor);
+                }
+            }
+            list.invalidate();
         }
 
         @Override

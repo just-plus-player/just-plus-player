@@ -1634,7 +1634,9 @@ public class PlayerActivity extends Activity {
         // integrated into the pill rather than a detached bar below it. Label and glyph stay white; only
         // what counts time down — the underline and the seconds inside the label — is on the brand accent,
         // so the timing reads at a glance without costing the wording its contrast over a bright frame.
-        final int skipCornerRadius = Utils.dpToPx(8);
+        // Same token as the cluster pills (UiMetrics.pillCorner) rather than a raw 8dp, so the skip and
+        // speed pills round like everything else on a tablet or a TV instead of staying at phone size.
+        final int skipCornerRadius = ui.pillCorner();
         buttonSkip = new Button(this);
         buttonSkip.setText(R.string.button_skip);
         buttonSkip.setAllCaps(false);

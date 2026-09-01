@@ -186,7 +186,7 @@ final class OffsetPanel {
         // a room can find, and this pill is the last stop of the D-pad path through here.
         final int resetCorner = Utils.dpToPx(22);
         reset.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_soft)),
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
                 pillFill(activity, accent, false, resetCorner), roundMask(resetCorner)));
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -261,7 +261,7 @@ final class OffsetPanel {
             for (int i = 0; i < pills.length; i++) {
                 final boolean on = i == picked[0];
                 pills[i].setBackground(new RippleDrawable(
-                        ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_soft)),
+                        ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
                         pillFill(activity, accent, on, corner), roundMask(corner)));
                 pills[i].setTextColor(ContextCompat.getColor(activity,
                         on ? R.color.ink_on_accent : R.color.ink_medium));

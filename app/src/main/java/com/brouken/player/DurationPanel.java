@@ -348,7 +348,7 @@ final class DurationPanel {
         key.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         key.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_strong)),
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
                 null, null));
         key.setOnClickListener(v -> onTap.run());
         return key;
@@ -373,7 +373,7 @@ final class DurationPanel {
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
         action.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_strong)),
+                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
                 null, mask));
         return action;
     }

@@ -6328,26 +6328,28 @@ public class PlayerActivity extends Activity {
     }
 
     /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
-    private View menuRule(int topPx, int bottomPx) {
-        final View rule = new View(this);
+    private View menuRule(final Context ctx, int topPx, int bottomPx) {
+        final View rule = new View(ctx);
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         lp.topMargin = topPx;
         lp.bottomMargin = bottomPx;
         rule.setLayoutParams(lp);
-        rule.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
+        rule.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                ContextCompat.getColor(ctx, R.color.divider)));
         return rule;
     }
 
     /**
      * A caption naming the group under it, in the register the panel already uses for a row's details —
-     * same size, same dimmed white. Indented to where the titles of that group start, not to the icon
+     * same size, same quiet ink. Indented to where the titles of that group start, not to the icon
      * column, and given more air above than below so it belongs to what follows it.
      */
-    private View menuCaption(CharSequence text) {
-        final TextView caption = new TextView(this);
+    private View menuCaption(final Context ctx, CharSequence text) {
+        final TextView caption = new TextView(ctx);
         caption.setText(text);
-        caption.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+        caption.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.ink_secondary)));
         caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
         caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
         return caption;
@@ -6391,13 +6393,14 @@ public class PlayerActivity extends Activity {
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        listLayout.addView(menuRule(0, Utils.dpToPx(4)));
+        listLayout.addView(menuRule(ctx, 0, Utils.dpToPx(4)));
 
         for (final MenuItem item : items) {
             if (item.chrome) {
                 // Air on both sides of a group boundary: it belongs to neither of the two groups.
                 listLayout.addView(item.title == null
-                        ? menuRule(Utils.dpToPx(6), Utils.dpToPx(6)) : menuCaption(item.title));
+                        ? menuRule(ctx, Utils.dpToPx(6), Utils.dpToPx(6))
+                        : menuCaption(ctx, item.title));
                 continue;
             }
             final boolean isCurrent = item.checked;

@@ -65,6 +65,7 @@ import androidx.media3.common.util.Util;
 import com.google.android.material.textfield.TextInputLayout;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
 
@@ -528,10 +529,12 @@ class Utils {
      */
     public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
                                     final View content) {
-        // 16dp is Material's own margin for a detached sheet. A television wants its overscan instead —
-        // the card has an edge to lose, where the full-bleed fill before it had none.
-        final int hMargin = Math.max(dpToPx(16), ui.overscanH());
-        final int vMargin = Math.max(dpToPx(16), ui.overscanV());
+        // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
+        // the panel is what the viewer came for and the strip of video beside it is not worth the room.
+        // A television wants its overscan instead — the card has an edge to lose, where the full-bleed
+        // fill before it had none.
+        final int hMargin = Math.max(dpToPx(8), ui.overscanH());
+        final int vMargin = Math.max(dpToPx(8), ui.overscanV());
         int barTop = 0;
         int barBottom = 0;
         final WindowInsets insets = activity.getWindow().getDecorView().getRootWindowInsets();
@@ -547,8 +550,10 @@ class Utils {
 
         final MaterialShapeDrawable card = new MaterialShapeDrawable(
                 ShapeAppearanceModel.builder().setAllCornerSizes(dpToPx(16)).build());
-        card.setFillColor(ColorStateList.valueOf(
-                ContextCompat.getColor(activity, R.color.sheet_surface)));
+        // From the content's own theme, not the player's: the panels follow the appearance choice, so
+        // the card is light when the app is light and black under AMOLED.
+        card.setFillColor(ColorStateList.valueOf(MaterialColors.getColor(
+                content, R.attr.colorSurface, ContextCompat.getColor(activity, R.color.sheet_surface))));
         content.setBackground(card);
         content.setClipToOutline(true); // so a full-bleed row's ripple stops at the rounded end
 
@@ -785,9 +790,15 @@ class Utils {
         }
         // Wrapped straight around whatever it was handed — an Activity, in every real call — because a
         // ContextThemeWrapper keeps its base's window token and a dialog needs one to exist at all.
-        return new android.view.ContextThemeWrapper(base,
+        final android.view.ContextThemeWrapper themed = new android.view.ContextThemeWrapper(base,
                 Prefs.THEME_LIGHT.equals(mode) ? R.style.Theme_Dialogs_Light
                         : R.style.Theme_Dialogs_Dark);
+        // AMOLED is part of the same appearance choice, and a panel is the largest dark surface the app
+        // ever puts on screen — the one place the option is worth the most.
+        if (!Prefs.THEME_LIGHT.equals(mode) && Prefs.isAmoledBlack(base)) {
+            themed.getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
+        }
+        return themed;
     }
 
     /**

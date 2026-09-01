@@ -14,4 +14,13 @@
     <style name="Theme.Settings" parent="BaseTheme.Settings">
         <item name="colorControlHighlight">@color/white</item>
     </style>
+
+    <!-- A player panel is built against these themes now, and a remote needs the same white
+         wash the player, the error screen and the settings list already get here. -->
+    <style name="Theme.Dialogs.Dark" parent="BaseTheme.Dialogs.Dark">
+        <item name="colorControlHighlight">@color/white</item>
+    </style>
+    <style name="Theme.Dialogs.Light" parent="BaseTheme.Dialogs.Light">
+        <item name="colorControlHighlight">@color/white</item>
+    </style>
 </resources>

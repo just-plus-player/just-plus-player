@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.widget.TextViewCompat;
 
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.slider.LabelFormatter;
@@ -154,27 +155,32 @@ final class OffsetPanel {
     static Dialog create(final Activity activity, final UiMetrics ui,
                          final int accent, final String title, final double maxSec,
                          final double stepSec, final Choice[] choices, final Line... lines) {
+        // Every view in here is built against the appearance choice, not against the player's own dark
+        // theme, so the panel is light when the app is light and black under AMOLED. A
+        // ContextThemeWrapper keeps the activity's window token, which the dialog still needs.
+        final Context ctx = Utils.dialogContext(activity);
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
         final Rhythm rhythm = Rhythm.of(activity.getResources().getConfiguration());
-        final LinearLayout root = new LinearLayout(activity);
+        final LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.VERTICAL);
 
-        final TextView header = new TextView(activity);
+        final TextView header = new TextView(ctx);
         header.setText(title);
         ViewCompat.setAccessibilityHeading(header, true);
-        header.setTextColor(Color.WHITE);
+        header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         // Space, not a rule: the hairline that used to sit here had a caption under it, and once the
         // caption went it landed a few pixels above the row of pills and read as their top border.
         root.addView(header);
-        root.addView(gap(activity, rhythm.title));
+        root.addView(gap(ctx, rhythm.title));
 
         final List<Runnable> resets = new ArrayList<>();
         final boolean picking = choices != null && choices.length > 0;
         MaterialButton firstPill = null;
         if (picking) {
             for (final Choice choice : choices) {
-                final MaterialButton lit = addChoice(activity, ui, root, choice, resets);
+                final MaterialButton lit = addChoice(ctx, ui, root, choice, resets);
                 if (firstPill == null) {
                     firstPill = lit;
                 }
@@ -197,23 +203,23 @@ final class OffsetPanel {
         boolean firstBlock = !picking;
         for (final Line line : lines) {
             if (!firstBlock) {
-                root.addView(gap(activity, rhythm.block));
+                root.addView(gap(ctx, rhythm.block));
             }
             firstBlock = false;
-            final Slider bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp,
+            final Slider bar = addLine(ctx, ui, root, accent, line, maxSec, stepSec, valueSp,
                     rhythm, resets);
             if (firstBar == null) {
                 firstBar = bar;
             }
         }
 
-        root.addView(gap(activity, rhythm.block));
+        root.addView(gap(ctx, rhythm.block));
 
         // Outlined, like the segmented control above it: one button family for the whole panel. Material
         // draws its own focus and press states, which is what replaced the hand-drawn ring here.
-        final MaterialButton reset = new MaterialButton(activity, null,
+        final MaterialButton reset = new MaterialButton(ctx, null,
                 com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        reset.setText(activity.getString(R.string.skip_offset_reset));
+        reset.setText(ctx.getString(R.string.skip_offset_reset));
         reset.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
         // Material insets a button by 6dp top and bottom to reach its 48dp touch target from a 36dp
         // box. This panel sizes its own rows, so the inset only shortens them.
@@ -240,7 +246,7 @@ final class OffsetPanel {
         // Scrolled, because a clipped panel is a panel that lies: the readouts stayed on screen while
         // the slider under the second one did not. No fillViewport — nothing in here stretches now that
         // the card is sized to its content, and the sliders drag across, so nothing fights the scroll.
-        final ScrollView scroller = new ScrollView(activity);
+        final ScrollView scroller = new ScrollView(ctx);
         scroller.addView(root);
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
@@ -270,10 +276,10 @@ final class OffsetPanel {
      *
      * @return the button to hand the first focus to
      */
-    private static MaterialButton addChoice(final Activity activity, final UiMetrics ui,
+    private static MaterialButton addChoice(final Context ctx, final UiMetrics ui,
                                             final LinearLayout root, final Choice choice,
                                             final List<Runnable> resets) {
-        final MaterialButtonToggleGroup group = new MaterialButtonToggleGroup(activity);
+        final MaterialButtonToggleGroup group = new MaterialButtonToggleGroup(ctx);
         group.setSingleSelection(true);
         // The panel opens with nothing checked when the settings disagree with themselves, and this only
         // stops a *press* from clearing the last one — it does not force a selection at bind time.
@@ -281,7 +287,7 @@ final class OffsetPanel {
 
         final MaterialButton[] pills = new MaterialButton[choice.values.length];
         for (int i = 0; i < choice.values.length; i++) {
-            final MaterialButton pill = new MaterialButton(activity, null,
+            final MaterialButton pill = new MaterialButton(ctx, null,
                     com.google.android.material.R.attr.materialButtonOutlinedStyle);
             pill.setId(View.generateViewId()); // the group tracks its buttons by id
             pill.setText(choice.labels[i]);
@@ -349,20 +355,24 @@ final class OffsetPanel {
     }
 
     /** Caption, readout and slider for one offset. Returns its Slider; adds its reset to {@code resets}. */
-    private static Slider addLine(final Activity activity, final UiMetrics ui, final LinearLayout root,
+    private static Slider addLine(final Context ctx, final UiMetrics ui, final LinearLayout root,
                                   final int accent, final Line line, final double maxSec,
                                   final double stepSec, final float valueSp, final Rhythm rhythm,
                                   final List<Runnable> resets) {
-        final int trackBg = ContextCompat.getColor(activity, R.color.track_white);
+        // The unplayed half of a track is a surface, not white: white is invisible on a light panel.
+        final int trackBg = MaterialColors.getColor(ctx, R.attr.colorSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.track_white));
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
         final int progressMax = (int) Math.round(2 * maxSec / stepSec);
         final int mid = progressMax / 2;
         final int dragSnap = Math.max(1, (int) Math.round(1 / stepSec)); // drag resolution: 1 s
         final double[] current = {line.initialSec};
 
         if (line.caption != null) {
-            final TextView caption = new TextView(activity);
+            final TextView caption = new TextView(ctx);
             caption.setText(line.caption);
-            caption.setTextColor(ContextCompat.getColor(activity, R.color.ink_medium));
+            caption.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_medium)));
             caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
             caption.setGravity(Gravity.CENTER);
             // A caption belongs to what is under it: the gap above it is the block's, drawn by the
@@ -371,7 +381,7 @@ final class OffsetPanel {
             root.addView(caption);
         }
 
-        final TextView value = new TextView(activity);
+        final TextView value = new TextView(ctx);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, valueSp);
         value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         value.setFontFeatureSettings("tnum"); // fixed-width digits: the readout stops twitching as it counts
@@ -382,7 +392,7 @@ final class OffsetPanel {
         // Counted in steps, not in seconds: valueFrom/valueTo/stepSize are floats, and a Slider refuses
         // a range that is not a whole number of steps — ±180 s at 0.1 s is exactly the sum that does not
         // survive float division. Whole steps keep the arithmetic that was already here.
-        final Slider seekBar = new Slider(activity);
+        final Slider seekBar = new Slider(ctx);
         seekBar.setValueFrom(0f);
         seekBar.setValueTo(progressMax);
         seekBar.setStepSize(1f);
@@ -404,10 +414,10 @@ final class OffsetPanel {
         // which is where it belongs. Slider has no key-increment setter, hence the key listener.
         final int keyStep = Math.max(2, (int) Math.round(maxSec / 90 / stepSec));
 
-        final MaterialButton minus = iconButton(activity, R.drawable.ic_remove_24dp, "-");
-        final MaterialButton plus = iconButton(activity, R.drawable.ic_add_24dp, "+");
+        final MaterialButton minus = iconButton(ctx, R.drawable.ic_remove_24dp, "-");
+        final MaterialButton plus = iconButton(ctx, R.drawable.ic_add_24dp, "+");
 
-        final LinearLayout row = new LinearLayout(activity);
+        final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         final LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(
@@ -429,8 +439,8 @@ final class OffsetPanel {
 
         // Readout: accent when non-zero, white at rest.
         final Runnable render = () -> {
-            value.setText(format(activity, current[0]));
-            value.setTextColor(isZero(current[0]) ? Color.WHITE : accent);
+            value.setText(format(ctx, current[0]));
+            value.setTextColor(isZero(current[0]) ? onSurface : accent);
         };
         render.run();
         final Runnable apply = () -> {
@@ -492,13 +502,14 @@ final class OffsetPanel {
         return seekBar;
     }
 
-    /** A ± button: Material's icon button, in the panel's white rather than its own muted grey. */
-    private static MaterialButton iconButton(final Activity activity, final int icon,
+    /** A ± button: Material's icon button, as legible on a light panel as on a dark one. */
+    private static MaterialButton iconButton(final Context ctx, final int icon,
                                              final String description) {
-        final MaterialButton button = new MaterialButton(activity, null,
+        final MaterialButton button = new MaterialButton(ctx, null,
                 com.google.android.material.R.attr.materialIconButtonStyle);
         button.setIconResource(icon);
-        button.setIconTint(ColorStateList.valueOf(Color.WHITE));
+        button.setIconTint(ColorStateList.valueOf(
+                MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE)));
         button.setContentDescription(description);
         button.setInsetTop(0);
         button.setInsetBottom(0);
@@ -544,8 +555,8 @@ final class OffsetPanel {
         return context.getString(R.string.offset_seconds, number);
     }
 
-    private static View gap(final Activity activity, final int heightPx) {
-        final View spacer = new View(activity);
+    private static View gap(final Context ctx, final int heightPx) {
+        final View spacer = new View(ctx);
         spacer.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, heightPx));
         return spacer;

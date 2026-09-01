@@ -5500,16 +5500,7 @@ public class PlayerActivity extends Activity {
             row.setFocusable(true);
             row.setMinimumHeight(ui.rowMinHeight());
             // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
-            final GradientDrawable rowContent = new GradientDrawable();
-            rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
-            final GradientDrawable rowMask = new GradientDrawable();
-            rowMask.setCornerRadius(Utils.dpToPx(8));
-            rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
-                    rowContent, rowMask));
+            row.setBackground(Utils.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
             if (isCurrent) {
                 currentRow[0] = row;
             }
@@ -5786,16 +5777,7 @@ public class PlayerActivity extends Activity {
             row.setClickable(true);
             row.setFocusable(true);
             row.setMinimumHeight(ui.rowMinHeight());
-            final GradientDrawable rowContent = new GradientDrawable();
-            rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
-            final GradientDrawable rowMask = new GradientDrawable();
-            rowMask.setCornerRadius(Utils.dpToPx(8));
-            rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
-                    rowContent, rowMask));
+            row.setBackground(Utils.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
             if (isCurrent) {
                 currentRow[0] = row;
             }
@@ -6072,16 +6054,7 @@ public class PlayerActivity extends Activity {
             row.setClickable(true);
             row.setFocusable(true);
             row.setMinimumHeight(ui.rowMinHeight());
-            final GradientDrawable rowContent = new GradientDrawable();
-            rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
-            final GradientDrawable rowMask = new GradientDrawable();
-            rowMask.setCornerRadius(Utils.dpToPx(8));
-            rowMask.setColor(Color.WHITE);
-            row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
-                    rowContent, rowMask));
+            row.setBackground(Utils.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
             if (isCurrent) {
                 currentRow[0] = row;
             }

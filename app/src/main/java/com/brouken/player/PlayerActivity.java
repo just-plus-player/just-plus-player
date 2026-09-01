@@ -5828,8 +5828,7 @@ public class PlayerActivity extends Activity {
             playlistDialog.dismiss();
         }
         playlistDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, playlistDialog, scrollView,
-                grid ? Utils.Panel.RAIL : Utils.Panel.LIST);
+        Utils.pickerWindow(this, ui, playlistDialog, scrollView);
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
         final View currentCell = currentRow[0];
@@ -6088,7 +6087,7 @@ public class PlayerActivity extends Activity {
             qualityDialog.dismiss();
         }
         qualityDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, qualityDialog, scrollView, Utils.Panel.OPTIONS);
+        Utils.pickerWindow(this, ui, qualityDialog, scrollView);
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
@@ -6230,7 +6229,7 @@ public class PlayerActivity extends Activity {
 
     // The panel every picker shares, matching the quality/playlist menus.
     private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
-        showSideMenu(menuTitle, items, 34, 48, Utils.Panel.OPTIONS);
+        showSideMenu(menuTitle, items, 34, 48);
     }
 
     /**
@@ -6238,11 +6237,8 @@ public class PlayerActivity extends Activity {
      *                  name that already says everything; a list where the poster is what tells the
      *                  rows apart — search results for a name typed from across the room — asks for
      *                  bigger, and nothing else about the panel changes.
-     * @param kind      {@link Utils.Panel#LIST} for a panel whose rows carry artwork and a title, which
-     *                  gets the wider card; {@link Utils.Panel#OPTIONS} for a list of words.
      */
-    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp,
-                              Utils.Panel kind) {
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
         if (items == null || items.isEmpty()) {
             return;
         }
@@ -6433,7 +6429,7 @@ public class PlayerActivity extends Activity {
             menuDialog.dismiss();
         }
         menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, menuDialog, scrollView, kind);
+        Utils.pickerWindow(this, ui, menuDialog, scrollView);
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
         if (focus != null) {
@@ -8010,7 +8006,7 @@ public class PlayerActivity extends Activity {
         items.add(0, typeNumbersRow(title, episodes));
         // Stills are 16:9, so the row leads with a wide frame rather than a tall poster — and an
         // episode name beside one is what the wider card exists for.
-        showSideMenu(title.name, items, 72, 41, Utils.Panel.LIST);
+        showSideMenu(title.name, items, 72, 41);
     }
 
     /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */

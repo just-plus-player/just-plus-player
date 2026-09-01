@@ -67,7 +67,7 @@ final class DurationPanel {
         final Configuration cfg = activity.getResources().getConfiguration();
         final boolean landscape = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE;
         final int hPad = Utils.dpToPx(24);
-        final int usableW = ui.pickerWidthPx(cfg) - 2 * hPad;
+        final int usableW = ui.panelWidthPx(cfg) - 2 * hPad;
 
         // Portrait has height to spare, so the rows simply take VLC's own size. Landscape has to divide what
         // is left after the title and the window insets — and only those: with the keypad beside the readout
@@ -274,9 +274,7 @@ final class DurationPanel {
         // overscan went.
         scrollView.setPadding(hPad, Utils.dpToPx(16), hPad, Utils.dpToPx(20));
 
-        // CONTROL: a keypad beside a readout is a layout of fixed proportions, and in landscape it
-        // already wants more height than the window has to give.
-        Utils.pickerWindow(activity, ui, dialog, scrollView, Utils.Panel.CONTROL);
+Utils.pickerWindow(activity, ui, dialog, scrollView);
         // On TV the remote's number keys are the natural way in — arrowing across ten buttons is not.
         dialog.setOnKeyListener((d, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN

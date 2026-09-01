@@ -106,42 +106,26 @@ final class UiMetrics {
     int overscanV() { return tv() ? dp(16) : 0; }
     int pickerTopPadLand() { return Math.max(dp(16), overscanV()); }
 
-    /** Adaptive picker side-panel width in px: never covers a narrow phone, docks on tablet/TV. */
-    int pickerWidthPx(Configuration cfg) {
-        final int preferred;
-        switch (deviceClass) {
-            case TV:            preferred = 420; break;
-            case TABLET_LARGE:  preferred = 440; break;
-            case TABLET_MEDIUM: preferred = 400; break;
-            default:            preferred = 360; break;
-        }
-        return panelWidthPx(cfg, preferred);
-    }
-
     /**
-     * Width for a panel whose rows carry artwork and a filename, rather than a word.
+     * The width every player panel gets, whichever button opened it.
      *
-     * <p>The width above is sized for "1.5×" and "Off". A playlist row holds
-     * {@code The.Dark.Knight.2008.BDRemux.2160p.DV.HDR.mkv} — 46 characters — and at 360dp, once the
-     * poster and the paddings have taken their share, some 270dp reach the name: about thirty
-     * characters. That shortfall is why the row has two different ways of coping with a name that does
-     * not fit at all (see PlayerActivity.fitLongText), and no amount of coping invents room.
-     *
-     * <p>640dp is Material's own ceiling for a sheet ({@code material_bottom_sheet_max_width}), and the
-     * caps below still apply, so a phone in landscape lands at 523dp and a television at 576dp. A
-     * narrow phone in portrait is already at its cap and does not move.
+     * <p>One number, because a panel that changes size with the press that opened it reads as several
+     * different panels. It follows the edge the panel is docked to, and that edge follows the window:
+     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp
+     * Material states for a sheet; a sheet at the end edge leaves a strip of the picture beside it —
+     * never more than 60% of a window held sideways, and never closer than 56dp to the far edge of one
+     * held upright — capped at the same 640dp.
      */
-    int listWidthPx(Configuration cfg) {
-        return panelWidthPx(cfg, 640);
-    }
-
-    private int panelWidthPx(Configuration cfg, int preferredDp) {
+    int panelWidthPx(Configuration cfg) {
         final int windowW = cfg.screenWidthDp;
-        final int capPortrait = windowW - 56;                       // always leave a strip of video/scrim
+        if (windowW < 600) {
+            return dp(Math.min(windowW - 8, 640));
+        }
+        final int capPortrait = windowW - 56;
         final int cap = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
                 ? Math.min(Math.round(windowW * 0.60f), capPortrait)
                 : capPortrait;
-        return dp(Math.min(preferredDp, cap));
+        return dp(Math.min(640, cap));
     }
 
     // ---- typography (sp; keeps user font-scale). Columns: PHONE / sw600 / sw720 / TV ----

@@ -13,6 +13,7 @@ import android.provider.DocumentsContract;
 import android.text.TextUtils;
 
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.media3.common.MimeTypes;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.CaptionStyleCompat;
@@ -460,6 +461,20 @@ class Prefs {
         // process restarted — including for the player rebuild that follows leaving the settings screen.
         revokedAudioMimes = mSharedPreferences.getStringSet(
                 PREF_KEY_REVOKED_AUDIO_MIMES, Collections.emptySet());
+        // A build up to 1.4.2 could write audio/raw here, when an AudioTrack carrying decoded PCM failed
+        // to open. That mime is what both audio renderers probe the sink with before they decode, so the
+        // entry left the device with no selectable audio track at all — silence for every file, every
+        // codec and every decoder priority, remembered for good. Dropped on read (rather than by another
+        // one-shot reset, which would throw away verdicts that are real) and rewritten, so the error
+        // report and the ffmpeg fallback see the same set as the sink.
+        if (revokedAudioMimes.contains(MimeTypes.AUDIO_RAW)) {
+            final Set<String> cleaned = new HashSet<>(revokedAudioMimes);
+            cleaned.remove(MimeTypes.AUDIO_RAW);
+            revokedAudioMimes = cleaned;
+            mSharedPreferences.edit()
+                    .putStringSet(PREF_KEY_REVOKED_AUDIO_MIMES, cleaned)
+                    .apply();
+        }
     }
 
     public void setLanguageAudio(final String languages) {

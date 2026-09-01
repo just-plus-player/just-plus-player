@@ -705,14 +705,15 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * Pure black is something only a dark theme can be, so with Light chosen the row is greyed
-         * rather than hidden: it says the option exists and what it waits for. Under System it stays
-         * live — it takes effect whenever the system turns dark.
+         * Pure black is something only a dark theme can be, so while the screen is not dark the row is
+         * greyed rather than hidden: it says the option exists and what it waits for. Read from the
+         * configuration in force, not from the stored choice — under System with a light system the
+         * option is as inert as it is under Light, and offering it there is offering nothing.
          */
         private void syncAmoledEnabled() {
             final Preference amoled = findPreference("amoledBlack");
             if (amoled != null) {
-                amoled.setEnabled(!Prefs.THEME_LIGHT.equals(Prefs.getThemeMode(requireContext())));
+                amoled.setEnabled(((SettingsActivity) requireActivity()).isNight());
             }
         }
 

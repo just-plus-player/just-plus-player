@@ -56,16 +56,15 @@ final class DurationPanel {
     }
 
     /**
-     * @param insetSource view used to read the window insets for the panel padding (any attached view)
      * @param accent      brand accent for the readout and the Start action
      */
-    static Dialog create(final Activity activity, final UiMetrics ui, final View insetSource,
+    static Dialog create(final Activity activity, final UiMetrics ui,
                          final int accent, final String title, final Listener listener) {
         final int[] typed = {0}; // up to 4 digits, read as HHMM
 
         final Configuration cfg = activity.getResources().getConfiguration();
         final boolean landscape = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE;
-        final int hPad = Utils.dpToPx(24) + ui.overscanH();
+        final int hPad = Utils.dpToPx(24);
         final int usableW = ui.pickerWidthPx(cfg) - 2 * hPad;
 
         // Portrait has height to spare, so the rows simply take VLC's own size. Landscape has to divide what
@@ -259,8 +258,9 @@ final class DurationPanel {
         final ScrollView scrollView = new ScrollView(activity);
         scrollView.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Utils.padForPickerInsets(activity, ui, insetSource, scrollView, hPad,
-                Utils.dpToPx(16), Utils.dpToPx(20));
+        // Only the sheet's own padding now — see Utils.pickerWindow for where the bars and the
+        // overscan went.
+        scrollView.setPadding(hPad, Utils.dpToPx(16), hPad, Utils.dpToPx(20));
 
         Utils.pickerWindow(activity, ui, dialog, scrollView);
         // On TV the remote's number keys are the natural way in — arrowing across ten buttons is not.

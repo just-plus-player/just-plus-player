@@ -1673,7 +1673,7 @@ public class PlayerActivity extends Activity {
         // Solid dark pill with the neutral white countdown underline baked into its background as inset layers.
         // (A separate MATCH_PARENT underline View resolves to the full screen width inside a wrap-content
         // FrameLayout, which stretched the whole floating unit across the screen — hence layers instead.)
-        final int skipRingWidth = Utils.dpToPx(2);
+        final int skipRingWidth = getResources().getDimensionPixelSize(R.dimen.focus_ring_width);
         final int skipBarHeight = Utils.dpToPx(3);
         final int skipBarCorner = Utils.dpToPx(2);
         final GradientDrawable skipPillFill = new GradientDrawable();

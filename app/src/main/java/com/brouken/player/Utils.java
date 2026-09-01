@@ -68,6 +68,7 @@ import androidx.media3.common.util.Util;
 import com.google.android.material.textfield.TextInputLayout;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
@@ -620,13 +621,51 @@ class Utils {
         final GradientDrawable content = new GradientDrawable();
         content.setCornerRadius(corner);
         content.setColor(fill);
-        content.setStroke(dpToPx(2), ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        content.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
+                ContextCompat.getColorStateList(ctx, R.color.focus_ring));
         final GradientDrawable mask = new GradientDrawable();
         mask.setCornerRadius(corner);
         mask.setColor(Color.WHITE);
-        return new RippleDrawable(ColorStateList.valueOf(MaterialColors.getColor(
-                ctx, R.attr.colorControlHighlight, ContextCompat.getColor(ctx, R.color.ripple_chrome))),
+        // Press only: a RippleDrawable washes on focus as well, and over the fill of the current row
+        // that wash lifted the accent to #DB5F54 from #D6493C — the very thing the ring exists to
+        // avoid. The edge says "here" and leaves the colour underneath it alone.
+        final int press = MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                ContextCompat.getColor(ctx, R.color.ripple_chrome));
+        return new RippleDrawable(new ColorStateList(
+                new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
+                new int[]{Color.TRANSPARENT, press}),
                 content, mask);
+    }
+
+    /**
+     * D-pad focus for an outlined Material button: its own border widens to the focus ring's width and
+     * goes white, and the button draws over its neighbours while it holds it.
+     *
+     * <p>Width, because colour alone is the weakest focus event in the app. Where a picker row grows an
+     * edge out of nothing — measured 16.30:1 between the same pixels focused and not — an outlined
+     * button already has an edge, so focus only recoloured it: grey to white, 2.76:1, under the 3:1 a
+     * non-text indicator wants. An edge that thickens as well is a change in shape, which the eye
+     * catches without being aimed at it.
+     *
+     * <p>Z, because in a segmented control the neighbours' borders are drawn over this one's: the group
+     * collapses adjacent strokes into shared dividers drawn by whoever comes later, so a focused middle
+     * segment was ringed along the top and bottom and left grey down both sides. Lifting it puts it last
+     * in the draw order without moving it in the row, which is what the group already does for the
+     * segment that is checked.
+     */
+    static void focusRing(final MaterialButton button) {
+        final int rest = button.getStrokeWidth();
+        final int ring = Math.max(rest,
+                button.getResources().getDimensionPixelSize(R.dimen.focus_ring_width));
+        // The edge is the whole signal: Material's own focus state layer goes, or a focused segment
+        // that is also the chosen one gets its accent painted over in the dark colour of the text on
+        // it. The press ripple stays exactly as it was.
+        button.setRippleColor(ContextCompat.getColorStateList(button.getContext(),
+                R.color.ripple_button));
+        button.setOnFocusChangeListener((v, focused) -> {
+            button.setStrokeWidth(focused ? ring : rest);
+            button.setTranslationZ(focused ? 1f : 0f);
+        });
     }
 
     public static String formatMilis(long time) {

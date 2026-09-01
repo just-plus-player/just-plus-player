@@ -1,0 +1,5 @@
+<resources>
+    <!-- Wider than the phone's 2dp: this is the one screen the ring is read from three metres
+         away, and it is the only focus signal the panels have. See values/dimens.xml. -->
+    <dimen name="focus_ring_width">4dp</dimen>
+</resources>

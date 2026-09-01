@@ -227,6 +227,7 @@ final class OffsetPanel {
         reset.setInsetTop(0);
         reset.setInsetBottom(0);
         reset.setMinHeight(ui.dpS(48)); // a target this small is missed as often as it is hit
+        Utils.focusRing(reset);
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         resetLp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -296,6 +297,7 @@ final class OffsetPanel {
             pill.setInsetTop(0);
             pill.setInsetBottom(0);
             pill.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
+            Utils.focusRing(pill);
             pill.setPadding(ui.dpS(4), pill.getPaddingTop(), ui.dpS(4), pill.getPaddingBottom());
             // Shrunk rather than wrapped or clipped: the widest label already fills its share of the
             // row at the ordinary size, so a longer language or a system font a notch up used to break
@@ -410,6 +412,10 @@ final class OffsetPanel {
         // 1.38:1 against that track, where every other stop in this panel reads 12.99:1.
         seekBar.setHaloTintList(ContextCompat.getColorStateList(ctx, R.color.focus_halo));
         seekBar.setThumbStrokeColor(ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        // Not @dimen/focus_ring_width, the one place that does not follow it: a Material 3 handle is
+        // 4dp wide, and a rim as thick as the ring elsewhere leaves no thumb between its two edges —
+        // the coral marker turns into a white sliver. What carries this stop on a television is the
+        // halo, which is a shape appearing where there was none.
         seekBar.setThumbStrokeWidth(Utils.dpToPx(2));
 
         // D-pad step, scaled to the range instead of the slider's own one-step-per-press. Left to

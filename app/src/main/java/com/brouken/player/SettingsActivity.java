@@ -52,6 +52,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.snackbar.Snackbar;
@@ -686,6 +687,11 @@ public class SettingsActivity extends AppCompatActivity
                 if (Prefs.THEME_SYSTEM.equals(Prefs.getThemeMode(context))) {
                     Prefs.setThemeMode(context, Prefs.THEME_DARK);
                 }
+            }
+            // The same ring the panels' segmented control wears: a border that only changes colour is
+            // a focus event you have to be looking at already.
+            for (int i = 0; i < group.getChildCount(); i++) {
+                Utils.focusRing((MaterialButton) group.getChildAt(i));
             }
             // The holder is recycled, so the listener from its last binding has to go first.
             group.clearOnButtonCheckedListeners();

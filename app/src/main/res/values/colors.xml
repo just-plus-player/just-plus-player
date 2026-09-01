@@ -93,9 +93,6 @@
          keyed to how bright the ground is, but they were not: a picker row and an OffsetPanel pill sit
          on the same dark panel — @color/pill_off_fill is barely a fill — and took #40 and #20. -->
     <color name="ripple_chrome">#40FFFFFF</color>
-    <!-- The wash inside @color/focus_halo. Translucent, because it is drawn over the thumb it
-         rings and the thumb has to stay readable through it. -->
-    <color name="focus_halo_wash">#66FFFFFF</color>
 
     <!-- Segment highlights (see CustomDefaultTimeBar): a *_fill band across the segment plus a crisp
          boundary hairline in the lighter *_edge colour. Three-colour timeline system — coral =

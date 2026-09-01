@@ -2,6 +2,6 @@
 <!-- As @color/focus_ring, for a control that already has an outline to lose: the ring takes the
      outline's place rather than being drawn beside it. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true" android:color="@color/white" />
+    <item android:state_focused="true" android:color="?attr/colorOnSurface" />
     <item android:color="?attr/colorOutline" />
 </selector>

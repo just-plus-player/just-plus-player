@@ -48,8 +48,6 @@
     <!-- A row that is not the current one: opaque grey, not white at an alpha, so it stays a step
          below the current row even where the fill behind them differs. -->
     <color name="ink_row_inactive">#FFDDDDDD</color>
-    <!-- Ink on a brand-filled control, e.g. a selected offset pill. -->
-    <color name="ink_on_accent">#FF141414</color>
 
     <!-- Player chrome surfaces, all translucent so the picture keeps showing through. Two families:
          a near-opaque one the panels and pills are cut from, and the plainly translucent black of
@@ -63,7 +61,6 @@
     <!-- Hairlines, grooves and the unfilled part of a track. -->
     <color name="divider">#1AFFFFFF</color>
     <color name="track_white">#33FFFFFF</color>
-    <color name="pill_off_fill">#14FFFFFF</color>
     <!-- Buffered lead ahead of the playhead; used on network sources only, see the call site. -->
     <color name="buffered_white">#C0FFFFFF</color>
 

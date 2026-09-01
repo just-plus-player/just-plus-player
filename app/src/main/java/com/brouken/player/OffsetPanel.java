@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.util.TypedValue;
@@ -52,6 +53,32 @@ import java.util.Locale;
  * only holds the returned dialog so it can dismiss it.
  */
 final class OffsetPanel {
+
+    /**
+     * The panel's vertical rhythm, on Material's 8dp grid, at two densities.
+     *
+     * <p>Two, because a phone held sideways gives the card about 355dp and the panel at its roomy rhythm
+     * wants some 410dp — the weighted spacers this replaced hid that by collapsing to nothing, which is
+     * how Reset came to sit against the slider. Stated gaps have to admit the shortfall instead, so a
+     * short canvas gets the tight column and everything else gets the roomy one.
+     */
+    private static final class Rhythm {
+        private final int title;    // title to the first control
+        private final int block;    // between two things that are not one thing
+        private final int readout;  // a readout to the slider it belongs to
+        private final int pad;      // the card's own padding
+
+        static Rhythm of(final Configuration cfg) {
+            return cfg.screenHeightDp < 500 ? new Rhythm(16, 16, 4, 16) : new Rhythm(24, 32, 8, 24);
+        }
+
+        private Rhythm(int title, int block, int readout, int pad) {
+            this.title = Utils.dpToPx(title);
+            this.block = Utils.dpToPx(block);
+            this.readout = Utils.dpToPx(readout);
+            this.pad = Utils.dpToPx(pad);
+        }
+    }
 
     interface Listener {
         void onOffsetChanged(double sec);
@@ -113,21 +140,21 @@ final class OffsetPanel {
     }
 
     /**
-     * @param insetSource view used to read the window insets for the panel padding (any attached view)
-     * @param accent      brand accent for the readout, track and thumb
+     * @param accent brand accent for the readout, track and thumb
      */
-    static Dialog create(final Activity activity, final UiMetrics ui, final View insetSource,
+    static Dialog create(final Activity activity, final UiMetrics ui,
                          final int accent, final String title, final double maxSec,
                          final double stepSec, final Line... lines) {
-        return create(activity, ui, insetSource, accent, title, maxSec, stepSec, null, lines);
+        return create(activity, ui, accent, title, maxSec, stepSec, null, lines);
     }
 
     /**
      * @param choices picked rather than nudged, drawn above the sliders; null or empty for none
      */
-    static Dialog create(final Activity activity, final UiMetrics ui, final View insetSource,
+    static Dialog create(final Activity activity, final UiMetrics ui,
                          final int accent, final String title, final double maxSec,
                          final double stepSec, final Choice[] choices, final Line... lines) {
+        final Rhythm rhythm = Rhythm.of(activity.getResources().getConfiguration());
         final LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
 
@@ -139,8 +166,8 @@ final class OffsetPanel {
         header.setTypeface(Typeface.DEFAULT_BOLD);
         // Space, not a rule: the hairline that used to sit here had a caption under it, and once the
         // caption went it landed a few pixels above the row of pills and read as their top border.
-        header.setPadding(0, 0, 0, Utils.dpToPx(20));
         root.addView(header);
+        root.addView(gap(activity, rhythm.title));
 
         final List<Runnable> resets = new ArrayList<>();
         final boolean picking = choices != null && choices.length > 0;
@@ -163,15 +190,24 @@ final class OffsetPanel {
         // for it. At the full size the panel did not fit its own window: the title was pushed off the
         // top and the reset pill off the bottom.
         final float valueSp = lines.length > 1 || picking ? ui.textClock() : ui.textValue();
+        // Fixed gaps on an 8dp grid rather than weighted spacers. The spacers shared out whatever the
+        // full-height panel had left over, so the rhythm was a different one on every screen — and on a
+        // phone in landscape what was left over was 8dp, which put Reset against the slider. A card sized
+        // to its content has nothing left over to share, so the gaps have to be stated.
+        boolean firstBlock = !picking;
         for (final Line line : lines) {
-            root.addView(verticalSpacer(activity));
-            final Slider bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp, resets);
+            if (!firstBlock) {
+                root.addView(gap(activity, rhythm.block));
+            }
+            firstBlock = false;
+            final Slider bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp,
+                    rhythm, resets);
             if (firstBar == null) {
                 firstBar = bar;
             }
         }
 
-        root.addView(verticalSpacer(activity));
+        root.addView(gap(activity, rhythm.block));
 
         // Outlined, like the segmented control above it: one button family for the whole panel. Material
         // draws its own focus and press states, which is what replaced the hand-drawn ring here.
@@ -197,14 +233,14 @@ final class OffsetPanel {
         });
         root.addView(reset);
 
-        Utils.padForPickerInsets(activity, ui, insetSource, root, Utils.dpToPx(24) + ui.overscanH(),
-                Utils.dpToPx(20), Utils.dpToPx(24));
+        // Only the sheet's own padding now: Utils.pickerWindow insets the card from the system bars
+        // and the overscan, so nothing here has to know about either.
+        root.setPadding(Utils.dpToPx(24), rhythm.pad, Utils.dpToPx(24), rhythm.pad);
 
         // Scrolled, because a clipped panel is a panel that lies: the readouts stayed on screen while
-        // the slider under the second one did not. fillViewport keeps the weighted spacers centring the
-        // content while it still fits, and the SeekBars drag across, so nothing fights the scroll.
+        // the slider under the second one did not. No fillViewport — nothing in here stretches now that
+        // the card is sized to its content, and the sliders drag across, so nothing fights the scroll.
         final ScrollView scroller = new ScrollView(activity);
-        scroller.setFillViewport(true);
         scroller.addView(root);
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
@@ -315,7 +351,7 @@ final class OffsetPanel {
     /** Caption, readout and slider for one offset. Returns its Slider; adds its reset to {@code resets}. */
     private static Slider addLine(final Activity activity, final UiMetrics ui, final LinearLayout root,
                                   final int accent, final Line line, final double maxSec,
-                                  final double stepSec, final float valueSp,
+                                  final double stepSec, final float valueSp, final Rhythm rhythm,
                                   final List<Runnable> resets) {
         final int trackBg = ContextCompat.getColor(activity, R.color.track_white);
         final int progressMax = (int) Math.round(2 * maxSec / stepSec);
@@ -329,11 +365,9 @@ final class OffsetPanel {
             caption.setTextColor(ContextCompat.getColor(activity, R.color.ink_medium));
             caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
             caption.setGravity(Gravity.CENTER);
-            // Asymmetric on purpose, and fixed rather than left to the weighted spacers: a caption
-            // belongs to what is under it, and the block above it needs a gap that does not vanish
-            // when the panel fills up. The spacers only share out what is left over — when there is
-            // nothing left over they collapse to nothing and two blocks end up touching.
-            caption.setPadding(0, ui.dpS(28), 0, Utils.dpToPx(4));
+            // A caption belongs to what is under it: the gap above it is the block's, drawn by the
+            // caller, and all it owns is the hair of space down to its own readout.
+            caption.setPadding(0, 0, 0, Utils.dpToPx(4));
             root.addView(caption);
         }
 
@@ -342,7 +376,7 @@ final class OffsetPanel {
         value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         value.setFontFeatureSettings("tnum"); // fixed-width digits: the readout stops twitching as it counts
         value.setGravity(Gravity.CENTER);
-        value.setPadding(0, 0, 0, Utils.dpToPx(20));
+        value.setPadding(0, 0, 0, rhythm.readout);
         root.addView(value);
 
         // Counted in steps, not in seconds: valueFrom/valueTo/stepSize are floats, and a Slider refuses
@@ -510,10 +544,10 @@ final class OffsetPanel {
         return context.getString(R.string.offset_seconds, number);
     }
 
-    private static View verticalSpacer(Activity activity) {
+    private static View gap(final Activity activity, final int heightPx) {
         final View spacer = new View(activity);
         spacer.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+                ViewGroup.LayoutParams.MATCH_PARENT, heightPx));
         return spacer;
     }
 }

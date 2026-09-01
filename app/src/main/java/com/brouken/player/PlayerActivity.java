@@ -3831,7 +3831,7 @@ public class PlayerActivity extends Activity {
         }
         final OffsetPanel.Choice[] choices = hasSkipSegment()
                 ? new OffsetPanel.Choice[]{ skipModeChoice() } : new OffsetPanel.Choice[0];
-        skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
+        skipOffsetDialog = OffsetPanel.create(this, ui,
                 brandColor(),   // coral, matches the skip timeline highlight
                 getString(R.string.skip_session_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC, choices,
                 // Captioned only while it shares the panel with the row above it; alone it is the panel.
@@ -3889,7 +3889,7 @@ public class PlayerActivity extends Activity {
         if (lines.isEmpty()) {
             return;
         }
-        subtitleOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout, brandColor(),
+        subtitleOffsetDialog = OffsetPanel.create(this, ui, brandColor(),
                 getString(R.string.subtitle_offset_title), SUBTITLE_OFFSET_MAX_SEC, OFFSET_STEP_SEC,
                 lines.toArray(new OffsetPanel.Line[0]));
         showPickerDialog(subtitleOffsetDialog);
@@ -5963,7 +5963,8 @@ public class PlayerActivity extends Activity {
         // them. Use a FIXED inset captured now (the status bar is visible while the controls — and thus this
         // dialog — are shown): a dynamic inset listener would drop to 0 when hideController() flips the
         // activity to immersive flags, making the list visibly "jump" up under the still-visible status bar.
-        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
+        // The rows carry their own side padding; the card only keeps them off its rounded ends.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
 
         if (playlistDialog != null) {
             playlistDialog.dismiss();
@@ -6202,7 +6203,8 @@ public class PlayerActivity extends Activity {
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
-        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
+        // The rows carry their own side padding; the card only keeps them off its rounded ends.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
 
         if (qualityDialog != null) {
             qualityDialog.dismiss();
@@ -6489,7 +6491,8 @@ public class PlayerActivity extends Activity {
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
-        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
+        // The rows carry their own side padding; the card only keeps them off its rounded ends.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
 
         if (menuDialog != null) {
             menuDialog.dismiss();
@@ -9202,7 +9205,7 @@ public class PlayerActivity extends Activity {
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
         }
-        sleepTimerDialog = DurationPanel.create(this, ui, coordinatorLayout, brandColor(),
+        sleepTimerDialog = DurationPanel.create(this, ui, brandColor(),
                 getString(R.string.sleep_timer_title), this::armSleepTimer);
         showPickerDialog(sleepTimerDialog);
     }

@@ -17,9 +17,11 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
+import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -62,6 +64,9 @@ import androidx.media3.common.util.Util;
 
 import com.google.android.material.textfield.TextInputLayout;
 import androidx.core.content.ContextCompat;
+
+import com.google.android.material.shape.MaterialShapeDrawable;
+import com.google.android.material.shape.ShapeAppearanceModel;
 
 import com.obsez.android.lib.filechooser.ChooserDialog;
 import com.sigpwned.chardet4j.Chardet;
@@ -507,70 +512,71 @@ class Utils {
     }
 
     /**
-     * Pads a side-panel's content for the system bars, the way every picker in this app wants it.
+     * The one window recipe every end-docked player panel uses: a Material 3 detached side sheet — a card
+     * inset from every edge with 16dp corners all round, over a dimmed picture, dismissible by a tap
+     * outside.
      *
-     * The status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
-     * room — but breathing room the content genuinely needs, since the window spans the full height and the
-     * camera cutout lives up there. Hence the height is read IGNORING VISIBILITY: {@code getInsets()} reports
-     * zero for a bar that is currently hidden, and a panel opened from another panel (the skip-offset and
-     * sleep-timer panels come off a side menu, which has already turned the bars off) would then get no top
-     * padding at all and put its header under the cutout. The playlist panel only ever escaped this by being
-     * opened straight off the controls, while the bars were still up.
+     * <p>Not {@code SideSheetDialog}, deliberately. That component is a fullscreen window, and a fullscreen
+     * dialog window makes OxygenOS treat the panel as immersive and apply its two-swipe back-gesture guard,
+     * where a plain window closes on one back. The scrim comes from the window's own dim instead.
      *
-     * In portrait the status-bar height reads well; landscape is much shorter (and its status-bar inset can
-     * include the camera cutout), where that same height looks oversized — use a compact fixed inset there.
-     * Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
-     *
-     * @param insetSource any attached view, used to read the window insets
-     * @param target      the view whose padding is set (horizontal padding comes from the caller's own grid)
-     */
-    /**
-     * The one window recipe every end-docked player panel uses: docked to the end edge, one device-classed
-     * width, the chrome surface behind it, and dismissible by a tap outside.
-     *
-     * <p>Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the panel
-     * as immersive and apply its two-swipe back-gesture guard, where a plain window closes on one back.
+     * <p>The system bars are a margin here, not padding. A flat fill could run under the status bar
+     * unnoticed; a card with a visible corner cannot, so what used to inset the content now insets the
+     * card, and the content keeps only the padding its own design asks for. The heights are read
+     * IGNORING VISIBILITY: a panel opened from another panel arrives with the bars already hidden, and
+     * {@code getInsets()} would report zero and put the card's corner under the cutout.
      */
     public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
                                     final View content) {
-        dialog.setContentView(content);
+        // 16dp is Material's own margin for a detached sheet. A television wants its overscan instead —
+        // the card has an edge to lose, where the full-bleed fill before it had none.
+        final int hMargin = Math.max(dpToPx(16), ui.overscanH());
+        final int vMargin = Math.max(dpToPx(16), ui.overscanV());
+        int barTop = 0;
+        int barBottom = 0;
+        final WindowInsets insets = activity.getWindow().getDecorView().getRootWindowInsets();
+        if (insets != null) {
+            if (Build.VERSION.SDK_INT >= 30) {
+                barTop = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
+                barBottom = insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom;
+            } else {
+                barTop = insets.getSystemWindowInsetTop();
+                barBottom = insets.getSystemWindowInsetBottom();
+            }
+        }
+
+        final MaterialShapeDrawable card = new MaterialShapeDrawable(
+                ShapeAppearanceModel.builder().setAllCornerSizes(dpToPx(16)).build());
+        card.setFillColor(ColorStateList.valueOf(
+                ContextCompat.getColor(activity, R.color.sheet_surface)));
+        content.setBackground(card);
+        content.setClipToOutline(true); // so a full-bleed row's ripple stops at the rounded end
+
+        final FrameLayout host = new FrameLayout(activity);
+        final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL);
+        lp.setMargins(hMargin, barTop + vMargin, hMargin, barBottom + vMargin);
+        host.addView(content, lp);
+
+        dialog.setContentView(host);
         dialog.setCanceledOnTouchOutside(true);
         final Window window = dialog.getWindow();
         if (window == null) {
             return;
         }
-        window.setLayout(ui.pickerWidthPx(activity.getResources().getConfiguration()),
+        // The window carries the card plus its margins, so the card itself keeps the width the panel was
+        // designed at. Capped short of the screen so the window never becomes a fullscreen one.
+        final int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+        window.setLayout(
+                Math.min(screenW - dpToPx(8),
+                        ui.pickerWidthPx(activity.getResources().getConfiguration()) + 2 * hMargin),
                 ViewGroup.LayoutParams.MATCH_PARENT);
         window.setGravity(Gravity.END);
-        window.setBackgroundDrawable(
-                new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
-    }
-
-    public static void padForPickerInsets(final Activity activity, final UiMetrics ui, final View insetSource,
-                                         final View target, final int hPad,
-                                         final int extraTopPx, final int extraBottomPx) {
-        final boolean landscape = activity.getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        int padTop = landscape ? ui.pickerTopPadLand() : ui.dp(24);
-        int padBottom = ui.overscanV();
-        final WindowInsets rootInsets = insetSource.getRootWindowInsets();
-        if (rootInsets != null) {
-            if (Build.VERSION.SDK_INT >= 30) {
-                if (!landscape) {
-                    padTop = rootInsets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
-                }
-                padBottom = rootInsets.getInsetsIgnoringVisibility(
-                        WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
-            } else {
-                // No ignoring-visibility variant before 30, and the legacy inset drops to 0 just the same
-                // once the bars are off — so the floor above stands in for it.
-                if (!landscape) {
-                    padTop = Math.max(padTop, rootInsets.getSystemWindowInsetTop());
-                }
-                padBottom = Math.max(padBottom, rootInsets.getSystemWindowInsetBottom() + ui.overscanV());
-            }
-        }
-        target.setPadding(hPad, padTop + extraTopPx, hPad, padBottom + extraBottomPx);
+        window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        // The picture behind a modal sheet steps back rather than competing with it.
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        window.setDimAmount(0.4f);
     }
 
     public static String formatMilis(long time) {

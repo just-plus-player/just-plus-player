@@ -54,6 +54,9 @@
          @color/ui_controls_background further down. What used to be four names was two pairs 2/255 and
          1/255 apart — close enough that nothing could have been choosing between them on purpose. -->
     <color name="chrome_surface">#F0141414</color>
+    <!-- The panels are Material detached side sheets: a card over a dimmed picture, so the tone is
+         the chrome one at full opacity. Nothing shows through a sheet that has its own scrim. -->
+    <color name="sheet_surface">#FF141414</color>
     <color name="badge_scrim">#CC000000</color>
     <color name="placeholder_card">#FF333333</color>
     <color name="thumb_box">#FF2A2A2A</color>

@@ -10,7 +10,7 @@
       android:layoutDirection="ltr">
   </FrameLayout>
 
-  <FrameLayout android:id="@+id/exo_bottom_bar"
+  <com.brouken.player.BottomBarLayout android:id="@+id/exo_bottom_bar"
       android:layout_width="match_parent"
       android:layout_height="@dimen/exo_styled_bottom_bar_height"
       android:layout_marginTop="@dimen/exo_styled_bottom_bar_margin_top"
@@ -86,7 +86,7 @@
 
     </HorizontalScrollView>
 
-  </FrameLayout>
+  </com.brouken.player.BottomBarLayout>
 
   <com.brouken.player.CustomDefaultTimeBar android:id="@+id/exo_progress"
       android:layout_width="match_parent"

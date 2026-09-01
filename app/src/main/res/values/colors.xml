@@ -7,7 +7,9 @@
     <color name="brand_ramp_start">#FFFF6E3C</color>
     <color name="brand_ramp_end">#FFFF0D63</color>
     <!-- M3 primary container (switch track when on, tonal surfaces): the brand at container tone.
-         One value for both day and night — a deep coral reads on white and on the dark settings list alike. -->
+         One value for both day and night — a deep coral reads on white and on the dark settings list alike.
+         The player's current picker row takes it too, so a selected row and a switch that is on are the
+         same colour rather than two different dimmings of the same accent. -->
     <color name="brand_container">#FF7A2019</color>
     <!-- M3 on-primary: the ink that sits on the brand, e.g. the switch handle when it is on. -->
     <color name="brand_on">#FF5F1411</color>

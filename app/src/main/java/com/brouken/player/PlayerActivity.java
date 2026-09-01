@@ -4133,17 +4133,6 @@ public class PlayerActivity extends Activity {
         return (alpha << 24) | (brandColor() & 0x00FFFFFF);
     }
 
-    /** Brand accent at reduced brightness (same hue/saturation) for large selected-row fills, where full
-     *  brand is too intense on the eyes. Scaling RGB proportionally lowers only the value, unlike alpha
-     *  blending which desaturates the color against the dark panel. */
-    private int brandColorDim() {
-        final int c = brandColor();
-        final float f = 0.72f; // tweakable: lower = darker
-        return Color.rgb(Math.round(Color.red(c) * f),
-                Math.round(Color.green(c) * f),
-                Math.round(Color.blue(c) * f));
-    }
-
     // Show a picker panel (audio/subtitle/playlist/quality/skip). OxygenOS/ColorOS applies a fullscreen
     // back-gesture guard (the "swipe again to go back" toast → two swipes) while the app is immersive, i.e.
     // system bars hidden. Our pickers call hideController(), which hides the bars, so keep the bars visible
@@ -5874,7 +5863,8 @@ public class PlayerActivity extends Activity {
             // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent
+                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -6156,7 +6146,8 @@ public class PlayerActivity extends Activity {
             row.setMinimumHeight(ui.rowMinHeight());
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent
+                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -6413,7 +6404,8 @@ public class PlayerActivity extends Activity {
             row.setMinimumHeight(ui.rowMinHeight());
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent
+                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);

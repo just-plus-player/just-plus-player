@@ -178,6 +178,7 @@ import com.brouken.player.update.UpdateInfo;
 import com.brouken.player.update.UpdateUi;
 import com.brouken.player.update.Updater;
 import com.bumptech.glide.Glide;
+import com.google.android.material.button.MaterialButton;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
@@ -5739,6 +5740,178 @@ public class PlayerActivity extends Activity {
         return state.toString().trim();
     }
 
+    /**
+     * The frame beside a playlist name, or above it on a card: the artwork the sender sent and, over it,
+     * the file's number — in the accent when that file is the one playing, which is the whole of how the
+     * panel says so. With no artwork the frame says that with a glyph, and the number stays where it
+     * sits on every frame that does have one.
+     */
+    private FrameLayout playlistFrame(final Context ctx, final int index, final Uri artwork,
+                                      final boolean playing) {
+        final FrameLayout box = new FrameLayout(ctx);
+        box.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
+                ContextCompat.getColor(ctx, R.color.thumb_box)));
+        // The row's own radius, so a frame inside a row reads as one object with it rather than as a
+        // rounded thing sitting on another rounded thing at a different rate.
+        final int corner = Utils.dpToPx(8);
+        box.setClipToOutline(true);
+        box.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), corner);
+            }
+        });
+
+        final ImageView poster = new ImageView(ctx);
+        // Fitted, not cropped: a still is 16:9 and fills the frame, and a tall poster keeps its whole
+        // picture with the frame's own colour beside it rather than losing its head and its feet.
+        poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        box.addView(poster, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (artwork != null) {
+            Glide.with(this).load(artwork).into(poster);
+        } else {
+            // Nothing was sent for this one. A frame standing empty reads as a fault, and the number
+            // blown up to fill it reads as a stand-in for the picture rather than as the file's place in
+            // the list — so the frame says "no preview" in the quietest way there is, and the number
+            // stays exactly where it sits on every frame that does have one.
+            poster.setVisibility(View.GONE);
+            final ImageView blank = new ImageView(ctx);
+            blank.setImageResource(R.drawable.ic_movie_24dp);
+            blank.setImageTintList(ColorStateList.valueOf(ColorUtils.setAlphaComponent(
+                    MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                            ContextCompat.getColor(ctx, R.color.ink_secondary)), 0x5C)));
+            final FrameLayout.LayoutParams blankLp = new FrameLayout.LayoutParams(
+                    ui.dpS(24), ui.dpS(24));
+            blankLp.gravity = Gravity.CENTER;
+            box.addView(blank, blankLp);
+        }
+        final TextView marker = metaChip(ctx, String.valueOf(index + 1));
+        if (playing) {
+            // The one playing says so in the marker it already has, rather than in a second thing beside
+            // it: the accent, with the ink that belongs to the accent. That pair is 4.88:1 — where the
+            // white this label wears over its own scrim would be 4.31:1 on the coral, under the 4.5 small
+            // text asks for. The word survives for a screen reader, which is what colour alone would
+            // otherwise cost.
+            marker.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer,
+                    ContextCompat.getColor(ctx, R.color.brand_accent_on)));
+            final GradientDrawable accent = new GradientDrawable();
+            accent.setCornerRadius(Utils.dpToPx(6));
+            accent.setColor(MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
+                    ContextCompat.getColor(ctx, R.color.brand_accent)));
+            marker.setBackground(accent);
+            marker.setContentDescription(getString(R.string.playlist_playing));
+        }
+        final FrameLayout.LayoutParams markerLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ui.dpS(20));
+        markerLp.gravity = Gravity.TOP | Gravity.START;
+        markerLp.setMargins(Utils.dpToPx(6), Utils.dpToPx(6), 0, 0);
+        box.addView(marker, markerLp);
+        return box;
+    }
+
+    /** One playlist row: the frame, the name, and the word for the one playing at the end of it. */
+    private View playlistRow(final Context ctx, final int index, final CharSequence title,
+                             final Uri artwork, final boolean isCurrent) {
+        final LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
+        row.setMinimumHeight(ui.rowMinHeight());
+
+        // 16:9, the shape of what is inside it, and the shape the episode lists already use.
+        final LinearLayout.LayoutParams frameLp = new LinearLayout.LayoutParams(ui.dpS(88), ui.dpS(50));
+        frameLp.setMarginEnd(Utils.dpToPx(12));
+        frameLp.gravity = Gravity.CENTER_VERTICAL;
+        row.addView(playlistFrame(ctx, index, artwork, isCurrent), frameLp);
+
+        final LinearLayout textBlock = new LinearLayout(ctx);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        final TextView titleText = new TextView(ctx);
+        titleText.setText(title);
+        titleText.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
+        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
+        if (isCurrent) {
+            titleText.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        textBlock.addView(titleText);
+        final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        blockLp.gravity = Gravity.CENTER_VERTICAL;
+        row.addView(textBlock, blockLp);
+        fitLongText(row, titleText);
+        return row;
+    }
+
+    /**
+     * One playlist card: the frame at a size worth looking at, the number over it, and the name under.
+     * This is what the frames are for — a folder of camera files tells its items apart by what is in
+     * them, where the names are one word and a number.
+     */
+    private View playlistCard(final Context ctx, final int index, final CharSequence title,
+                              final Uri artwork, final boolean isCurrent, final int cellWidthPx) {
+        final LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(6);
+        card.setPadding(pad, pad, pad, Utils.dpToPx(8));
+
+        card.addView(playlistFrame(ctx, index, artwork, isCurrent),
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        (cellWidthPx - 2 * pad) * 9 / 16));
+
+        final TextView titleText = new TextView(ctx);
+        titleText.setText(title);
+        titleText.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
+        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
+        if (isCurrent) {
+            titleText.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        final LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleLp.topMargin = Utils.dpToPx(8);
+        card.addView(titleText, titleLp);
+
+        // One line, and an ellipsis where it runs out. Two lines kept every card the same height even
+        // when the names were short, but it paid for that with a blank line under most of them; a single
+        // line is the same height for every card without reserving room nothing is going to use. Not
+        // fitLongText's marquee either — in a rail it would leave every card that is not focused cut off
+        // mid-word, where an ellipsis says the name goes on.
+        titleText.setLines(1);
+        titleText.setEllipsize(TextUtils.TruncateAt.END);
+        return card;
+    }
+
+    /**
+     * A label over a frame, Material's way of putting one on an image: the full shape at label size in
+     * the label weight, on a scrim of its own rather than on the theme's surface — what is behind it is
+     * a picture, and a frame with no picture in it yet is the very colour a surface pill would be.
+     */
+    private TextView metaChip(final Context ctx, final CharSequence text) {
+        final TextView chip = new TextView(ctx);
+        chip.setText(text);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBadge());
+        chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        chip.setTextColor(Color.WHITE);
+        final GradientDrawable fill = new GradientDrawable();
+        // 6dp, not the pill the height would give: the frame it sits on is 8dp, and a label rounded to
+        // half of itself beside a corner that gentle reads as a different family. Under the frame's own
+        // radius, because it is the smaller box and sits 6dp inside it.
+        fill.setCornerRadius(Utils.dpToPx(6));
+        fill.setColor(ContextCompat.getColor(ctx, R.color.badge_scrim));
+        chip.setBackground(fill);
+        // A stated height with the radius at half of it: a pill, and every pill in the panel the same
+        // height whatever is in it. Font padding off, so the text sits on the pill's centre line rather
+        // than on the centre of the room the font asks for.
+        chip.setGravity(Gravity.CENTER);
+        chip.setIncludeFontPadding(false);
+        chip.setPadding(Utils.dpToPx(8), 0, Utils.dpToPx(8), 0);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ui.dpS(20));
+        lp.setMarginEnd(Utils.dpToPx(4));
+        chip.setLayoutParams(lp);
+        return chip;
+    }
+
     // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
     // clash with the poster's rounded clip. Reused by the header poster and the playlist rows.
     private TextView createPosterNumberBadge() {
@@ -5746,11 +5919,13 @@ public class PlayerActivity extends Activity {
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        lp.setMargins(Utils.dpToPx(3), Utils.dpToPx(3), 0, 0);
+        lp.setMargins(Utils.dpToPx(6), Utils.dpToPx(6), 0, 0);
         badge.setLayoutParams(lp);
         final GradientDrawable bg = new GradientDrawable();
         bg.setColor(ContextCompat.getColor(this, R.color.badge_scrim));
-        bg.setCornerRadius(Utils.dpToPx(3));
+        // The same radius as the panel's labels, and inset clear of the frame's own corner rather than
+        // sitting on the curve of it.
+        bg.setCornerRadius(Utils.dpToPx(6));
         badge.setBackground(bg);
         badge.setGravity(Gravity.CENTER);
         badge.setMinWidth(Utils.dpToPx(18));
@@ -5821,7 +5996,6 @@ public class PlayerActivity extends Activity {
         }
         final int count = mediaItems.size();
         final int current = fromPlayer ? player.getCurrentMediaItemIndex() : apiPlaylistStartIndex;
-        final int radius = Utils.dpToPx(4);
         final View[] currentRow = new View[1];
 
         // The panels follow the appearance choice, like the dialogs do — see
@@ -5829,31 +6003,92 @@ public class PlayerActivity extends Activity {
         // light panel and AMOLED gets a black one.
         final Context ctx = Utils.dialogContext(this);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
-        // What "chosen" looks like, shared with the toggle groups and the settings switch.
-        final int selectedFill = MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
-                ContextCompat.getColor(ctx, R.color.brand_container));
-        final int onSelected = MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer, Color.WHITE);
         final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
+        // Frames are a landscape idea: a rail of them needs width to run along and gives up the height
+        // a list would have used. Held upright there is no width and nothing to scroll sideways, so the
+        // panel is a list and does not offer a choice it cannot honour. The choice itself is remembered
+        // for when the phone is turned back.
+        final boolean landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        final boolean grid = landscape && mPrefs != null && mPrefs.playlistGrid;
+
+        // The panel's name, how much is in it, and the one control it has.
+        final LinearLayout headerRow = new LinearLayout(ctx);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        // The name carries the weight and the count follows it in the quieter ink, because one of them
+        // is what the panel is and the other is how much of it there is. Both on one baseline, and the
+        // pair starts on the line the frames below it start on, not on the panel's own padding.
         final TextView header = new TextView(ctx);
         header.setText(getString(R.string.playlist));
         header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
-        listLayout.addView(header);
+        header.setPadding(Utils.dpToPx(8), Utils.dpToPx(10), 0, Utils.dpToPx(10));
+        headerRow.addView(header);
 
-        final View divider = new View(ctx);
-        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-        dividerLp.bottomMargin = Utils.dpToPx(4);
-        divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
-                ContextCompat.getColor(ctx, R.color.divider)));
-        listLayout.addView(divider);
+        final TextView headerCount = new TextView(ctx);
+        headerCount.setText(getResources().getQuantityString(R.plurals.playlist_items, count, count));
+        headerCount.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.ink_secondary)));
+        headerCount.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        final LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        countLp.setMarginStart(Utils.dpToPx(8));
+        headerRow.addView(headerCount, countLp);
+
+        // Rows or frames, remembered rather than asked again: a viewer who wants pictures wants them for
+        // every playlist, not for this one. The icon shows what the press will give, not where you are.
+        if (landscape) {
+            final MaterialButton modeButton = new MaterialButton(ctx, null,
+                    com.google.android.material.R.attr.materialIconButtonStyle);
+            modeButton.setIconResource(grid ? R.drawable.ic_view_list_24dp : R.drawable.ic_view_grid_24dp);
+            modeButton.setIconTint(ColorStateList.valueOf(MaterialColors.getColor(ctx,
+                    R.attr.colorOnSurfaceVariant, ContextCompat.getColor(ctx, R.color.ink_secondary))));
+            modeButton.setContentDescription(getString(grid
+                    ? R.string.playlist_view_list : R.string.playlist_view_grid));
+            modeButton.setInsetTop(0);
+            modeButton.setInsetBottom(0);
+            modeButton.setIconSize(ui.dpS(24));
+            modeButton.setMinWidth(ui.clusterBox());
+            modeButton.setMinHeight(ui.clusterBox());
+            Utils.focusRing(modeButton);
+            // The panel is built from scratch every time it opens, so switching is opening it again — and
+            // showPlaylistDialog dismisses the one on screen itself before it builds the next.
+            modeButton.setOnClickListener(v -> {
+                mPrefs.updatePlaylistGrid(!grid);
+                showPlaylistDialog();
+            });
+            headerRow.addView(modeButton);
+        }
+        listLayout.addView(headerRow);
+
+        // A card keeps a stated width and lets the next one show past the panel's edge, which is what
+        // says there is more of it; 190dp is about the narrowest a 16:9 frame can be and still be a
+        // picture rather than a stamp, and it grows with the device class like every other box here.
+        final int cellWidth = ui.dpS(190);
+        LinearLayout gridRow = null;
+        HorizontalScrollView railScroller = null;
+        if (grid) {
+            railScroller = new HorizontalScrollView(ctx);
+            railScroller.setHorizontalScrollBarEnabled(false);
+            // The rail is cut by the panel's edge wherever it happens to be scrolled to, so the cut is
+            // faded rather than sliced — that fade is also the only thing saying there is more to the
+            // right. The padding is not clipped, so the first and last cards keep the panel's margin
+            // while the ones between it scroll under it.
+            railScroller.setHorizontalFadingEdgeEnabled(true);
+            railScroller.setFadingEdgeLength(ui.dpS(28));
+            railScroller.setClipToPadding(false);
+            gridRow = new LinearLayout(ctx);
+            gridRow.setOrientation(LinearLayout.HORIZONTAL);
+            railScroller.addView(gridRow);
+            listLayout.addView(railScroller);
+        }
 
         for (int i = 0; i < count; i++) {
             final int index = i;
@@ -5866,78 +6101,24 @@ public class PlayerActivity extends Activity {
             final Uri artwork = md != null ? md.artworkUri : null;
             final boolean isCurrent = i == current;
 
-            final LinearLayout row = new LinearLayout(ctx);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
+            final View row = grid
+                    ? playlistCard(ctx, i, title, artwork, isCurrent, cellWidth)
+                    : playlistRow(ctx, i, title, artwork, isCurrent);
             row.setClickable(true);
             row.setFocusable(true);
-            row.setMinimumHeight(ui.rowMinHeight());
-            // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
-            row.setBackground(Utils.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
+            // Nothing is painted under the one playing. Two attempts said otherwise and both measured
+            // badly: the coral of the other pickers turned the row brown, and the neutral step that
+            // replaced it came out at 1.29:1 in the dark appearance, 1.16:1 in the light one, and at
+            // exactly nothing under AMOLED, where the two container tones are the same colour. What says
+            // it now is the glyph in the picture and the weight of the name — one mark the eye finds and
+            // one that survives a monochrome screenshot — leaving the fill to the focus ring, whose job
+            // "this cell" already was.
+            row.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT));
+            // What a screen reader needs to hear, and free: the row is the selected one in its list.
+            row.setSelected(isCurrent);
             if (isCurrent) {
                 currentRow[0] = row;
             }
-
-            final FrameLayout box = new FrameLayout(ctx);
-            final LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(56));
-            boxLp.setMarginEnd(Utils.dpToPx(12));
-            boxLp.gravity = Gravity.CENTER_VERTICAL;
-            box.setLayoutParams(boxLp);
-            box.setMinimumWidth(Utils.dpToPx(40));
-            box.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
-                        ContextCompat.getColor(ctx, R.color.thumb_box)));
-            box.setClipToOutline(true);
-            box.setOutlineProvider(new ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
-                }
-            });
-
-            final ImageView poster = new ImageView(ctx);
-            poster.setLayoutParams(new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT));
-            poster.setAdjustViewBounds(true);
-            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            box.addView(poster);
-
-            if (artwork != null) {
-                Glide.with(this).load(artwork).into(poster);
-                final TextView numberChip = createPosterNumberBadge();
-                numberChip.setText(String.valueOf(i + 1));
-                numberChip.setVisibility(View.VISIBLE);
-                box.addView(numberChip);
-            } else {
-                poster.setVisibility(View.GONE);
-                final TextView number = new TextView(ctx);
-                number.setText(String.valueOf(i + 1));
-                number.setTypeface(Typeface.DEFAULT_BOLD);
-                number.setLayoutParams(new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-                number.setGravity(Gravity.CENTER);
-                number.setMinWidth(Utils.dpToPx(40));
-                number.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
-                number.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textListNumber());
-                box.addView(number);
-            }
-            row.addView(box);
-
-            final TextView titleText = new TextView(ctx);
-            titleText.setText(title);
-            titleText.setTextColor(isCurrent ? onSelected : onSurface);
-            titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
-            if (isCurrent) {
-                titleText.setTypeface(Typeface.DEFAULT_BOLD);
-            }
-            final LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            titleLp.gravity = Gravity.CENTER_VERTICAL;
-            titleText.setLayoutParams(titleLp);
-            row.addView(titleText);
-            fitLongText(row, titleText);
 
             row.setOnClickListener(v -> {
                 if (player != null) {
@@ -5960,7 +6141,17 @@ public class PlayerActivity extends Activity {
                 }
             });
 
-            listLayout.addView(row);
+            if (grid) {
+                gridRow.addView(row, new LinearLayout.LayoutParams(
+                        cellWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else {
+                final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                // Each row carries its own rounded fill, so they are separated rather than stacked into
+                // one column of touching rectangles.
+                rowLp.bottomMargin = Utils.dpToPx(4);
+                listLayout.addView(row, rowLp);
+            }
         }
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
@@ -5976,11 +6167,25 @@ public class PlayerActivity extends Activity {
             playlistDialog.dismiss();
         }
         playlistDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, playlistDialog, scrollView);
+        Utils.pickerWindow(this, ui, playlistDialog, scrollView,
+                grid ? Utils.Panel.RAIL : Utils.Panel.LIST);
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
-        if (currentRow[0] != null) {
-            currentRow[0].post(() -> currentRow[0].requestFocus());
+        final View currentCell = currentRow[0];
+        final HorizontalScrollView rail = railScroller;
+        if (currentCell != null) {
+            currentCell.post(() -> {
+                // A remote is brought to the item playing by taking the focus. A finger is not: nothing
+                // is focusable in touch mode, so the focus request is refused and neither scroller moves
+                // — which is why a playlist of two hundred files used to open at the first one however
+                // far in the viewer had got. Scroll it as well, on whichever axis this arrangement runs.
+                currentCell.requestFocus();
+                if (rail != null) {
+                    rail.scrollTo(currentCell.getLeft() - Utils.dpToPx(8), 0);
+                } else {
+                    scrollView.scrollTo(0, currentCell.getTop() - Utils.dpToPx(8));
+                }
+            });
         }
     }
 
@@ -6219,7 +6424,7 @@ public class PlayerActivity extends Activity {
             qualityDialog.dismiss();
         }
         qualityDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, qualityDialog, scrollView);
+        Utils.pickerWindow(this, ui, qualityDialog, scrollView, Utils.Panel.OPTIONS);
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
@@ -6359,9 +6564,9 @@ public class PlayerActivity extends Activity {
         return caption;
     }
 
-    // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
+    // The panel every picker shares, matching the quality/playlist menus.
     private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
-        showSideMenu(menuTitle, items, 34, 48);
+        showSideMenu(menuTitle, items, 34, 48, Utils.Panel.OPTIONS);
     }
 
     /**
@@ -6369,8 +6574,11 @@ public class PlayerActivity extends Activity {
      *                  name that already says everything; a list where the poster is what tells the
      *                  rows apart — search results for a name typed from across the room — asks for
      *                  bigger, and nothing else about the panel changes.
+     * @param kind      {@link Utils.Panel#LIST} for a panel whose rows carry artwork and a title, which
+     *                  gets the wider card; {@link Utils.Panel#OPTIONS} for a list of words.
      */
-    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp,
+                              Utils.Panel kind) {
         if (items == null || items.isEmpty()) {
             return;
         }
@@ -6540,7 +6748,7 @@ public class PlayerActivity extends Activity {
             menuDialog.dismiss();
         }
         menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, menuDialog, scrollView);
+        Utils.pickerWindow(this, ui, menuDialog, scrollView, kind);
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
         if (focus != null) {
@@ -8121,8 +8329,9 @@ public class PlayerActivity extends Activity {
         // Here as well as on the season list: a series with one season skips that step entirely, and
         // typing the numbers must not end up being something only multi-season shows offer.
         items.add(0, typeNumbersRow(title, episodes));
-        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster.
-        showSideMenu(title.name, items, 72, 41);
+        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster — and an
+        // episode name beside one is what the wider card exists for.
+        showSideMenu(title.name, items, 72, 41, Utils.Panel.LIST);
     }
 
     /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */

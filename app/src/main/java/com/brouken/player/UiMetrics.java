@@ -108,7 +108,6 @@ final class UiMetrics {
 
     /** Adaptive picker side-panel width in px: never covers a narrow phone, docks on tablet/TV. */
     int pickerWidthPx(Configuration cfg) {
-        final int windowW = cfg.screenWidthDp;
         final int preferred;
         switch (deviceClass) {
             case TV:            preferred = 420; break;
@@ -116,11 +115,43 @@ final class UiMetrics {
             case TABLET_MEDIUM: preferred = 400; break;
             default:            preferred = 360; break;
         }
+        return panelWidthPx(cfg, preferred);
+    }
+
+    /**
+     * Width for a panel whose rows carry artwork and a filename, rather than a word.
+     *
+     * <p>The width above is sized for "1.5×" and "Off". A playlist row holds
+     * {@code The.Dark.Knight.2008.BDRemux.2160p.DV.HDR.mkv} — 46 characters — and at 360dp, once the
+     * poster and the paddings have taken their share, some 270dp reach the name: about thirty
+     * characters. That shortfall is why the row has two different ways of coping with a name that does
+     * not fit at all (see PlayerActivity.fitLongText), and no amount of coping invents room.
+     *
+     * <p>640dp is Material's own ceiling for a sheet ({@code material_bottom_sheet_max_width}), and the
+     * caps below still apply, so a phone in landscape lands at 523dp and a television at 576dp. A
+     * narrow phone in portrait is already at its cap and does not move.
+     */
+    int listWidthPx(Configuration cfg) {
+        return panelWidthPx(cfg, 640);
+    }
+
+    /**
+     * Width for a rail of frames docked to the bottom edge. The caps above leave a strip of video beside
+     * a panel because a panel at the end edge takes width from the picture; a rail has already given up
+     * the height instead, so the strip it would leave buys nothing and costs it a frame — measured, the
+     * 60% landscape cap shows 2.7 cards where 85% shows 3.9.
+     */
+    int railWidthPx(Configuration cfg) {
+        return dp(Math.round(cfg.screenWidthDp * 0.85f));
+    }
+
+    private int panelWidthPx(Configuration cfg, int preferredDp) {
+        final int windowW = cfg.screenWidthDp;
         final int capPortrait = windowW - 56;                       // always leave a strip of video/scrim
         final int cap = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
                 ? Math.min(Math.round(windowW * 0.60f), capPortrait)
                 : capPortrait;
-        return dp(Math.min(preferred, cap));
+        return dp(Math.min(preferredDp, cap));
     }
 
     // ---- typography (sp; keeps user font-scale). Columns: PHONE / sw600 / sw720 / TV ----
@@ -145,7 +176,6 @@ final class UiMetrics {
     float textValue()       { return t(40, 44, 46, 48); }   // skip-offset readout
     float textAction()      { return t(15, 16, 16, 18); }   // reset pill
     float textPlaceholder() { return t(20, 21, 22, 22); }   // poster fallback
-    float textListNumber()  { return t(18, 19, 20, 20); }   // playlist row number
 
     /** True when a config change would not affect any adaptive size (skip the re-apply pass). */
     boolean sameClassAndWidth(UiMetrics other) {

@@ -169,6 +169,15 @@
     <string name="time_ends_at_inline">до %1$s</string>
     <string name="time_live">● ЕФІР</string>
     <string name="playlist">Список відтворення</string>
+    <plurals name="playlist_items">
+        <item quantity="one">%d файл</item>
+        <item quantity="few">%d файли</item>
+        <item quantity="many">%d файлів</item>
+        <item quantity="other">%d файла</item>
+    </plurals>
+    <string name="playlist_playing">Грає</string>
+    <string name="playlist_view_grid">Сітка</string>
+    <string name="playlist_view_list">Список</string>
     <string name="pref_map_dv7">Резервний варіант Dolby Vision profile 7</string>
     <string name="pref_map_dv7_on">Відтворення контенту Dolby Vision profile 7 на дисплеях HDR</string>
     <string name="pref_map_dv7_off">Відтворення вмісту UHD Blu-ray, що містить Dolby Vision, як є</string>

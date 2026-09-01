@@ -516,14 +516,45 @@ class Utils {
             return new Rational(format.width, format.height);
     }
 
+    /** What a panel holds, which decides how wide it gets and which edge it arrives from. */
+    public enum Panel {
+        /** A word per row: speed, sleep, audio, subtitles, quality, the overflow menu. */
+        OPTIONS,
+        /** Rows carrying artwork and a filename, which need the width Material allows a sheet. */
+        LIST,
+        /** The same rows turned on their side: one row of frames that scrolls sideways. */
+        RAIL,
+        /** A control layout of fixed proportions — a slider, a keypad — which needs its height. */
+        CONTROL
+    }
+
     /**
-     * The one window recipe every end-docked player panel uses: a Material 3 detached side sheet — a card
-     * inset from every edge with 16dp corners all round, over a dimmed picture, dismissible by a tap
-     * outside.
+     * The one window recipe every player panel uses: a Material 3 card over a dimmed picture,
+     * dismissible by a tap outside. Docked to the end edge and centred vertically, or docked to the
+     * bottom edge on a tall narrow window — see the anchor rule below.
      *
-     * <p>Not {@code SideSheetDialog}, deliberately. That component is a fullscreen window, and a fullscreen
-     * dialog window makes OxygenOS treat the panel as immersive and apply its two-swipe back-gesture guard,
-     * where a plain window closes on one back. The scrim comes from the window's own dim instead.
+     * <p>Not {@code SideSheetDialog} or {@code BottomSheetDialog}, deliberately. Both are fullscreen
+     * windows, and a fullscreen dialog window makes OxygenOS treat the panel as immersive and apply its
+     * two-swipe back-gesture guard, where a plain window closes on one back. The scrim comes from the
+     * window's own dim instead, and the window stays a hair narrower than the screen so it never becomes
+     * a fullscreen one. That is also why a bottom-docked panel here has no drag handle and no
+     * swipe-to-dismiss: it is a plain window, and a handle that promised a drag it cannot perform would
+     * be worse than no handle. It closes on a tap outside and on back, like every other panel.
+     *
+     * <p>The anchor follows the window, which is what Material's size classes ask for: the bottom edge
+     * belongs to a compact width that has the height to spare — in practice a phone held upright, where
+     * the bottom is where the thumb is and where a vertically centred card puts its first row halfway up
+     * a tall screen. Everywhere else the panel stays at the end edge. A phone or tablet held sideways is
+     * a compact-height window, where a sheet from the bottom has less room than this card has now — the
+     * skip panel alone stands 388dp tall on a television and 294dp on a phone in landscape. A tablet
+     * upright is past the compact width, so it keeps the side dock its width was chosen for. And a
+     * television has no bottom sheet in its own component set, an unreserved overscan strip along that
+     * edge, and every piece of its chrome there already.
+     *
+     * <p>{@link Panel#CONTROL} never takes the bottom edge whatever the window says. The subtitle
+     * offset panel is the reason: it retimes a line that is drawn at the bottom of the frame, live,
+     * while playback runs. A panel that covers the bottom of the picture deletes the very thing the
+     * viewer is reading to know whether the nudge was right.
      *
      * <p>The system bars are a margin here, not padding. A flat fill could run under the status bar
      * unnoticed; a card with a visible corner cannot, so what used to inset the content now insets the
@@ -532,8 +563,25 @@ class Utils {
      * {@code getInsets()} would report zero and put the card's corner under the cutout.
      */
     public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
-                                    final View content) {
+                                    final View content, final Panel kind) {
         final Configuration cfg = activity.getResources().getConfiguration();
+        // What decides the edge is the axis the content scrolls on, and the window only decides it for
+        // content that scrolls the ordinary way. A RAIL scrolls sideways: it wants width and has already
+        // given up height, and the bottom edge is the only shape that supplies width in a window a
+        // sideways phone's height — measured, a rail stands at 55% of that window where the same panel
+        // as a list stands at 84%, which is not a sheet any more. Everything that scrolls downward keeps
+        // the end edge unless the window is a phone held upright: Material's compact-width class is
+        // below 600dp, and 600 on both edges here means a phone held sideways — Expanded width over
+        // Compact height, the worst window there is for a sheet from the bottom — is never caught, and
+        // neither is a tablet, whose width is past compact either way up. A television never docks to the
+        // bottom: it has no bottom sheet in its own component set, its chrome is all at that edge, and
+        // the overscan strip there is the one this app under-reserves.
+        final boolean bottom = kind == Panel.RAIL
+                ? ui.deviceClass != UiMetrics.DeviceClass.TV
+                : kind != Panel.CONTROL && cfg.screenWidthDp < 600 && cfg.screenHeightDp >= 600;
+        final int panelWidth = kind == Panel.RAIL && bottom ? ui.railWidthPx(cfg)
+                : kind == Panel.LIST || kind == Panel.RAIL ? ui.listWidthPx(cfg)
+                : ui.pickerWidthPx(cfg);
         // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
         // the panel is what the viewer came for and the strip of video beside it is not worth the room.
         // A television wants its overscan instead — the card has an edge to lose, where the full-bleed
@@ -566,8 +614,20 @@ class Utils {
             }
         }
 
-        final MaterialShapeDrawable card = new MaterialShapeDrawable(
-                ShapeAppearanceModel.builder().setAllCornerSizes(dpToPx(16)).build());
+        // Docked at the bottom means docked: the two corners against the edge go square, the way
+        // Material draws a bottom sheet, so the card reads as attached rather than as a card that
+        // happens to be low. And it takes the radius Material gives that shape — 28dp, its extra-large
+        // corner — where a sheet at the end edge takes the large one, 16dp. Two shapes, two numbers,
+        // both Material's own.
+        final int corner = dpToPx(bottom ? 28 : 16);
+        final ShapeAppearanceModel.Builder shape = ShapeAppearanceModel.builder();
+        if (bottom) {
+            shape.setTopLeftCornerSize(corner).setTopRightCornerSize(corner)
+                    .setBottomLeftCornerSize(0).setBottomRightCornerSize(0);
+        } else {
+            shape.setAllCornerSizes(corner);
+        }
+        final MaterialShapeDrawable card = new MaterialShapeDrawable(shape.build());
         // From the content's own theme, not the player's: the panels follow the appearance choice, so
         // the card is light when the app is light and black under AMOLED.
         card.setFillColor(ColorStateList.valueOf(MaterialColors.getColor(
@@ -579,12 +639,22 @@ class Utils {
         // under CENTER_VERTICAL as a shift rather than a bound, so an uneven pair walks the card off the
         // top of the screen. Padding bounds it, and the margin left on the card is even.
         final FrameLayout host = new FrameLayout(activity);
-        host.setPadding(0, insetTop, 0, insetBottom);
+        // A sheet must not reach the top edge; the panels hide the status bar, so without a floor here a
+        // long playlist would grow into a full-screen dialog that arrived from the bottom.
+        host.setPadding(0, bottom ? Math.max(insetTop, dpToPx(56)) : insetTop, 0, insetBottom);
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ui.pickerWidthPx(cfg), ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.END | Gravity.CENTER_VERTICAL);
-        // Horizontal gravity is END, where a margin is a bound and the blocked edge can simply be added.
-        lp.setMargins(hMargin, vMargin, hMargin + insetEnd, vMargin);
+                panelWidth, ViewGroup.LayoutParams.WRAP_CONTENT,
+                bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
+                        : Gravity.END | Gravity.CENTER_VERTICAL);
+        if (bottom) {
+            // Even margins under CENTER_HORIZONTAL, and none at the bottom: the card sits on the edge,
+            // above whatever the navigation bar left of it (that inset is the host's padding).
+            lp.setMargins(hMargin, vMargin, hMargin, 0);
+        } else {
+            // Horizontal gravity is END, where a margin is a bound and the blocked edge can simply be
+            // added.
+            lp.setMargins(hMargin, vMargin, hMargin + insetEnd, vMargin);
+        }
         host.addView(content, lp);
 
         dialog.setContentView(host);
@@ -597,9 +667,10 @@ class Utils {
         // designed at. Capped short of the screen so the window never becomes a fullscreen one.
         final int screenW = activity.getResources().getDisplayMetrics().widthPixels;
         window.setLayout(
-                Math.min(screenW - dpToPx(8), ui.pickerWidthPx(cfg) + 2 * hMargin + insetEnd),
+                bottom ? screenW - dpToPx(8)
+                        : Math.min(screenW - dpToPx(8), panelWidth + 2 * hMargin + insetEnd),
                 ViewGroup.LayoutParams.MATCH_PARENT);
-        window.setGravity(Gravity.END);
+        window.setGravity(bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.END);
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         // The picture behind a modal sheet steps back rather than competing with it.
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);

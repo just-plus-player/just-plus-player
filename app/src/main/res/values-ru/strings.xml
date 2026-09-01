@@ -168,6 +168,15 @@
     <string name="time_ends_at_inline">до %1$s</string>
     <string name="time_live">● ЭФИР</string>
     <string name="playlist">Плейлист</string>
+    <plurals name="playlist_items">
+        <item quantity="one">%d файл</item>
+        <item quantity="few">%d файла</item>
+        <item quantity="many">%d файлов</item>
+        <item quantity="other">%d файла</item>
+    </plurals>
+    <string name="playlist_playing">Играет</string>
+    <string name="playlist_view_grid">Сетка</string>
+    <string name="playlist_view_list">Список</string>
     <string name="shortcut_videos">Видео</string>
     <string name="button_open">Открыть</string>
     <string name="button_crop">Изменить размер</string>

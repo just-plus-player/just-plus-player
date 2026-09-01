@@ -274,7 +274,9 @@ final class DurationPanel {
         // overscan went.
         scrollView.setPadding(hPad, Utils.dpToPx(16), hPad, Utils.dpToPx(20));
 
-        Utils.pickerWindow(activity, ui, dialog, scrollView);
+        // CONTROL: a keypad beside a readout is a layout of fixed proportions, and in landscape it
+        // already wants more height than the window has to give.
+        Utils.pickerWindow(activity, ui, dialog, scrollView, Utils.Panel.CONTROL);
         // On TV the remote's number keys are the natural way in — arrowing across ten buttons is not.
         dialog.setOnKeyListener((d, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN

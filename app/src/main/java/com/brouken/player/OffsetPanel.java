@@ -252,7 +252,9 @@ final class OffsetPanel {
         scroller.addView(root);
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(activity, ui, dialog, scroller);
+        // CONTROL, not OPTIONS: this panel's sliders retime a line drawn at the bottom of the frame
+        // while it plays, so it must never be the thing covering that line.
+        Utils.pickerWindow(activity, ui, dialog, scroller, Utils.Panel.CONTROL);
         // The theme carries no title bar, so this is the only name a screen reader can announce.
         dialog.setTitle(title);
         // The choice, not the slider: it is the panel's first decision and it is at the top, so a

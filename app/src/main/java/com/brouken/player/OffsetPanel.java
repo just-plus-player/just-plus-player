@@ -7,25 +7,25 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
-import android.graphics.drawable.StateListDrawable;
-import android.util.StateSet;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.widget.TextViewCompat;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.slider.LabelFormatter;
+import com.google.android.material.slider.Slider;
 
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
@@ -34,7 +34,9 @@ import java.util.Locale;
 
 /**
  * A reusable end-docked panel for adjusting signed offsets in seconds (skip timing, subtitle timing):
- * a large centred readout, a brand-tinted SeekBar flanked by −/+ icon buttons, and a Reset pill.
+ * a large centred readout, a brand-tinted Material {@link Slider} flanked by −/+ icon buttons, and a
+ * Reset button. What the panel picks rather than nudges is a {@link MaterialButtonToggleGroup}, the
+ * same segmented control the settings screen uses for the appearance choice.
  *
  * <p>A panel can carry more than one of those, which is what {@link Line} is for. Two subtitle lines
  * are two offsets, and two menu rows for one setting is a row too many — so they are stacked here
@@ -44,9 +46,9 @@ import java.util.Locale;
  * Input is split by device idiom, because one step size cannot serve both: a finger crossing the
  * narrow phone panel covers the whole ± range, so a raw drag moves the value in ragged sub-second
  * hops. Dragging therefore snaps to whole seconds, while the fine {@code stepSec} stays reachable
- * through the ± buttons. A remote gets the coarse step instead: a focused {@code SeekBar} answers
- * left and right itself, so the ± buttons beside it cannot be reached by a D-pad at all — the step
- * a press moves is sized for that in {@link #addLine}.
+ * through the ± buttons. A remote gets the coarse step instead: a focused slider answers left and
+ * right itself, so the ± buttons beside it cannot be reached by a D-pad at all — the step a press
+ * moves is sized for that in {@link #addLine}.
  *
  * The panel owns the current values and reports every change through {@link Listener}; the caller
  * only holds the returned dialog so it can dismiss it.
@@ -72,14 +74,14 @@ final class OffsetPanel {
     }
 
     /**
-     * One thing the panel picks rather than nudges: a row of pills, the one in force lit.
+     * One thing the panel picks rather than nudges: a segmented control, the option in force checked.
      *
      * <p>It lives in this panel and not in a menu of its own because what is being picked and what is
-     * being nudged are one thing to the person watching — how this film's skips behave. Pills rather
-     * than a list: four short words fit across the panel, and a choice that shows all of its options at
-     * once is one press to change from a remote as well as from a finger. No caption: the panel's title
-     * already says what is being chosen, and a third label in the same style as the two below it turned
-     * the panel into a list of look-alikes.
+     * being nudged are one thing to the person watching — how this film's skips behave. A segmented
+     * control rather than a list: four short words fit across the panel, and a choice that shows all of
+     * its options at once is one press to change from a remote as well as from a finger. No caption:
+     * the panel's title already says what is being chosen, and a third label in the same style as the
+     * two below it turned the panel into a list of look-alikes.
      */
     static final class Choice {
 
@@ -144,17 +146,17 @@ final class OffsetPanel {
 
         final List<Runnable> resets = new ArrayList<>();
         final boolean picking = choices != null && choices.length > 0;
-        TextView firstPill = null;
+        MaterialButton firstPill = null;
         if (picking) {
             for (final Choice choice : choices) {
-                final TextView lit = addChoice(activity, ui, root, accent, choice, resets);
+                final MaterialButton lit = addChoice(activity, ui, root, choice, resets);
                 if (firstPill == null) {
                     firstPill = lit;
                 }
             }
         }
 
-        SeekBar firstBar = null;
+        Slider firstBar = null;
         // One value gets the big readout it was designed for; two share the height, so they take the
         // clock's size instead. Two 44sp numbers plus their sliders do not fit a phone held sideways,
         // and what fell off the bottom was the second slider — the panel looked like it could only
@@ -165,7 +167,7 @@ final class OffsetPanel {
         final float valueSp = lines.length > 1 || picking ? ui.textClock() : ui.textValue();
         for (final Line line : lines) {
             root.addView(verticalSpacer(activity));
-            final SeekBar bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp, resets);
+            final Slider bar = addLine(activity, ui, root, accent, line, maxSec, stepSec, valueSp, resets);
             if (firstBar == null) {
                 firstBar = bar;
             }
@@ -173,21 +175,17 @@ final class OffsetPanel {
 
         root.addView(verticalSpacer(activity));
 
-        final TextView reset = new TextView(activity);
+        // Outlined, like the segmented control above it: one button family for the whole panel. Material
+        // draws its own focus and press states, which is what replaced the hand-drawn ring here.
+        final MaterialButton reset = new MaterialButton(activity, null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle);
         reset.setText(activity.getString(R.string.skip_offset_reset));
-        reset.setTextColor(Color.WHITE);
         reset.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
-        reset.setGravity(Gravity.CENTER);
-        reset.setClickable(true);
-        reset.setFocusable(true);
-        reset.setPadding(Utils.dpToPx(28), Utils.dpToPx(11), Utils.dpToPx(28), Utils.dpToPx(11));
-        reset.setMinHeight(ui.dpS(48)); // a pill this small is missed as often as it is hit
-        // The same focus edge the pills take: a ripple is touch feedback, not something a remote across
-        // a room can find, and this pill is the last stop of the D-pad path through here.
-        final int resetCorner = Utils.dpToPx(22);
-        reset.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
-                pillFill(activity, accent, false, resetCorner), roundMask(resetCorner)));
+        // Material insets a button by 6dp top and bottom to reach its 48dp touch target from a 36dp
+        // box. This panel sizes its own rows, so the inset only shortens them.
+        reset.setInsetTop(0);
+        reset.setInsetBottom(0);
+        reset.setMinHeight(ui.dpS(48)); // a target this small is missed as often as it is hit
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         resetLp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -237,86 +235,85 @@ final class OffsetPanel {
     }
 
     /**
-     * A row of pills for one choice, the one in force lit — and lit means the brightest thing in the
-     * row, not a tinted version of it.
+     * One choice as a Material segmented control, the option in force checked.
      *
-     * <p>That is the whole of the second attempt at this row. The first drew the option in force as the
-     * accent at a third of its alpha with accent text, which measured 1.1:1 against its neighbours and
-     * read as the one option that had been switched off. Filled with the accent and lettered in the
-     * panel's own near-black, it is unmistakable, it carries the same colour the readouts use for "you
-     * changed this", and {@code setSelected} says the same thing again to a screen reader — which no
-     * amount of colour can.
+     * <p>Two earlier attempts are worth not repeating. The first drew the option in force as the accent
+     * at a third of its alpha with accent text, which measured 1.1:1 against its neighbours and read as
+     * the one option that had been switched off. The second filled it with the accent and lettered it
+     * in the panel's own near-black — unmistakable, but a shape this app drew by hand and nothing else
+     * in it shared. {@link MaterialButtonToggleGroup} is the same control the settings screen gives the
+     * appearance choice, so the two now say "pick one of these" in one language, and checked state
+     * reaches a screen reader without any of it depending on colour.
      *
-     * @return the pill to hand the first focus to
+     * @return the button to hand the first focus to
      */
-    private static TextView addChoice(final Activity activity, final UiMetrics ui,
-                                      final LinearLayout root, final int accent, final Choice choice,
-                                      final List<Runnable> resets) {
-        final int corner = Utils.dpToPx(16);
-        final LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        final TextView[] pills = new TextView[choice.values.length];
-        final int[] picked = {indexOf(choice.values, choice.current)};
-        final Runnable render = () -> {
-            for (int i = 0; i < pills.length; i++) {
-                final boolean on = i == picked[0];
-                pills[i].setBackground(new RippleDrawable(
-                        ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
-                        pillFill(activity, accent, on, corner), roundMask(corner)));
-                pills[i].setTextColor(ContextCompat.getColor(activity,
-                        on ? R.color.ink_on_accent : R.color.ink_medium));
-                pills[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                // Said again without colour, for a screen reader and for anyone who cannot tell these
-                // two shades apart.
-                pills[i].setSelected(on);
-            }
-        };
+    private static MaterialButton addChoice(final Activity activity, final UiMetrics ui,
+                                            final LinearLayout root, final Choice choice,
+                                            final List<Runnable> resets) {
+        final MaterialButtonToggleGroup group = new MaterialButtonToggleGroup(activity);
+        group.setSingleSelection(true);
+        // The panel opens with nothing checked when the settings disagree with themselves, and this only
+        // stops a *press* from clearing the last one — it does not force a selection at bind time.
+        group.setSelectionRequired(true);
+
+        final MaterialButton[] pills = new MaterialButton[choice.values.length];
         for (int i = 0; i < choice.values.length; i++) {
-            final TextView pill = new TextView(activity);
+            final MaterialButton pill = new MaterialButton(activity, null,
+                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
+            pill.setId(View.generateViewId()); // the group tracks its buttons by id
             pill.setText(choice.labels[i]);
-            pill.setGravity(Gravity.CENTER);
-            pill.setClickable(true);
-            pill.setFocusable(true);
             pill.setMaxLines(1);
+            pill.setInsetTop(0);
+            pill.setInsetBottom(0);
+            pill.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
+            pill.setPadding(ui.dpS(4), pill.getPaddingTop(), ui.dpS(4), pill.getPaddingBottom());
             // Shrunk rather than wrapped or clipped: the widest label already fills its share of the
             // row at the ordinary size, so a longer language or a system font a notch up used to break
             // one word across two lines and leave the row ragged.
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                     pill, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
                     TypedValue.COMPLEX_UNIT_SP);
-            pill.setPadding(ui.dpS(4), ui.dpS(12), ui.dpS(4), ui.dpS(12));
-            pill.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
-            // Equal shares of the row rather than each pill's own width: four words of different
-            // lengths read as a set this way, and the widest of them decides nothing.
-            final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-            // Gaps between the pills only: an outer margin here would set the row in from the title
-            // above it by the width of the gap, which is exactly the misalignment it looks like.
-            lp.leftMargin = i == 0 ? 0 : Utils.dpToPx(3);
-            lp.rightMargin = i == choice.values.length - 1 ? 0 : Utils.dpToPx(3);
-            pill.setLayoutParams(lp);
-            final int index = i;
-            pill.setOnClickListener(v -> {
-                if (picked[0] == index) {
+            // Equal shares of the row rather than each button's own width: four words of different
+            // lengths read as a set this way, and the widest of them decides nothing. The group is a
+            // LinearLayout, so weights work and it joins the segments into one control itself.
+            group.addView(pill, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            pills[i] = pill;
+        }
+
+        final int start = indexOf(choice.values, choice.current);
+        if (start >= 0) {
+            group.check(pills[start].getId());
+        }
+        // Reset checks a button itself, and a programmatic check fires the same listener a press does.
+        final boolean[] muted = {false};
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked || muted[0]) {
+                return;
+            }
+            for (int i = 0; i < pills.length; i++) {
+                if (pills[i].getId() == checkedId) {
+                    choice.listener.onPicked(choice.values[i]);
                     return;
                 }
-                picked[0] = index;
-                render.run();
-                choice.listener.onPicked(choice.values[index]);
-            });
-            pills[i] = pill;
-            row.addView(pill);
-        }
-        render.run();
-        root.addView(row);
+            }
+        });
+
+        root.addView(group);
         resets.add(() -> {
             // Back to whatever the settings say, which is what "reset" means for a panel that only ever
             // held this session's answers. Without it there was no way back from a choice at all.
-            picked[0] = indexOf(choice.values, choice.inherited);
-            render.run();
+            final int inherited = indexOf(choice.values, choice.inherited);
+            muted[0] = true;
+            if (inherited < 0) {
+                group.clearChecked();
+            } else {
+                group.check(pills[inherited].getId());
+            }
+            muted[0] = false;
             choice.listener.onPicked(null);
         });
-        return pills[Math.max(0, picked[0])];
+        return pills[Math.max(0, start)];
     }
 
     private static int indexOf(final String[] values, final String value) {
@@ -328,42 +325,11 @@ final class OffsetPanel {
         return -1; // nothing lit: the panel is not going to guess which one is in force
     }
 
-    /** Pill background: filled with the accent while in force, and edged in white while focused. */
-    private static Drawable pillFill(final Context context, final int accent, final boolean on,
-                                     final int corner) {
-        final StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_focused},
-                pillShape(context, accent, on, corner, true));
-        states.addState(StateSet.WILD_CARD, pillShape(context, accent, on, corner, false));
-        return states;
-    }
-
-    private static Drawable pillShape(final Context context, final int accent, final boolean on,
-                                      final int corner, final boolean focused) {
-        final GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(corner);
-        shape.setColor(on ? accent : ContextCompat.getColor(context, R.color.pill_off_fill));
-        if (focused) {
-            // The accent, like the Skip pill's own focus ring — and white only on the pill that is
-            // already the accent, where a coral edge would not show. One signal and one language: an
-            // edge appears, nothing moves and nothing changes size, so the row keeps its rhythm.
-            shape.setStroke(Utils.dpToPx(2), on ? Color.WHITE : accent);
-        }
-        return shape;
-    }
-
-    private static Drawable roundMask(final int corner) {
-        final GradientDrawable mask = new GradientDrawable();
-        mask.setCornerRadius(corner);
-        mask.setColor(Color.WHITE);
-        return mask;
-    }
-
-    /** Caption, readout and slider for one offset. Returns its SeekBar; adds its reset to {@code resets}. */
-    private static SeekBar addLine(final Activity activity, final UiMetrics ui, final LinearLayout root,
-                                   final int accent, final Line line, final double maxSec,
-                                   final double stepSec, final float valueSp,
-                                   final List<Runnable> resets) {
+    /** Caption, readout and slider for one offset. Returns its Slider; adds its reset to {@code resets}. */
+    private static Slider addLine(final Activity activity, final UiMetrics ui, final LinearLayout root,
+                                  final int accent, final Line line, final double maxSec,
+                                  final double stepSec, final float valueSp,
+                                  final List<Runnable> resets) {
         final int trackBg = ContextCompat.getColor(activity, R.color.track_white);
         final int progressMax = (int) Math.round(2 * maxSec / stepSec);
         final int mid = progressMax / 2;
@@ -392,27 +358,33 @@ final class OffsetPanel {
         value.setPadding(0, 0, 0, Utils.dpToPx(20));
         root.addView(value);
 
-        final SeekBar seekBar = new SeekBar(activity);
-        seekBar.setMax(progressMax);
-        // D-pad step, scaled to the range instead of fixed at 2 × stepSec. Fixed, it made the wide
-        // subtitle range unreachable from a remote: measured on a television, five presses moved the
-        // value 2.5 s, so ±180 s was 360 presses to one edge with the thumb barely leaving the middle.
-        // A press is now a ninetieth of the range, floored at 2 × stepSec so the narrow skip panel keeps
-        // exactly the step it had. The fine step stays on the ± buttons, which is where it belongs.
-        seekBar.setKeyProgressIncrement(Math.max(2, (int) Math.round(maxSec / 90 / stepSec)));
-        seekBar.setProgress((int) Math.round(line.initialSec / stepSec) + mid);
-        seekBar.setFocusable(true);
-        seekBar.setSplitTrack(false);
-        seekBar.setProgressTintList(ColorStateList.valueOf(accent));
+        // Counted in steps, not in seconds: valueFrom/valueTo/stepSize are floats, and a Slider refuses
+        // a range that is not a whole number of steps — ±180 s at 0.1 s is exactly the sum that does not
+        // survive float division. Whole steps keep the arithmetic that was already here.
+        final Slider seekBar = new Slider(activity);
+        seekBar.setValueFrom(0f);
+        seekBar.setValueTo(progressMax);
+        seekBar.setStepSize(1f);
+        seekBar.setValue(Math.round(line.initialSec / stepSec) + mid);
+        // A tick per step is 3600 dots across the subtitle range.
+        seekBar.setTickVisible(false);
+        // The readout above is the label, and it is four times the size of the bubble.
+        seekBar.setLabelBehavior(LabelFormatter.LABEL_GONE);
         seekBar.setThumbTintList(ColorStateList.valueOf(accent));
-        seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(trackBg));
+        seekBar.setTrackActiveTintList(ColorStateList.valueOf(accent));
+        seekBar.setTrackInactiveTintList(ColorStateList.valueOf(trackBg));
+        seekBar.setHaloTintList(ColorStateList.valueOf(accent));
 
-        final ImageButton minus = new ImageButton(activity, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        minus.setImageResource(R.drawable.ic_remove_24dp);
-        minus.setContentDescription("-");
-        final ImageButton plus = new ImageButton(activity, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        plus.setImageResource(R.drawable.ic_add_24dp);
-        plus.setContentDescription("+");
+        // D-pad step, scaled to the range instead of the slider's own one-step-per-press. Left to
+        // itself it made the wide subtitle range unreachable from a remote: measured on a television,
+        // five presses moved the value 2.5 s, so ±180 s was 360 presses to one edge with the thumb
+        // barely leaving the middle. A press is now a ninetieth of the range, floored at 2 × stepSec so
+        // the narrow skip panel keeps exactly the step it had. The fine step stays on the ± buttons,
+        // which is where it belongs. Slider has no key-increment setter, hence the key listener.
+        final int keyStep = Math.max(2, (int) Math.round(maxSec / 90 / stepSec));
+
+        final MaterialButton minus = iconButton(activity, R.drawable.ic_remove_24dp, "-");
+        final MaterialButton plus = iconButton(activity, R.drawable.ic_add_24dp, "+");
 
         final LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -446,49 +418,76 @@ final class OffsetPanel {
         };
 
         final boolean[] dragging = {false};
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                if (!fromUser) {
-                    return;
-                }
-                int p = progress;
-                if (dragging[0]) {
-                    // Snap the finger to whole seconds. setProgress re-enters with fromUser=false, so the
-                    // value is applied here and the nested callback is a no-op.
-                    p = Math.round((float) p / dragSnap) * dragSnap;
-                    if (p != progress) {
-                        sb.setProgress(p);
-                    }
-                }
-                current[0] = (p - mid) * stepSec;
-                apply.run();
+        seekBar.addOnChangeListener((sb, v, fromUser) -> {
+            if (!fromUser) {
+                return;
             }
-
+            final int progress = Math.round(v);
+            int p = progress;
+            if (dragging[0]) {
+                // Snap the finger to whole seconds. setValue re-enters with fromUser=false, so the
+                // value is applied here and the nested callback is a no-op.
+                p = Math.round((float) p / dragSnap) * dragSnap;
+                if (p != progress) {
+                    sb.setValue(p);
+                }
+            }
+            current[0] = (p - mid) * stepSec;
+            apply.run();
+        });
+        seekBar.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
             @Override
-            public void onStartTrackingTouch(SeekBar sb) {
+            public void onStartTrackingTouch(@NonNull Slider sb) {
                 dragging[0] = true;
             }
 
             @Override
-            public void onStopTrackingTouch(SeekBar sb) {
+            public void onStopTrackingTouch(@NonNull Slider sb) {
                 dragging[0] = false;
             }
+        });
+        seekBar.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                return false;
+            }
+            int dir = keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1
+                    : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? +1 : 0;
+            if (dir == 0) {
+                return false;
+            }
+            if (v.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) {
+                dir = -dir; // the slider mirrors, so left is more and right is less
+            }
+            step(seekBar, dir * keyStep, progressMax, mid, stepSec, current, apply);
+            return true;
         });
         minus.setOnClickListener(v -> step(seekBar, -1, progressMax, mid, stepSec, current, apply));
         plus.setOnClickListener(v -> step(seekBar, +1, progressMax, mid, stepSec, current, apply));
         resets.add(() -> {
-            seekBar.setProgress(mid);
+            seekBar.setValue(mid);
             current[0] = 0;
             apply.run();
         });
         return seekBar;
     }
 
-    private static void step(SeekBar seekBar, int delta, int progressMax, int mid, double stepSec,
+    /** A ± button: Material's icon button, in the panel's white rather than its own muted grey. */
+    private static MaterialButton iconButton(final Activity activity, final int icon,
+                                             final String description) {
+        final MaterialButton button = new MaterialButton(activity, null,
+                com.google.android.material.R.attr.materialIconButtonStyle);
+        button.setIconResource(icon);
+        button.setIconTint(ColorStateList.valueOf(Color.WHITE));
+        button.setContentDescription(description);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        return button;
+    }
+
+    private static void step(Slider seekBar, int delta, int progressMax, int mid, double stepSec,
                              double[] current, Runnable apply) {
-        final int p = Math.min(progressMax, Math.max(0, seekBar.getProgress() + delta));
-        seekBar.setProgress(p);
+        final int p = Math.min(progressMax, Math.max(0, Math.round(seekBar.getValue()) + delta));
+        seekBar.setValue(p);
         current[0] = (p - mid) * stepSec;
         apply.run();
     }

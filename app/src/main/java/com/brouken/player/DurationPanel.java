@@ -282,7 +282,7 @@ final class DurationPanel {
             window.setLayout(ui.pickerWidthPx(cfg), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(
-                    new ColorDrawable(ContextCompat.getColor(activity, R.color.panel_surface)));
+                    new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
         }
         // Only where there is a D-pad. In touch mode this scrolls the title out of sight for nothing, since
         // a focus ring is not drawn there anyway.

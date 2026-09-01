@@ -49,10 +49,11 @@
     <!-- Ink on a brand-filled control, e.g. a selected offset pill. -->
     <color name="ink_on_accent">#FF141414</color>
 
-    <!-- Player chrome surfaces, all translucent so the picture keeps showing through. -->
-    <color name="panel_surface">#F0141414</color>
-    <color name="pill_surface">#F0161616</color>
-    <color name="pill_scrim">#99000000</color>
+    <!-- Player chrome surfaces, all translucent so the picture keeps showing through. Two families:
+         a near-opaque one the panels and pills are cut from, and the plainly translucent black of
+         @color/ui_controls_background further down. What used to be four names was two pairs 2/255 and
+         1/255 apart — close enough that nothing could have been choosing between them on purpose. -->
+    <color name="chrome_surface">#F0141414</color>
     <color name="badge_scrim">#CC000000</color>
     <color name="placeholder_card">#FF333333</color>
     <color name="thumb_box">#FF2A2A2A</color>
@@ -80,6 +81,8 @@
     <color name="ad_edge">#FFFFD27A</color>
     <color name="ad_fill">#C7FFA000</color>
 
+    <!-- The translucent black chrome: the control cluster, the lock and stats pills, the round discs,
+         swipe-to-unlock, the navigation bar, and the Media3 colours below that alias to it. -->
     <color name="ui_controls_background">#98000000</color>
     <color name="exo_bottom_bar_background" tools:keep="@color/exo_bottom_bar_background">@color/ui_controls_background</color>
     <color name="exo_black_opacity_70" tools:keep="@color/exo_black_opacity_70">@color/ui_controls_background</color>

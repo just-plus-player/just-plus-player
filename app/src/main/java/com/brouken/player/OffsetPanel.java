@@ -224,7 +224,7 @@ final class OffsetPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(
-                    new ColorDrawable(ContextCompat.getColor(activity, R.color.panel_surface)));
+                    new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
         }
         // The choice, not the slider: it is the panel's first decision and it is at the top, so a
         // remote lands on it and the scroller stays where the title is. Focusing the slider scrolled

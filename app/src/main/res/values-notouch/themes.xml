@@ -10,9 +10,12 @@
         <item name="colorControlHighlight">@color/white</item>
     </style>
     <!-- The settings list is where a remote spends most of its presses, and the default M3
-         highlight is barely a shade over the card it sits on. Same white as the other two. -->
+         highlight is barely a shade over the card it sits on. Not the white the two above use,
+         though: this is the one screen in the app that goes light with the appearance choice, and
+         white on a light card measured 1.09:1 between a focused row and its neighbours. The
+         surface's own ink is the same near-white on a dark screen and legible on a light one. -->
     <style name="Theme.Settings" parent="BaseTheme.Settings">
-        <item name="colorControlHighlight">@color/white</item>
+        <item name="colorControlHighlight">?attr/colorOnSurface</item>
     </style>
 
     <!-- The panels are NOT given the white wash the three screens above get. A wash over a row

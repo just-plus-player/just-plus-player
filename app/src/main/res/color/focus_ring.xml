@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A control that has D-pad focus wears a white edge. Nothing otherwise, and nothing at all in
-     touch mode, where no view is ever focused. This is the ring that replaced a wash: Material's
-     own focus state layer measured 2.51:1 on a television, and where a control carries the accent
-     as a fill the wash washed the accent out with it. -->
+<!-- A control that has D-pad focus wears an edge in the ink of the surface it sits on. Nothing
+     otherwise, and nothing at all in touch mode, where no view is ever focused. This is the ring that
+     replaced a wash: Material's own focus state layer measured 2.51:1 on a television, and where a
+     control carries the accent as a fill the wash washed the accent out with it.
+
+     The ink follows the surface rather than being white, because the panels and the settings screen
+     are light when the appearance choice is light — and a white ring on a light card measured 1.15:1,
+     which is no ring at all. On a dark surface colorOnSurface is a near-white that reads the same as
+     the white it replaced. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true" android:color="@color/white" />
+    <item android:state_focused="true" android:color="?attr/colorOnSurface" />
     <item android:color="@android:color/transparent" />
 </selector>

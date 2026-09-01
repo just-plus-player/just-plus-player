@@ -136,22 +136,27 @@
         as a fill it washed the accent out too, leaving 2.21:1 for the label on it.
     -->
     <style name="Widget.JustPlus.Button.Quiet" parent="Widget.Material3.Button.TextButton">
-        <item name="strokeWidth">2dp</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
         <item name="strokeColor">@color/focus_ring</item>
     </style>
 
     <style name="Widget.JustPlus.Button.Quiet.Icon" parent="Widget.Material3.Button.IconButton">
-        <item name="strokeWidth">2dp</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
         <item name="strokeColor">@color/focus_ring</item>
     </style>
 
+    <!-- The one style whose stroke is not only the ring: it is also the border that makes the button
+         outlined. So it keeps the thin border at rest and Utils.focusRing widens it to the ring's own
+         width while it holds focus, which is the second half of the signal. A grey border that only
+         changes colour is a weak event — measured 2.76:1 between the same pixels focused and not,
+         where a ring appearing on a picker row reads 16.30:1. -->
     <style name="Widget.JustPlus.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
         <item name="strokeWidth">2dp</item>
         <item name="strokeColor">@color/focus_ring_outlined</item>
     </style>
 
     <style name="Widget.JustPlus.Button.Filled" parent="Widget.Material3.Button">
-        <item name="strokeWidth">2dp</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
         <item name="strokeColor">@color/focus_ring</item>
     </style>
 

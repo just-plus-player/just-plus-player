@@ -12,6 +12,19 @@
 
     <dimen name="marker_width">3dp</dimen>
 
+    <!-- The D-pad focus ring, everywhere one is drawn: the three button styles in themes.xml, the
+         picker row, the slider thumb and the skip pill. One number, because it used to be five
+         literal 2dp's reached by three different paths, and they did not agree — Utils.dpToPx
+         truncates, so the row's "2dp" arrived 50% thinner than the buttons' identical 2dp.
+
+         A television gets a wider one (values-television, values-notouch). Everything else in the
+         player's geometry grows with UiMetrics.dpS, which this cannot: a style in XML has no way to
+         reach it. Contrast is not thickness — at three metres a hairline is lost where a line reads
+         at once, and 2dp on a 720p set is three pixels. Outlined buttons are the exception: their
+         stroke is also their resting border, so they stay thin at rest and thicken to this on focus
+         (see Utils.focusRing). -->
+    <dimen name="focus_ring_width">2dp</dimen>
+
     <dimen name="level_bar_width">6dp</dimen>
     <dimen name="level_bar_height">160dp</dimen>
     <dimen name="level_bar_margin">28dp</dimen>

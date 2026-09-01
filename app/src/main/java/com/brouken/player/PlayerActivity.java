@@ -717,11 +717,12 @@ public class PlayerActivity extends Activity {
     private boolean scrubbingNoticeable;
     private long scrubbingStart;
     // Key seek (D-pad arrows, ◀◀/▶▶) accelerates: the longer the key is held — or the faster it is
-    // clicked — the bigger the step, and the seek itself happens once, after the presses stop. A fixed
-    // 10s per press cannot get through a feature-length film, and one seekTo per press is one
-    // re-buffering per press: on a network stream a burst of clicks means seconds of black screen
-    // instead of a single jump.
+    // clicked — the bigger the step. A fixed 10s per press cannot get through a feature-length film.
+    // Each press seeks behind the same one-in-flight gate the touch gestures use, so the picture and the
+    // bar follow the presses without a queue of seeks (and re-bufferings) piling up on a network stream;
+    // the steps the gate skipped are made good by one commit once the presses stop.
     private long keyScrubTarget = -1;   // -1 = no scrub in progress
+    private long keyScrubSeeked = -1;   // the last target a press actually seeked to
     private int keyScrubSteps;          // presses in a row (drives the step size)
     private long keyScrubLastMs;
     private final Runnable keyScrubCommit = this::commitKeyScrub;
@@ -772,7 +773,7 @@ public class PlayerActivity extends Activity {
     // roughly one opening in three with no sound at all, twice. Spending the latch waits for a real second
     // start, which is the only kind that follows a stopped AudioTrack.
     private boolean audioEverStarted;
-    public boolean frameRendered;
+    private boolean frameRendered;
     private boolean alive;
     public static boolean focusPlay = false;
     private Uri nextUri;
@@ -2718,6 +2719,7 @@ public class PlayerActivity extends Activity {
             if (keyScrubTarget >= 0) {
                 playerView.removeCallbacks(keyScrubCommit);
                 keyScrubTarget = -1;
+                keyScrubSeeked = -1;
                 keyScrubSteps = 0;
                 playerView.removeCallbacks(playerView.textClearRunnable);
                 playerView.textClearRunnable.run();
@@ -3043,8 +3045,8 @@ public class PlayerActivity extends Activity {
                     playerView.postDelayed(playerView.textClearRunnable, 1000);
                 }
                 if (keyScrubTarget >= 0) {
-                    // Wait longer than the acceleration window, so a burst of clicks coalesces into one
-                    // seek instead of one seek (and one re-buffering) per click.
+                    // Wait longer than the acceleration window, so a burst of clicks ends in one commit
+                    // rather than one per click.
                     playerView.removeCallbacks(keyScrubCommit);
                     playerView.postDelayed(keyScrubCommit, 520);
                 }
@@ -3082,10 +3084,29 @@ public class PlayerActivity extends Activity {
         final long step = keyScrubStep(duration);
         keyScrubTarget = Math.max(0, Math.min(duration, from + (forward ? step : -step)));
         showKeySeekMessage(keyScrubTarget);
-        // While the key is held down the target keeps flying; don't seek until it settles.
+        // Seek now if the previous seek has landed, so the picture and the bar follow the presses. A held
+        // key outruns the gate, so the commit below still lands on the target once the presses stop.
+        setKeySeekDirection(keyScrubTarget);
+        if (seekIfLanded(keyScrubTarget)) {
+            keyScrubSeeked = keyScrubTarget;
+        }
         playerView.removeCallbacks(keyScrubCommit);
         playerView.postDelayed(keyScrubCommit, 700);
         return true;
+    }
+
+    /** One seek in flight at a time, the gate every scrub shares; see onRenderedFirstFrame. */
+    boolean seekIfLanded(long position) {
+        if (!frameRendered || player == null)
+            return false;
+        frameRendered = false;
+        player.seekTo(position);
+        return true;
+    }
+
+    private void setKeySeekDirection(long target) {
+        player.setSeekParameters(target >= player.getCurrentPosition()
+                ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
     }
 
     /**
@@ -3122,12 +3143,15 @@ public class PlayerActivity extends Activity {
 
     private void commitKeyScrub() {
         final long target = keyScrubTarget;
+        final long seeked = keyScrubSeeked;
         keyScrubTarget = -1;
+        keyScrubSeeked = -1;
         keyScrubSteps = 0;
-        if (target < 0 || player == null)
+        // Nothing to make good if the last press got through the gate: seeking there again would only
+        // flush the decoder a second time.
+        if (target < 0 || target == seeked || player == null)
             return;
-        player.setSeekParameters(target >= player.getCurrentPosition()
-                ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
+        setKeySeekDirection(target);
         player.seekTo(target);
     }
 
@@ -10973,6 +10997,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(keyScrubCommit);
         }
         keyScrubTarget = -1;
+        keyScrubSeeked = -1;
         keyScrubSteps = 0;
         stopLoadingSpeed();
         // An error deferred until the controller is fully visible belongs to the playback session being
@@ -13335,12 +13360,7 @@ public class PlayerActivity extends Activity {
             playerView.clearIcon();
             playerView.setCustomErrorMessage(Utils.formatMilisSign(diff));
         }
-        if (frameRendered) {
-            frameRendered = false;
-            if (player != null) {
-                player.seekTo(position);
-            }
-        }
+        seekIfLanded(position);
     }
 
     /**

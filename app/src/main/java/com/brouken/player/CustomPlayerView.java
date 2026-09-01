@@ -306,13 +306,8 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     // behind the finger instead of following it. Forward seeks land in buffered data, which is why only
     // rewinding looked broken. The release in onTouchEvent seeks to wherever the drag actually ended.
     private void seekGesture(final long position) {
-        if (!(getContext() instanceof PlayerActivity))
-            return;
-        final PlayerActivity activity = (PlayerActivity) getContext();
-        if (!activity.frameRendered)
-            return;
-        activity.frameRendered = false;
-        PlayerActivity.player.seekTo(position);
+        if (getContext() instanceof PlayerActivity)
+            ((PlayerActivity) getContext()).seekIfLanded(position);
     }
 
     @Override

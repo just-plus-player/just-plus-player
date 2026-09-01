@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On a dark scheme the accent is the brand itself: the darker one exists only so a coral can
+         be read on white. See values/colors.xml for the measurements. -->
+    <color name="brand_accent">@color/brand</color>
+    <color name="brand_accent_on">@color/brand_on</color>
+</resources>

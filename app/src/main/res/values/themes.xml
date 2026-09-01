@@ -115,20 +115,38 @@
          appearance choice on its own. Two explicit themes rather than one DayNight theme over an
          overridden configuration: createConfigurationContext returns a context with no activity
          token, and a dialog built against one cannot add its window at all. -->
-    <style name="Theme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
+    <style name="BaseTheme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- The player's panels are built against these themes now, so they need the accent the
+             window themes carry: Material 3 derives colorAccent from colorSecondary, not from
+             colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
+        <item name="colorAccent">@color/brand</item>
     </style>
 
-    <style name="Theme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
+    <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
+         white focus wash a remote needs without redefining everything above. -->
+    <style name="Theme.Dialogs.Light" parent="BaseTheme.Dialogs.Light">
+    </style>
+
+    <style name="BaseTheme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- The player's panels are built against these themes now, so they need the accent the
+             window themes carry: Material 3 derives colorAccent from colorSecondary, not from
+             colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
+        <item name="colorAccent">@color/brand</item>
+    </style>
+
+    <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
+         white focus wash a remote needs without redefining everything above. -->
+    <style name="Theme.Dialogs.Dark" parent="BaseTheme.Dialogs.Dark">
     </style>
 
     <style name="ExoStyledControls.Button.Center.Secondary" parent="ExoStyledControls.Button.Center">

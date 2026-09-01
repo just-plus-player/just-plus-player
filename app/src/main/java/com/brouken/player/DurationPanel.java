@@ -2,6 +2,7 @@ package com.brouken.player;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -22,6 +23,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
+
+import com.google.android.material.color.MaterialColors;
 
 import java.util.Date;
 import java.util.Locale;
@@ -75,14 +78,18 @@ final class DurationPanel {
                 ? Math.max(36, Math.min(52, (cfg.screenHeightDp - 110) / 4 - 8))
                 : 52);
 
-        final LinearLayout root = new LinearLayout(activity);
+        // Built against the appearance choice rather than the player's own dark theme — see
+        // OffsetPanel for the same move and Utils.dialogContext for what it resolves.
+        final Context ctx = Utils.dialogContext(activity);
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        final LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.VERTICAL);
 
         // Left-aligned 18sp medium, as VLC's BottomSheetTitle is — and as every other picker header in
         // this app already is.
-        final TextView header = new TextView(activity);
+        final TextView header = new TextView(ctx);
         header.setText(title);
-        header.setTextColor(Color.WHITE);
+        header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         header.setMinHeight(ui.dp(48));
@@ -92,7 +99,7 @@ final class DurationPanel {
         // Laid out top down with plain margins, exactly as VLC's sheet is — no weight, no vertical centring.
         // Those two put a void above the readout and another below the keypad, and gave the scroll view room
         // to carry the title off the top edge. Nothing here needs to stretch.
-        final LinearLayout body = new LinearLayout(activity);
+        final LinearLayout body = new LinearLayout(ctx);
         body.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         body.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -100,14 +107,14 @@ final class DurationPanel {
 
         // Side by side the width splits 45/55 in the keypad's favour: it has three columns to seat, the
         // readout only its own digits and the two actions.
-        final LinearLayout readoutColumn = new LinearLayout(activity);
+        final LinearLayout readoutColumn = new LinearLayout(ctx);
         readoutColumn.setOrientation(LinearLayout.VERTICAL);
         readoutColumn.setLayoutParams(new LinearLayout.LayoutParams(
                 landscape ? Math.round(usableW * 0.45f) : ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         body.addView(readoutColumn);
 
-        final LinearLayout valueRow = new LinearLayout(activity);
+        final LinearLayout valueRow = new LinearLayout(ctx);
         valueRow.setOrientation(LinearLayout.HORIZONTAL);
         valueRow.setGravity(Gravity.CENTER_VERTICAL);
         // A key row's height and margin, so the readout and the backspace share the centre line of the
@@ -121,7 +128,7 @@ final class DurationPanel {
         valueRow.setMinimumHeight(rowHeight);
         readoutColumn.addView(valueRow);
 
-        final TextView value = new TextView(activity);
+        final TextView value = new TextView(ctx);
         // 24sp bold, VLC's size for this readout — not the big light numeral of the skip-offset panel. That
         // one owns its whole panel; this one shares a line with a backspace and a narrow landscape column.
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(24));
@@ -132,7 +139,7 @@ final class DurationPanel {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         valueRow.addView(value);
 
-        final ImageButton backspace = new ImageButton(activity, null, 0,
+        final ImageButton backspace = new ImageButton(ctx, null, 0,
                 R.style.ExoStyledControls_Button_Bottom);
         backspace.setImageResource(R.drawable.ic_backspace_24dp);
         backspace.setContentDescription(activity.getString(R.string.sleep_timer_backspace));
@@ -140,8 +147,9 @@ final class DurationPanel {
 
         // Where the duration lands in wall-clock terms — the same phrasing the header uses for the end of
         // the video, since it answers the same question.
-        final TextView endsAt = new TextView(activity);
-        endsAt.setTextColor(ContextCompat.getColor(activity, R.color.ink_medium));
+        final TextView endsAt = new TextView(ctx);
+        endsAt.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.ink_medium)));
         endsAt.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAt.setPadding(0, 0, 0, Utils.dpToPx(6));
         readoutColumn.addView(endsAt);
@@ -150,7 +158,8 @@ final class DurationPanel {
         final View divider = new View(activity);
         divider.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1)));
-        divider.setBackgroundColor(ContextCompat.getColor(activity, R.color.divider));
+        divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                ContextCompat.getColor(ctx, R.color.divider)));
         readoutColumn.addView(divider);
 
         final Runnable render = () -> {
@@ -159,7 +168,7 @@ final class DurationPanel {
             text.append("  ");
             appendUnit(text, String.format(Locale.US, "%02d", typed[0] % 100), "m");
             value.setText(text);
-            value.setTextColor(typed[0] == 0 ? Color.WHITE : accent);
+            value.setTextColor(typed[0] == 0 ? onSurface : accent);
             backspace.setEnabled(typed[0] != 0);
             backspace.setAlpha(typed[0] != 0 ? 1f : 0.35f);
 
@@ -177,7 +186,7 @@ final class DurationPanel {
 
         final View[] firstKey = new View[1];
         final View[] digitKeys = new View[10];
-        final LinearLayout keypad = new LinearLayout(activity);
+        final LinearLayout keypad = new LinearLayout(ctx);
         keypad.setOrientation(LinearLayout.VERTICAL);
         final LinearLayout.LayoutParams keypadLp = new LinearLayout.LayoutParams(
                 landscape ? Math.round(usableW * 0.55f) : ViewGroup.LayoutParams.MATCH_PARENT,
@@ -187,10 +196,10 @@ final class DurationPanel {
         }
         keypad.setLayoutParams(keypadLp);
         for (int row = 0; row < 3; row++) {
-            final LinearLayout line = keyRow(activity, rowHeight);
+            final LinearLayout line = keyRow(ctx, rowHeight);
             for (int col = 0; col < 3; col++) {
                 final int digit = row * 3 + col + 1;
-                final View key = keyButton(activity, ui, String.valueOf(digit),
+                final View key = keyButton(ctx, ui, String.valueOf(digit),
                         () -> appendDigit(typed, digit, render));
                 digitKeys[digit] = key;
                 if (firstKey[0] == null) {
@@ -201,16 +210,16 @@ final class DurationPanel {
             keypad.addView(line);
         }
         // Last row as VLC has it: the two minute values worth a shortcut, either side of the zero.
-        final LinearLayout lastRow = keyRow(activity, rowHeight);
-        lastRow.addView(keyButton(activity, ui, ":00", () -> appendMinutes(typed, 0, render)));
-        digitKeys[0] = keyButton(activity, ui, "0", () -> appendDigit(typed, 0, render));
+        final LinearLayout lastRow = keyRow(ctx, rowHeight);
+        lastRow.addView(keyButton(ctx, ui, ":00", () -> appendMinutes(typed, 0, render)));
+        digitKeys[0] = keyButton(ctx, ui, "0", () -> appendDigit(typed, 0, render));
         lastRow.addView(digitKeys[0]);
-        lastRow.addView(keyButton(activity, ui, ":30", () -> appendMinutes(typed, 30, render)));
+        lastRow.addView(keyButton(ctx, ui, ":30", () -> appendMinutes(typed, 30, render)));
         keypad.addView(lastRow);
         body.addView(keypad);
 
         // Right-aligned at the foot, the way VLC ends its picker with "remove current" and "ok".
-        final LinearLayout actions = new LinearLayout(activity);
+        final LinearLayout actions = new LinearLayout(ctx);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.END);
         final LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(
@@ -220,14 +229,14 @@ final class DurationPanel {
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
 
-        final TextView stop = actionButton(activity, ui,
-                activity.getString(R.string.sleep_timer_stop), Color.WHITE);
+        final TextView stop = actionButton(ctx, ui,
+                ctx.getString(R.string.sleep_timer_stop), onSurface);
         stop.setOnClickListener(v -> {
             listener.onDurationPicked(0);
             dialog.dismiss();
         });
-        final TextView start = actionButton(activity, ui,
-                activity.getString(R.string.sleep_timer_start), accent);
+        final TextView start = actionButton(ctx, ui,
+                ctx.getString(R.string.sleep_timer_start), accent);
         start.setOnClickListener(v -> {
             final int total = totalMinutes(typed[0]);
             if (total <= 0) {
@@ -255,7 +264,7 @@ final class DurationPanel {
         // Backstop only. The sizing above is meant to make the panel fit outright; this catches what it
         // cannot foresee — a large font scale, split screen, a window shape not thought of — so that no
         // action can ever end up somewhere unreachable. No fillViewport: nothing in here wants to stretch.
-        final ScrollView scrollView = new ScrollView(activity);
+        final ScrollView scrollView = new ScrollView(ctx);
         scrollView.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         // Only the sheet's own padding now — see Utils.pickerWindow for where the bars and the
@@ -309,8 +318,8 @@ final class DurationPanel {
         text.setSpan(new RelativeSizeSpan(0.5f), start, text.length(), 0);
     }
 
-    private static LinearLayout keyRow(final Activity activity, final int rowHeight) {
-        final LinearLayout line = new LinearLayout(activity);
+    private static LinearLayout keyRow(final Context ctx, final int rowHeight) {
+        final LinearLayout line = new LinearLayout(ctx);
         line.setOrientation(LinearLayout.HORIZONTAL);
         line.setWeightSum(3f);
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -321,11 +330,11 @@ final class DurationPanel {
     }
 
     /** A bare key: bold text on nothing, as VLC's are — only the touch ripple marks it out. */
-    private static TextView keyButton(final Activity activity, final UiMetrics ui,
+    private static TextView keyButton(final Context ctx, final UiMetrics ui,
                                       final String label, final Runnable onTap) {
-        final TextView key = new TextView(activity);
+        final TextView key = new TextView(ctx);
         key.setText(label);
-        key.setTextColor(Color.WHITE);
+        key.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
         key.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.sp(18));
         key.setTypeface(Typeface.DEFAULT_BOLD);
         key.setGravity(Gravity.CENTER);
@@ -336,16 +345,17 @@ final class DurationPanel {
         key.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         key.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
+                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                        ContextCompat.getColor(ctx, R.color.ripple_chrome))),
                 null, null));
         key.setOnClickListener(v -> onTap.run());
         return key;
     }
 
     /** One of two equal-width actions sharing the foot of the column. */
-    private static TextView actionButton(final Activity activity, final UiMetrics ui,
+    private static TextView actionButton(final Context ctx, final UiMetrics ui,
                                         final String label, final int color) {
-        final TextView action = new TextView(activity);
+        final TextView action = new TextView(ctx);
         action.setText(label.toUpperCase(Locale.getDefault()));
         action.setTextColor(color);
         action.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
@@ -361,7 +371,8 @@ final class DurationPanel {
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
         action.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.ripple_chrome)),
+                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                        ContextCompat.getColor(ctx, R.color.ripple_chrome))),
                 null, mask));
         return action;
     }

@@ -94,6 +94,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
+
+import com.google.android.material.color.MaterialColors;
 import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
@@ -5821,25 +5823,31 @@ public class PlayerActivity extends Activity {
         final int radius = Utils.dpToPx(4);
         final View[] currentRow = new View[1];
 
-        final LinearLayout listLayout = new LinearLayout(this);
+        // The panels follow the appearance choice, like the dialogs do — see
+        // Utils.dialogContext. Every view below is built against it, so a light app gets a
+        // light panel and AMOLED gets a black one.
+        final Context ctx = Utils.dialogContext(this);
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        final TextView header = new TextView(this);
+        final TextView header = new TextView(ctx);
         header.setText(getString(R.string.playlist));
-        header.setTextColor(Color.WHITE);
+        header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        final View divider = new View(this);
+        final View divider = new View(ctx);
         final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         dividerLp.bottomMargin = Utils.dpToPx(4);
         divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
+        divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                ContextCompat.getColor(ctx, R.color.divider)));
         listLayout.addView(divider);
 
         for (int i = 0; i < count; i++) {
@@ -5853,7 +5861,7 @@ public class PlayerActivity extends Activity {
             final Uri artwork = md != null ? md.artworkUri : null;
             final boolean isCurrent = i == current;
 
-            final LinearLayout row = new LinearLayout(this);
+            final LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
@@ -5864,25 +5872,27 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
             rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
+                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
+                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
 
-            final FrameLayout box = new FrameLayout(this);
+            final FrameLayout box = new FrameLayout(ctx);
             final LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(56));
             boxLp.setMarginEnd(Utils.dpToPx(12));
             boxLp.gravity = Gravity.CENTER_VERTICAL;
             box.setLayoutParams(boxLp);
             box.setMinimumWidth(Utils.dpToPx(40));
-            box.setBackgroundColor(ContextCompat.getColor(this, R.color.thumb_box));
+            box.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
+                        ContextCompat.getColor(ctx, R.color.thumb_box)));
             box.setClipToOutline(true);
             box.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
@@ -5891,7 +5901,7 @@ public class PlayerActivity extends Activity {
                 }
             });
 
-            final ImageView poster = new ImageView(this);
+            final ImageView poster = new ImageView(ctx);
             poster.setLayoutParams(new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT));
             poster.setAdjustViewBounds(true);
@@ -5906,22 +5916,23 @@ public class PlayerActivity extends Activity {
                 box.addView(numberChip);
             } else {
                 poster.setVisibility(View.GONE);
-                final TextView number = new TextView(this);
+                final TextView number = new TextView(ctx);
                 number.setText(String.valueOf(i + 1));
                 number.setTypeface(Typeface.DEFAULT_BOLD);
                 number.setLayoutParams(new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
                 number.setGravity(Gravity.CENTER);
                 number.setMinWidth(Utils.dpToPx(40));
-                number.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+                number.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
                 number.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textListNumber());
                 box.addView(number);
             }
             row.addView(box);
 
-            final TextView titleText = new TextView(this);
+            final TextView titleText = new TextView(ctx);
             titleText.setText(title);
-            titleText.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
+            titleText.setTextColor(isCurrent ? Color.WHITE : onSurface);
             titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
             if (isCurrent) {
                 titleText.setTypeface(Typeface.DEFAULT_BOLD);
@@ -5957,7 +5968,7 @@ public class PlayerActivity extends Activity {
             listLayout.addView(row);
         }
 
-        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
         scrollView.addView(listLayout);
         // The dialog spans the full height behind the status/navigation bars, so pad the content clear of
         // them. Use a FIXED inset captured now (the status bar is visible while the controls — and thus this
@@ -6103,32 +6114,38 @@ public class PlayerActivity extends Activity {
         final int selected = selectedQualityIndex(choices);
         final View[] currentRow = new View[1];
 
-        final LinearLayout listLayout = new LinearLayout(this);
+        // The panels follow the appearance choice, like the dialogs do — see
+        // Utils.dialogContext. Every view below is built against it, so a light app gets a
+        // light panel and AMOLED gets a black one.
+        final Context ctx = Utils.dialogContext(this);
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        final TextView header = new TextView(this);
+        final TextView header = new TextView(ctx);
         header.setText(getString(R.string.quality_title));
-        header.setTextColor(Color.WHITE);
+        header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        final View divider = new View(this);
+        final View divider = new View(ctx);
         final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         dividerLp.bottomMargin = Utils.dpToPx(4);
         divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(ContextCompat.getColor(this, R.color.divider));
+        divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                ContextCompat.getColor(ctx, R.color.divider)));
         listLayout.addView(divider);
 
         for (int i = 0; i < choices.size(); i++) {
             final VideoQualityChoice choice = choices.get(i);
             final boolean isCurrent = i == selected;
 
-            final LinearLayout row = new LinearLayout(this);
+            final LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
@@ -6138,27 +6155,28 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
             rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
+                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
+                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
 
-            final LinearLayout textBlock = new LinearLayout(this);
+            final LinearLayout textBlock = new LinearLayout(ctx);
             textBlock.setOrientation(LinearLayout.VERTICAL);
             final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             blockLp.gravity = Gravity.CENTER_VERTICAL;
             textBlock.setLayoutParams(blockLp);
 
-            final TextView title = new TextView(this);
+            final TextView title = new TextView(ctx);
             title.setText(qualityChoiceTitle(choice));
-            title.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
+            title.setTextColor(isCurrent ? Color.WHITE : onSurface);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -6168,9 +6186,10 @@ public class PlayerActivity extends Activity {
             final String subtitle = qualityChoiceSubtitle(choice);
             TextView details = null;
             if (subtitle != null && !subtitle.isEmpty()) {
-                details = new TextView(this);
+                details = new TextView(ctx);
                 details.setText(subtitle);
-                details.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+                details.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
@@ -6178,9 +6197,10 @@ public class PlayerActivity extends Activity {
             fitLongText(row, title, details);
 
             if (choice.bitrateText != null && !choice.bitrateText.isEmpty()) {
-                final TextView bitrate = new TextView(this);
+                final TextView bitrate = new TextView(ctx);
                 bitrate.setText(choice.bitrateText);
-                bitrate.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+                bitrate.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
                 bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 bitrate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
                 bitrate.setSingleLine(true);
@@ -6201,7 +6221,7 @@ public class PlayerActivity extends Activity {
             listLayout.addView(row);
         }
 
-        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
         scrollView.addView(listLayout);
         // The rows carry their own side padding; the card only keeps them off its rounded ends.
         scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
@@ -6353,14 +6373,19 @@ public class PlayerActivity extends Activity {
         // without this a remote opens onto whatever focus the dialog happened to pick.
         final View[] firstRow = new View[1];
 
-        final LinearLayout listLayout = new LinearLayout(this);
+        // The panels follow the appearance choice, like the dialogs do — see
+        // Utils.dialogContext. Every view below is built against it, so a light app gets a
+        // light panel and AMOLED gets a black one.
+        final Context ctx = Utils.dialogContext(this);
+        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        final TextView header = new TextView(this);
+        final TextView header = new TextView(ctx);
         header.setText(menuTitle);
-        header.setTextColor(Color.WHITE);
+        header.setTextColor(onSurface);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
@@ -6377,7 +6402,7 @@ public class PlayerActivity extends Activity {
             }
             final boolean isCurrent = item.checked;
 
-            final LinearLayout row = new LinearLayout(this);
+            final LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
@@ -6387,12 +6412,13 @@ public class PlayerActivity extends Activity {
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
             rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(this, R.color.brand_container) : Color.TRANSPARENT);
+                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
+                    ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                            ContextCompat.getColor(ctx, R.color.ripple_chrome))),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
@@ -6406,11 +6432,12 @@ public class PlayerActivity extends Activity {
             // readings of "this film" looking like one thing. Cropped, not fitted — a row of posters with
             // ragged widths reads as broken, and losing a sliver of a 2:3 image costs nothing.
             if (item.imageUrl != null && !item.imageUrl.isEmpty()) {
-                final ImageView art = new ImageView(this);
+                final ImageView art = new ImageView(ctx);
                 art.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 // Same placeholder as the header's poster slot, so a slow load is a quiet grey card
                 // rather than a hole that shifts the text when it fills.
-                art.setBackgroundColor(ContextCompat.getColor(this, R.color.placeholder_card));
+                art.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
+                        ContextCompat.getColor(ctx, R.color.placeholder_card)));
                 final int artCorner = Utils.dpToPx(4);
                 art.setClipToOutline(true);
                 art.setOutlineProvider(new ViewOutlineProvider() {
@@ -6426,10 +6453,10 @@ public class PlayerActivity extends Activity {
                 row.addView(art);
                 Glide.with(this).load(item.imageUrl).into(art);
             } else if (item.iconRes != 0) {
-                final ImageView icon = new ImageView(this);
+                final ImageView icon = new ImageView(ctx);
                 icon.setImageResource(item.iconRes);
                 icon.setImageTintList(ColorStateList.valueOf(
-                        isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive)));
+                        isCurrent ? Color.WHITE : onSurface));
                 final int iconSize = Utils.dpToPx(22);
                 final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
                 iconLp.setMarginEnd(Utils.dpToPx(16));
@@ -6437,16 +6464,16 @@ public class PlayerActivity extends Activity {
                 row.addView(icon);
             }
 
-            final LinearLayout textBlock = new LinearLayout(this);
+            final LinearLayout textBlock = new LinearLayout(ctx);
             textBlock.setOrientation(LinearLayout.VERTICAL);
             final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             blockLp.gravity = Gravity.CENTER_VERTICAL;
             textBlock.setLayoutParams(blockLp);
 
-            final TextView title = new TextView(this);
+            final TextView title = new TextView(ctx);
             title.setText(item.title);
-            title.setTextColor(isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive));
+            title.setTextColor(isCurrent ? Color.WHITE : onSurface);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -6460,7 +6487,7 @@ public class PlayerActivity extends Activity {
                     final int markBox = Math.round(title.getTextSize());
                     mark.setBounds(0, 0, markBox, markBox);
                     mark.setTintList(ColorStateList.valueOf(
-                            isCurrent ? Color.WHITE : ContextCompat.getColor(this, R.color.ink_row_inactive)));
+                            isCurrent ? Color.WHITE : onSurface));
                     title.setCompoundDrawablesRelative(mark, null, null, null);
                     title.setCompoundDrawablePadding(Utils.dpToPx(6));
                 }
@@ -6469,9 +6496,10 @@ public class PlayerActivity extends Activity {
 
             TextView details = null;
             if (item.subtitle != null && item.subtitle.length() > 0) {
-                details = new TextView(this);
+                details = new TextView(ctx);
                 details.setText(item.subtitle);
-                details.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+                details.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
@@ -6489,7 +6517,7 @@ public class PlayerActivity extends Activity {
             listLayout.addView(row);
         }
 
-        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
         scrollView.addView(listLayout);
         // The rows carry their own side padding; the card only keeps them off its rounded ends.
         scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));

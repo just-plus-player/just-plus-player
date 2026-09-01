@@ -516,18 +516,6 @@ class Utils {
             return new Rational(format.width, format.height);
     }
 
-    /** What a panel holds, which decides how wide it gets and which edge it arrives from. */
-    public enum Panel {
-        /** A word per row: speed, sleep, audio, subtitles, quality, the overflow menu. */
-        OPTIONS,
-        /** Rows carrying artwork and a filename, which need the width Material allows a sheet. */
-        LIST,
-        /** The same rows turned on their side: one row of frames that scrolls sideways. */
-        RAIL,
-        /** A control layout of fixed proportions — a slider, a keypad — which needs its height. */
-        CONTROL
-    }
-
     /**
      * The one window recipe every player panel uses: a Material 3 card over a dimmed picture,
      * dismissible by a tap outside. Docked to the end edge and centred vertically, or docked to the
@@ -541,20 +529,22 @@ class Utils {
      * swipe-to-dismiss: it is a plain window, and a handle that promised a drag it cannot perform would
      * be worse than no handle. It closes on a tap outside and on back, like every other panel.
      *
-     * <p>The anchor follows the window, which is what Material's size classes ask for: the bottom edge
-     * belongs to a compact width that has the height to spare — in practice a phone held upright, where
-     * the bottom is where the thumb is and where a vertically centred card puts its first row halfway up
-     * a tall screen. Everywhere else the panel stays at the end edge. A phone or tablet held sideways is
-     * a compact-height window, where a sheet from the bottom has less room than this card has now — the
-     * skip panel alone stands 388dp tall on a television and 294dp on a phone in landscape. A tablet
-     * upright is past the compact width, so it keeps the side dock its width was chosen for. And a
-     * television has no bottom sheet in its own component set, an unreserved overscan strip along that
-     * edge, and every piece of its chrome there already.
+     * <p>Every panel in the player is this one shape, this one size and this one place, whichever button
+     * opened it: a panel that arrives from a different edge or at a different width depending on the
+     * press reads as several different panels, and the viewer has to learn each of them. What varies is
+     * the window, not the content. A compact-width window — a phone held upright — takes the bottom
+     * edge, which is what Material's size classes ask for on that class of window and where the thumb
+     * already is. Everything wider takes the end edge: a phone or tablet held sideways is a
+     * compact-height window, where a sheet from the bottom has less room than this card has and the
+     * strip of picture beside it is worth keeping, and a television has no bottom sheet in its own
+     * component set, an unreserved overscan strip along that edge, and every piece of its chrome there
+     * already.
      *
-     * <p>{@link Panel#CONTROL} never takes the bottom edge whatever the window says. The subtitle
-     * offset panel is the reason: it retimes a line that is drawn at the bottom of the frame, live,
-     * while playback runs. A panel that covers the bottom of the picture deletes the very thing the
-     * viewer is reading to know whether the nudge was right.
+     * <p>The one thing that follows from the edge rather than being chosen is the width, and the shape:
+     * a sheet docked to the bottom is that edge's width, capped at the 640dp Material states for a
+     * sheet, with the two corners against the edge square and the navigation bar's inset carried inside
+     * it; a sheet at the end edge is inset from every side with 16dp corners all round. See
+     * {@link UiMetrics#panelWidthPx}.
      *
      * <p>The system bars are a margin here, not padding. A flat fill could run under the status bar
      * unnoticed; a card with a visible corner cannot, so what used to inset the content now insets the
@@ -563,31 +553,18 @@ class Utils {
      * {@code getInsets()} would report zero and put the card's corner under the cutout.
      */
     public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
-                                    final View content, final Panel kind) {
+                                    final View content) {
         final Configuration cfg = activity.getResources().getConfiguration();
-        // What decides the edge is the axis the content scrolls on, and the window only decides it for
-        // content that scrolls the ordinary way. A RAIL scrolls sideways: it wants width and has already
-        // given up height, and the bottom edge is the only shape that supplies width in a window a
-        // sideways phone's height — measured, a rail stands at 55% of that window where the same panel
-        // as a list stands at 84%, which is not a sheet any more. Everything that scrolls downward keeps
-        // the end edge unless the window is a phone held upright: Material's compact-width class is
-        // below 600dp, and 600 on both edges here means a phone held sideways — Expanded width over
-        // Compact height, the worst window there is for a sheet from the bottom — is never caught, and
-        // neither is a tablet, whose width is past compact either way up. A television never docks to the
-        // bottom: it has no bottom sheet in its own component set, its chrome is all at that edge, and
-        // the overscan strip there is the one this app under-reserves.
-        final boolean bottom = kind == Panel.RAIL
-                ? ui.deviceClass != UiMetrics.DeviceClass.TV
-                : kind != Panel.CONTROL && cfg.screenWidthDp < 600 && cfg.screenHeightDp >= 600;
-        // A sheet docked to an edge is that edge's width, not a card standing near it: full-bleed, and
-        // capped at the 640dp Material states for a bottom sheet, centred once the window is wider than
-        // that. The 8dp it stops short of the screen is the window's own, kept so the dialog never
-        // becomes a fullscreen one — see above; at 4dp a side it reads as the edge.
+        // One edge for every panel, and the window is what picks it — never which button was pressed:
+        // a panel that arrives from a different edge depending on what opened it reads as several
+        // different panels. A compact-width window, which is a phone held upright, gets the bottom edge,
+        // where the thumb is and where Material puts a sheet on that class of window. Everything wider
+        // gets the end edge: there the strip of picture beside the panel is worth having, and a remote's
+        // focus travels along one side of the screen instead of across the bottom of it.
+        final boolean bottom = cfg.screenWidthDp < 600;
+        // And one width, which follows the edge rather than the content — see UiMetrics.panelWidthPx.
         final int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        final int panelWidth = bottom
-                ? Math.min(screenWidth - dpToPx(8), dpToPx(640))
-                : kind == Panel.LIST || kind == Panel.RAIL ? ui.listWidthPx(cfg)
-                : ui.pickerWidthPx(cfg);
+        final int panelWidth = ui.panelWidthPx(cfg);
         // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
         // the panel is what the viewer came for and the strip of video beside it is not worth the room.
         // A television wants its overscan instead — the card has an edge to lose, where the full-bleed

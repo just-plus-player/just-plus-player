@@ -140,26 +140,27 @@ final class OffsetPanel {
     private OffsetPanel() {
     }
 
-    /**
-     * @param accent brand accent for the readout, track and thumb
-     */
     static Dialog create(final Activity activity, final UiMetrics ui,
-                         final int accent, final String title, final double maxSec,
+                         final String title, final double maxSec,
                          final double stepSec, final Line... lines) {
-        return create(activity, ui, accent, title, maxSec, stepSec, null, lines);
+        return create(activity, ui, title, maxSec, stepSec, null, lines);
     }
 
     /**
      * @param choices picked rather than nudged, drawn above the sliders; null or empty for none
      */
     static Dialog create(final Activity activity, final UiMetrics ui,
-                         final int accent, final String title, final double maxSec,
+                         final String title, final double maxSec,
                          final double stepSec, final Choice[] choices, final Line... lines) {
         // Every view in here is built against the appearance choice, not against the player's own dark
         // theme, so the panel is light when the app is light and black under AMOLED. A
         // ContextThemeWrapper keeps the activity's window token, which the dialog still needs.
         final Context ctx = Utils.dialogContext(activity);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        // The interface accent, not the chrome's: this panel is a surface, and @color/brand is the
+        // coral that lives over video. One accent per world — see @color/brand_accent.
+        final int accent = MaterialColors.getColor(ctx, R.attr.colorPrimary,
+                ContextCompat.getColor(ctx, R.color.brand_accent));
         final Rhythm rhythm = Rhythm.of(activity.getResources().getConfiguration());
         final LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.VERTICAL);

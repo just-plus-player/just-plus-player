@@ -6,15 +6,27 @@
     <!-- The mark's ramp (see design/just+.svg); the vector drawables carry these same two stops. -->
     <color name="brand_ramp_start">#FFFF6E3C</color>
     <color name="brand_ramp_end">#FFFF0D63</color>
-    <!-- The accent as it has to be on a LIGHT surface. @color/brand is a coral light enough to sit on
-         black; on a white sheet it measures 2.6:1 as a caption and 2.4:1 as a glyph, under the 4.5 and 3
-         those want. Same hue, same family, taken down until it clears both: 5.1:1 on colorSurface and
-         4.7:1 on colorSurfaceContainer. -->
-    <color name="brand_on_light">#FFC4362A</color>
-    <!-- The pair the one DayNight screen — settings — resolves through, so its section headers and its
-         switch follow the mode. values-night/ swaps both back to the bright coral. -->
-    <color name="brand_accent">@color/brand_on_light</color>
-    <color name="brand_accent_on">@color/white</color>
+    <!-- ONE accent for everything the app draws on a surface: a switch track, a checked segment, the
+         chosen row of a picker, a glyph, a section header. One, because two made the switch visibly
+         change colour between light and dark.
+
+         Its lightness is not a preference, it is the only window that exists. To be a fill or a glyph
+         at 3:1 it has to be darker than L=0.254 (else it vanishes on a white card) and lighter than
+         L=0.143 (else it vanishes on a dark one). L=0.193 is the middle of that window: 3.75:1 on the
+         light card, 3.78:1 on the dark one. @color/brand sits at L=0.333, above the window, which is
+         why it measured 2.4:1 on white.
+
+         Same hue as @color/brand, saturation eased to 0.65 — at this lightness the full saturation
+         reads as fire engine rather than coral.
+
+         What it cannot be is small text at 4.5:1 in BOTH schemes: that would need it darker than
+         L=0.172 on white and lighter than L=0.204 on black, and those windows do not overlap. As a
+         section header it lands at 4.11:1 light and 4.30:1 dark — short of AA, and still twice what
+         the bright coral managed on white. -->
+    <color name="brand_accent">#FFD6493C</color>
+    <!-- Ink on that accent. Near-black wins the arithmetic on a mid-toned fill: 4.88:1, where white is
+         4.31:1 and fails small text. -->
+    <color name="brand_accent_on">@color/black</color>
 
     <!-- M3 primary container (switch track when on, tonal surfaces): the brand at container tone.
          One value for both day and night — a deep coral reads on white and on the dark settings list alike.

@@ -12,6 +12,13 @@
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- colorAccent is NOT derived from colorPrimary: Theme.Material3.Dark inherits it through
+             Theme.MaterialComponents, where Base.V14.Theme.MaterialComponents sets it to
+             ?attr/colorSecondary — a role this app leaves at the M3 default on purpose. Drop this line
+             and every AppCompat widget that reads the accent goes baseline mauve. AppCompat's own
+             colorControlActivated maps to ?attr/colorAccent (Base.V7.Theme.AppCompat), so setting that
+             as well is redundant; the framework's android:colorControlActivated is not, since it maps
+             from android:colorAccent, which nothing here sets. -->
         <item name="colorAccent">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
@@ -60,7 +67,6 @@
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
         <item name="colorAccent">@color/brand</item>
-        <item name="colorControlActivated">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
 

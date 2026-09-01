@@ -12237,7 +12237,14 @@ public class PlayerActivity extends Activity {
     // guarded by mPrefs.revokedAudioMimes itself, so a repeat failure on the same mime after the
     // switch falls through to the normal error screen instead of looping.
     private boolean recoverByRevokingAudioMime(String mime, boolean persist) {
-        if (mime == null || player == null || audioSink == null
+        // audio/raw is never a passthrough mime: it is what a decoder feeds the sink, and it is also the
+        // format both audio renderers probe the sink with before they will decode anything at all. Denying
+        // it therefore denies decoding itself — every audio track becomes FORMAT_UNSUPPORTED_SUBTYPE, no
+        // audio track is selected, and the device plays every file in silence with no decoder in the
+        // report (JPP-C: a Realtek TV box, persisted, so no codec and no decoder priority brought sound
+        // back). An AudioTrack that failed while carrying decoded PCM reaches here with exactly that mime,
+        // via AudioSink.InitializationException.format, and there is nothing to revoke for it.
+        if (mime == null || MimeTypes.AUDIO_RAW.equals(mime) || player == null || audioSink == null
                 || mPrefs.revokedAudioMimes.contains(mime) || sessionRevokedAudioMimes.contains(mime)) {
             return false;
         }

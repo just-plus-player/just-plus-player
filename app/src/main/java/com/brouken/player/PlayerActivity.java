@@ -1982,10 +1982,15 @@ public class PlayerActivity extends Activity {
                 // pulls every child up off the screen edge, the two scrims included (the full-screen dim and
                 // the bar's own gradient), and what shows through underneath is a bright strip of raw video.
                 // On TV that inset is pure overscan, so the strip appeared with nothing drawn over it at all.
-                final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
+                final BottomBarLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
+                final int barHeight = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height);
                 final ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
-                params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + bottomBarPaddingBottom;
+                params.height = barHeight + bottomBarPaddingBottom;
                 exoBottomBar.setLayoutParams(params);
+                // Media3 parks the bar by that unchanged resource height, so tell it how much taller the bar
+                // now is -- without this the park stops the inset short and the button row's top stays over
+                // the picture for as long as the seek bar is up on its own.
+                exoBottomBar.setTravelScale((float) params.height / barHeight);
 
                 if (Build.VERSION.SDK_INT >= 35) {
                     findViewById(R.id.exo_left).getLayoutParams().width = windowInsets.getInsets(WindowInsets.Type.navigationBars()).left;

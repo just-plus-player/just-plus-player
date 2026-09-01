@@ -5595,17 +5595,7 @@ public class PlayerActivity extends Activity {
             playlistDialog.dismiss();
         }
         playlistDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        playlistDialog.setContentView(scrollView);
-        playlistDialog.setCanceledOnTouchOutside(true);
-        final Window window = playlistDialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
-            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
-            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.chrome_surface)));
-        }
+        Utils.pickerWindow(this, ui, playlistDialog, scrollView);
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
         if (currentRow[0] != null) {
@@ -5844,17 +5834,7 @@ public class PlayerActivity extends Activity {
             qualityDialog.dismiss();
         }
         qualityDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        qualityDialog.setContentView(scrollView);
-        qualityDialog.setCanceledOnTouchOutside(true);
-        final Window window = qualityDialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
-            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
-            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.chrome_surface)));
-        }
+        Utils.pickerWindow(this, ui, qualityDialog, scrollView);
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
@@ -6141,17 +6121,7 @@ public class PlayerActivity extends Activity {
             menuDialog.dismiss();
         }
         menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        menuDialog.setContentView(scrollView);
-        menuDialog.setCanceledOnTouchOutside(true);
-        final Window window = menuDialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
-            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
-            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.chrome_surface)));
-        }
+        Utils.pickerWindow(this, ui, menuDialog, scrollView);
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
         if (focus != null) {

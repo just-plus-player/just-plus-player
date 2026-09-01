@@ -5,6 +5,7 @@ import static android.content.Context.UI_MODE_SERVICE;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.Dialog;
 import android.app.UiModeManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -18,6 +19,7 @@ import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.Cursor;
+import android.graphics.drawable.ColorDrawable;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -31,6 +33,7 @@ import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
@@ -58,6 +61,8 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 
 import com.google.android.material.textfield.TextInputLayout;
+import androidx.core.content.ContextCompat;
+
 import com.obsez.android.lib.filechooser.ChooserDialog;
 import com.sigpwned.chardet4j.Chardet;
 import com.sigpwned.chardet4j.io.DecodedInputStreamReader;
@@ -519,6 +524,28 @@ class Utils {
      * @param insetSource any attached view, used to read the window insets
      * @param target      the view whose padding is set (horizontal padding comes from the caller's own grid)
      */
+    /**
+     * The one window recipe every end-docked player panel uses: docked to the end edge, one device-classed
+     * width, the chrome surface behind it, and dismissible by a tap outside.
+     *
+     * <p>Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the panel
+     * as immersive and apply its two-swipe back-gesture guard, where a plain window closes on one back.
+     */
+    public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
+                                    final View content) {
+        dialog.setContentView(content);
+        dialog.setCanceledOnTouchOutside(true);
+        final Window window = dialog.getWindow();
+        if (window == null) {
+            return;
+        }
+        window.setLayout(ui.pickerWidthPx(activity.getResources().getConfiguration()),
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setGravity(Gravity.END);
+        window.setBackgroundDrawable(
+                new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
+    }
+
     public static void padForPickerInsets(final Activity activity, final UiMetrics ui, final View insetSource,
                                          final View target, final int hPad,
                                          final int extraTopPx, final int extraBottomPx) {

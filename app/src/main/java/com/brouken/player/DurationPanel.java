@@ -6,7 +6,6 @@ import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.text.SpannableStringBuilder;
@@ -17,7 +16,6 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -264,8 +262,7 @@ final class DurationPanel {
         Utils.padForPickerInsets(activity, ui, insetSource, scrollView, hPad,
                 Utils.dpToPx(16), Utils.dpToPx(20));
 
-        dialog.setContentView(scrollView);
-        dialog.setCanceledOnTouchOutside(true);
+        Utils.pickerWindow(activity, ui, dialog, scrollView);
         // On TV the remote's number keys are the natural way in — arrowing across ten buttons is not.
         dialog.setOnKeyListener((d, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN
@@ -275,15 +272,6 @@ final class DurationPanel {
             digitKeys[keyCode - KeyEvent.KEYCODE_0].performClick();
             return true;
         });
-        final Window window = dialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge — see OffsetPanel: a fullscreen dialog window makes
-            // OxygenOS treat the panel as immersive and demand two back swipes.
-            window.setLayout(ui.pickerWidthPx(cfg), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(
-                    new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
-        }
         // Only where there is a D-pad. In touch mode this scrolls the title out of sight for nothing, since
         // a focus ring is not drawn there anyway.
         if (firstKey[0] != null && ui.deviceClass == UiMetrics.DeviceClass.TV) {

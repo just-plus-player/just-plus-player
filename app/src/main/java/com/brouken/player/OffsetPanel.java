@@ -6,13 +6,11 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -210,20 +208,9 @@ final class OffsetPanel {
         scroller.addView(root);
 
         final Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
-        dialog.setContentView(scroller);
+        Utils.pickerWindow(activity, ui, dialog, scroller);
         // The theme carries no title bar, so this is the only name a screen reader can announce.
         dialog.setTitle(title);
-        dialog.setCanceledOnTouchOutside(true);
-        final Window window = dialog.getWindow();
-        if (window != null) {
-            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
-            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
-            window.setLayout(ui.pickerWidthPx(activity.getResources().getConfiguration()),
-                    ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setGravity(Gravity.END);
-            window.setBackgroundDrawable(
-                    new ColorDrawable(ContextCompat.getColor(activity, R.color.chrome_surface)));
-        }
         // The choice, not the slider: it is the panel's first decision and it is at the top, so a
         // remote lands on it and the scroller stays where the title is. Focusing the slider scrolled
         // the panel to its own bottom the moment it opened.

@@ -96,6 +96,8 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.shape.ShapeAppearanceModel;
+import com.google.android.material.shape.MaterialShapeDrawable;
 import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
@@ -5454,6 +5456,10 @@ public class PlayerActivity extends Activity {
         // light panel and AMOLED gets a black one.
         final Context ctx = Utils.dialogContext(this);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        // What "chosen" looks like, shared with the toggle groups and the settings switch.
+        final int selectedFill = MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
+                ContextCompat.getColor(ctx, R.color.brand_container));
+        final int onSelected = MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer, Color.WHITE);
         final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
@@ -5497,8 +5503,7 @@ public class PlayerActivity extends Activity {
             // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -5558,7 +5563,7 @@ public class PlayerActivity extends Activity {
 
             final TextView titleText = new TextView(ctx);
             titleText.setText(title);
-            titleText.setTextColor(isCurrent ? Color.WHITE : onSurface);
+            titleText.setTextColor(isCurrent ? onSelected : onSurface);
             titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
             if (isCurrent) {
                 titleText.setTypeface(Typeface.DEFAULT_BOLD);
@@ -5745,6 +5750,10 @@ public class PlayerActivity extends Activity {
         // light panel and AMOLED gets a black one.
         final Context ctx = Utils.dialogContext(this);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        // What "chosen" looks like, shared with the toggle groups and the settings switch.
+        final int selectedFill = MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
+                ContextCompat.getColor(ctx, R.color.brand_container));
+        final int onSelected = MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer, Color.WHITE);
         final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
@@ -5780,8 +5789,7 @@ public class PlayerActivity extends Activity {
             row.setMinimumHeight(ui.rowMinHeight());
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -5802,7 +5810,7 @@ public class PlayerActivity extends Activity {
 
             final TextView title = new TextView(ctx);
             title.setText(qualityChoiceTitle(choice));
-            title.setTextColor(isCurrent ? Color.WHITE : onSurface);
+            title.setTextColor(isCurrent ? onSelected : onSurface);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -5954,30 +5962,45 @@ public class PlayerActivity extends Activity {
     }
 
     /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
-    private View menuRule(final Context ctx, int topPx, int bottomPx) {
-        final View rule = new View(ctx);
+    /**
+     * One group of rows as its own rounded card, the way the settings screen draws a preference
+     * category. The card is the tonal step above the sheet it sits on, and the gap to the next card is
+     * what used to be a hairline rule — a boundary you can see without drawing a line for it.
+     */
+    private LinearLayout panelGroup(final Context ctx) {
+        final LinearLayout group = new LinearLayout(ctx);
+        group.setOrientation(LinearLayout.VERTICAL);
+        final MaterialShapeDrawable card = new MaterialShapeDrawable(
+                ShapeAppearanceModel.builder().setAllCornerSizes(Utils.dpToPx(20)).build());
+        card.setFillColor(ColorStateList.valueOf(MaterialColors.getColor(
+                ctx, R.attr.colorSurfaceContainer, ContextCompat.getColor(ctx, R.color.thumb_box))));
+        group.setBackground(card);
+        // So a row's ripple and its lit fill stop at the card's rounded end.
+        group.setClipToOutline(true);
+        // A hair of card showing around each row, which is what tells a lit row from the card under it.
+        final int pad = Utils.dpToPx(4);
+        group.setPadding(pad, pad, pad, pad);
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-        lp.topMargin = topPx;
-        lp.bottomMargin = bottomPx;
-        rule.setLayoutParams(lp);
-        rule.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
-                ContextCompat.getColor(ctx, R.color.divider)));
-        return rule;
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = Utils.dpToPx(8);
+        group.setLayoutParams(lp);
+        return group;
     }
 
     /**
-     * A caption naming the group under it, in the register the panel already uses for a row's details —
-     * same size, same quiet ink. Indented to where the titles of that group start, not to the icon
-     * column, and given more air above than below so it belongs to what follows it.
+     * A caption naming the card under it, in the accent — the same coral the settings screen gives a
+     * preference category, so a group boundary reads the same in both places. Indented to where the
+     * titles of that group start, not to the icon column, and given more air above than below so it
+     * belongs to what follows it.
      */
     private View menuCaption(final Context ctx, CharSequence text) {
         final TextView caption = new TextView(ctx);
         caption.setText(text);
-        caption.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                ContextCompat.getColor(ctx, R.color.ink_secondary)));
+        caption.setTextColor(MaterialColors.getColor(ctx, R.attr.colorPrimary,
+                ContextCompat.getColor(ctx, R.color.brand)));
+        caption.setTypeface(Typeface.DEFAULT_BOLD);
         caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
-        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
+        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(8));
         return caption;
     }
 
@@ -6006,6 +6029,12 @@ public class PlayerActivity extends Activity {
         // light panel and AMOLED gets a black one.
         final Context ctx = Utils.dialogContext(this);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        // What "chosen" looks like, shared with the toggle groups and the settings switch.
+        final int selectedFill = MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
+                ContextCompat.getColor(ctx, R.color.brand_container));
+        final int onSelected = MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer, Color.WHITE);
+        final int accent = MaterialColors.getColor(ctx, R.attr.colorPrimary,
+                ContextCompat.getColor(ctx, R.color.brand));
         final LinearLayout listLayout = new LinearLayout(ctx);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
@@ -6019,14 +6048,17 @@ public class PlayerActivity extends Activity {
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
         listLayout.addView(header);
 
-        listLayout.addView(menuRule(ctx, 0, Utils.dpToPx(4)));
+        // Each group of rows is its own card, the way a preference category is one in settings. The
+        // holder is null between groups: the next row opens a new card, and a bare boundary needs no
+        // rule because the gap between two cards already is one.
+        final LinearLayout[] group = new LinearLayout[1];
 
         for (final MenuItem item : items) {
             if (item.chrome) {
-                // Air on both sides of a group boundary: it belongs to neither of the two groups.
-                listLayout.addView(item.title == null
-                        ? menuRule(ctx, Utils.dpToPx(6), Utils.dpToPx(6))
-                        : menuCaption(ctx, item.title));
+                group[0] = null;
+                if (item.title != null) {
+                    listLayout.addView(menuCaption(ctx, item.title));
+                }
                 continue;
             }
             final boolean isCurrent = item.checked;
@@ -6040,8 +6072,7 @@ public class PlayerActivity extends Activity {
             row.setMinimumHeight(ui.rowMinHeight());
             final GradientDrawable rowContent = new GradientDrawable();
             rowContent.setCornerRadius(Utils.dpToPx(8));
-            rowContent.setColor(isCurrent
-                    ? ContextCompat.getColor(ctx, R.color.brand_container) : Color.TRANSPARENT);
+            rowContent.setColor(isCurrent ? selectedFill : Color.TRANSPARENT);
             final GradientDrawable rowMask = new GradientDrawable();
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
@@ -6084,8 +6115,10 @@ public class PlayerActivity extends Activity {
             } else if (item.iconRes != 0) {
                 final ImageView icon = new ImageView(ctx);
                 icon.setImageResource(item.iconRes);
-                icon.setImageTintList(ColorStateList.valueOf(
-                        isCurrent ? Color.WHITE : onSurface));
+                // The accent, not the ink: a row of grey glyphs is a list of look-alikes, and the coral
+                // is the one thing in this panel that says which app it belongs to. White on the lit
+                // row, where the accent is already the fill under it.
+                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? onSelected : accent));
                 final int iconSize = Utils.dpToPx(22);
                 final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
                 iconLp.setMarginEnd(Utils.dpToPx(16));
@@ -6102,7 +6135,7 @@ public class PlayerActivity extends Activity {
 
             final TextView title = new TextView(ctx);
             title.setText(item.title);
-            title.setTextColor(isCurrent ? Color.WHITE : onSurface);
+            title.setTextColor(isCurrent ? onSelected : onSurface);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -6115,8 +6148,7 @@ public class PlayerActivity extends Activity {
                 if (mark != null) {
                     final int markBox = Math.round(title.getTextSize());
                     mark.setBounds(0, 0, markBox, markBox);
-                    mark.setTintList(ColorStateList.valueOf(
-                            isCurrent ? Color.WHITE : onSurface));
+                    mark.setTintList(ColorStateList.valueOf(isCurrent ? onSelected : accent));
                     title.setCompoundDrawablesRelative(mark, null, null, null);
                     title.setCompoundDrawablePadding(Utils.dpToPx(6));
                 }
@@ -6143,7 +6175,11 @@ public class PlayerActivity extends Activity {
                     item.action.run();
                 }
             });
-            listLayout.addView(row);
+            if (group[0] == null) {
+                group[0] = panelGroup(ctx);
+                listLayout.addView(group[0]);
+            }
+            group[0].addView(row);
         }
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);

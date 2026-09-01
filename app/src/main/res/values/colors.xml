@@ -6,6 +6,16 @@
     <!-- The mark's ramp (see design/just+.svg); the vector drawables carry these same two stops. -->
     <color name="brand_ramp_start">#FFFF6E3C</color>
     <color name="brand_ramp_end">#FFFF0D63</color>
+    <!-- The accent as it has to be on a LIGHT surface. @color/brand is a coral light enough to sit on
+         black; on a white sheet it measures 2.6:1 as a caption and 2.4:1 as a glyph, under the 4.5 and 3
+         those want. Same hue, same family, taken down until it clears both: 5.1:1 on colorSurface and
+         4.7:1 on colorSurfaceContainer. -->
+    <color name="brand_on_light">#FFC4362A</color>
+    <!-- The pair the one DayNight screen — settings — resolves through, so its section headers and its
+         switch follow the mode. values-night/ swaps both back to the bright coral. -->
+    <color name="brand_accent">@color/brand_on_light</color>
+    <color name="brand_accent_on">@color/white</color>
+
     <!-- M3 primary container (switch track when on, tonal surfaces): the brand at container tone.
          One value for both day and night — a deep coral reads on white and on the dark settings list alike.
          The player's current picker row takes it too, so a selected row and a switch that is on are the

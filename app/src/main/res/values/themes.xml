@@ -12,6 +12,14 @@
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. Material
+             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
+             three said it three different ways — and the coral container the rows used measured 1.59:1
+             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
+             read the same and clear 3:1 either way round. -->
+        <item name="colorSecondaryContainer">@color/brand</item>
+        <item name="colorOnSecondaryContainer">@color/brand_on</item>
         <!-- colorAccent is NOT derived from colorPrimary: Theme.Material3.Dark inherits it through
              Theme.MaterialComponents, where Base.V14.Theme.MaterialComponents sets it to
              ?attr/colorSecondary — a role this app leaves at the M3 default on purpose. Drop this line
@@ -47,6 +55,14 @@
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. Material
+             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
+             three said it three different ways — and the coral container the rows used measured 1.59:1
+             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
+             read the same and clear 3:1 either way round. -->
+        <item name="colorSecondaryContainer">@color/brand</item>
+        <item name="colorOnSecondaryContainer">@color/brand_on</item>
         <item name="colorAccent">@color/brand</item>
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
@@ -63,11 +79,21 @@
              primary colour, which with a coral primary is a red band across the top of the screen.
              SettingsActivity sets the icon appearance to match. -->
         <item name="android:statusBarColor">?attr/colorSurface</item>
-        <item name="colorPrimary">@color/brand</item>
+        <!-- The one DayNight screen in the app, so the accent is the pair that follows the mode: the
+             bright coral is unreadable as a section header on a white card, at 2.6:1. -->
+        <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="colorOnPrimary">@color/brand_on</item>
-        <item name="colorAccent">@color/brand</item>
-        <item name="android:colorControlActivated">@color/brand</item>
+        <item name="colorOnPrimary">@color/brand_accent_on</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. Material
+             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
+             three said it three different ways — and the coral container the rows used measured 1.59:1
+             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
+             read the same and clear 3:1 either way round. -->
+        <item name="colorSecondaryContainer">@color/brand_accent</item>
+        <item name="colorOnSecondaryContainer">@color/brand_accent_on</item>
+        <item name="colorAccent">@color/brand_accent</item>
+        <item name="android:colorControlActivated">@color/brand_accent</item>
     </style>
 
     <!-- Split like Theme.Player and Theme.Error, so values-television and values-notouch can give the
@@ -118,13 +144,23 @@
     <style name="BaseTheme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
-        <item name="colorPrimary">@color/brand</item>
+        <!-- Not @color/brand: this theme is light whatever the system is doing, and the bright coral
+             cannot be read on it. See @color/brand_on_light. -->
+        <item name="colorPrimary">@color/brand_on_light</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="colorOnPrimary">@color/brand_on</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. Material
+             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
+             three said it three different ways — and the coral container the rows used measured 1.59:1
+             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
+             read the same and clear 3:1 either way round. -->
+        <item name="colorSecondaryContainer">@color/brand_on_light</item>
+        <item name="colorOnSecondaryContainer">@color/white</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
-        <item name="colorAccent">@color/brand</item>
+        <item name="colorAccent">@color/brand_on_light</item>
     </style>
 
     <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
@@ -138,6 +174,14 @@
         <item name="colorPrimary">@color/brand</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/brand_on</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. Material
+             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
+             three said it three different ways — and the coral container the rows used measured 1.59:1
+             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
+             read the same and clear 3:1 either way round. -->
+        <item name="colorSecondaryContainer">@color/brand</item>
+        <item name="colorOnSecondaryContainer">@color/brand_on</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->

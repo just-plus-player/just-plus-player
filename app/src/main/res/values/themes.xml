@@ -145,8 +145,8 @@
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <!-- Not @color/brand: this theme is light whatever the system is doing, and the bright coral
-             cannot be read on it. See @color/brand_on_light. -->
-        <item name="colorPrimary">@color/brand_on_light</item>
+             cannot be read on it. @color/brand_accent is the one value that works on both. -->
+        <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
         <item name="colorOnPrimary">@color/white</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
@@ -155,12 +155,12 @@
              three said it three different ways — and the coral container the rows used measured 1.59:1
              against a dark card, a selection you had to look for. Pointed at the accent pair, all three
              read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">@color/brand_on_light</item>
-        <item name="colorOnSecondaryContainer">@color/white</item>
+        <item name="colorSecondaryContainer">@color/brand_accent</item>
+        <item name="colorOnSecondaryContainer">@color/brand_accent_on</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
-        <item name="colorAccent">@color/brand_on_light</item>
+        <item name="colorAccent">@color/brand_accent</item>
     </style>
 
     <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
@@ -171,21 +171,23 @@
     <style name="BaseTheme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
-        <item name="colorPrimary">@color/brand</item>
+        <!-- The same accent the light panel uses, so a switch does not change colour with the theme.
+             @color/brand stays what it always was: the chrome over video, which is never light. -->
+        <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="colorOnPrimary">@color/brand_on</item>
+        <item name="colorOnPrimary">@color/white</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
              segment of a toggle group, the current row of a picker, the track of a switch. Material
              would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
              three said it three different ways — and the coral container the rows used measured 1.59:1
              against a dark card, a selection you had to look for. Pointed at the accent pair, all three
              read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">@color/brand</item>
-        <item name="colorOnSecondaryContainer">@color/brand_on</item>
+        <item name="colorSecondaryContainer">@color/brand_accent</item>
+        <item name="colorOnSecondaryContainer">@color/brand_accent_on</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
-        <item name="colorAccent">@color/brand</item>
+        <item name="colorAccent">@color/brand_accent</item>
     </style>
 
     <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the

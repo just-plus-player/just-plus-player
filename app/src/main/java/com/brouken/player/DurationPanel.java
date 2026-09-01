@@ -59,10 +59,9 @@ final class DurationPanel {
     }
 
     /**
-     * @param accent      brand accent for the readout and the Start action
      */
     static Dialog create(final Activity activity, final UiMetrics ui,
-                         final int accent, final String title, final Listener listener) {
+                         final String title, final Listener listener) {
         final int[] typed = {0}; // up to 4 digits, read as HHMM
 
         final Configuration cfg = activity.getResources().getConfiguration();
@@ -82,6 +81,10 @@ final class DurationPanel {
         // OffsetPanel for the same move and Utils.dialogContext for what it resolves.
         final Context ctx = Utils.dialogContext(activity);
         final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
+        // The interface accent, not the chrome's: see OffsetPanel and @color/brand_accent.
+        final int accent = MaterialColors.getColor(ctx, R.attr.colorPrimary,
+                ContextCompat.getColor(ctx, R.color.brand_accent));
+
         final LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.VERTICAL);
 

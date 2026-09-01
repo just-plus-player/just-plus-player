@@ -3836,7 +3836,6 @@ public class PlayerActivity extends Activity {
         final OffsetPanel.Choice[] choices = hasSkipSegment()
                 ? new OffsetPanel.Choice[]{ skipModeChoice() } : new OffsetPanel.Choice[0];
         skipOffsetDialog = OffsetPanel.create(this, ui,
-                brandColor(),   // coral, matches the skip timeline highlight
                 getString(R.string.skip_session_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC, choices,
                 // Captioned only while it shares the panel with the row above it; alone it is the panel.
                 new OffsetPanel.Line(choices.length == 0 ? null : getString(R.string.skip_offset_title),
@@ -3893,7 +3892,7 @@ public class PlayerActivity extends Activity {
         if (lines.isEmpty()) {
             return;
         }
-        subtitleOffsetDialog = OffsetPanel.create(this, ui, brandColor(),
+        subtitleOffsetDialog = OffsetPanel.create(this, ui,
                 getString(R.string.subtitle_offset_title), SUBTITLE_OFFSET_MAX_SEC, OFFSET_STEP_SEC,
                 lines.toArray(new OffsetPanel.Line[0]));
         showPickerDialog(subtitleOffsetDialog);
@@ -6414,13 +6413,16 @@ public class PlayerActivity extends Activity {
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        final TextView header = new TextView(ctx);
-        header.setText(menuTitle);
-        header.setTextColor(onSurface);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
-        header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
-        listLayout.addView(header);
+        // A panel whose groups name themselves needs no title of its own — see showMoreMenu.
+        if (menuTitle != null) {
+            final TextView header = new TextView(ctx);
+            header.setText(menuTitle);
+            header.setTextColor(onSurface);
+            header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
+            header.setTypeface(Typeface.DEFAULT_BOLD);
+            header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+            listLayout.addView(header);
+        }
 
         // Each group of rows is its own card, the way a preference category is one in settings. The
         // holder is null between groups: the next row opens a new card, and a bare boundary needs no
@@ -9272,7 +9274,7 @@ public class PlayerActivity extends Activity {
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
         }
-        sleepTimerDialog = DurationPanel.create(this, ui, brandColor(),
+        sleepTimerDialog = DurationPanel.create(this, ui,
                 getString(R.string.sleep_timer_title), this::armSleepTimer);
         showPickerDialog(sleepTimerDialog);
     }
@@ -9349,7 +9351,9 @@ public class PlayerActivity extends Activity {
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
         items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
-        showSideMenu(getString(R.string.button_more), items);
+        // No title: every group in here already names itself, and "More" only repeated the button
+        // that opened the panel.
+        showSideMenu(null, items);
     }
 
     // --- Watch together -------------------------------------------------------------------------

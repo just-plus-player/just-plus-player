@@ -579,7 +579,13 @@ class Utils {
         final boolean bottom = kind == Panel.RAIL
                 ? ui.deviceClass != UiMetrics.DeviceClass.TV
                 : kind != Panel.CONTROL && cfg.screenWidthDp < 600 && cfg.screenHeightDp >= 600;
-        final int panelWidth = kind == Panel.RAIL && bottom ? ui.railWidthPx(cfg)
+        // A sheet docked to an edge is that edge's width, not a card standing near it: full-bleed, and
+        // capped at the 640dp Material states for a bottom sheet, centred once the window is wider than
+        // that. The 8dp it stops short of the screen is the window's own, kept so the dialog never
+        // becomes a fullscreen one — see above; at 4dp a side it reads as the edge.
+        final int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        final int panelWidth = bottom
+                ? Math.min(screenWidth - dpToPx(8), dpToPx(640))
                 : kind == Panel.LIST || kind == Panel.RAIL ? ui.listWidthPx(cfg)
                 : ui.pickerWidthPx(cfg);
         // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
@@ -641,15 +647,27 @@ class Utils {
         final FrameLayout host = new FrameLayout(activity);
         // A sheet must not reach the top edge; the panels hide the status bar, so without a floor here a
         // long playlist would grow into a full-screen dialog that arrived from the bottom.
-        host.setPadding(0, bottom ? Math.max(insetTop, dpToPx(56)) : insetTop, 0, insetBottom);
+        //
+        // At the bottom the inset goes inside the sheet instead of under it, which is what Material's own
+        // bottom sheet does (paddingBottomSystemWindowInsets): the surface reaches the screen's edge and
+        // the rows stop above the navigation bar. Held as a margin it left a strip of video between the
+        // sheet and the edge, and a sheet with a gap under it is a card again.
+        host.setPadding(0, bottom ? Math.max(insetTop, dpToPx(56)) : insetTop, 0,
+                bottom ? 0 : insetBottom);
+        if (bottom && insetBottom > 0) {
+            content.setPadding(content.getPaddingLeft(), content.getPaddingTop(),
+                    content.getPaddingRight(), content.getPaddingBottom() + insetBottom);
+        }
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 panelWidth, ViewGroup.LayoutParams.WRAP_CONTENT,
                 bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
                         : Gravity.END | Gravity.CENTER_VERTICAL);
         if (bottom) {
-            // Even margins under CENTER_HORIZONTAL, and none at the bottom: the card sits on the edge,
-            // above whatever the navigation bar left of it (that inset is the host's padding).
-            lp.setMargins(hMargin, vMargin, hMargin, 0);
+            // No side margins at all, and none at the bottom: a docked sheet is the width it is given
+            // and sits on the edge, above whatever the navigation bar left of it (that inset is the
+            // host's padding). A margin here is what made the shape read as a card glued to the bottom
+            // rather than as a sheet — detached at the sides, square where it met the screen.
+            lp.setMargins(0, vMargin, 0, 0);
         } else {
             // Horizontal gravity is END, where a margin is a bound and the blocked edge can simply be
             // added.
@@ -665,10 +683,9 @@ class Utils {
         }
         // The window carries the card plus its margins, so the card itself keeps the width the panel was
         // designed at. Capped short of the screen so the window never becomes a fullscreen one.
-        final int screenW = activity.getResources().getDisplayMetrics().widthPixels;
         window.setLayout(
-                bottom ? screenW - dpToPx(8)
-                        : Math.min(screenW - dpToPx(8), panelWidth + 2 * hMargin + insetEnd),
+                bottom ? screenWidth - dpToPx(8)
+                        : Math.min(screenWidth - dpToPx(8), panelWidth + 2 * hMargin + insetEnd),
                 ViewGroup.LayoutParams.MATCH_PARENT);
         window.setGravity(bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.END);
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));

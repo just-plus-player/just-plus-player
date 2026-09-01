@@ -529,22 +529,36 @@ class Utils {
      */
     public static void pickerWindow(final Activity activity, final UiMetrics ui, final Dialog dialog,
                                     final View content) {
+        final Configuration cfg = activity.getResources().getConfiguration();
         // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
         // the panel is what the viewer came for and the strip of video beside it is not worth the room.
         // A television wants its overscan instead — the card has an edge to lose, where the full-bleed
         // fill before it had none.
         final int hMargin = Math.max(dpToPx(8), ui.overscanH());
         final int vMargin = Math.max(dpToPx(8), ui.overscanV());
-        int barTop = 0;
-        int barBottom = 0;
+        // What actually blocks pixels while a panel is open, and nothing more. applyPickerBars hides the
+        // status bar and shows the navigation bar, so reserving room for the status bar costs the card
+        // 24dp of height for a bar that is not on screen — which is what clipped the last row of a long
+        // menu while a fifth of the window stood empty. The cutout is there whether or not any bar is,
+        // and the navigation inset is read ignoring visibility because a panel opened from another panel
+        // arrives with the bars already turned off. Per edge, because a cutout on the left of a
+        // sideways phone says nothing about the right edge this panel is docked to.
+        int insetTop = 0;
+        int insetBottom = 0;
+        int insetEnd = 0;
         final WindowInsets insets = activity.getWindow().getDecorView().getRootWindowInsets();
         if (insets != null) {
             if (Build.VERSION.SDK_INT >= 30) {
-                barTop = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
-                barBottom = insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom;
+                final android.graphics.Insets blocked = android.graphics.Insets.max(
+                        insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout()),
+                        insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()));
+                insetTop = blocked.top;
+                insetBottom = blocked.bottom;
+                insetEnd = cfg.getLayoutDirection()
+                        == View.LAYOUT_DIRECTION_RTL ? blocked.left : blocked.right;
             } else {
-                barTop = insets.getSystemWindowInsetTop();
-                barBottom = insets.getSystemWindowInsetBottom();
+                // No per-type insets before 30, and no way to ask about a hidden bar either.
+                insetBottom = insets.getSystemWindowInsetBottom();
             }
         }
 
@@ -557,11 +571,16 @@ class Utils {
         content.setBackground(card);
         content.setClipToOutline(true); // so a full-bleed row's ripple stops at the rounded end
 
+        // The blocked edges are the host's padding, not the card's margin: FrameLayout treats a margin
+        // under CENTER_VERTICAL as a shift rather than a bound, so an uneven pair walks the card off the
+        // top of the screen. Padding bounds it, and the margin left on the card is even.
         final FrameLayout host = new FrameLayout(activity);
+        host.setPadding(0, insetTop, 0, insetBottom);
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_VERTICAL);
-        lp.setMargins(hMargin, barTop + vMargin, hMargin, barBottom + vMargin);
+                ui.pickerWidthPx(cfg), ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.END | Gravity.CENTER_VERTICAL);
+        // Horizontal gravity is END, where a margin is a bound and the blocked edge can simply be added.
+        lp.setMargins(hMargin, vMargin, hMargin + insetEnd, vMargin);
         host.addView(content, lp);
 
         dialog.setContentView(host);
@@ -574,8 +593,7 @@ class Utils {
         // designed at. Capped short of the screen so the window never becomes a fullscreen one.
         final int screenW = activity.getResources().getDisplayMetrics().widthPixels;
         window.setLayout(
-                Math.min(screenW - dpToPx(8),
-                        ui.pickerWidthPx(activity.getResources().getConfiguration()) + 2 * hMargin),
+                Math.min(screenW - dpToPx(8), ui.pickerWidthPx(cfg) + 2 * hMargin + insetEnd),
                 ViewGroup.LayoutParams.MATCH_PARENT);
         window.setGravity(Gravity.END);
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));

@@ -135,16 +135,6 @@ final class UiMetrics {
         return panelWidthPx(cfg, 640);
     }
 
-    /**
-     * Width for a rail of frames docked to the bottom edge. The caps above leave a strip of video beside
-     * a panel because a panel at the end edge takes width from the picture; a rail has already given up
-     * the height instead, so the strip it would leave buys nothing and costs it a frame — measured, the
-     * 60% landscape cap shows 2.7 cards where 85% shows 3.9.
-     */
-    int railWidthPx(Configuration cfg) {
-        return dp(Math.round(cfg.screenWidthDp * 0.85f));
-    }
-
     private int panelWidthPx(Configuration cfg, int preferredDp) {
         final int windowW = cfg.screenWidthDp;
         final int capPortrait = windowW - 56;                       // always leave a strip of video/scrim

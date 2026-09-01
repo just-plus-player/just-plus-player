@@ -5154,6 +5154,38 @@ public class PlayerActivity extends Activity {
         return shortSide + "p";
     }
 
+    /**
+     * A track row in two lines: what the track is called, and what it is.
+     *
+     * <p>One line held both, in the shape the header meta line uses — {@code name [AAC 2.0 298k] (lang)}
+     * — and a file whose tracks declare neither a name nor a language turned that into four rows reading
+     * {@code [AAC 2.0 298k]}, three of them identical to the eye and none of them nameable. Brackets in a
+     * list also read as something printed rather than something chosen.
+     *
+     * <p>So the name goes on the first line — the container's own label, else the language, else the
+     * track's number, which is the one thing that always distinguishes one from the next — and the
+     * codec, the channels and the bitrate go on the second in the ink a supporting line is given. It is
+     * the shape the quality panel beside it already uses.
+     *
+     * @return the headline, and the supporting line or null when there is nothing to support it with
+     */
+    private String[] trackRowText(final Format format, final int number) {
+        final String name = trackName(format);
+        final String language = languageDisplayName(format.language);
+        final String headline = name != null && !name.isEmpty() ? name
+                : language != null && !language.isEmpty() ? language
+                : getString(R.string.audio_track_number, number);
+        final StringBuilder detail = new StringBuilder(CustomDefaultTrackNameProvider.techInfo(format));
+        // The language belongs on the second line only when the first one is taken by a name.
+        if (name != null && !name.isEmpty() && language != null && !language.isEmpty()) {
+            if (detail.length() > 0) {
+                detail.append(" \u00b7 ");
+            }
+            detail.append(language);
+        }
+        return new String[]{headline, detail.length() == 0 ? null : detail.toString()};
+    }
+
     private String buildAudioInfo(Format audio) {
         if (audio == null) {
             return null;
@@ -6148,8 +6180,8 @@ public class PlayerActivity extends Activity {
                 final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 // Each row carries its own rounded fill, so they are separated rather than stacked into
-                // one column of touching rectangles.
-                rowLp.bottomMargin = Utils.dpToPx(4);
+                // one column of touching rectangles — between them, which is not after the last one.
+                rowLp.bottomMargin = i == count - 1 ? 0 : Utils.dpToPx(4);
                 listLayout.addView(row, rowLp);
             }
         }
@@ -6161,7 +6193,10 @@ public class PlayerActivity extends Activity {
         // dialog — are shown): a dynamic inset listener would drop to 0 when hideController() flips the
         // activity to immersive flags, making the list visibly "jump" up under the still-visible status bar.
         // The rows carry their own side padding; the card only keeps them off its rounded ends.
-        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
+        // Nothing at the bottom: the list inside carries its own padding and the panel adds the
+        // navigation bar's inset under that, so a third one here only opened a band of empty sheet
+        // below the last row.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
 
         if (playlistDialog != null) {
             playlistDialog.dismiss();
@@ -6418,7 +6453,10 @@ public class PlayerActivity extends Activity {
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
         scrollView.addView(listLayout);
         // The rows carry their own side padding; the card only keeps them off its rounded ends.
-        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
+        // Nothing at the bottom: the list inside carries its own padding and the panel adds the
+        // navigation bar's inset under that, so a third one here only opened a band of empty sheet
+        // below the last row.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
 
         if (qualityDialog != null) {
             qualityDialog.dismiss();
@@ -6523,28 +6561,24 @@ public class PlayerActivity extends Activity {
 
     /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
     /**
-     * One group of rows as its own rounded card, the way the settings screen draws a preference
-     * category. The card is the tonal step above the sheet it sits on, and the gap to the next card is
-     * what used to be a hairline rule — a boundary you can see without drawing a line for it.
+     * The rule between two groups of rows that have no name to separate them: a hairline of the outline
+     * tone, inset to the panel's content edge, with the same air above it as below.
+     *
+     * <p>It replaced a card per group. A card inside a sheet is a container inside a container, and the
+     * two tones it needs are 1.23:1 apart — so it read as noise rather than as structure, and it gave
+     * the panel three different left edges: the group's name on one, the icons on a second, their labels
+     * on a third. A list on the sheet itself has one edge, and a rule is what a boundary between two
+     * groups of a list looks like.
      */
-    private LinearLayout panelGroup(final Context ctx) {
-        final LinearLayout group = new LinearLayout(ctx);
-        group.setOrientation(LinearLayout.VERTICAL);
-        final MaterialShapeDrawable card = new MaterialShapeDrawable(
-                ShapeAppearanceModel.builder().setAllCornerSizes(Utils.dpToPx(20)).build());
-        card.setFillColor(ColorStateList.valueOf(MaterialColors.getColor(
-                ctx, R.attr.colorSurfaceContainer, ContextCompat.getColor(ctx, R.color.thumb_box))));
-        group.setBackground(card);
-        // So a row's ripple and its lit fill stop at the card's rounded end.
-        group.setClipToOutline(true);
-        // A hair of card showing around each row, which is what tells a lit row from the card under it.
-        final int pad = Utils.dpToPx(4);
-        group.setPadding(pad, pad, pad, pad);
+    private View menuDivider(final Context ctx) {
+        final View rule = new View(ctx);
+        rule.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                ContextCompat.getColor(ctx, R.color.divider)));
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = Utils.dpToPx(8);
-        group.setLayoutParams(lp);
-        return group;
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, Utils.dpToPx(1)));
+        lp.setMargins(Utils.dpToPx(6), Utils.dpToPx(8), Utils.dpToPx(6), Utils.dpToPx(8));
+        rule.setLayoutParams(lp);
+        return rule;
     }
 
     /**
@@ -6558,9 +6592,13 @@ public class PlayerActivity extends Activity {
         caption.setText(text);
         caption.setTextColor(MaterialColors.getColor(ctx, R.attr.colorPrimary,
                 ContextCompat.getColor(ctx, R.color.brand)));
-        caption.setTypeface(Typeface.DEFAULT_BOLD);
+        // Medium, not bold, at the size Material gives a list subheader — and started on the same line
+        // the icons below it start on, 16dp into the row, so the panel has one left edge instead of
+        // three. It keeps the accent: the settings screen names its sections in it, and one coral line
+        // at the top of a group is a signature where eight coral glyphs under it were noise.
+        caption.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
-        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(8));
+        caption.setPadding(Utils.dpToPx(6), Utils.dpToPx(16), Utils.dpToPx(6), Utils.dpToPx(8));
         return caption;
     }
 
@@ -6610,20 +6648,22 @@ public class PlayerActivity extends Activity {
             header.setTextColor(onSurface);
             header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
             header.setTypeface(Typeface.DEFAULT_BOLD);
-            header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+            header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
             listLayout.addView(header);
         }
 
         // Each group of rows is its own card, the way a preference category is one in settings. The
         // holder is null between groups: the next row opens a new card, and a bare boundary needs no
         // rule because the gap between two cards already is one.
-        final LinearLayout[] group = new LinearLayout[1];
+        // Whether anything is above the boundary yet, so the panel never opens on a rule.
+        final boolean[] anyRow = {false};
 
         for (final MenuItem item : items) {
             if (item.chrome) {
-                group[0] = null;
                 if (item.title != null) {
                     listLayout.addView(menuCaption(ctx, item.title));
+                } else if (anyRow[0]) {
+                    listLayout.addView(menuDivider(ctx));
                 }
                 continue;
             }
@@ -6632,10 +6672,18 @@ public class PlayerActivity extends Activity {
             final LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+            // 6dp inside the list's own 10dp, so the icon starts 16dp from the sheet's edge and its
+            // label at 16 + 24 + 16 = 56dp — the two numbers Material states for a list item with a
+            // leading icon. The vertical padding only keeps a two-line row off its own edges; the
+            // height below does the rest.
+            row.setPadding(Utils.dpToPx(6), Utils.dpToPx(8), Utils.dpToPx(6), Utils.dpToPx(8));
             row.setClickable(true);
             row.setFocusable(true);
-            row.setMinimumHeight(ui.rowMinHeight());
+            // A one-line row is 48dp and a one-line row that leads with an icon or a poster is 56dp —
+            // Material states both, and this list has rows of each kind.
+            final boolean leads = item.iconRes != 0
+                    || (item.imageUrl != null && !item.imageUrl.isEmpty());
+            row.setMinimumHeight(leads ? ui.dpS(56) : ui.rowMinHeight());
             row.setBackground(Utils.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
             if (isCurrent) {
                 currentRow[0] = row;
@@ -6672,11 +6720,18 @@ public class PlayerActivity extends Activity {
             } else if (item.iconRes != 0) {
                 final ImageView icon = new ImageView(ctx);
                 icon.setImageResource(item.iconRes);
-                // The accent, not the ink: a row of grey glyphs is a list of look-alikes, and the coral
-                // is the one thing in this panel that says which app it belongs to. White on the lit
-                // row, where the accent is already the fill under it.
-                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? onSelected : accent));
-                final int iconSize = Utils.dpToPx(22);
+                // The ink a leading icon is given, not the accent. The accent was the argument once —
+                // "the one thing that says which app this is" — and eight of them in a column is not a
+                // signature, it is a list where every row shouts and the colour has stopped meaning
+                // anything: the same coral says "chosen" two rows below, on the row that is. One accent,
+                // one job. On the chosen row the icon takes the ink that belongs to the fill under it.
+                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? onSelected
+                        : MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                                ContextCompat.getColor(ctx, R.color.ink_secondary))));
+                // 24dp, the size Material states for a list item's leading icon — through dpS, because
+                // the row's own height goes through it, and a glyph that stays put in a row that grows
+                // reads as a smaller glyph on every device the chrome scales up for.
+                final int iconSize = ui.dpS(24);
                 final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
                 iconLp.setMarginEnd(Utils.dpToPx(16));
                 icon.setLayoutParams(iconLp);
@@ -6716,8 +6771,12 @@ public class PlayerActivity extends Activity {
             if (item.subtitle != null && item.subtitle.length() > 0) {
                 details = new TextView(ctx);
                 details.setText(item.subtitle);
-                details.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
+                // On the row that is chosen it takes the ink of the fill it sits on: the quiet ink of
+                // the panel measures about 1.6:1 against the accent, which is a second line nobody can
+                // read on the one row the eye goes to first.
+                details.setTextColor(isCurrent ? onSelected
+                        : MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                                ContextCompat.getColor(ctx, R.color.ink_secondary)));
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
@@ -6732,17 +6791,17 @@ public class PlayerActivity extends Activity {
                     item.action.run();
                 }
             });
-            if (group[0] == null) {
-                group[0] = panelGroup(ctx);
-                listLayout.addView(group[0]);
-            }
-            group[0].addView(row);
+            listLayout.addView(row);
+            anyRow[0] = true;
         }
 
         final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
         scrollView.addView(listLayout);
         // The rows carry their own side padding; the card only keeps them off its rounded ends.
-        scrollView.setPadding(0, Utils.dpToPx(8), 0, Utils.dpToPx(8));
+        // Nothing at the bottom: the list inside carries its own padding and the panel adds the
+        // navigation bar's inset under that, so a third one here only opened a band of empty sheet
+        // below the last row.
+        scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
 
         if (menuDialog != null) {
             menuDialog.dismiss();
@@ -6758,13 +6817,16 @@ public class PlayerActivity extends Activity {
 
     private static class AudioChoice {
         final String label;
+        final String detail; // the codec, channels and bitrate; null when the track declares none
         final TrackGroup group;
         final int trackIndex;
         final boolean selected;
         final String language; // ISO-639-2/T, null when the track declares none
 
-        AudioChoice(String label, TrackGroup group, int trackIndex, boolean selected, String language) {
+        AudioChoice(String label, String detail, TrackGroup group, int trackIndex, boolean selected,
+                    String language) {
             this.label = label;
+            this.detail = detail;
             this.group = group;
             this.trackIndex = trackIndex;
             this.selected = selected;
@@ -6789,12 +6851,8 @@ public class PlayerActivity extends Activity {
                 }
                 final Format format = trackGroup.getFormat(i);
                 number++;
-                // Same descriptor as the header meta line, so the picker matches what is shown up top.
-                String label = buildAudioInfo(format);
-                if (label == null || label.isEmpty()) {
-                    label = getString(R.string.audio_track_number, number);
-                }
-                choices.add(new AudioChoice(label, trackGroup, i, group.isTrackSelected(i),
+                final String[] text = trackRowText(format, number);
+                choices.add(new AudioChoice(text[0], text[1], trackGroup, i, group.isTrackSelected(i),
                         Utils.toIso3Language(format.language)));
             }
         }
@@ -7004,7 +7062,7 @@ public class PlayerActivity extends Activity {
         final List<MenuItem> items = new ArrayList<>();
         String selectedLanguage = null;
         for (final AudioChoice choice : choices) {
-            items.add(new MenuItem(choice.label, null, choice.selected,
+            items.add(new MenuItem(choice.label, choice.detail, choice.selected,
                     () -> applyAudio(choice)));
             if (choice.selected) {
                 selectedLanguage = choice.language;
@@ -7851,14 +7909,12 @@ public class PlayerActivity extends Activity {
                 if (format.equals(secondaryTextTrack.get())) {
                     continue;
                 }
-                String label = buildSubtitleInfo(format);
-                if (label == null || label.isEmpty()) {
-                    label = getString(R.string.audio_track_number, number);
-                }
+                final String[] text = trackRowText(format, number);
                 final int index = i;
                 // !painting: an embedded track can stay selected while the file is painted over it
                 // (SubtitleOffset drops the renderer's cues), and two ticked rows is a lie.
-                items.add(new MenuItem(label, null, textEnabled && !painting && group.isTrackSelected(i),
+                items.add(new MenuItem(text[0], text[1],
+                        textEnabled && !painting && group.isTrackSelected(i),
                         () -> applySubtitle(trackGroup, index)));
             }
         }
@@ -7985,13 +8041,10 @@ public class PlayerActivity extends Activity {
                 if (shownByMainLine(format)) {
                     continue;
                 }
-                String label = buildSubtitleInfo(format);
-                if (label == null || label.isEmpty()) {
-                    label = getString(R.string.audio_track_number, number);
-                }
+                final String[] text = trackRowText(format, number);
                 final TrackGroup mediaGroup = group.getMediaTrackGroup();
                 final int trackIndex = i;
-                items.add(new MenuItem(label, null, format.equals(currentTrack),
+                items.add(new MenuItem(text[0], text[1], format.equals(currentTrack),
                         () -> chooseSecondarySubtitleTrack(mediaGroup, trackIndex, format)));
             }
         }

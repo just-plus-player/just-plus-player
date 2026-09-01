@@ -405,7 +405,12 @@ final class OffsetPanel {
         seekBar.setThumbTintList(ColorStateList.valueOf(accent));
         seekBar.setTrackActiveTintList(ColorStateList.valueOf(accent));
         seekBar.setTrackInactiveTintList(ColorStateList.valueOf(trackBg));
-        seekBar.setHaloTintList(ColorStateList.valueOf(accent));
+        // The one stop on the D-pad path that had no ring. Material rings a focused thumb in the
+        // accent, which here is the colour of the thumb and of the track under it — measured
+        // 1.38:1 against that track, where every other stop in this panel reads 12.99:1.
+        seekBar.setHaloTintList(ContextCompat.getColorStateList(ctx, R.color.focus_halo));
+        seekBar.setThumbStrokeColor(ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        seekBar.setThumbStrokeWidth(Utils.dpToPx(2));
 
         // D-pad step, scaled to the range instead of the slider's own one-step-per-press. Left to
         // itself it made the wide subtitle range unreachable from a remote: measured on a television,

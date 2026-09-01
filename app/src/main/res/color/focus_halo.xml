@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The slider's share of @color/focus_ring. A thumb is too narrow to carry an edge on its own, so
+     focus arrives as a wash around it — white, because Material's own halo is the accent, and an
+     accent halo around an accent thumb on an accent track measured 1.38:1 against the track. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/focus_halo_wash" />
+    <item android:color="@android:color/transparent" />
+</selector>

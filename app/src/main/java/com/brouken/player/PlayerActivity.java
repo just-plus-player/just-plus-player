@@ -1671,7 +1671,7 @@ public class PlayerActivity extends Activity {
         final int skipBarHeight = Utils.dpToPx(3);
         final int skipBarCorner = Utils.dpToPx(2);
         final GradientDrawable skipPillFill = new GradientDrawable();
-        skipPillFill.setColor(ContextCompat.getColor(this, R.color.pill_surface));
+        skipPillFill.setColor(ContextCompat.getColor(this, R.color.chrome_surface));
         skipPillFill.setCornerRadius(skipCornerRadius);
         skipPillGroove = new GradientDrawable();
         // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
@@ -1769,7 +1769,7 @@ public class PlayerActivity extends Activity {
         speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
 
         final GradientDrawable speedBoostBackground = new GradientDrawable();
-        speedBoostBackground.setColor(ContextCompat.getColor(this, R.color.pill_surface));
+        speedBoostBackground.setColor(ContextCompat.getColor(this, R.color.chrome_surface));
         speedBoostBackground.setCornerRadius(skipCornerRadius);
         speedBoostIndicator.setBackground(speedBoostBackground);
 
@@ -1809,7 +1809,7 @@ public class PlayerActivity extends Activity {
         statsView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         // Same corner as the lock button, the time pill and the poster — a floating box in this UI is rounded.
         final GradientDrawable statsBackground = new GradientDrawable();
-        statsBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
+        statsBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
         statsBackground.setCornerRadius(ui.pillCorner());
         statsView.setBackground(statsBackground);
         final int statsPadding = Utils.dpToPx(8);
@@ -1832,7 +1832,7 @@ public class PlayerActivity extends Activity {
         roomPill.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
         roomPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomPillBackground = new GradientDrawable();
-        roomPillBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
+        roomPillBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
         roomPillBackground.setCornerRadius(ui.pillCorner());
         roomPill.setBackground(roomPillBackground);
         roomPill.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -1860,7 +1860,7 @@ public class PlayerActivity extends Activity {
         roomBadge.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
         roomBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomBackground = new GradientDrawable();
-        roomBackground.setColor(ContextCompat.getColor(this, R.color.pill_scrim));
+        roomBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
         roomBackground.setCornerRadius(ui.pillCorner());
         roomBadge.setBackground(roomBackground);
         roomBadge.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -5612,7 +5612,7 @@ public class PlayerActivity extends Activity {
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.panel_surface)));
+                    ContextCompat.getColor(this, R.color.chrome_surface)));
         }
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
@@ -5860,7 +5860,7 @@ public class PlayerActivity extends Activity {
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.panel_surface)));
+                    ContextCompat.getColor(this, R.color.chrome_surface)));
         }
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
@@ -6156,7 +6156,7 @@ public class PlayerActivity extends Activity {
             window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setGravity(Gravity.END);
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    ContextCompat.getColor(this, R.color.panel_surface)));
+                    ContextCompat.getColor(this, R.color.chrome_surface)));
         }
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];

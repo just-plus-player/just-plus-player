@@ -1969,8 +1969,8 @@ public class PlayerActivity extends Activity {
                 int paddingRight = insetH;
                 int marginRight = 0;
 
-                int bottomBarPaddingBottom = 0;
-                int progressBarMarginBottom = 0;
+                final int bottomBarPaddingBottom = windowInsets.getSystemWindowInsetBottom() + overscanV;
+                final int progressBarMarginBottom = bottomBarPaddingBottom;
 
                 // Don't use exo_top (the built-in top scrim): it is a sibling of exo_controls_background and Media3
                 // animates it on a different schedule, so it appears before / lingers after the header. Instead the
@@ -1978,23 +1978,18 @@ public class PlayerActivity extends Activity {
                 // being the header itself, it can never desync from it. Keep exo_top collapsed.
                 findViewById(R.id.exo_top).getLayoutParams().height = 0;
 
+                // Take the bottom inset by growing the bar, never by padding the control view itself: padding
+                // pulls every child up off the screen edge, the two scrims included (the full-screen dim and
+                // the bar's own gradient), and what shows through underneath is a bright strip of raw video.
+                // On TV that inset is pure overscan, so the strip appeared with nothing drawn over it at all.
+                final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
+                final ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
+                params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + bottomBarPaddingBottom;
+                exoBottomBar.setLayoutParams(params);
+
                 if (Build.VERSION.SDK_INT >= 35) {
-                    final int left = windowInsets.getInsets(WindowInsets.Type.navigationBars()).left;
-                    final int right = windowInsets.getInsets(WindowInsets.Type.navigationBars()).right;
-
-                    final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
-                    ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
-                    params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + windowInsets.getSystemWindowInsetBottom() + overscanV;
-                    exoBottomBar.setLayoutParams(params);
-
-                    findViewById(R.id.exo_left).getLayoutParams().width = left;
-                    findViewById(R.id.exo_right).getLayoutParams().width = right;
-
-                    bottomBarPaddingBottom = windowInsets.getSystemWindowInsetBottom() + overscanV;
-                    progressBarMarginBottom = windowInsets.getSystemWindowInsetBottom() + overscanV;
-                } else {
-                    // No top padding: the header panel's background (below) covers the status-bar area instead.
-                    view.setPadding(0, 0, 0, windowInsets.getSystemWindowInsetBottom() + overscanV);
+                    findViewById(R.id.exo_left).getLayoutParams().width = windowInsets.getInsets(WindowInsets.Type.navigationBars()).left;
+                    findViewById(R.id.exo_right).getLayoutParams().width = windowInsets.getInsets(WindowInsets.Type.navigationBars()).right;
                 }
 
                 // Extend the header's background up over the status-bar area (top margin -> 0, top inset moved into
@@ -12242,7 +12237,14 @@ public class PlayerActivity extends Activity {
     // guarded by mPrefs.revokedAudioMimes itself, so a repeat failure on the same mime after the
     // switch falls through to the normal error screen instead of looping.
     private boolean recoverByRevokingAudioMime(String mime, boolean persist) {
-        if (mime == null || player == null || audioSink == null
+        // audio/raw is never a passthrough mime: it is what a decoder feeds the sink, and it is also the
+        // format both audio renderers probe the sink with before they will decode anything at all. Denying
+        // it therefore denies decoding itself — every audio track becomes FORMAT_UNSUPPORTED_SUBTYPE, no
+        // audio track is selected, and the device plays every file in silence with no decoder in the
+        // report (JPP-C: a Realtek TV box, persisted, so no codec and no decoder priority brought sound
+        // back). An AudioTrack that failed while carrying decoded PCM reaches here with exactly that mime,
+        // via AudioSink.InitializationException.format, and there is nothing to revoke for it.
+        if (mime == null || MimeTypes.AUDIO_RAW.equals(mime) || player == null || audioSink == null
                 || mPrefs.revokedAudioMimes.contains(mime) || sessionRevokedAudioMimes.contains(mime)) {
             return false;
         }

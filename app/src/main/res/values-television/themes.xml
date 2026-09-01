@@ -14,13 +14,9 @@
     <style name="Theme.Settings" parent="BaseTheme.Settings">
         <item name="colorControlHighlight">@color/white</item>
     </style>
-
-    <!-- A player panel is built against these themes now, and a remote needs the same white
-         wash the player, the error screen and the settings list already get here. -->
-    <style name="Theme.Dialogs.Dark" parent="BaseTheme.Dialogs.Dark">
-        <item name="colorControlHighlight">@color/white</item>
-    </style>
-    <style name="Theme.Dialogs.Light" parent="BaseTheme.Dialogs.Light">
-        <item name="colorControlHighlight">@color/white</item>
-    </style>
+
+    <!-- The panels are NOT given the white wash the three screens above get. A wash over a row
+         that carries the accent as a fill destroys the fill: measured 2.21:1 for the label on a
+         focused current row. They wear @color/focus_ring instead, on the row and on every
+         button. -->
 </resources>

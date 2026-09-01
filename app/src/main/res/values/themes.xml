@@ -75,6 +75,12 @@
     <style name="BaseTheme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
              primary colour, which with a coral primary is a red band across the top of the screen.
              SettingsActivity sets the icon appearance to match. -->
@@ -119,6 +125,36 @@
         <item name="buttonBarNeutralButtonStyle">@style/Widget.JustPlus.Button.Dialog.Neutral</item>
     </style>
 
+    <!--
+        Three button styles, and one rule between them: a filled button is the action that moves things
+        forward, an outlined one is a choice among several, and a quiet one is everything else. It is the
+        same rule in a dialog and over video, which is what makes the Skip button legible as the top of a
+        hierarchy rather than an exception to it.
+
+        All three take the focus ring. Material draws D-pad focus as a state layer, which measured 2.51:1
+        on a television against the 3:1 a non-text indicator wants — and on a control carrying the accent
+        as a fill it washed the accent out too, leaving 2.21:1 for the label on it.
+    -->
+    <style name="Widget.JustPlus.Button.Quiet" parent="Widget.Material3.Button.TextButton">
+        <item name="strokeWidth">2dp</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Quiet.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="strokeWidth">2dp</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeWidth">2dp</item>
+        <item name="strokeColor">@color/focus_ring_outlined</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Filled" parent="Widget.Material3.Button">
+        <item name="strokeWidth">2dp</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
     <style name="Widget.JustPlus.Button.Dialog.Dismissive" parent="Widget.Material3.Button.TextButton.Dialog">
         <item name="android:textColor">@color/dialog_button_dismissive</item>
     </style>
@@ -144,6 +180,12 @@
     <style name="BaseTheme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- Not @color/brand: this theme is light whatever the system is doing, and the bright coral
              cannot be read on it. @color/brand_accent is the one value that works on both. -->
         <item name="colorPrimary">@color/brand_accent</item>
@@ -171,6 +213,12 @@
     <style name="BaseTheme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- The same accent the light panel uses, so a switch does not change colour with the theme.
              @color/brand stays what it always was: the chrome over video, which is never light. -->
         <item name="colorPrimary">@color/brand_accent</item>

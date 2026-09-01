@@ -21,6 +21,9 @@ import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
@@ -600,6 +603,30 @@ class Utils {
         // The picture behind a modal sheet steps back rather than competing with it.
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.4f);
+    }
+
+    /**
+     * The background every row inside a player panel wears: a rounded fill, a ripple clipped to it, and
+     * the D-pad focus ring.
+     *
+     * <p>The ring is the whole point. A remote used to be shown focus as a white wash, and over a row
+     * lit with the accent the wash took the accent with it — measured 2.21:1 for the label on a focused
+     * current row, against the 4.5 it wants. An edge says the same thing and destroys nothing.
+     *
+     * @param fill the row's own colour, or {@link Color#TRANSPARENT} for a row that is not the current one
+     */
+    public static Drawable pickerRow(final Context ctx, final int fill) {
+        final int corner = dpToPx(8);
+        final GradientDrawable content = new GradientDrawable();
+        content.setCornerRadius(corner);
+        content.setColor(fill);
+        content.setStroke(dpToPx(2), ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(corner);
+        mask.setColor(Color.WHITE);
+        return new RippleDrawable(ColorStateList.valueOf(MaterialColors.getColor(
+                ctx, R.attr.colorControlHighlight, ContextCompat.getColor(ctx, R.color.ripple_chrome))),
+                content, mask);
     }
 
     public static String formatMilis(long time) {

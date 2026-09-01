@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A control that has D-pad focus wears a white edge. Nothing otherwise, and nothing at all in
+     touch mode, where no view is ever focused. This is the ring that replaced a wash: Material's
+     own focus state layer measured 2.51:1 on a television, and where a control carries the accent
+     as a fill the wash washed the accent out with it. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/white" />
+    <item android:color="@android:color/transparent" />
+</selector>

@@ -347,10 +347,7 @@ final class DurationPanel {
         // them in pixels instead is what once squeezed this keypad down to its middle column.
         key.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        key.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                        ContextCompat.getColor(ctx, R.color.ripple_chrome))),
-                null, null));
+        key.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT));
         key.setOnClickListener(v -> onTap.run());
         return key;
     }
@@ -370,13 +367,7 @@ final class DurationPanel {
         // short, an ellipsis is a legible failure where a broken word is not.
         action.setSingleLine(true);
         action.setPadding(Utils.dpToPx(12), Utils.dpToPx(11), Utils.dpToPx(12), Utils.dpToPx(11));
-        final GradientDrawable mask = new GradientDrawable();
-        mask.setCornerRadius(Utils.dpToPx(8));
-        mask.setColor(Color.WHITE);
-        action.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                        ContextCompat.getColor(ctx, R.color.ripple_chrome))),
-                null, mask));
+        action.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT));
         return action;
     }
 }

@@ -5877,7 +5877,7 @@ public class PlayerActivity extends Activity {
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
@@ -6159,7 +6159,7 @@ public class PlayerActivity extends Activity {
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
@@ -6416,7 +6416,7 @@ public class PlayerActivity extends Activity {
             rowMask.setCornerRadius(Utils.dpToPx(8));
             rowMask.setColor(Color.WHITE);
             row.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)),
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
                     rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
@@ -8275,7 +8275,7 @@ public class PlayerActivity extends Activity {
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
         row.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_strong)), content, mask));
+                ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)), content, mask));
 
         final ImageView art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -14352,7 +14352,7 @@ public class PlayerActivity extends Activity {
         final GradientDrawable mask = new GradientDrawable();
         mask.setShape(GradientDrawable.OVAL);
         mask.setColor(Color.WHITE);
-        return new RippleDrawable(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_medium)),
+        return new RippleDrawable(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
                 new InsetDrawable((Drawable) ring, discInset / 2),
                 new InsetDrawable((Drawable) mask, discInset));
     }

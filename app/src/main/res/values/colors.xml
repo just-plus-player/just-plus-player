@@ -64,11 +64,10 @@
     <!-- Buffered lead ahead of the playhead; used on network sources only, see the call site. -->
     <color name="buffered_white">#C0FFFFFF</color>
 
-    <!-- Press feedback. Three tones today, one per surface family; they are independent knobs
-         rather than a deliberate scale. -->
-    <color name="ripple_strong">#40FFFFFF</color>
-    <color name="ripple_medium">#33FFFFFF</color>
-    <color name="ripple_soft">#20FFFFFF</color>
+    <!-- Press feedback, one tone for every player surface. The three it replaced looked like a scale
+         keyed to how bright the ground is, but they were not: a picker row and an OffsetPanel pill sit
+         on the same dark panel — @color/pill_off_fill is barely a fill — and took #40 and #20. -->
+    <color name="ripple_chrome">#40FFFFFF</color>
 
     <!-- Segment highlights (see CustomDefaultTimeBar): a *_fill band across the segment plus a crisp
          boundary hairline in the lighter *_edge colour. Three-colour timeline system — coral =

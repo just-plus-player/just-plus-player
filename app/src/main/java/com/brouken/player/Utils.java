@@ -45,6 +45,7 @@ import android.util.Rational;
 import android.view.Display;
 import android.view.LayoutInflater;
 import android.util.TypedValue;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -654,7 +655,22 @@ class Utils {
         host.addView(content, lp);
 
         dialog.setContentView(host);
+        // setCanceledOnTouchOutside measures "outside" against the window, and a sheet docked to the
+        // bottom is given a window as wide as the screen and as tall as it — so on a phone held upright
+        // there was no outside to tap, and only the sideways panel, whose window is the width of the
+        // card, could be dismissed that way. The host is what fills the rest of the screen, so it is
+        // what answers: a press landing beyond the card's own bounds closes the panel, whichever edge
+        // the card is docked to. The card's children keep every press that reaches them.
         dialog.setCanceledOnTouchOutside(true);
+        host.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() != MotionEvent.ACTION_DOWN
+                    || (event.getX() >= content.getLeft() && event.getX() <= content.getRight()
+                        && event.getY() >= content.getTop() && event.getY() <= content.getBottom())) {
+                return false;
+            }
+            dialog.cancel();
+            return true;
+        });
         final Window window = dialog.getWindow();
         if (window == null) {
             return;
@@ -682,6 +698,27 @@ class Utils {
      *
      * @param fill the row's own colour, or {@link Color#TRANSPARENT} for a row that is not the current one
      */
+    public static Drawable pickerRow(final Context ctx, final int fill) {
+        final int corner = dpToPx(8);
+        final GradientDrawable content = new GradientDrawable();
+        content.setCornerRadius(corner);
+        content.setColor(fill);
+        content.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
+                ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(corner);
+        mask.setColor(Color.WHITE);
+        // Press only: a RippleDrawable washes on focus as well, and over the fill of the current row
+        // that wash lifted the accent to #DB5F54 from #D6493C — the very thing the ring exists to
+        // avoid. The edge says "here" and leaves the colour underneath it alone.
+        final int press = MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                ContextCompat.getColor(ctx, R.color.ripple_chrome));
+        return new RippleDrawable(new ColorStateList(
+                new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
+                new int[]{Color.TRANSPARENT, press}),
+                content, mask);
+    }
+
     /**
      * One segment of a picker's toggle group: outlined, at least 48dp tall, lettering that shrinks
      * rather than wraps, and the app's focus ring. Shared by the panels that offer a row of ready-made
@@ -729,27 +766,6 @@ class Utils {
             end--;
         }
         return number.substring(0, end);
-    }
-
-    public static Drawable pickerRow(final Context ctx, final int fill) {
-        final int corner = dpToPx(8);
-        final GradientDrawable content = new GradientDrawable();
-        content.setCornerRadius(corner);
-        content.setColor(fill);
-        content.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
-                ContextCompat.getColorStateList(ctx, R.color.focus_ring));
-        final GradientDrawable mask = new GradientDrawable();
-        mask.setCornerRadius(corner);
-        mask.setColor(Color.WHITE);
-        // Press only: a RippleDrawable washes on focus as well, and over the fill of the current row
-        // that wash lifted the accent to #DB5F54 from #D6493C — the very thing the ring exists to
-        // avoid. The edge says "here" and leaves the colour underneath it alone.
-        final int press = MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                ContextCompat.getColor(ctx, R.color.ripple_chrome));
-        return new RippleDrawable(new ColorStateList(
-                new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
-                new int[]{Color.TRANSPARENT, press}),
-                content, mask);
     }
 
     /**

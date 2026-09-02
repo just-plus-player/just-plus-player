@@ -660,6 +660,9 @@ public class PlayerActivity extends Activity {
     // Set while the source was let go under a standing pause, so the next play re-prepares rather than
     // leaving an idle player with a play button that does nothing.
     private boolean stoppedForPause;
+    // Set while the audio track type is disabled for a trip to the background (see onStop), so onStart
+    // knows to put it back.
+    private boolean audioReleasedForBackground;
     private final Runnable pauseReleaseRunnable = () -> {
         if (player == null || player.getPlayWhenReady() || player.isPlaying()) {
             return;
@@ -2499,6 +2502,13 @@ public class PlayerActivity extends Activity {
             releasePlayer(false);
             initializePlayer();
         } else {
+            // The audio track type onStop disabled to hand the receiver's route back. The track this builds
+            // is unstarted, since the player is paused; the latch the pause armed recreates it on play.
+            if (audioReleasedForBackground) {
+                audioReleasedForBackground = false;
+                player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false).build());
+            }
             resumeFrameRendered = false;
             playerView.postDelayed(resumeWatchdogRunnable, RESUME_WATCHDOG_MS);
             // Put back what onStop cancelled, and only that: a load that was still buffering when the user
@@ -2587,12 +2597,21 @@ public class PlayerActivity extends Activity {
         // pauses the sink — so until this screen let the player go, minutes later, every other player on
         // the box met "AudioTrack init failed" for AC3 and wrote the refusal down as a verdict about the
         // hardware, which is why clearing their data was what it took to get them bitstreaming again.
-        // stop() keeps the item, the position and the surface, so the return costs one prepare() — the
-        // same trade the standing pause already makes, through the same latch.
+        // Only the audio track type is disabled for it: that reaches MediaCodecAudioRenderer.onDisabled,
+        // whose flush() releases the AudioTrack — the same call a stop() ends in — while the timeline,
+        // the buffer, the surface and everything selected on the instance stay. A stop() used to be the
+        // way out here, and the return paid for it twice: a prepare() that re-read the container, and the
+        // resume watchdog reading the idle player as a dead session and rebuilding it outright, which is
+        // what the viewer saw as the file opening from scratch after every screensaver. onStart puts the
+        // track type back. Not through restartPassthroughAudio: a reselect made while paused is exactly
+        // what leaves a stale track behind, and the pause has already latched the recreate for the play.
         if (audioSink != null && audioSink.isPassthrough()) {
             Utils.log("background: releasing the passthrough output");
-            stoppedForPause = true;
-            player.stop();
+            // A recreate whose onTracksChanged is still to come would put the track type straight back.
+            audioRestartInFlight = false;
+            audioReleasedForBackground = true;
+            player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
         }
         // The load watchdog only ever ran while the activity was on screen by accident: nothing cancelled it
         // on this path, so an item still buffering when the user left would time out in the background —
@@ -10314,6 +10333,7 @@ public class PlayerActivity extends Activity {
         audioReselectAtMs = 0;
         playerView.removeCallbacks(rebufferArmRunnable);
         audioRestartPending = false;
+        audioReleasedForBackground = false;
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
@@ -11118,6 +11138,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(rebufferArmRunnable);
             playerView.removeCallbacks(pauseReleaseRunnable);
             stoppedForPause = false;
+            audioReleasedForBackground = false;
             audioRestartPending = false;
             audioRestartInFlight = false;
             audioRestartSettling = false;
@@ -11472,6 +11493,12 @@ public class PlayerActivity extends Activity {
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
             if (playWhenReady && stoppedForPause) {
                 stoppedForPause = false;
+                // The re-prepare opens a fresh output of its own, so the pause's latch has nothing left to
+                // recreate — spent here it would tear that output down the instant playback begins, which is
+                // the shape that has produced a silent start before (see audioEverStarted). Outside the check
+                // below: the play button has usually re-prepared already (Util.handlePlayButtonAction does so
+                // on an idle player before it calls play()), so the state here is rarely still IDLE.
+                audioRestartPending = false;
                 if (player != null && player.getPlaybackState() == Player.STATE_IDLE) {
                     Utils.log("pause: re-preparing after the source was let go");
                     player.prepare();

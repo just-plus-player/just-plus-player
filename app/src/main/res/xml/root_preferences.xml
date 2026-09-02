@@ -314,6 +314,13 @@
             app:title="@string/stats_title" />
 
         <SwitchPreferenceCompat
+            app:key="showTransfer"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_show_transfer_on"
+            app:summaryOff="@string/pref_show_transfer_off"
+            app:title="@string/pref_show_transfer" />
+
+        <SwitchPreferenceCompat
             app:key="keepAwakeOnPause"
             app:defaultValue="true"
             app:summaryOn="@string/pref_keep_awake_on_pause_on"

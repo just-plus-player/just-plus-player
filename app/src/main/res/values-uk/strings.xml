@@ -218,6 +218,9 @@
     <string name="stats_report_message">Надішліть ці подробиці відтворення, повідомляючи про проблему із зображенням чи звуком.</string>
     <string name="pref_show_stats_on">Буфер, декодери та пропущені кадри показуються з елементами керування</string>
     <string name="pref_show_stats_off">Подробиці відтворення приховані</string>
+    <string name="pref_show_transfer">Рядок передачі</string>
+    <string name="pref_show_transfer_on">Буфер, мережа та бітрейт показуються одним рядком над смугою перемотування</string>
+    <string name="pref_show_transfer_off">Показники передачі залишаються на панелі статистики</string>
     <string name="pref_keep_awake_on_pause">Не вимикати екран на паузі</string>
     <string name="pref_keep_awake_on_pause_on">Заставка пристрою не вмикається; зображення тьмяніє через хвилину, а через дві години екран віддається системі</string>
     <string name="pref_keep_awake_on_pause_off">Пауза лишається на розсуд пристрою, і його заставка вмикається як завжди</string>

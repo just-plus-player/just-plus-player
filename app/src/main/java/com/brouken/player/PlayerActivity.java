@@ -588,6 +588,7 @@ public class PlayerActivity extends Activity {
     private static final int ENDS_AT_COLOR = 0xB3FFFFFF;
     private TextView roomPill;
     private TextView statsView;
+    private TextView transferView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
     private ImageButton buttonOpen;
@@ -1120,6 +1121,7 @@ public class PlayerActivity extends Activity {
             // The stats panel needs the same once-a-second tick over the same lifetime (controls visible),
             // so it rides this one rather than starting a second timer.
             updateStats();
+            updateTransfer();
             if (controllerVisible) {
                 playerView.postDelayed(this, 1000);
             }
@@ -1865,6 +1867,35 @@ public class PlayerActivity extends Activity {
         roomPill.setVisibility(View.GONE);
         coordinatorLayout.addView(roomPill);
 
+        // The transfer figures — buffer, network, bitrate — as one line on the room pill's slot, under a
+        // switch of their own: a viewer who wants to watch the buffer all evening does not want the whole
+        // stats panel over the picture for it. It takes the pill's exact geometry (set with the insets, so
+        // it follows the seek bar on every device) and yields to whichever pill wants that row — the room
+        // on this side, Skip on the other, which a full-width line does reach under in portrait.
+        // Monospace, like the panel, so the digits stand still.
+        transferView = new TextView(this);
+        transferView.setTextColor(0xB3FFFFFF);
+        transferView.setTypeface(Typeface.MONOSPACE);
+        transferView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
+        // One row where it fits — landscape and TV — and three where it does not, which is a phone held
+        // upright (updateTransfer gives each figure its own row there) and any screen where the Skip
+        // pill has taken the end of the row. Ellipsising instead cost the bitrate, which is losing the
+        // point of the line. The fields carry non-breaking spaces, so a break the layout has to make
+        // falls between them rather than through a number.
+        transferView.setMaxLines(3);
+        transferView.setEllipsize(TextUtils.TruncateAt.END);
+        final GradientDrawable transferBackground = new GradientDrawable();
+        transferBackground.setColor(0x99000000);
+        transferBackground.setCornerRadius(ui.pillCorner());
+        transferView.setBackground(transferBackground);
+        transferView.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
+        final CoordinatorLayout.LayoutParams transferLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        transferLp.gravity = Gravity.BOTTOM | Gravity.START;
+        transferView.setLayoutParams(transferLp);
+        transferView.setVisibility(View.GONE);
+        coordinatorLayout.addView(transferView);
+
         // The room itself reads in the pill above; this floats only for the one thing that pill cannot say
         // in time — that the pause was the room's doing and not the viewer's, which has to show while the
         // controls are down. It goes under the centre disc, on the loading rate's geometry, because that is
@@ -2048,6 +2079,19 @@ public class PlayerActivity extends Activity {
                             + ui.dpS(24);
                     pillLp.leftMargin = insetH + ui.gridH();
                     roomPill.setLayoutParams(pillLp);
+                }
+
+                // The transfer line is the room pill's stand-in on the same slot, so it takes the pill's
+                // offsets verbatim; a right margin too, so a long line stops at the grid instead of the edge.
+                if (transferView != null) {
+                    final CoordinatorLayout.LayoutParams transferParams =
+                            (CoordinatorLayout.LayoutParams) transferView.getLayoutParams();
+                    transferParams.bottomMargin = windowInsets.getSystemWindowInsetBottom() + overscanV
+                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
+                            + ui.dpS(24);
+                    transferParams.leftMargin = insetH + ui.gridH();
+                    transferParams.rightMargin = insetH + ui.gridH();
+                    transferView.setLayoutParams(transferParams);
                 }
 
                 // Mirror of the Skip pill on the other edge: the stats panel floats on the same coordinator,
@@ -4230,7 +4274,10 @@ public class PlayerActivity extends Activity {
         buttonSkip.setFocusable(actionable);
         final boolean appearing = buttonSkip.getVisibility() != View.VISIBLE;
         if (appearing) {
+            // After the layout, not before it: what the transfer line has to give up is the pill's
+            // width, and a pill that has never been shown has none to read yet.
             buttonSkip.setVisibility(View.VISIBLE);
+            buttonSkip.post(this::updateTransfer);
         }
         if (isTvBox && actionable && claimFocus && (appearing || stateChanged)) {
             buttonSkip.requestFocus();
@@ -4308,6 +4355,7 @@ public class PlayerActivity extends Activity {
                 playerView.requestFocus();
             }
             buttonSkip.setVisibility(View.GONE);
+            updateTransfer(); // the whole row is the line's again
         }
     }
 
@@ -5237,6 +5285,9 @@ public class PlayerActivity extends Activity {
         if (statsView != null) {
             statsView.setVisibility(View.GONE);
         }
+        if (transferView != null) {
+            transferView.setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -5244,11 +5295,8 @@ public class PlayerActivity extends Activity {
      * the same time, and repeating "1080p H264" there would be noise. What is left is the figures that
      * move and the decoder names the coarse codec label hides.
      *
-     * <p>Splitting the transfer figures (buffer, network, bitrate) out of here onto a line of their own,
-     * under a second switch, was tried and put back: everything they say is already on this panel, and
-     * the bottom bar has no band wide enough for them — the time is short, the button cluster is not, so
-     * a centred line is capped at twice the narrower side and loses the bitrate to an ellipsis on a TV.
-     * Worth revisiting only if the controls are laid out differently.
+     * <p>The transfer figures (buffer, network, bitrate) are listed here only while the transfer line is
+     * off: with it on they have their own place above the seek bar, and nothing is said twice.
      */
     private void updateStats() {
         if (statsView == null) {
@@ -5258,53 +5306,129 @@ public class PlayerActivity extends Activity {
             fadeChrome(statsView, false);
             return;
         }
-        final StringBuilder text = new StringBuilder();
-        // Ahead of the playhead, against the load control's target — the "how much slack is there"
-        // reading. On a local file this is always full, which is itself the answer.
-        final long bufferedMs = player.getTotalBufferedDuration();
-        text.append(getString(R.string.stats_buffer, bufferedMs / 1000,
-                (int) Math.min(100, bufferedMs * 100 / bufferCeilingMs())));
-        if (bandwidthBitrate > 0) {
-            text.append('\n').append(getString(R.string.stats_network,
-                    getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f)));
-        }
+        final List<String> lines = new ArrayList<>();
         final Format video = player.getVideoFormat();
+        if (!mPrefs.showTransfer) {
+            lines.add(bufferText());
+            addIfAny(lines, networkText());
+        }
         if (video != null) {
-            text.append('\n').append(video.width).append('×').append(video.height);
+            lines.add(video.width + "×" + video.height);
             // Its own line rather than a third field: the panel has to stay narrower than the gap to the
             // centred transport buttons, and every line here is kept short enough to never wrap.
-            if (video.bitrate != Format.NO_VALUE) {
-                text.append('\n').append(getString(R.string.stats_stream,
-                        getString(R.string.quality_bitrate, video.bitrate / 1_000_000f)));
-            } else {
-                // Matroska and AVI carry no bitrate to read, so the whole file over its duration is all
-                // there is. Labelled apart from Stream: it counts audio and subtitles in too.
-                final float overall = overallBitrate();
-                if (overall > 0) {
-                    text.append('\n').append(getString(R.string.stats_overall,
-                            getString(R.string.quality_bitrate, overall)));
-                }
+            if (!mPrefs.showTransfer) {
+                addIfAny(lines, bitrateText(video));
             }
         }
         // The mime says "hevc"; only the decoder name says whether that went to the vendor's hardware
         // codec or to a software one, which is the whole question behind most "it stutters" reports.
         // One per line: the two of them on one line was the panel's widest content by a wide margin.
-        if (videoDecoderName != null) {
-            text.append('\n').append(videoDecoderName);
-        }
-        if (audioDecoderName != null) {
-            text.append('\n').append(audioDecoderName);
-        }
-        final String dolbyVision = dolbyVisionStatus();
-        if (dolbyVision != null) {
-            text.append('\n').append(dolbyVision);
-        }
+        addIfAny(lines, videoDecoderName);
+        addIfAny(lines, audioDecoderName);
+        addIfAny(lines, dolbyVisionStatus());
         final DecoderCounters counters = player.getVideoDecoderCounters();
         if (counters != null) {
-            text.append('\n').append(getString(R.string.stats_dropped, counters.droppedBufferCount));
+            lines.add(getString(R.string.stats_dropped, counters.droppedBufferCount));
         }
-        statsView.setText(text);
+        statsView.setText(TextUtils.join("\n", lines));
         fadeChrome(statsView, true);
+    }
+
+    /**
+     * The transfer line: buffer, network and bitrate on the row above the seek bar. Its own switch,
+     * because "watch the buffer" and "a panel over the picture" are different asks.
+     *
+     * <p>It shares that row with the two pills, and answers them differently because they stand in
+     * different places. The room pill holds this very slot, so the line gives it up and comes back when
+     * the room's badge goes. Skip is at the far end, and it can stand there for a whole opening — long
+     * enough that hiding the figures for its sake was the wrong trade — so the line stops short of it
+     * instead, taking a second or third row for what no longer fits beside it.
+     */
+    private void updateTransfer() {
+        if (transferView == null) {
+            return;
+        }
+        if (!mPrefs.showTransfer || player == null || !controllerChromeVisible || inPip
+                || isVisible(roomPill)) {
+            fadeChrome(transferView, false);
+            return;
+        }
+        final List<String> fields = new ArrayList<>();
+        addField(fields, bufferText());
+        addField(fields, networkText());
+        final Format video = player.getVideoFormat();
+        if (video != null) {
+            addField(fields, bitrateText(video));
+        }
+        // Upright the three never fit across the screen, so they stop pretending to be one line and take
+        // a row each. The separators go with the row they were separating: what tells two figures apart
+        // there is the line break, and a dot at the end of every row is only clutter.
+        final boolean portrait =
+                getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        transferView.setText(TextUtils.join(portrait ? "\n" : " · ", fields));
+        // Stop short of the Skip pill rather than step aside for it: the pill stands for a whole opening
+        // or a whole set of credits, and the figures would be gone for all of it. The pill's own width is
+        // the only thing that has to be read, and it is read on the tick that is running anyway.
+        final CoordinatorLayout.LayoutParams lp =
+                (CoordinatorLayout.LayoutParams) transferView.getLayoutParams();
+        final int row = coordinatorLayout.getWidth() - lp.leftMargin - lp.rightMargin;
+        final int free = isVisible(buttonSkip) ? row - buttonSkip.getWidth() - ui.dpS(8) : row;
+        if (free > 0) {
+            transferView.setMaxWidth(free);
+        }
+        fadeChrome(transferView, true);
+    }
+
+    private static boolean isVisible(@Nullable View view) {
+        return view != null && view.getVisibility() == View.VISIBLE;
+    }
+
+    /**
+     * A field of the transfer line, with its own spaces made non-breaking: the line wraps where it has to
+     * on a narrow screen, and the only place it may break is between two fields.
+     */
+    private static void addField(List<String> fields, @Nullable String value) {
+        if (value != null) {
+            fields.add(value.replace(' ', '\u00A0'));
+        }
+    }
+
+    private static void addIfAny(List<String> list, @Nullable String value) {
+        if (value != null) {
+            list.add(value);
+        }
+    }
+
+    /**
+     * Ahead of the playhead, against the load control's target — the "how much slack is there" reading.
+     * On a local file this is always full, which is itself the answer.
+     */
+    private String bufferText() {
+        final long bufferedMs = player.getTotalBufferedDuration();
+        return getString(R.string.stats_buffer, bufferedMs / 1000,
+                (int) Math.min(100, bufferedMs * 100 / bufferCeilingMs()));
+    }
+
+    /** The measured network rate, or null before the first estimate lands. */
+    @Nullable
+    private String networkText() {
+        return bandwidthBitrate > 0
+                ? getString(R.string.stats_network, getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f))
+                : null;
+    }
+
+    /**
+     * The track's own bitrate where the container states one. Matroska and AVI carry none to read, so the
+     * whole file over its duration is all there is — labelled apart from Stream: it counts audio and
+     * subtitles in too. Null when neither is known.
+     */
+    @Nullable
+    private String bitrateText(Format video) {
+        if (video.bitrate != Format.NO_VALUE) {
+            return getString(R.string.stats_stream, getString(R.string.quality_bitrate, video.bitrate / 1_000_000f));
+        }
+        final float overall = overallBitrate();
+        return overall > 0 ? getString(R.string.stats_overall, getString(R.string.quality_bitrate, overall)) : null;
     }
 
 
@@ -9552,6 +9676,8 @@ public class PlayerActivity extends Activity {
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
             }
             fadeChrome(roomPill, showPill);
+            // The transfer line holds the pill's slot: it steps aside the moment the pill comes up.
+            updateTransfer();
         }
 
         // The float says only what the header cannot say in time: this pause is the room's, not yours. Bounded

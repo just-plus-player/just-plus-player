@@ -239,6 +239,9 @@
     <string name="stats_report_message">Send these playback details when reporting a problem with picture or sound.</string>
     <string name="pref_show_stats_on">Buffer, decoders and dropped frames are shown with the player controls</string>
     <string name="pref_show_stats_off">Playback details stay hidden</string>
+    <string name="pref_show_transfer">Transfer line</string>
+    <string name="pref_show_transfer_on">Buffer, network and bitrate are shown on one line above the seek bar</string>
+    <string name="pref_show_transfer_off">Transfer figures stay in the statistics panel</string>
     <string name="pref_keep_awake_on_pause">Keep the screen on while paused</string>
     <string name="pref_keep_awake_on_pause_on">The device screensaver stays away; the picture dims after a minute and the screen is released after two hours</string>
     <string name="pref_keep_awake_on_pause_off">A pause is left to the device, and its screensaver comes on as usual</string>

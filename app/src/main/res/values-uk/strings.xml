@@ -344,7 +344,6 @@
     <string name="sleep_timer_title">Таймер сну</string>
     <string name="sleep_timer_off">Вимк</string>
     <string name="sleep_timer_end_of_item">Після поточного файлу</string>
-    <string name="sleep_timer_custom">Своє…</string>
     <string name="sleep_timer_minutes">%1$d хв</string>
     <string name="sleep_timer_hours">%1$s год</string>
     <string name="sleep_timer_hours_minutes">%1$d год %2$d хв</string>
@@ -353,5 +352,6 @@
     <string name="sleep_timer_warning">Таймер сну: закриття через %1$d с</string>
     <string name="sleep_timer_start">Старт</string>
     <string name="sleep_timer_backspace">Видалити цифру</string>
-    <string name="sleep_timer_stop">Стоп</string>
+    <string name="duration_hours">Години</string>
+    <string name="duration_minutes">Хвилини</string>
 </resources>

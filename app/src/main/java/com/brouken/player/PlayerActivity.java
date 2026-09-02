@@ -9363,7 +9363,6 @@ public class PlayerActivity extends Activity {
     // result intent that finish() builds, so pausing and then being killed overnight would lose the very
     // position the timer exists to protect. Closing also frees the decoder and the receiver's audio lock.
 
-    private static final int[] SLEEP_PRESETS_MIN = {15, 30, 45, 60, 90};
     private static final long SLEEP_WARN_MS = 30_000;   // fade + notice window ahead of the close
     private static final long SLEEP_TICK_MS = 1000;
     private static final long SLEEP_FADE_TICK_MS = 250; // fine enough a ramp to read as a fade, not a step
@@ -9484,29 +9483,26 @@ public class PlayerActivity extends Activity {
         return remaining > 0 ? Utils.formatMilis(remaining) : null;
     }
 
-    private void showSleepTimerMenu() {
-        final List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem(getString(R.string.sleep_timer_off), null,
-                !sleepAtEndOfItem && sleepRemainingMs() == 0, () -> armSleepTimer(0)));
-        for (final int minutes : SLEEP_PRESETS_MIN) {
-            final boolean current = !sleepAtEndOfItem && sleepSetMinutes == minutes;
-            items.add(new MenuItem(formatSleepDuration(minutes),
-                    current ? Utils.formatMilis(sleepRemainingMs()) : null,
-                    current, () -> armSleepTimer(minutes)));
-        }
-        items.add(new MenuItem(getString(R.string.sleep_timer_end_of_item), null, sleepAtEndOfItem,
-                this::armSleepAtEndOfItem));
-        items.add(new MenuItem(getString(R.string.sleep_timer_custom), null, false,
-                this::showSleepTimerCustomDialog));
-        showSideMenu(getString(R.string.sleep_timer_title), items);
-    }
-
-    private void showSleepTimerCustomDialog() {
+    /**
+     * One panel for the whole timer — durations, end of file and a typed length — rather than a list
+     * whose last row opened a second panel to type in. {@link DurationPanel} carries the reasoning.
+     */
+    private void showSleepTimerPanel() {
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
         }
-        sleepTimerDialog = DurationPanel.create(this, ui,
-                getString(R.string.sleep_timer_title), this::armSleepTimer);
+        sleepTimerDialog = DurationPanel.create(this, ui, getString(R.string.sleep_timer_title),
+                sleepSetMinutes, sleepAtEndOfItem, sleepRemainingMs(), new DurationPanel.Listener() {
+                    @Override
+                    public void onDurationPicked(final int minutes) {
+                        armSleepTimer(minutes);
+                    }
+
+                    @Override
+                    public void onEndOfItemPicked() {
+                        armSleepAtEndOfItem();
+                    }
+                });
         showPickerDialog(sleepTimerDialog);
     }
 
@@ -9553,7 +9549,7 @@ public class PlayerActivity extends Activity {
         }
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
-                    sleepTimerSummary(), false, this::showSleepTimerMenu));
+                    sleepTimerSummary(), false, this::showSleepTimerPanel));
         }
         items.add(MenuItem.rule());
         // Here as well as in the subtitle panel: the panel is where somebody who has looked for

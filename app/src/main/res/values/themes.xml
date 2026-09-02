@@ -1,6 +1,14 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="BaseTheme.Player" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- The Snackbar is the one component in this app that reads Material's inverse roles, and
+             nothing here had ever set them: it arrived in the baseline lavender with a mauve action,
+             which belongs to no other pixel on this screen. Pointed at the chrome the app already
+             draws over video — the same plate Utils.showText uses for its notices — and at the coral
+             that lives there. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <item name="colorPrimaryInverse">@color/brand</item>
         <!-- Transparent so the OS-toggled status bar doesn't paint its own @color/ui_controls_background strip,
              which desyncs from the controller fade. The controller-synced exo_top scrim (given a height on all
              SDKs in PlayerActivity's insets listener) provides the darkening behind the status-bar icons. -->
@@ -73,6 +81,14 @@
     </style>
 
     <style name="BaseTheme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- The Snackbar is the one component in this app that reads Material's inverse roles, and
+             nothing here had ever set them: it arrived in the baseline lavender with a mauve action,
+             which belongs to no other pixel on this screen. Pointed at the chrome the app already
+             draws over video — the same plate Utils.showText uses for its notices — and at the coral
+             that lives there. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <item name="colorPrimaryInverse">@color/brand</item>
         <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
         <!-- Material's own button attributes, pointed at the three styles below, so every button in

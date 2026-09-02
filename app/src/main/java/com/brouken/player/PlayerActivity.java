@@ -14258,6 +14258,12 @@ public class PlayerActivity extends Activity {
         snackbar = Snackbar.make(coordinatorLayout, textPrimary, Snackbar.LENGTH_LONG);
         if (textSecondary != null) {
             snackbar.setAction(R.string.error_details, v -> showErrorScreen(textSecondary, textSecondary));
+            // Said here rather than left to the theme. The plate follows colorSurfaceInverse and its
+            // text colorOnSurfaceInverse, both set in Theme.Player — but the action's colour travels
+            // through Material's own overlay (snackbarButtonStyle → colorOnContainer ←
+            // colorPrimaryInverse) and never arrived: measured #FF00FF on the built screen, which is no
+            // colour this app owns. One line ends the chase.
+            snackbar.setActionTextColor(brandColor());
         }
         snackbar.setAnchorView(R.id.exo_bottom_bar);
         snackbar.show();

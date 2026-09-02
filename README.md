@@ -8,6 +8,14 @@ Video player for Android phones, tablets and Android TV, built on [Media3](https
 
 It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita and keeps what makes it good: no ads, no tracking, barely any permissions, ExoPlayer's `ffmpeg` extension for AC3, E-AC-3, DTS, DTS-HD and TrueHD, and audio that stays in sync over Bluetooth. On top of that it adds a reworked player interface and the features below.
 
+## Install
+
+[![Download the APK](https://img.shields.io/badge/Download%20the%20APK-latest%20release-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/just-plus-player/just-plus-player/releases/latest) [![Downloader code 1183424](https://img.shields.io/badge/Downloader%20code-1183424-FF9900?style=for-the-badge&logo=amazonfiretv&logoColor=white)](https://www.aftvnews.com/downloader/)
+
+**Phone, tablet, TV box** — download the APK and open it. **Android TV / Fire TV** — no keyboard needed: install [Downloader](https://www.aftvnews.com/downloader/) and enter the code above.
+
+Sideloaded builds check for updates themselves and install them in place, without going through a store.
+
 ## What Just+ adds
 
 **Player and controls**
@@ -120,10 +128,6 @@ HDR (HDR10+ and Dolby Vision) playback on compatible hardware. AC-4 audio works 
  * Third-party equalizer / audio processing support (e.g. [Wavelet](https://github.com/Pittvandewitt/Wavelet))
  * Media Session and Audio Focus support, pause when headphones are disconnected
  * No ads, no tracking, no excessive permissions
-
-## Install
-
-Grab the APK from [Releases](https://github.com/just-plus-player/just-plus-player/releases/latest) and install it. Sideloaded builds check for updates themselves and can install them without going through a store.
 
 ## Build
 

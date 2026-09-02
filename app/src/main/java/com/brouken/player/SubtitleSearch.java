@@ -542,6 +542,7 @@ final class SubtitleSearch {
      */
     private static List<Candidate> shegu(MediaId id, AtomicBoolean answered) {
         if (id.tmdb == null) {
+            Utils.log("subtitles: " + SOURCE_SHEGU + " needs a tmdb id, and there is none");
             return Collections.emptyList();
         }
         final StringBuilder url = new StringBuilder("https://subtitles.shegu.st/subtitles?tmdb=")
@@ -611,6 +612,9 @@ final class SubtitleSearch {
     /** Stremio's OpenSubtitles addon: imdb only, no filtering, three-letter bibliographic codes. */
     private static List<Candidate> stremio(MediaId id, AtomicBoolean answered) {
         if (id.imdb == null) {
+            // Said out loud: an empty list from here used to read in the trace as "asked and offered
+            // nothing", which is a different fact from "was never in a position to ask".
+            Utils.log("subtitles: " + SOURCE_STREMIO + " needs an imdb id, and there is none");
             return Collections.emptyList();
         }
         final String imdb = id.imdb.startsWith("tt") ? id.imdb : "tt" + id.imdb;
@@ -648,6 +652,7 @@ final class SubtitleSearch {
     private static List<Candidate> restOpenSubtitles(MediaId id, List<String> preferred,
                                                      AtomicBoolean answered, boolean allowMachine) {
         if (id.imdb == null) {
+            Utils.log("subtitles: " + SOURCE_REST + " needs an imdb id, and there is none");
             return Collections.emptyList();
         }
         final String imdb = id.imdbNumeric();

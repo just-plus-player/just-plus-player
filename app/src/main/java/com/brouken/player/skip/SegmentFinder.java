@@ -916,6 +916,11 @@ public final class SegmentFinder {
         if (root == null) {
             return null;
         }
+        // isNull first: optString stringifies a JSON null into the word "null", and TMDB leaves
+        // imdb_id null for plenty of titles.
+        if (root.isNull("imdb_id")) {
+            return null;
+        }
         final String imdbId = root.optString("imdb_id", null);
         return (imdbId != null && !imdbId.isEmpty()) ? imdbId : null;
     }

@@ -8228,7 +8228,7 @@ public class PlayerActivity extends Activity {
 
         final LinearLayout results = new LinearLayout(dialogContext);
         results.setOrientation(LinearLayout.VERTICAL);
-        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(dialogContext);
         scroll.addView(results);
 
         // Capped rather than free: the list has to leave the field and the keyboard on screen, because
@@ -8268,7 +8268,7 @@ public class PlayerActivity extends Activity {
                     return;
                 }
                 final int generation = titleSearchGeneration;
-                pending[0] = () -> searchTitles(text, generation, results, dialog);
+                pending[0] = () -> searchTitles(dialogContext, text, generation, results, dialog);
                 handler.postDelayed(pending[0], TITLE_QUERY_DEBOUNCE_MS);
             }
         });
@@ -8276,7 +8276,8 @@ public class PlayerActivity extends Activity {
     }
 
     /** Asks TMDB what the typed name could be, then fills the list in place. */
-    private void searchTitles(String query, int generation, LinearLayout results, AlertDialog dialog) {
+    private void searchTitles(final Context ctx, String query, int generation,
+                              LinearLayout results, AlertDialog dialog) {
         final Thread worker = new Thread(() -> {
             final List<TitleSearch.Title> titles = TitleSearch.search(query);
             runOnUiThread(() -> {
@@ -8285,7 +8286,7 @@ public class PlayerActivity extends Activity {
                 }
                 results.removeAllViews();
                 if (titles.isEmpty()) {
-                    results.addView(searchNote(getString(R.string.subtitle_search_none)));
+                    results.addView(searchNote(ctx, getString(R.string.subtitle_search_none)));
                     return;
                 }
                 for (final TitleSearch.Title title : titles) {
@@ -8294,7 +8295,7 @@ public class PlayerActivity extends Activity {
                     // nothing else.
                     final String kind = getString(title.movie
                             ? R.string.subtitle_search_movie : R.string.subtitle_search_series);
-                    results.addView(searchRow(title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
+                    results.addView(searchRow(ctx, title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
                             title.year == null ? kind : title.year + " · " + kind, () -> {
                         dialog.dismiss();
                         if (title.movie) {
@@ -8389,10 +8390,16 @@ public class PlayerActivity extends Activity {
         showSideMenu(title.name, items, 72, 41);
     }
 
-    /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */
+    /**
+     * The way past the catalogues, first in the list because it is what somebody who knows reaches for.
+     *
+     * <p>With a glyph, because without one it was a line of text at the head of a list of episodes that
+     * lead with their stills — and a row that looks like none of its neighbours and like no control
+     * either reads as a heading. The keyboard says what pressing it opens.
+     */
     private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
-        return new MenuItem(getString(R.string.subtitle_search_type), null, false,
-                () -> askSeasonEpisode(title, episodes));
+        return new MenuItem(R.drawable.ic_keyboard_24dp, getString(R.string.subtitle_search_type),
+                null, false, () -> askSeasonEpisode(title, episodes));
     }
 
     /**
@@ -8518,10 +8525,11 @@ public class PlayerActivity extends Activity {
     }
 
     /** A line of plain text where a row would go, for "nothing found". */
-    private TextView searchNote(CharSequence text) {
-        final TextView note = new TextView(this);
+    private TextView searchNote(final Context ctx, CharSequence text) {
+        final TextView note = new TextView(ctx);
         note.setText(text);
-        note.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+        note.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.ink_secondary)));
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
         note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
         return note;
@@ -8532,9 +8540,9 @@ public class PlayerActivity extends Activity {
      * {@link #showSideMenu}, but this list is rebuilt on every keystroke inside a dialog that has to
      * keep both the keyboard and the field it belongs to, so it builds its own.
      */
-    private View searchRow(String imageUrl, int imageW, int imageH, CharSequence name,
-                           CharSequence detail, Runnable action) {
-        final LinearLayout row = new LinearLayout(this);
+    private View searchRow(final Context ctx, String imageUrl, int imageW, int imageH,
+                           CharSequence name, CharSequence detail, Runnable action) {
+        final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, Utils.dpToPx(6), 0, Utils.dpToPx(6));
@@ -8548,14 +8556,17 @@ public class PlayerActivity extends Activity {
         mask.setCornerRadius(Utils.dpToPx(8));
         mask.setColor(Color.WHITE);
         row.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)), content, mask));
+                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                        ContextCompat.getColor(ctx, R.color.ripple_chrome))), content, mask));
 
-        final ImageView art = new ImageView(this);
+        final ImageView art = new ImageView(ctx);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         // Grey only while something is on its way. A title the catalogue has no poster for led with a
         // grey card standing in for an image that was never coming — the row should lead with nothing.
-        art.setBackgroundColor(
-                imageUrl != null ? ContextCompat.getColor(this, R.color.placeholder_card) : Color.TRANSPARENT);
+        art.setBackgroundColor(imageUrl != null
+                ? MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
+                        ContextCompat.getColor(ctx, R.color.placeholder_card))
+                : Color.TRANSPARENT);
         final int corner = Utils.dpToPx(4);
         art.setClipToOutline(true);
         art.setOutlineProvider(new ViewOutlineProvider() {
@@ -8572,20 +8583,22 @@ public class PlayerActivity extends Activity {
             Glide.with(this).load(imageUrl).into(art);
         }
 
-        final LinearLayout textBlock = new LinearLayout(this);
+        final LinearLayout textBlock = new LinearLayout(ctx);
         textBlock.setOrientation(LinearLayout.VERTICAL);
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final TextView titleView = new TextView(this);
+        final TextView titleView = new TextView(ctx);
         titleView.setText(name);
-        titleView.setTextColor(ContextCompat.getColor(this, R.color.ink_row_inactive));
+        titleView.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface,
+                ContextCompat.getColor(ctx, R.color.ink_row_inactive)));
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
         textBlock.addView(titleView);
         TextView detailView = null;
         if (detail != null && detail.length() > 0) {
-            detailView = new TextView(this);
+            detailView = new TextView(ctx);
             detailView.setText(detail);
-            detailView.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+            detailView.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
             detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
             textBlock.addView(detailView);
         }

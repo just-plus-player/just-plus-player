@@ -137,7 +137,8 @@ final class DurationPanel {
         final MaterialButton[] segments = new MaterialButton[PRESETS_MIN.length];
         for (int i = 0; i < PRESETS_MIN.length; i++) {
             final int minutes = PRESETS_MIN[i];
-            segments[i] = segment(ctx, ui, activity.getString(R.string.sleep_timer_minutes, minutes));
+            segments[i] = Utils.pickerSegment(ctx, ui,
+                    activity.getString(R.string.sleep_timer_minutes, minutes));
             durations.addView(segments[i], new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
@@ -183,7 +184,7 @@ final class DurationPanel {
         // a sixth segment: it is not a length, and the row of five would have had to give up the width.
         final MaterialButtonToggleGroup endOfFile = new MaterialButtonToggleGroup(ctx);
         endOfFile.setSingleSelection(true);
-        final MaterialButton endOfFileButton = segment(ctx, ui,
+        final MaterialButton endOfFileButton = Utils.pickerSegment(ctx, ui,
                 activity.getString(R.string.sleep_timer_end_of_item));
         endOfFile.addView(endOfFileButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -489,26 +490,6 @@ final class DurationPanel {
         column.addView(caption, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return column;
-    }
-
-    /** One segment of a toggle group, sized and lettered as OffsetPanel's are. */
-    private static MaterialButton segment(final Context ctx, final UiMetrics ui, final String label) {
-        final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        button.setId(View.generateViewId()); // the group tracks its buttons by id
-        button.setText(label);
-        button.setMaxLines(1);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        button.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
-        Utils.focusRing(button);
-        button.setPadding(ui.dpS(4), button.getPaddingTop(), ui.dpS(4), button.getPaddingBottom());
-        // Shrunk rather than wrapped or clipped: "After the current file" and a system font a notch up
-        // would otherwise break a word across two lines and leave the row ragged.
-        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                button, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
-                TypedValue.COMPLEX_UNIT_SP);
-        return button;
     }
 
     /** One of the two actions at the foot — outlined, as every button this app's panels carry is. */

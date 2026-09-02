@@ -44,6 +44,7 @@ import android.util.Log;
 import android.util.Rational;
 import android.view.Display;
 import android.view.LayoutInflater;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -681,6 +682,55 @@ class Utils {
      *
      * @param fill the row's own colour, or {@link Color#TRANSPARENT} for a row that is not the current one
      */
+    /**
+     * One segment of a picker's toggle group: outlined, at least 48dp tall, lettering that shrinks
+     * rather than wraps, and the app's focus ring. Shared by the panels that offer a row of ready-made
+     * answers — the sleep timer's durations and the speed panel's rates — so the two say "pick one of
+     * these" in one shape.
+     */
+    public static com.google.android.material.button.MaterialButton pickerSegment(
+            final Context ctx, final UiMetrics ui, final String label) {
+        final com.google.android.material.button.MaterialButton button =
+                new com.google.android.material.button.MaterialButton(ctx, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        button.setId(View.generateViewId()); // a toggle group tracks its buttons by id
+        button.setText(label);
+        button.setMaxLines(1);
+        // Material insets a button by 6dp top and bottom to reach its 48dp touch target from a 36dp
+        // box. These panels size their own rows, so the inset only shortens them.
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
+        focusRing(button);
+        button.setPadding(ui.dpS(4), button.getPaddingTop(), ui.dpS(4), button.getPaddingBottom());
+        // Shrunk rather than wrapped or clipped: the widest label already fills its share of the row at
+        // the ordinary size, so a longer language or a system font a notch up used to break one word
+        // across two lines and leave the row ragged.
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                button, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
+                TypedValue.COMPLEX_UNIT_SP);
+        return button;
+    }
+
+    /**
+     * "2,50" -> "2,5", "3,00" -> "3". Against the locale's own decimal separator, which is not a dot
+     * everywhere this app is read.
+     */
+    public static String trimZeros(final String number, final Locale locale) {
+        final char point = java.text.DecimalFormatSymbols.getInstance(locale).getDecimalSeparator();
+        if (number.indexOf(point) < 0) {
+            return number;
+        }
+        int end = number.length();
+        while (end > 0 && number.charAt(end - 1) == '0') {
+            end--;
+        }
+        if (end > 0 && number.charAt(end - 1) == point) {
+            end--;
+        }
+        return number.substring(0, end);
+    }
+
     public static Drawable pickerRow(final Context ctx, final int fill) {
         final int corner = dpToPx(8);
         final GradientDrawable content = new GradientDrawable();

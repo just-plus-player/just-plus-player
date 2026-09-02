@@ -217,7 +217,8 @@
     <string name="pref_subtitle_secondary_mode_always">Завжди — під основними субтитрами</string>
     <string name="pref_subtitle_secondary_mode_demand">На вимогу — над основними субтитрами на паузі</string>
     <string name="speed_title">Швидкість відтворення</string>
-    <string name="speed_normal">Звичайна</string>
+    <string name="speed_slower">Повільніше</string>
+    <string name="speed_faster">Швидше</string>
     <string name="audio_track_number">Доріжка %1$d</string>
     <string name="audio_prefer_language">Завжди надавати перевагу: %1$s</string>
     <string name="audio_prefer_language_done">%1$s тепер перша серед бажаних мов озвучення</string>

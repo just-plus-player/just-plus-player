@@ -236,7 +236,8 @@
     <string name="pref_subtitle_secondary_mode_always">Always — under the main subtitles</string>
     <string name="pref_subtitle_secondary_mode_demand">On demand — above the main subtitles when you pause</string>
     <string name="speed_title">Playback speed</string>
-    <string name="speed_normal">Normal</string>
+    <string name="speed_slower">Slower</string>
+    <string name="speed_faster">Faster</string>
     <string name="audio_track_number">Track %1$d</string>
     <string name="audio_prefer_language">Always prefer %1$s</string>
     <string name="audio_prefer_language_done">%1$s is now the first preferred audio language</string>

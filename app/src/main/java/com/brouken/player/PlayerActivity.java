@@ -737,6 +737,7 @@ public class PlayerActivity extends Activity {
     private android.app.Dialog skipOffsetDialog;
     private android.app.Dialog subtitleOffsetDialog;
     private android.app.Dialog sleepTimerDialog;
+    private android.app.Dialog speedDialog;
     private android.app.Dialog menuDialog;
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
     // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
@@ -9294,30 +9295,21 @@ public class PlayerActivity extends Activity {
         applyMainLineTrackSelection();
     }
 
-    private static final float[] SPEED_PRESETS =
-            {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
-
-    private String formatSpeed(float speed) {
-        if (Math.abs(speed - 1f) < 0.001f) {
-            return getString(R.string.speed_normal);
-        }
-        final String number = speed == Math.rint(speed)
-                ? String.valueOf((int) speed)
-                : String.valueOf(speed);
-        return number + "×";
-    }
-
+    /**
+     * The rate and the ways to change it on one panel, in place of the menu of eight rows it was —
+     * {@link SpeedPanel} carries the reasoning. Applies as it is pressed and stays open: a speed is
+     * judged by ear, and the panel that set it is where the correction is made.
+     */
     private void showSpeedDialog() {
         if (player == null) {
             return;
         }
-        final float current = userSpeed();
-        final List<MenuItem> items = new ArrayList<>();
-        for (final float speed : SPEED_PRESETS) {
-            items.add(new MenuItem(formatSpeed(speed), null,
-                    Math.abs(current - speed) < 0.001f, () -> applySpeed(speed)));
+        if (speedDialog != null) {
+            speedDialog.dismiss();
         }
-        showSideMenu(getString(R.string.speed_title), items);
+        speedDialog = SpeedPanel.create(this, ui, getString(R.string.speed_title), userSpeed(),
+                this::applySpeed);
+        showPickerDialog(speedDialog);
     }
 
     private void applySpeed(float speed) {
@@ -9530,7 +9522,7 @@ public class PlayerActivity extends Activity {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
                     // Quiet at 1x, like every other row here: a summary reports what has been changed,
                     // and "Normal" is the absence of a change.
-                    userSpeed() == 1f ? null : formatSpeed(userSpeed()),
+                    userSpeed() == 1f ? null : SpeedPanel.format(userSpeed()),
                     false, this::showSpeedDialog));
         }
         // Only with subtitles on: there is nothing to shift otherwise. One row for both lines — the
@@ -11736,6 +11728,11 @@ public class PlayerActivity extends Activity {
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
             sleepTimerDialog = null;
+        }
+        // Likewise the speed, which outlives the file it was set on.
+        if (speedDialog != null) {
+            speedDialog.dismiss();
+            speedDialog = null;
         }
         if (menuDialog != null) {
             menuDialog.dismiss();

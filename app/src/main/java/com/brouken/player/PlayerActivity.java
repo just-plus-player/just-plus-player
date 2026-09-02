@@ -588,6 +588,7 @@ public class PlayerActivity extends Activity {
     private static final int ENDS_AT_COLOR = 0xB3FFFFFF;
     private TextView roomPill;
     private TextView statsView;
+    private TextView transferView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
     private ImageButton buttonOpen;
@@ -659,6 +660,9 @@ public class PlayerActivity extends Activity {
     // Set while the source was let go under a standing pause, so the next play re-prepares rather than
     // leaving an idle player with a play button that does nothing.
     private boolean stoppedForPause;
+    // Set while the audio track type is disabled for a trip to the background (see onStop), so onStart
+    // knows to put it back.
+    private boolean audioReleasedForBackground;
     private final Runnable pauseReleaseRunnable = () -> {
         if (player == null || player.getPlayWhenReady() || player.isPlaying()) {
             return;
@@ -717,11 +721,12 @@ public class PlayerActivity extends Activity {
     private boolean scrubbingNoticeable;
     private long scrubbingStart;
     // Key seek (D-pad arrows, ◀◀/▶▶) accelerates: the longer the key is held — or the faster it is
-    // clicked — the bigger the step, and the seek itself happens once, after the presses stop. A fixed
-    // 10s per press cannot get through a feature-length film, and one seekTo per press is one
-    // re-buffering per press: on a network stream a burst of clicks means seconds of black screen
-    // instead of a single jump.
+    // clicked — the bigger the step. A fixed 10s per press cannot get through a feature-length film.
+    // Each press seeks behind the same one-in-flight gate the touch gestures use, so the picture and the
+    // bar follow the presses without a queue of seeks (and re-bufferings) piling up on a network stream;
+    // the steps the gate skipped are made good by one commit once the presses stop.
     private long keyScrubTarget = -1;   // -1 = no scrub in progress
+    private long keyScrubSeeked = -1;   // the last target a press actually seeked to
     private int keyScrubSteps;          // presses in a row (drives the step size)
     private long keyScrubLastMs;
     private final Runnable keyScrubCommit = this::commitKeyScrub;
@@ -772,7 +777,7 @@ public class PlayerActivity extends Activity {
     // roughly one opening in three with no sound at all, twice. Spending the latch waits for a real second
     // start, which is the only kind that follows a stopped AudioTrack.
     private boolean audioEverStarted;
-    public boolean frameRendered;
+    private boolean frameRendered;
     private boolean alive;
     public static boolean focusPlay = false;
     private Uri nextUri;
@@ -1119,6 +1124,7 @@ public class PlayerActivity extends Activity {
             // The stats panel needs the same once-a-second tick over the same lifetime (controls visible),
             // so it rides this one rather than starting a second timer.
             updateStats();
+            updateTransfer();
             if (controllerVisible) {
                 playerView.postDelayed(this, 1000);
             }
@@ -1864,6 +1870,35 @@ public class PlayerActivity extends Activity {
         roomPill.setVisibility(View.GONE);
         coordinatorLayout.addView(roomPill);
 
+        // The transfer figures — buffer, network, bitrate — as one line on the room pill's slot, under a
+        // switch of their own: a viewer who wants to watch the buffer all evening does not want the whole
+        // stats panel over the picture for it. It takes the pill's exact geometry (set with the insets, so
+        // it follows the seek bar on every device) and yields to whichever pill wants that row — the room
+        // on this side, Skip on the other, which a full-width line does reach under in portrait.
+        // Monospace, like the panel, so the digits stand still.
+        transferView = new TextView(this);
+        transferView.setTextColor(0xB3FFFFFF);
+        transferView.setTypeface(Typeface.MONOSPACE);
+        transferView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
+        // One row where it fits — landscape and TV — and three where it does not, which is a phone held
+        // upright (updateTransfer gives each figure its own row there) and any screen where the Skip
+        // pill has taken the end of the row. Ellipsising instead cost the bitrate, which is losing the
+        // point of the line. The fields carry non-breaking spaces, so a break the layout has to make
+        // falls between them rather than through a number.
+        transferView.setMaxLines(3);
+        transferView.setEllipsize(TextUtils.TruncateAt.END);
+        final GradientDrawable transferBackground = new GradientDrawable();
+        transferBackground.setColor(0x99000000);
+        transferBackground.setCornerRadius(ui.pillCorner());
+        transferView.setBackground(transferBackground);
+        transferView.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
+        final CoordinatorLayout.LayoutParams transferLp = new CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        transferLp.gravity = Gravity.BOTTOM | Gravity.START;
+        transferView.setLayoutParams(transferLp);
+        transferView.setVisibility(View.GONE);
+        coordinatorLayout.addView(transferView);
+
         // The room itself reads in the pill above; this floats only for the one thing that pill cannot say
         // in time — that the pause was the room's doing and not the viewer's, which has to show while the
         // controls are down. It goes under the centre disc, on the loading rate's geometry, because that is
@@ -1982,10 +2017,15 @@ public class PlayerActivity extends Activity {
                 // pulls every child up off the screen edge, the two scrims included (the full-screen dim and
                 // the bar's own gradient), and what shows through underneath is a bright strip of raw video.
                 // On TV that inset is pure overscan, so the strip appeared with nothing drawn over it at all.
-                final FrameLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
+                final BottomBarLayout exoBottomBar = findViewById(R.id.exo_bottom_bar);
+                final int barHeight = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height);
                 final ViewGroup.LayoutParams params = exoBottomBar.getLayoutParams();
-                params.height = getResources().getDimensionPixelSize(R.dimen.exo_styled_bottom_bar_height) + bottomBarPaddingBottom;
+                params.height = barHeight + bottomBarPaddingBottom;
                 exoBottomBar.setLayoutParams(params);
+                // Media3 parks the bar by that unchanged resource height, so tell it how much taller the bar
+                // now is -- without this the park stops the inset short and the button row's top stays over
+                // the picture for as long as the seek bar is up on its own.
+                exoBottomBar.setTravelScale((float) params.height / barHeight);
 
                 if (Build.VERSION.SDK_INT >= 35) {
                     findViewById(R.id.exo_left).getLayoutParams().width = windowInsets.getInsets(WindowInsets.Type.navigationBars()).left;
@@ -2042,6 +2082,19 @@ public class PlayerActivity extends Activity {
                             + ui.dpS(24);
                     pillLp.leftMargin = insetH + ui.gridH();
                     roomPill.setLayoutParams(pillLp);
+                }
+
+                // The transfer line is the room pill's stand-in on the same slot, so it takes the pill's
+                // offsets verbatim; a right margin too, so a long line stops at the grid instead of the edge.
+                if (transferView != null) {
+                    final CoordinatorLayout.LayoutParams transferParams =
+                            (CoordinatorLayout.LayoutParams) transferView.getLayoutParams();
+                    transferParams.bottomMargin = windowInsets.getSystemWindowInsetBottom() + overscanV
+                            + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
+                            + ui.dpS(24);
+                    transferParams.leftMargin = insetH + ui.gridH();
+                    transferParams.rightMargin = insetH + ui.gridH();
+                    transferView.setLayoutParams(transferParams);
                 }
 
                 // Mirror of the Skip pill on the other edge: the stats panel floats on the same coordinator,
@@ -2449,6 +2502,13 @@ public class PlayerActivity extends Activity {
             releasePlayer(false);
             initializePlayer();
         } else {
+            // The audio track type onStop disabled to hand the receiver's route back. The track this builds
+            // is unstarted, since the player is paused; the latch the pause armed recreates it on play.
+            if (audioReleasedForBackground) {
+                audioReleasedForBackground = false;
+                player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false).build());
+            }
             resumeFrameRendered = false;
             playerView.postDelayed(resumeWatchdogRunnable, RESUME_WATCHDOG_MS);
             // Put back what onStop cancelled, and only that: a load that was still buffering when the user
@@ -2537,12 +2597,21 @@ public class PlayerActivity extends Activity {
         // pauses the sink — so until this screen let the player go, minutes later, every other player on
         // the box met "AudioTrack init failed" for AC3 and wrote the refusal down as a verdict about the
         // hardware, which is why clearing their data was what it took to get them bitstreaming again.
-        // stop() keeps the item, the position and the surface, so the return costs one prepare() — the
-        // same trade the standing pause already makes, through the same latch.
+        // Only the audio track type is disabled for it: that reaches MediaCodecAudioRenderer.onDisabled,
+        // whose flush() releases the AudioTrack — the same call a stop() ends in — while the timeline,
+        // the buffer, the surface and everything selected on the instance stay. A stop() used to be the
+        // way out here, and the return paid for it twice: a prepare() that re-read the container, and the
+        // resume watchdog reading the idle player as a dead session and rebuilding it outright, which is
+        // what the viewer saw as the file opening from scratch after every screensaver. onStart puts the
+        // track type back. Not through restartPassthroughAudio: a reselect made while paused is exactly
+        // what leaves a stale track behind, and the pause has already latched the recreate for the play.
         if (audioSink != null && audioSink.isPassthrough()) {
             Utils.log("background: releasing the passthrough output");
-            stoppedForPause = true;
-            player.stop();
+            // A recreate whose onTracksChanged is still to come would put the track type straight back.
+            audioRestartInFlight = false;
+            audioReleasedForBackground = true;
+            player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
         }
         // The load watchdog only ever ran while the activity was on screen by accident: nothing cancelled it
         // on this path, so an item still buffering when the user left would time out in the background —
@@ -2718,6 +2787,7 @@ public class PlayerActivity extends Activity {
             if (keyScrubTarget >= 0) {
                 playerView.removeCallbacks(keyScrubCommit);
                 keyScrubTarget = -1;
+                keyScrubSeeked = -1;
                 keyScrubSteps = 0;
                 playerView.removeCallbacks(playerView.textClearRunnable);
                 playerView.textClearRunnable.run();
@@ -3043,8 +3113,8 @@ public class PlayerActivity extends Activity {
                     playerView.postDelayed(playerView.textClearRunnable, 1000);
                 }
                 if (keyScrubTarget >= 0) {
-                    // Wait longer than the acceleration window, so a burst of clicks coalesces into one
-                    // seek instead of one seek (and one re-buffering) per click.
+                    // Wait longer than the acceleration window, so a burst of clicks ends in one commit
+                    // rather than one per click.
                     playerView.removeCallbacks(keyScrubCommit);
                     playerView.postDelayed(keyScrubCommit, 520);
                 }
@@ -3082,10 +3152,29 @@ public class PlayerActivity extends Activity {
         final long step = keyScrubStep(duration);
         keyScrubTarget = Math.max(0, Math.min(duration, from + (forward ? step : -step)));
         showKeySeekMessage(keyScrubTarget);
-        // While the key is held down the target keeps flying; don't seek until it settles.
+        // Seek now if the previous seek has landed, so the picture and the bar follow the presses. A held
+        // key outruns the gate, so the commit below still lands on the target once the presses stop.
+        setKeySeekDirection(keyScrubTarget);
+        if (seekIfLanded(keyScrubTarget)) {
+            keyScrubSeeked = keyScrubTarget;
+        }
         playerView.removeCallbacks(keyScrubCommit);
         playerView.postDelayed(keyScrubCommit, 700);
         return true;
+    }
+
+    /** One seek in flight at a time, the gate every scrub shares; see onRenderedFirstFrame. */
+    boolean seekIfLanded(long position) {
+        if (!frameRendered || player == null)
+            return false;
+        frameRendered = false;
+        player.seekTo(position);
+        return true;
+    }
+
+    private void setKeySeekDirection(long target) {
+        player.setSeekParameters(target >= player.getCurrentPosition()
+                ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
     }
 
     /**
@@ -3122,12 +3211,15 @@ public class PlayerActivity extends Activity {
 
     private void commitKeyScrub() {
         final long target = keyScrubTarget;
+        final long seeked = keyScrubSeeked;
         keyScrubTarget = -1;
+        keyScrubSeeked = -1;
         keyScrubSteps = 0;
-        if (target < 0 || player == null)
+        // Nothing to make good if the last press got through the gate: seeking there again would only
+        // flush the decoder a second time.
+        if (target < 0 || target == seeked || player == null)
             return;
-        player.setSeekParameters(target >= player.getCurrentPosition()
-                ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
+        setKeySeekDirection(target);
         player.seekTo(target);
     }
 
@@ -4201,7 +4293,10 @@ public class PlayerActivity extends Activity {
         buttonSkip.setFocusable(actionable);
         final boolean appearing = buttonSkip.getVisibility() != View.VISIBLE;
         if (appearing) {
+            // After the layout, not before it: what the transfer line has to give up is the pill's
+            // width, and a pill that has never been shown has none to read yet.
             buttonSkip.setVisibility(View.VISIBLE);
+            buttonSkip.post(this::updateTransfer);
         }
         if (isTvBox && actionable && claimFocus && (appearing || stateChanged)) {
             buttonSkip.requestFocus();
@@ -4279,6 +4374,7 @@ public class PlayerActivity extends Activity {
                 playerView.requestFocus();
             }
             buttonSkip.setVisibility(View.GONE);
+            updateTransfer(); // the whole row is the line's again
         }
     }
 
@@ -5208,6 +5304,9 @@ public class PlayerActivity extends Activity {
         if (statsView != null) {
             statsView.setVisibility(View.GONE);
         }
+        if (transferView != null) {
+            transferView.setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -5215,11 +5314,8 @@ public class PlayerActivity extends Activity {
      * the same time, and repeating "1080p H264" there would be noise. What is left is the figures that
      * move and the decoder names the coarse codec label hides.
      *
-     * <p>Splitting the transfer figures (buffer, network, bitrate) out of here onto a line of their own,
-     * under a second switch, was tried and put back: everything they say is already on this panel, and
-     * the bottom bar has no band wide enough for them — the time is short, the button cluster is not, so
-     * a centred line is capped at twice the narrower side and loses the bitrate to an ellipsis on a TV.
-     * Worth revisiting only if the controls are laid out differently.
+     * <p>The transfer figures (buffer, network, bitrate) are listed here only while the transfer line is
+     * off: with it on they have their own place above the seek bar, and nothing is said twice.
      */
     private void updateStats() {
         if (statsView == null) {
@@ -5229,53 +5325,129 @@ public class PlayerActivity extends Activity {
             fadeChrome(statsView, false);
             return;
         }
-        final StringBuilder text = new StringBuilder();
-        // Ahead of the playhead, against the load control's target — the "how much slack is there"
-        // reading. On a local file this is always full, which is itself the answer.
-        final long bufferedMs = player.getTotalBufferedDuration();
-        text.append(getString(R.string.stats_buffer, bufferedMs / 1000,
-                (int) Math.min(100, bufferedMs * 100 / bufferCeilingMs())));
-        if (bandwidthBitrate > 0) {
-            text.append('\n').append(getString(R.string.stats_network,
-                    getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f)));
-        }
+        final List<String> lines = new ArrayList<>();
         final Format video = player.getVideoFormat();
+        if (!mPrefs.showTransfer) {
+            lines.add(bufferText());
+            addIfAny(lines, networkText());
+        }
         if (video != null) {
-            text.append('\n').append(video.width).append('×').append(video.height);
+            lines.add(video.width + "×" + video.height);
             // Its own line rather than a third field: the panel has to stay narrower than the gap to the
             // centred transport buttons, and every line here is kept short enough to never wrap.
-            if (video.bitrate != Format.NO_VALUE) {
-                text.append('\n').append(getString(R.string.stats_stream,
-                        getString(R.string.quality_bitrate, video.bitrate / 1_000_000f)));
-            } else {
-                // Matroska and AVI carry no bitrate to read, so the whole file over its duration is all
-                // there is. Labelled apart from Stream: it counts audio and subtitles in too.
-                final float overall = overallBitrate();
-                if (overall > 0) {
-                    text.append('\n').append(getString(R.string.stats_overall,
-                            getString(R.string.quality_bitrate, overall)));
-                }
+            if (!mPrefs.showTransfer) {
+                addIfAny(lines, bitrateText(video));
             }
         }
         // The mime says "hevc"; only the decoder name says whether that went to the vendor's hardware
         // codec or to a software one, which is the whole question behind most "it stutters" reports.
         // One per line: the two of them on one line was the panel's widest content by a wide margin.
-        if (videoDecoderName != null) {
-            text.append('\n').append(videoDecoderName);
-        }
-        if (audioDecoderName != null) {
-            text.append('\n').append(audioDecoderName);
-        }
-        final String dolbyVision = dolbyVisionStatus();
-        if (dolbyVision != null) {
-            text.append('\n').append(dolbyVision);
-        }
+        addIfAny(lines, videoDecoderName);
+        addIfAny(lines, audioDecoderName);
+        addIfAny(lines, dolbyVisionStatus());
         final DecoderCounters counters = player.getVideoDecoderCounters();
         if (counters != null) {
-            text.append('\n').append(getString(R.string.stats_dropped, counters.droppedBufferCount));
+            lines.add(getString(R.string.stats_dropped, counters.droppedBufferCount));
         }
-        statsView.setText(text);
+        statsView.setText(TextUtils.join("\n", lines));
         fadeChrome(statsView, true);
+    }
+
+    /**
+     * The transfer line: buffer, network and bitrate on the row above the seek bar. Its own switch,
+     * because "watch the buffer" and "a panel over the picture" are different asks.
+     *
+     * <p>It shares that row with the two pills, and answers them differently because they stand in
+     * different places. The room pill holds this very slot, so the line gives it up and comes back when
+     * the room's badge goes. Skip is at the far end, and it can stand there for a whole opening — long
+     * enough that hiding the figures for its sake was the wrong trade — so the line stops short of it
+     * instead, taking a second or third row for what no longer fits beside it.
+     */
+    private void updateTransfer() {
+        if (transferView == null) {
+            return;
+        }
+        if (!mPrefs.showTransfer || player == null || !controllerChromeVisible || inPip
+                || isVisible(roomPill)) {
+            fadeChrome(transferView, false);
+            return;
+        }
+        final List<String> fields = new ArrayList<>();
+        addField(fields, bufferText());
+        addField(fields, networkText());
+        final Format video = player.getVideoFormat();
+        if (video != null) {
+            addField(fields, bitrateText(video));
+        }
+        // Upright the three never fit across the screen, so they stop pretending to be one line and take
+        // a row each. The separators go with the row they were separating: what tells two figures apart
+        // there is the line break, and a dot at the end of every row is only clutter.
+        final boolean portrait =
+                getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        transferView.setText(TextUtils.join(portrait ? "\n" : " · ", fields));
+        // Stop short of the Skip pill rather than step aside for it: the pill stands for a whole opening
+        // or a whole set of credits, and the figures would be gone for all of it. The pill's own width is
+        // the only thing that has to be read, and it is read on the tick that is running anyway.
+        final CoordinatorLayout.LayoutParams lp =
+                (CoordinatorLayout.LayoutParams) transferView.getLayoutParams();
+        final int row = coordinatorLayout.getWidth() - lp.leftMargin - lp.rightMargin;
+        final int free = isVisible(buttonSkip) ? row - buttonSkip.getWidth() - ui.dpS(8) : row;
+        if (free > 0) {
+            transferView.setMaxWidth(free);
+        }
+        fadeChrome(transferView, true);
+    }
+
+    private static boolean isVisible(@Nullable View view) {
+        return view != null && view.getVisibility() == View.VISIBLE;
+    }
+
+    /**
+     * A field of the transfer line, with its own spaces made non-breaking: the line wraps where it has to
+     * on a narrow screen, and the only place it may break is between two fields.
+     */
+    private static void addField(List<String> fields, @Nullable String value) {
+        if (value != null) {
+            fields.add(value.replace(' ', '\u00A0'));
+        }
+    }
+
+    private static void addIfAny(List<String> list, @Nullable String value) {
+        if (value != null) {
+            list.add(value);
+        }
+    }
+
+    /**
+     * Ahead of the playhead, against the load control's target — the "how much slack is there" reading.
+     * On a local file this is always full, which is itself the answer.
+     */
+    private String bufferText() {
+        final long bufferedMs = player.getTotalBufferedDuration();
+        return getString(R.string.stats_buffer, bufferedMs / 1000,
+                (int) Math.min(100, bufferedMs * 100 / bufferCeilingMs()));
+    }
+
+    /** The measured network rate, or null before the first estimate lands. */
+    @Nullable
+    private String networkText() {
+        return bandwidthBitrate > 0
+                ? getString(R.string.stats_network, getString(R.string.quality_bitrate, bandwidthBitrate / 1_000_000f))
+                : null;
+    }
+
+    /**
+     * The track's own bitrate where the container states one. Matroska and AVI carry none to read, so the
+     * whole file over its duration is all there is — labelled apart from Stream: it counts audio and
+     * subtitles in too. Null when neither is known.
+     */
+    @Nullable
+    private String bitrateText(Format video) {
+        if (video.bitrate != Format.NO_VALUE) {
+            return getString(R.string.stats_stream, getString(R.string.quality_bitrate, video.bitrate / 1_000_000f));
+        }
+        final float overall = overallBitrate();
+        return overall > 0 ? getString(R.string.stats_overall, getString(R.string.quality_bitrate, overall)) : null;
     }
 
 
@@ -9523,6 +9695,8 @@ public class PlayerActivity extends Activity {
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
             }
             fadeChrome(roomPill, showPill);
+            // The transfer line holds the pill's slot: it steps aside the moment the pill comes up.
+            updateTransfer();
         }
 
         // The float says only what the header cannot say in time: this pause is the room's, not yours. Bounded
@@ -10159,6 +10333,7 @@ public class PlayerActivity extends Activity {
         audioReselectAtMs = 0;
         playerView.removeCallbacks(rebufferArmRunnable);
         audioRestartPending = false;
+        audioReleasedForBackground = false;
 
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
@@ -10963,6 +11138,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(rebufferArmRunnable);
             playerView.removeCallbacks(pauseReleaseRunnable);
             stoppedForPause = false;
+            audioReleasedForBackground = false;
             audioRestartPending = false;
             audioRestartInFlight = false;
             audioRestartSettling = false;
@@ -10973,6 +11149,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(keyScrubCommit);
         }
         keyScrubTarget = -1;
+        keyScrubSeeked = -1;
         keyScrubSteps = 0;
         stopLoadingSpeed();
         // An error deferred until the controller is fully visible belongs to the playback session being
@@ -11316,6 +11493,12 @@ public class PlayerActivity extends Activity {
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
             if (playWhenReady && stoppedForPause) {
                 stoppedForPause = false;
+                // The re-prepare opens a fresh output of its own, so the pause's latch has nothing left to
+                // recreate — spent here it would tear that output down the instant playback begins, which is
+                // the shape that has produced a silent start before (see audioEverStarted). Outside the check
+                // below: the play button has usually re-prepared already (Util.handlePlayButtonAction does so
+                // on an idle player before it calls play()), so the state here is rarely still IDLE.
+                audioRestartPending = false;
                 if (player != null && player.getPlaybackState() == Player.STATE_IDLE) {
                     Utils.log("pause: re-preparing after the source was let go");
                     player.prepare();
@@ -13335,12 +13518,7 @@ public class PlayerActivity extends Activity {
             playerView.clearIcon();
             playerView.setCustomErrorMessage(Utils.formatMilisSign(diff));
         }
-        if (frameRendered) {
-            frameRendered = false;
-            if (player != null) {
-                player.seekTo(position);
-            }
-        }
+        seekIfLanded(position);
     }
 
     /**

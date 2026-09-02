@@ -109,6 +109,7 @@ class Prefs {
     private static final String PREF_KEY_SHOW_CLOCK = "showClock";
     private static final String PREF_KEY_TIME_REMAINING = "timeRemaining";
     private static final String PREF_KEY_SHOW_STATS = "showStats";
+    private static final String PREF_KEY_SHOW_TRANSFER = "showTransfer";
     private static final String PREF_KEY_SYSTEM_VOLUME = "systemVolume";
     private static final String PREF_KEY_TOGETHER_NICK = "togetherNick";
     private static final String PREF_KEY_TOGETHER_PASSWORD = "togetherPassword";
@@ -269,6 +270,8 @@ class Prefs {
     /** Bottom bar counts down what is left instead of showing the total duration. */
     public boolean timeRemaining = false;
     public boolean showStats = false;
+    /** Buffer, network and bitrate on one line above the seek bar, apart from the stats panel. */
+    public boolean showTransfer = false;
     public boolean systemVolume = true;
     /** How other people in a watch-together room see this device. Generated once, then editable. */
     public String togetherNick = "";
@@ -431,6 +434,7 @@ class Prefs {
         showClock = mSharedPreferences.getBoolean(PREF_KEY_SHOW_CLOCK, showClock);
         timeRemaining = mSharedPreferences.getBoolean(PREF_KEY_TIME_REMAINING, timeRemaining);
         showStats = mSharedPreferences.getBoolean(PREF_KEY_SHOW_STATS, showStats);
+        showTransfer = mSharedPreferences.getBoolean(PREF_KEY_SHOW_TRANSFER, showTransfer);
         // Forced on for TV boxes, where the remote routes volume to the panel or receiver over CEC and
         // only the system stream responds — the setting is hidden there too.
         systemVolume = Utils.isTvBox(mContext) || mSharedPreferences.getBoolean(PREF_KEY_SYSTEM_VOLUME, systemVolume);

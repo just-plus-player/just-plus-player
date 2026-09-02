@@ -211,6 +211,9 @@
     <string name="stats_report_message">Отправьте эти подробности воспроизведения, сообщая о проблеме с изображением или звуком.</string>
     <string name="pref_show_stats_on">Буфер, декодеры и пропущенные кадры показываются с элементами управления</string>
     <string name="pref_show_stats_off">Подробности воспроизведения скрыты</string>
+    <string name="pref_show_transfer">Строка передачи</string>
+    <string name="pref_show_transfer_on">Буфер, сеть и битрейт показываются одной строкой над полосой перемотки</string>
+    <string name="pref_show_transfer_off">Показатели передачи остаются на панели статистики</string>
     <string name="pref_keep_awake_on_pause">Не гасить экран на паузе</string>
     <string name="pref_keep_awake_on_pause_on">Заставка устройства не включается; изображение затемняется через минуту, а через два часа экран отдаётся системе</string>
     <string name="pref_keep_awake_on_pause_off">Пауза остаётся на усмотрение устройства, и его заставка включается как обычно</string>

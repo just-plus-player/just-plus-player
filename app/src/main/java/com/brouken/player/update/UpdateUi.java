@@ -17,6 +17,8 @@ import androidx.appcompat.app.AlertDialog;
 
 import com.brouken.player.BuildConfig;
 import com.brouken.player.R;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 /**
@@ -60,15 +62,51 @@ public final class UpdateUi {
         scroll.setPadding(padH, dp(dialogContext, 8), padH, 0);
         scroll.addView(message);
 
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext)
+        // Two actions in the bar, not three. "Skip this version", "Later" and "Update" want 269dp of
+        // lettering side by side: that fits a 411dp phone and stacks into three lines on a 360dp one,
+        // before any language longer than English reaches it. Material gives a dialog one confirming
+        // and one dismissive action, and the pair that is left needs 141dp of a 264dp bar.
+        //
+        // Skipping is the third thing anybody might do here, and it stays a thing done rather than a
+        // box ticked — a checkbox beside an Update button reads as a contradiction, because you cannot
+        // skip a version and install it in the same breath. So it is a text button of its own, on its
+        // own line above the bar, where its width belongs to nobody else. Only where there is something
+        // to skip to: the manual check passes no onSkip.
+        final LinearLayout content = new LinearLayout(dialogContext);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.pref_update_header)
-                .setView(scroll)
-                .setPositiveButton(R.string.update_now, (dialog, which) -> startDownload(activity, dialogContext, info))
-                .setNegativeButton(R.string.update_later, null);
+                .setView(content)
+                .setPositiveButton(R.string.update_now, (d, which) -> startDownload(activity, dialogContext, info))
+                .setNegativeButton(R.string.update_later, null)
+                .create();
+
         if (onSkip != null) {
-            builder.setNeutralButton(R.string.update_skip, (dialog, which) -> onSkip.run());
+            final MaterialButton skip = new MaterialButton(dialogContext, null,
+                    androidx.appcompat.R.attr.borderlessButtonStyle);
+            skip.setText(R.string.update_skip);
+            // Not the brand: this dialog letters its confirming action in the accent and everything else
+            // in the quieter ink, and skipping a version is not what anybody came here to do.
+            skip.setTextColor(MaterialColors.getColor(dialogContext,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant,
+                    skip.getCurrentTextColor()));
+            skip.setInsetTop(0);
+            skip.setInsetBottom(0);
+            skip.setMinHeight(dp(dialogContext, 48));
+            skip.setOnClickListener(v -> {
+                dialog.dismiss();
+                onSkip.run();
+            });
+            final LinearLayout.LayoutParams skipLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            // Lettering flush with the message above it: a text button carries 12dp of its own padding.
+            skipLp.setMargins(padH - dp(dialogContext, 12), dp(dialogContext, 8), padH, 0);
+            content.addView(skip, skipLp);
         }
-        builder.show();
+        dialog.show();
     }
 
     /** Downloads the APK with a progress dialog, then launches the system installer. */

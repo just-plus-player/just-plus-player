@@ -189,6 +189,15 @@
     <string name="button_audio_track">Аудио</string>
     <string name="button_more">Ещё</string>
     <string name="button_update">Доступно обновление</string>
+    <string name="pref_update_header">Обновления</string>
+    <string name="update_checking">Проверяем обновления…</string>
+    <string name="update_available">Доступно обновление: %1$s → %2$s</string>
+    <string name="update_none">У вас последняя версия</string>
+    <string name="update_downloading">Загружаем обновление…</string>
+    <string name="update_download_failed">Не удалось загрузить</string>
+    <string name="update_now">Обновить</string>
+    <string name="update_later">Позже</string>
+    <string name="update_skip">Пропустить эту версию</string>
     <string name="update_stops_playback">Плеер закроется для установки — позиция сохранится.</string>
     <string name="audio_title">Аудиодорожка</string>
     <string name="subtitle_title">Субтитры</string>

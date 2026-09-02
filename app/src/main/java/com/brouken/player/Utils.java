@@ -1080,6 +1080,25 @@ class Utils {
         return themed;
     }
 
+
+    /**
+     * Makes a dialog that carries a text field give way to the keyboard by shrinking rather than by
+     * sliding.
+     *
+     * <p>Left unsaid, the soft-input mode is {@code UNSPECIFIED} and the system chooses — and on the
+     * owner's phone it chose to pan: the window's picture slid up to keep the cursor above the
+     * keyboard while the window kept the coordinates it was laid out with. A screen recording with the
+     * touch indicator on caught what that costs: the finger sat on the first result at y=815 and the
+     * press was delivered to the second, whose picture was at 897 — the two spaces some 100px, about a
+     * status bar, apart. Resizing moves nothing, so the two cannot drift.
+     */
+    static void keyboardResizes(final android.app.Dialog dialog) {
+        final Window window = dialog.getWindow();
+        if (window != null) {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+    }
+
     /**
      * The strip a dialog's fields stand in, inset to the dialog's own text margin so a field lines
      * up with the title above it.

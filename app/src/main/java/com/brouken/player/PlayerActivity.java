@@ -8245,6 +8245,10 @@ public class PlayerActivity extends Activity {
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
 
+        // The list has to keep still under a finger: see Utils.keyboardResizes for what the alternative
+        // cost here.
+        Utils.keyboardResizes(dialog);
+
         final Handler handler = new Handler(Looper.getMainLooper());
         final Runnable[] pending = new Runnable[1];
         // What was last asked for, so the list is not thrown away and rebuilt for a change that changed
@@ -8445,14 +8449,14 @@ public class PlayerActivity extends Activity {
             episode.setText(String.valueOf(current.episode));
         }
 
-        new MaterialAlertDialogBuilder(dialogContext)
+        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.subtitle_search_type)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
                         number(season.getText().toString(), 1),
                         number(episode.getText().toString(), -1), episodes))
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .show());
     }
 
     /** A typed number, or {@code fallback} for anything that is not one. */
@@ -9737,13 +9741,13 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        new MaterialAlertDialogBuilder(dialogContext)
+        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(code)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> joinRoom(code, input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .show());
     }
 
     /**
@@ -9856,7 +9860,7 @@ public class PlayerActivity extends Activity {
         // truthfully and quite uselessly, that no such room exists.
         final EditText password = Utils.textField(fields, getString(R.string.together_password));
 
-        new MaterialAlertDialogBuilder(dialogContext)
+        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.together_join)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -9868,7 +9872,7 @@ public class PlayerActivity extends Activity {
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .show());
     }
 
     /** Enter a room by code; the room says what it is playing as soon as we are in. */

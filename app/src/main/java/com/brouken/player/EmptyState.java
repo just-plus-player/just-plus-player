@@ -229,13 +229,13 @@ class EmptyState {
             input.setText(pasted.toString());
             input.setSelection(input.getText().length());
         }
-        new MaterialAlertDialogBuilder(dialogContext)
+        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.empty_state_link)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> openLink(input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .show());
     }
 
     private void openLink(final String text) {

@@ -27,7 +27,6 @@ import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.slider.LabelFormatter;
 import com.google.android.material.slider.Slider;
 
-import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -440,13 +439,12 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
         row.addView(minus);
         row.addView(seekBar);
         row.addView(plus);
-        // Optical alignment: each ± button is a 24dp glyph in 12dp of its own padding, so the row is
-        // pulled out by that padding. What lines up with the title and the pills is the glyph.
-        final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.leftMargin = -Utils.dpToPx(12);
-        rowLp.rightMargin = -Utils.dpToPx(12);
-        row.setLayoutParams(rowLp);
+        // Inside the column, not pulled out of it. The row used to hang 12dp past each edge so that the
+        // ± glyphs lined up optically with the title and the pills — but a view outside its parent's
+        // bounds is never handed the touch, so the outer strip of each button was dead. The glyph now
+        // sits 12dp in, which is a shift the eye has to look for and a press it does not.
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(row);
 
         // Readout: accent when non-zero, white at rest.
@@ -525,6 +523,12 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
         button.setContentDescription(description);
         button.setInsetTop(0);
         button.setInsetBottom(0);
+        // Material's icon button is a 20dp glyph in 10dp of padding — a 40dp box, and with the insets
+        // taken off, 40dp tall. The platform's floor for anything a finger has to hit is 48.
+        button.setMinWidth(Utils.dpToPx(48));
+        button.setMinHeight(Utils.dpToPx(48));
+        button.setMinimumWidth(Utils.dpToPx(48));
+        button.setMinimumHeight(Utils.dpToPx(48));
         return button;
     }
 
@@ -551,18 +555,7 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
         final Locale locale = Locale.getDefault();
         String number = "0";
         if (!isZero(sec)) {
-            number = String.format(locale, "%+.2f", sec);
-            // Trim trailing zeros: "+2,50" -> "+2,5", "+3,00" -> "+3". Against the locale's own
-            // separator, which is not a dot everywhere this app is read.
-            final char point = DecimalFormatSymbols.getInstance(locale).getDecimalSeparator();
-            int end = number.length();
-            while (end > 0 && number.charAt(end - 1) == '0') {
-                end--;
-            }
-            if (end > 0 && number.charAt(end - 1) == point) {
-                end--;
-            }
-            number = number.substring(0, end);
+            number = Utils.trimZeros(String.format(locale, "%+.2f", sec), locale);
         }
         return context.getString(R.string.offset_seconds, number);
     }

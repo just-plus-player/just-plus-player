@@ -8247,6 +8247,12 @@ public class PlayerActivity extends Activity {
 
         final Handler handler = new Handler(Looper.getMainLooper());
         final Runnable[] pending = new Runnable[1];
+        // What was last asked for, so the list is not thrown away and rebuilt for a change that changed
+        // nothing. A soft keyboard editing Cyrillic keeps the word composing, and touching anything
+        // outside the field makes it finish — which fires afterTextChanged with the same text, and used
+        // to schedule a fresh search that replaced every row a second later. Rebuilding a list under a
+        // finger that is already on it is how a press ends up on the row that took its place.
+        final String[] asked = {""};
         query.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -8256,10 +8262,15 @@ public class PlayerActivity extends Activity {
 
             @Override
             public void afterTextChanged(Editable s) {
+                final String typed = s.toString().trim();
+                if (typed.equals(asked[0])) {
+                    return;
+                }
+                asked[0] = typed;
                 if (pending[0] != null) {
                     handler.removeCallbacks(pending[0]);
                 }
-                final String text = s.toString().trim();
+                final String text = typed;
                 // Every keystroke invalidates the answer to the last one, whether or not a new request
                 // goes out — otherwise a slow reply for "Sil" lands on top of the results for "Silo".
                 titleSearchGeneration++;
@@ -8545,10 +8556,19 @@ public class PlayerActivity extends Activity {
         final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, Utils.dpToPx(6), 0, Utils.dpToPx(6));
         row.setClickable(true);
         row.setFocusable(true);
         row.setMinimumHeight(ui.rowMinHeight());
+        // Separated rather than padded, and the difference is what a press lands on. These rows used to
+        // carry 6dp of their own padding and sit flush against each other, so between two posters lay a
+        // 12dp band that looked like a gap and belonged, from its middle down, to the row below. A touch
+        // log from the owner's phone caught exactly that: y=24 inside a 216px row, 8dp past a boundary
+        // the eye had no way to see. The gap is real space now, owned by neither, and every pixel a row
+        // can be pressed on is a pixel it draws.
+        final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.bottomMargin = Utils.dpToPx(8);
+        row.setLayoutParams(rowLp);
         final GradientDrawable content = new GradientDrawable();
         content.setCornerRadius(Utils.dpToPx(8));
         content.setColor(Color.TRANSPARENT);

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The close button a panel's header carries. Named rather than held in a field because
+         Utils.pickerWindow is what wires it: the panels build the button, the window knows what
+         closing means. -->
+    <item name="picker_close" type="id" />
+</resources>

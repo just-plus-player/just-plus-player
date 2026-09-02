@@ -126,7 +126,7 @@ final class DurationPanel {
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         header.setMinHeight(ui.dp(48));
         header.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(header);
+        root.addView(Utils.pickerHeader(ctx, ui, header));
 
         // The durations across the panel, whichever way it is held: five segments share a full-width
         // row at 60dp or more, and half a landscape panel would leave each of them under the 48dp a

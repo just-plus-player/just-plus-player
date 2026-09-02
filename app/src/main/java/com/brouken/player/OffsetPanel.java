@@ -172,7 +172,7 @@ final class OffsetPanel {
         header.setTypeface(Typeface.DEFAULT_BOLD);
         // Space, not a rule: the hairline that used to sit here had a caption under it, and once the
         // caption went it landed a few pixels above the row of pills and read as their top border.
-        root.addView(header);
+        root.addView(Utils.pickerHeader(ctx, ui, header));
         root.addView(gap(ctx, rhythm.title));
 
         final List<Runnable> resets = new ArrayList<>();

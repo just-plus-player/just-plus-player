@@ -654,6 +654,13 @@ class Utils {
         }
         host.addView(content, lp);
 
+        // The panels build a close button; this is where it learns what it closes. One place decides,
+        // and a panel that forgot to carry one simply has none.
+        final View close = content.findViewById(R.id.picker_close);
+        if (close != null) {
+            close.setOnClickListener(v -> dialog.cancel());
+        }
+
         dialog.setContentView(host);
         // setCanceledOnTouchOutside measures "outside" against the window, and a sheet docked to the
         // bottom is given a window as wide as the screen and as tall as it — so on a phone held upright
@@ -717,6 +724,57 @@ class Utils {
                 new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
                 new int[]{Color.TRANSPARENT, press}),
                 content, mask);
+    }
+
+    /**
+     * The one control every player panel carries: a close button for its header.
+     *
+     * <p>It exists for the panel that fills the screen. A playlist grows until 56dp of picture is all
+     * that is left above it, and then the only ways out are the system Back and a press on that strip —
+     * one of which is a gesture on most phones now, and the other of which looks like nothing. Material
+     * gives a surface that has taken the screen an explicit close, and this is it.
+     *
+     * <p>No listener here: {@link #pickerWindow} finds it by id and wires it to the dialog, so what
+     * closing means is decided in the one place that already knows.
+     */
+    public static com.google.android.material.button.MaterialButton pickerClose(
+            final Context ctx, final UiMetrics ui) {
+        final com.google.android.material.button.MaterialButton button =
+                new com.google.android.material.button.MaterialButton(ctx, null,
+                        com.google.android.material.R.attr.materialIconButtonStyle);
+        button.setId(R.id.picker_close);
+        button.setIconResource(R.drawable.ic_close_24dp);
+        button.setIconSize(ui.dpS(24));
+        button.setIconTint(ColorStateList.valueOf(MaterialColors.getColor(ctx,
+                R.attr.colorOnSurfaceVariant, ContextCompat.getColor(ctx, R.color.ink_secondary))));
+        button.setContentDescription(ctx.getString(R.string.error_close));
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setMinWidth(ui.dpS(48));
+        button.setMinHeight(ui.dpS(48));
+        button.setMinimumWidth(ui.dpS(48));
+        button.setMinimumHeight(ui.dpS(48));
+        focusRing(button);
+        return button;
+    }
+
+    /**
+     * A panel's title row: whatever names the panel, then the close button at the end of the same line.
+     *
+     * @param title the panel's own header view, or null for a panel whose groups name themselves — the
+     *              row is then the close button alone, which is still the line every panel starts with
+     */
+    public static LinearLayout pickerHeader(final Context ctx, final UiMetrics ui, final View title) {
+        final LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        // Weight on whatever is to the left of it, so the close button sits at the end whether the row
+        // holds a title, a title and a count, or nothing at all.
+        row.addView(title == null ? new View(ctx) : title,
+                new LinearLayout.LayoutParams(0, title == null
+                        ? 1 : ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(pickerClose(ctx, ui));
+        return row;
     }
 
     /**

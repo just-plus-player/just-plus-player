@@ -91,7 +91,7 @@ final class SpeedPanel {
         header.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         header.setMinHeight(ui.dp(48));
         header.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(header);
+        root.addView(Utils.pickerHeader(ctx, ui, header));
 
         final TextView value = new TextView(ctx);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textValue());

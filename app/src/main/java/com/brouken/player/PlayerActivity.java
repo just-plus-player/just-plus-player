@@ -6077,6 +6077,8 @@ public class PlayerActivity extends Activity {
 
         // Rows or frames, remembered rather than asked again: a viewer who wants pictures wants them for
         // every playlist, not for this one. The icon shows what the press will give, not where you are.
+        // The close button is added after it, so the panel's own control and the one every panel has
+        // read in that order, left to right.
         if (landscape) {
             final MaterialButton modeButton = new MaterialButton(ctx, null,
                     com.google.android.material.R.attr.materialIconButtonStyle);
@@ -6099,6 +6101,7 @@ public class PlayerActivity extends Activity {
             });
             headerRow.addView(modeButton);
         }
+        headerRow.addView(Utils.pickerClose(ctx, ui));
         listLayout.addView(headerRow);
 
         // A card keeps a stated width and lets the next one show past the panel's edge, which is what
@@ -6369,7 +6372,7 @@ public class PlayerActivity extends Activity {
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
-        listLayout.addView(header);
+        listLayout.addView(Utils.pickerHeader(ctx, ui, header));
 
         final View divider = new View(ctx);
         final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
@@ -6638,16 +6641,18 @@ public class PlayerActivity extends Activity {
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        // A panel whose groups name themselves needs no title of its own — see showMoreMenu.
+        // A panel whose groups name themselves needs no title of its own — see showMoreMenu. It still
+        // gets the line the title would have sat on, because the close button lives there.
+        TextView header = null;
         if (menuTitle != null) {
-            final TextView header = new TextView(ctx);
+            header = new TextView(ctx);
             header.setText(menuTitle);
             header.setTextColor(onSurface);
             header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
             header.setTypeface(Typeface.DEFAULT_BOLD);
             header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
-            listLayout.addView(header);
         }
+        listLayout.addView(Utils.pickerHeader(ctx, ui, header));
 
         // Each group of rows is its own card, the way a preference category is one in settings. The
         // holder is null between groups: the next row opens a new card, and a bare boundary needs no

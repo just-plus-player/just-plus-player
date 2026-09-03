@@ -9781,11 +9781,8 @@ public class PlayerActivity extends Activity {
      */
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
-        // "Playback" rather than "this film": of these four only the skip offset is per file. The speed
-        // outlives the app, the subtitle timing outlives the episode, and a sleep timer was never about
-        // one file at all. The caption also carries the qualifier for the band, which is why the row
-        // below is "Speed" and only its own panel says "Playback speed".
-        items.add(MenuItem.caption(getString(R.string.menu_playback)));
+        // Unnamed: the rules below already divide the three bands, and a caption over the first of them
+        // said what the rows under it say for themselves.
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
                     // Quiet at 1x, like every other row here: a summary reports what has been changed,

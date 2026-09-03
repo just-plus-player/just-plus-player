@@ -39,6 +39,7 @@ import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
@@ -740,14 +741,22 @@ class Utils {
     public static com.google.android.material.button.MaterialButton pickerClose(
             final Context ctx, final UiMetrics ui) {
         final com.google.android.material.button.MaterialButton button =
+                iconButton(ctx, ui, R.drawable.ic_close_24dp, R.string.error_close);
+        button.setId(R.id.picker_close);
+        return button;
+    }
+
+    /** A 48dp glyph on nothing, in the colour a panel gives its quieter text. */
+    private static com.google.android.material.button.MaterialButton iconButton(
+            final Context ctx, final UiMetrics ui, final int icon, final int description) {
+        final com.google.android.material.button.MaterialButton button =
                 new com.google.android.material.button.MaterialButton(ctx, null,
                         com.google.android.material.R.attr.materialIconButtonStyle);
-        button.setId(R.id.picker_close);
-        button.setIconResource(R.drawable.ic_close_24dp);
+        button.setIconResource(icon);
         button.setIconSize(ui.dpS(24));
         button.setIconTint(ColorStateList.valueOf(MaterialColors.getColor(ctx,
                 R.attr.colorOnSurfaceVariant, ContextCompat.getColor(ctx, R.color.ink_secondary))));
-        button.setContentDescription(ctx.getString(R.string.error_close));
+        button.setContentDescription(ctx.getString(description));
         button.setInsetTop(0);
         button.setInsetBottom(0);
         button.setMinWidth(ui.dpS(48));
@@ -759,15 +768,87 @@ class Utils {
     }
 
     /**
+     * A panel that carries a text field: it opens with the keyboard up, and the keyboard shortens it
+     * instead of covering it.
+     *
+     * <p>Upright the window is resized above the keys and there is nothing more to do. Sideways the
+     * keyboard is a window of its own the height of the screen, so the panel's window is never resized
+     * and a card centred in it would sit half under the keys. What the keys cover is an inset either
+     * way, and held as the host's padding it bounds the card in both — upright that inset is zero
+     * inside the resized window, so nothing moves twice.
+     */
+    static void keyboardPanel(final Dialog dialog, final View content) {
+        keyboardResizes(dialog);
+        if (Build.VERSION.SDK_INT >= 30) {
+            final View host = (View) content.getParent();
+            final int hostBottom = host.getPaddingBottom();
+            host.setOnApplyWindowInsetsListener((v, insets) -> {
+                v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
+                        hostBottom + insets.getInsets(WindowInsets.Type.ime()).bottom);
+                return insets;
+            });
+        }
+        final Window window = dialog.getWindow();
+        if (window != null) {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+    }
+
+    /**
+     * Makes the system's back gesture step back through a chain of panels rather than end it.
+     *
+     * <p>Back means "undo the last thing I navigated", and in a search that walks title to season to
+     * episode that is the previous list, not the whole errand. Only back: a press outside the card and
+     * the close button still leave, which is the other question a viewer can be asking.
+     *
+     * <p>Two ways in, because the manifest opts this app into predictive back: from 33 a dialog is
+     * given the gesture through the dispatcher and never sees the key at all, and below that the key
+     * is all there is. The registration lives as long as the dialog's window does.
+     */
+    static void panelBack(final Dialog dialog, final Runnable back) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            dialog.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, back::run);
+            return;
+        }
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode != KeyEvent.KEYCODE_BACK || event.getAction() != KeyEvent.ACTION_UP) {
+                return false;
+            }
+            back.run();
+            return true;
+        });
+    }
+
+    /**
      * A panel's title row: whatever names the panel, then the close button at the end of the same line.
      *
      * @param title the panel's own header view, or null for a panel whose groups name themselves — the
      *              row is then the close button alone, which is still the line every panel starts with
      */
     public static LinearLayout pickerHeader(final Context ctx, final UiMetrics ui, final View title) {
+        return pickerHeader(ctx, ui, title, null);
+    }
+
+    /**
+     * The same, for a panel that is one step of several: a back arrow at the start of the line, where
+     * every toolbar in Android puts one, and the close button still at the end. Back goes one step,
+     * close leaves the whole thing — two different questions, so two different controls.
+     *
+     * @param back what the arrow does, or null for a panel nothing came before
+     */
+    public static LinearLayout pickerHeader(final Context ctx, final UiMetrics ui, final View title,
+                                            final Runnable back) {
         final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        if (back != null) {
+            final com.google.android.material.button.MaterialButton arrow =
+                    iconButton(ctx, ui, R.drawable.ic_arrow_back_24dp, R.string.back);
+            arrow.setOnClickListener(v -> back.run());
+            row.addView(arrow);
+        }
         // Weight on whatever is to the left of it, so the close button sits at the end whether the row
         // holds a title, a title and a count, or nothing at all.
         row.addView(title == null ? new View(ctx) : title,
@@ -1082,21 +1163,39 @@ class Utils {
 
 
     /**
-     * Makes a dialog that carries a text field give way to the keyboard by shrinking rather than by
-     * sliding.
+     * Keeps a dialog that carries a text field where it first appeared, whatever the keyboard does to
+     * the bars around it.
      *
-     * <p>Left unsaid, the soft-input mode is {@code UNSPECIFIED} and the system chooses — and on the
-     * owner's phone it chose to pan: the window's picture slid up to keep the cursor above the
-     * keyboard while the window kept the coordinates it was laid out with. A screen recording with the
-     * touch indicator on caught what that costs: the finger sat on the first result at y=815 and the
-     * press was delivered to the second, whose picture was at 897 — the two spaces some 100px, about a
-     * status bar, apart. Resizing moves nothing, so the two cannot drift.
+     * <p>The player hides the status bar, and a dialog over it brings the bar back — until the keyboard
+     * comes up, when the system reconsiders and hides it again. A dialog's frame is laid out below the
+     * bars that are visible, so that hide moves the frame up by a status bar, in the same breath as the
+     * keyboard shrinks it. On the owner's phone the picture stayed where it was while the touch frame
+     * moved: a press measured 795 on a row whose own {@code getLocationOnScreen} said 898, and the row
+     * below took the press meant for the one above. The 110px gap was the height of the bar.
+     *
+     * <p>So the frame is inset by the bars whether they show or not, and pinned to the top: the keyboard
+     * can only make the window shorter, results can only make it taller, and the top edge never has a
+     * reason to move.
      */
     static void keyboardResizes(final android.app.Dialog dialog) {
         final Window window = dialog.getWindow();
-        if (window != null) {
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        if (window == null) {
+            return;
         }
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        final WindowManager.LayoutParams lp = window.getAttributes();
+        // A window already docked to an edge keeps the edge it was docked to; only a centred one has a
+        // reason to move, and the top is the one place a keyboard cannot push it away from.
+        if (lp.gravity == Gravity.NO_GRAVITY || lp.gravity == (Gravity.CENTER)) {
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Naming the types takes over from the system, which would otherwise add the keyboard for
+            // ADJUST_RESIZE by itself — so it is named here too.
+            lp.setFitInsetsTypes(lp.getFitInsetsTypes() | WindowInsets.Type.ime());
+            lp.setFitInsetsIgnoringVisibility(true);
+        }
+        window.setAttributes(lp);
     }
 
     /**
@@ -1130,6 +1229,12 @@ class Utils {
                 .inflate(R.layout.dialog_text_field, fields, false);
         field.setHint(hint);
         field.setPlaceholderText(placeholder);
+        // The accent the dark panel shares with the light one measures 3.3:1 on its card: enough for
+        // the 2dp outline, not for the 12sp label riding it. The label alone takes the brighter coral.
+        if (!MaterialColors.isColorLight(MaterialColors.getColor(field, R.attr.colorSurface))) {
+            field.setHintTextColor(ColorStateList.valueOf(
+                    ContextCompat.getColor(fields.getContext(), R.color.brand)));
+        }
         fields.addView(field);
         return field.getEditText();
     }

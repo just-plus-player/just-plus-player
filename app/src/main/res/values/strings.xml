@@ -328,9 +328,11 @@
     <string name="subtitle_search_found">Subtitles found: %1$s</string>
     <string name="subtitle_search_manual">Find subtitles online</string>
     <string name="subtitle_search_label">Title or id</string>
-    <string name="subtitle_search_hint">Name, or a tmdb / imdb id</string>
+    <string name="subtitle_search_hint">Silo, 125988 or tt14688458</string>
     <string name="subtitle_search_language_title">Choose language</string>
     <string name="subtitle_search_none">Nothing found</string>
+    <string name="subtitle_search_failed">Search unavailable, check the connection</string>
+    <string name="back">Back</string>
     <string name="subtitle_search_searching">Looking for subtitles…</string>
     <string name="subtitle_search_translating">Translating subtitles…</string>
     <string name="subtitle_translate_failed">Could not translate to %1$s</string>

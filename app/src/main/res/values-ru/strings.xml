@@ -315,9 +315,11 @@
     <string name="subtitle_search_found">Найдены субтитры: %1$s</string>
     <string name="subtitle_search_manual">Найти субтитры онлайн</string>
     <string name="subtitle_search_label">Название или id</string>
-    <string name="subtitle_search_hint">Название или id из tmdb / imdb</string>
+    <string name="subtitle_search_hint">Silo, 125988 или tt14688458</string>
     <string name="subtitle_search_language_title">Выбор языка</string>
     <string name="subtitle_search_none">Ничего не найдено</string>
+    <string name="subtitle_search_failed">Поиск недоступен, проверьте соединение</string>
+    <string name="back">Назад</string>
     <string name="subtitle_search_searching">Ищем субтитры…</string>
     <string name="subtitle_search_translating">Переводим субтитры…</string>
     <string name="subtitle_translate_failed">Не удалось перевести на %1$s</string>

@@ -140,6 +140,7 @@ final class UiMetrics {
     float textTitle()       { return t(18, 20, 21, 22); }   // picker headers
     float textBody()        { return t(16, 17, 18, 20); }   // picker row title
     float textCaption()     { return t(13, 14, 15, 16); }   // row details / subtitle
+    float textSupporting()  { return t(14, 15, 16, 17); }   // second line of a Material list item
     float textList()        { return t(15, 16, 17, 18); }   // playlist row
     float textInfo()        { return t(12, 13, 13, 14); }   // header meta lines
     float textHeaderTitle() { return t(22, 24, 25, 26); }   // header title (larger than a picker header)

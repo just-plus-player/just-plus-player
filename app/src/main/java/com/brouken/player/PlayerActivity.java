@@ -1035,6 +1035,11 @@ public class PlayerActivity extends Activity {
     // scoped and deliberately the title only, never the episode: the next item of the same playlist is
     // the same series, and its episode number still comes from its own name.
     private String manualTmdbId;
+    /** The picked title's imdb id, once anything has resolved it — see {@link #playingId()}. */
+    private String manualImdbId;
+    /** The last tmdb id an imdb lookup was made for, and its answer. */
+    private String resolvedImdbOf;
+    private String resolvedImdb;
     // Whether that title is a film. MediaId reads movie-vs-series off the season number alone, so the
     // type TMDB reported has to arrive as a season — otherwise a series nobody could parse an episode
     // out of is asked about as a film, which is the one case this whole dialog exists for.
@@ -1125,6 +1130,8 @@ public class PlayerActivity extends Activity {
     // modal run — dialog, season, episode — and threading a flag through all of it would have three
     // methods carrying an argument they only pass on.
     private boolean subtitleSearchForSecondary;
+    /** What was last typed into the search panel, so stepping back into it lands on the same list. */
+    private String subtitleSearchQuery;
     /** Where both subtitle offsets read the media position from; the player is asked for it lazily. */
     private final SubtitleOffset.Position subtitlePosition = new SubtitleOffset.Position() {
         @Override
@@ -3632,6 +3639,7 @@ public class PlayerActivity extends Activity {
         apiImdbId = null;
         apiTmdbId = null;
         manualTmdbId = null;
+        manualImdbId = null;
         manualMovie = false;
         manualSeason = -1;
         manualEpisode = -1;
@@ -4143,6 +4151,13 @@ public class PlayerActivity extends Activity {
     // system bars hidden. Our pickers call hideController(), which hides the bars, so keep the bars visible
     // while a panel is open and restore immersive on dismiss — this lets the back gesture close the panel in
     // one swipe (the reference lampaua build never goes immersive for its pickers).
+
+    /** Raises a dialog that carries a text field: see {@link Utils#keyboardResizes}. */
+    private void showFieldDialog(final AlertDialog dialog) {
+        Utils.keyboardResizes(dialog);
+        dialog.show();
+    }
+
     private void showPickerDialog(final android.app.Dialog dialog) {
         // Hide the controls for a clean panel. Keep the navigation/gesture bar visible (so OxygenOS doesn't
         // apply its fullscreen back-gesture guard) but hide the status bar (clean top, no strip over the
@@ -6617,6 +6632,16 @@ public class PlayerActivity extends Activity {
      *                  bigger, and nothing else about the panel changes.
      */
     private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
+        showSideMenu(menuTitle, items, posterWDp, posterHDp, null);
+    }
+
+    /**
+     * @param back the step this panel was reached from, or null for a panel that is the first thing
+     *             opened. When there is one, the header carries an arrow and the system's back gesture
+     *             goes there instead of closing the panel.
+     */
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp,
+                              Runnable back) {
         if (items == null || items.isEmpty()) {
             return;
         }
@@ -6641,8 +6666,8 @@ public class PlayerActivity extends Activity {
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        // A panel whose groups name themselves needs no title of its own — see showMoreMenu. It still
-        // gets the line the title would have sat on, because the close button lives there.
+        // A panel whose groups tell themselves apart needs no title of its own — see showMoreMenu. It
+        // still gets the line the title would have sat on, because the close button lives there.
         TextView header = null;
         if (menuTitle != null) {
             header = new TextView(ctx);
@@ -6652,7 +6677,7 @@ public class PlayerActivity extends Activity {
             header.setTypeface(Typeface.DEFAULT_BOLD);
             header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
         }
-        listLayout.addView(Utils.pickerHeader(ctx, ui, header));
+        listLayout.addView(Utils.pickerHeader(ctx, ui, header, back));
 
         // Each group of rows is its own card, the way a preference category is one in settings. The
         // holder is null between groups: the next row opens a new card, and a bare boundary needs no
@@ -6810,6 +6835,9 @@ public class PlayerActivity extends Activity {
         }
         menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
         Utils.pickerWindow(this, ui, menuDialog, scrollView);
+        if (back != null) {
+            Utils.panelBack(menuDialog, back);
+        }
         showPickerDialog(menuDialog);
         final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
         if (focus != null) {
@@ -8213,41 +8241,114 @@ public class PlayerActivity extends Activity {
      * finds has to go back where it was asked from.
      */
     private void showSubtitleSearchDialog(final boolean forSecondary) {
-        final Context dialogContext = Utils.dialogContext(this);
+        // Opened afresh, so nothing is remembered from the last time — what is prefilled below is this
+        // file's own id. Stepping back into it from a season or an episode goes through
+        // openSubtitleSearch instead, which keeps what was typed.
+        subtitleSearchQuery = null;
+        openSubtitleSearch(forSecondary);
+    }
+
+    private void openSubtitleSearch(final boolean forSecondary) {
+        final Context ctx = Utils.dialogContext(this);
         subtitleSearchForSecondary = forSecondary;
-        final LinearLayout fields = Utils.dialogFields(dialogContext);
-        final EditText query = Utils.textField(fields, getString(R.string.subtitle_search_label),
+        // Reached by the back arrow of a panel that is still on screen.
+        if (menuDialog != null) {
+            menuDialog.dismiss();
+        }
+
+        // A panel, not a dialog: it is opened from a panel, it lists rows like a panel, and every panel
+        // in the player is one shape at one place decided by the window — see Utils.pickerWindow. As a
+        // centred Material dialog it was the one window in the player that arrived from somewhere else.
+        final LinearLayout root = new LinearLayout(ctx);
+        root.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(10);
+        root.setPadding(pad, pad, pad, pad);
+
+        // A panel names itself on its first line and closes from the end of it. Sideways, where the
+        // keyboard leaves a phone about 130dp, that line costs 53dp — most of a result — and the field's
+        // own label says the same word. So there the close button joins the field's line and the title
+        // goes, rather than the list this panel exists to show.
+        final boolean titled = getResources().getConfiguration().screenHeightDp >= 480;
+        if (titled) {
+            final TextView header = new TextView(ctx);
+            header.setText(getString(R.string.subtitle_search_manual));
+            header.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
+            header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
+            header.setTypeface(Typeface.DEFAULT_BOLD);
+            header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+            root.addView(Utils.pickerHeader(ctx, ui, header));
+
+            final View divider = new View(ctx);
+            final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+            dividerLp.bottomMargin = Utils.dpToPx(4);
+            divider.setLayoutParams(dividerLp);
+            divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
+                    ContextCompat.getColor(ctx, R.color.divider)));
+            root.addView(divider);
+        }
+
+        final LinearLayout fieldRow = new LinearLayout(ctx);
+        fieldRow.setOrientation(LinearLayout.HORIZONTAL);
+        fieldRow.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(fieldRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        final EditText query = Utils.textField(fieldRow, getString(R.string.subtitle_search_label),
                 getString(R.string.subtitle_search_hint));
+        ((View) query.getParent().getParent()).setLayoutParams(
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (!titled) {
+            fieldRow.addView(Utils.pickerClose(ctx, ui));
+        }
+        // What the launcher already said this is, imdb first: it names one title exactly, where a name
+        // names several and a tmdb id names one per kind. Deliberately not the file name — reaching this
+        // panel means the name is what failed — but an id is the opposite of a name, and typing one off
+        // a screen is the slowest way in there is.
+        final String prefill = subtitleSearchQuery != null ? subtitleSearchQuery : playingId();
         query.setInputType(InputType.TYPE_CLASS_TEXT);
-        // Without this the keyboard takes the whole screen in landscape — its extract mode — and covers
-        // the dialog it belongs to, list and all. The list is the point of this dialog: it fills in while
-        // the name is still being typed, and a player is always in landscape.
-        query.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        // Deliberately not prefilled from the file name: reaching this dialog means the name is already
-        // what failed, and clearing a line of release noise with a remote costs more than typing.
+        // Without NO_EXTRACT_UI the keyboard takes the whole screen in landscape — its extract mode — and
+        // covers the panel it belongs to, list and all. The list is the point of this panel: it fills in
+        // while the name is still being typed, and a player is always in landscape. The action key
+        // searches: pressing it runs the pending request now rather than closing the keyboard.
+        query.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        ((com.google.android.material.textfield.TextInputLayout) query.getParent().getParent())
+                .setEndIconMode(com.google.android.material.textfield.TextInputLayout.END_ICON_CLEAR_TEXT);
 
-        final LinearLayout results = new LinearLayout(dialogContext);
+        // A request is out. Invisible rather than gone, so the list below does not step down when it
+        // shows and back up when it goes.
+        final com.google.android.material.progressindicator.LinearProgressIndicator progress =
+                new com.google.android.material.progressindicator.LinearProgressIndicator(ctx);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.INVISIBLE);
+        final LinearLayout.LayoutParams progressLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        progressLp.topMargin = Utils.dpToPx(4);
+        root.addView(progress, progressLp);
+
+        final LinearLayout results = new LinearLayout(ctx);
         results.setOrientation(LinearLayout.VERTICAL);
-        final android.widget.ScrollView scroll = new android.widget.ScrollView(dialogContext);
+        // Whole rows only. The list is as tall as its results, up to what the panel can give it — the
+        // keyboard decides that, not a number here — and rounds down to the row: a list cut through a
+        // title reads as broken, one cut at a boundary reads as a list. The indicator line then says
+        // that there is more.
+        final int rowPx = ui.dpS(72);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(ctx) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                final int rows = Math.max(1, MeasureSpec.getSize(heightSpec) / rowPx);
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(rows * rowPx, MeasureSpec.AT_MOST));
+            }
+        };
+        scroll.setScrollIndicators(View.SCROLL_INDICATOR_BOTTOM);
         scroll.addView(results);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // Capped rather than free: the list has to leave the field and the keyboard on screen, because
-        // the next thing typed is what narrows it down. Half the window is the ceiling because the
-        // player is landscape — a fixed height that fits a phone upright pushes the field off it.
-        final int listHeight = Math.min(ui.dpS(260),
-                getResources().getDisplayMetrics().heightPixels / 2);
-        fields.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
-
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
-                .setTitle(R.string.subtitle_search_manual)
-                .setView(fields)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
-
-        // The list has to keep still under a finger: see Utils.keyboardResizes for what the alternative
-        // cost here.
-        Utils.keyboardResizes(dialog);
+        final android.app.Dialog dialog =
+                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        Utils.pickerWindow(this, ui, dialog, root);
+        Utils.keyboardPanel(dialog, root);
 
         final Handler handler = new Handler(Looper.getMainLooper());
         final Runnable[] pending = new Runnable[1];
@@ -8271,6 +8372,7 @@ public class PlayerActivity extends Activity {
                     return;
                 }
                 asked[0] = typed;
+                subtitleSearchQuery = typed.isEmpty() ? null : typed;
                 if (pending[0] != null) {
                     handler.removeCallbacks(pending[0]);
                 }
@@ -8280,26 +8382,47 @@ public class PlayerActivity extends Activity {
                 titleSearchGeneration++;
                 if (text.length() < TITLE_QUERY_MIN) {
                     results.removeAllViews();
+                    progress.setVisibility(View.INVISIBLE);
                     return;
                 }
                 final int generation = titleSearchGeneration;
-                pending[0] = () -> searchTitles(dialogContext, text, generation, results, dialog);
+                pending[0] = () -> searchTitles(ctx, text, generation, results, progress, dialog);
                 handler.postDelayed(pending[0], TITLE_QUERY_DEBOUNCE_MS);
             }
         });
-        dialog.show();
+        query.setOnEditorActionListener((v, actionId, event) -> {
+            if (pending[0] != null) {
+                handler.removeCallbacks(pending[0]);
+                pending[0].run();
+            }
+            return true;
+        });
+        // After the watcher, so a prefilled id searches itself and the panel opens on its one answer.
+        if (prefill != null) {
+            query.setText(prefill);
+            query.setSelection(query.getText().length());
+        }
+        // The field is what this panel is for, so it opens with the caret in it.
+        query.requestFocus();
+        showPickerDialog(dialog);
     }
 
     /** Asks TMDB what the typed name could be, then fills the list in place. */
     private void searchTitles(final Context ctx, String query, int generation,
-                              LinearLayout results, AlertDialog dialog) {
+                              LinearLayout results, View progress, android.app.Dialog dialog) {
+        progress.setVisibility(View.VISIBLE);
         final Thread worker = new Thread(() -> {
             final List<TitleSearch.Title> titles = TitleSearch.search(query);
             runOnUiThread(() -> {
                 if (isFinishing() || generation != titleSearchGeneration) {
                     return;
                 }
+                progress.setVisibility(View.INVISIBLE);
                 results.removeAllViews();
+                if (titles == null) {
+                    results.addView(searchNote(ctx, getString(R.string.subtitle_search_failed)));
+                    return;
+                }
                 if (titles.isEmpty()) {
                     results.addView(searchNote(ctx, getString(R.string.subtitle_search_none)));
                     return;
@@ -8316,7 +8439,7 @@ public class PlayerActivity extends Activity {
                         if (title.movie) {
                             applyManualTitle(title, -1, -1, null);
                         } else {
-                            chooseSeason(title);
+                            chooseSeason(title, () -> openSubtitleSearch(subtitleSearchForSecondary));
                         }
                     }));
                 }
@@ -8334,7 +8457,7 @@ public class PlayerActivity extends Activity {
      * <p>The whole series arrives in one request, so picking a season costs nothing after this and the
      * numbering cannot drift between the two steps.
      */
-    private void chooseSeason(TitleSearch.Title title) {
+    private void chooseSeason(TitleSearch.Title title, Runnable back) {
         final Thread worker = new Thread(() -> {
             // Cinemeta is keyed by imdb and the search gave a tmdb id, so one hop first. The resolver
             // is the one the automatic search already uses for the same reason.
@@ -8344,6 +8467,10 @@ public class PlayerActivity extends Activity {
             } catch (Exception e) {
                 Utils.log("titles: imdb lookup " + e);
             }
+            // Kept for whatever this pick turns into: the panel prefills an id next time, and the one
+            // this title is known by everywhere is the imdb one.
+            resolvedImdbOf = title.tmdb;
+            resolvedImdb = imdb;
             final List<TitleSearch.Episode> episodes = TitleSearch.episodes(imdb, title.tmdb);
             runOnUiThread(() -> {
                 if (isFinishing()) {
@@ -8352,7 +8479,7 @@ public class PlayerActivity extends Activity {
                 // Nothing came back. Rather than quietly guess the first season, hand over the numbers:
                 // a title no catalogue lists is exactly when somebody knows them and we do not.
                 if (episodes.isEmpty()) {
-                    askSeasonEpisode(title, episodes);
+                    askSeasonEpisode(title, episodes, back);
                     return;
                 }
                 final List<Integer> seasons = new ArrayList<>();
@@ -8362,26 +8489,37 @@ public class PlayerActivity extends Activity {
                     }
                 }
                 if (seasons.size() == 1) {
-                    chooseEpisode(title, episodes, seasons.get(0));
+                    chooseEpisode(title, episodes, seasons.get(0), back);
                     return;
                 }
-                final List<MenuItem> items = new ArrayList<>(seasons.size() + 1);
-                items.add(typeNumbersRow(title, episodes));
-                for (final int season : seasons) {
-                    items.add(new MenuItem(getString(season == 0
-                                    ? R.string.subtitle_search_specials
-                                    : R.string.subtitle_search_season, season),
-                            null, false, () -> chooseEpisode(title, episodes, season)));
-                }
-                showSideMenu(title.name, items);
+                showSeasons(title, episodes, seasons, back);
             });
         }, "TitleEpisodes");
         worker.setDaemon(true);
         worker.start();
     }
 
+    /**
+     * The season list, and the step an episode goes back to. Separate from the request above so that
+     * going back is the list again rather than the catalogue asked a second time.
+     */
+    private void showSeasons(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
+                             List<Integer> seasons, Runnable back) {
+        final List<MenuItem> items = new ArrayList<>(seasons.size() + 1);
+        items.add(typeNumbersRow(title, episodes, () -> showSeasons(title, episodes, seasons, back)));
+        for (final int season : seasons) {
+            items.add(new MenuItem(getString(season == 0
+                            ? R.string.subtitle_search_specials
+                            : R.string.subtitle_search_season, season),
+                    null, false, () -> chooseEpisode(title, episodes, season,
+                            () -> showSeasons(title, episodes, seasons, back))));
+        }
+        showSideMenu(title.name, items, 34, 48, back);
+    }
+
     /** No request of its own — the season's episodes are already in hand. */
-    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season) {
+    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season,
+                               Runnable back) {
         final List<MenuItem> items = new ArrayList<>();
         for (final TitleSearch.Episode episode : episodes) {
             if (episode.season != season) {
@@ -8399,10 +8537,11 @@ public class PlayerActivity extends Activity {
         }
         // Here as well as on the season list: a series with one season skips that step entirely, and
         // typing the numbers must not end up being something only multi-season shows offer.
-        items.add(0, typeNumbersRow(title, episodes));
+        items.add(0, typeNumbersRow(title, episodes,
+                () -> chooseEpisode(title, episodes, season, back)));
         // Stills are 16:9, so the row leads with a wide frame rather than a tall poster — and an
         // episode name beside one is what the wider card exists for.
-        showSideMenu(title.name, items, 72, 41);
+        showSideMenu(title.name, items, 72, 41, back);
     }
 
     /**
@@ -8412,9 +8551,10 @@ public class PlayerActivity extends Activity {
      * lead with their stills — and a row that looks like none of its neighbours and like no control
      * either reads as a heading. The keyboard says what pressing it opens.
      */
-    private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+    private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
+                                    Runnable back) {
         return new MenuItem(R.drawable.ic_keyboard_24dp, getString(R.string.subtitle_search_type),
-                null, false, () -> askSeasonEpisode(title, episodes));
+                null, false, () -> askSeasonEpisode(title, episodes, back));
     }
 
     /**
@@ -8426,37 +8566,109 @@ public class PlayerActivity extends Activity {
      * A blank season means the first, and a blank episode means the whole season — which every source
      * reads as an answerable question.
      */
-    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
-        final Context dialogContext = Utils.dialogContext(this);
+    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
+                                  Runnable back) {
+        final Context ctx = Utils.dialogContext(this);
         final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
+
+        // The same card as the season list it is reached from, because it answers the same question by
+        // other means. It used to be a centred Material dialog, which made typing the numbers look like
+        // a different errand from picking them.
+        final LinearLayout root = new LinearLayout(ctx);
+        root.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(10);
+        root.setPadding(pad, pad, pad, pad);
+
+        final TextView header = new TextView(ctx);
+        header.setText(getString(R.string.subtitle_search_type));
+        header.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
+        root.addView(Utils.pickerHeader(ctx, ui, header, back));
 
         // Labelled, not hinted: prefilling is the normal case here — the whole point is to correct one
         // digit of what is already believed — and a hint leaves the moment a field is filled, so both
-        // rows would read as a bare "1" and "2" with nothing to say which is which. The Material label
-        // rides the outline and stays.
-        final LinearLayout fields = Utils.dialogFields(dialogContext);
-        final EditText season =
-                Utils.textField(fields, getString(R.string.subtitle_search_season_label));
+        // would read as a bare "1" and "2" with nothing to say which is which. The Material label rides
+        // the outline and stays. One control to a row, the width of the panel, like every other row it
+        // sits under.
+        final EditText season = Utils.textField(root, getString(R.string.subtitle_search_season_label));
         season.setInputType(InputType.TYPE_CLASS_NUMBER);
         if (current != null && current.season >= 0) {
             season.setText(String.valueOf(current.season));
         }
 
-        final EditText episode =
-                Utils.textField(fields, getString(R.string.subtitle_search_episode_label));
+        final EditText episode = Utils.textField(root, getString(R.string.subtitle_search_episode_label));
         episode.setInputType(InputType.TYPE_CLASS_NUMBER);
+        episode.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         if (current != null && current.episode >= 1) {
             episode.setText(String.valueOf(current.episode));
         }
 
-        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
-                .setTitle(R.string.subtitle_search_type)
-                .setView(fields)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
-                        number(season.getText().toString(), 1),
-                        number(episode.getText().toString(), -1), episodes))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show());
+        final android.app.Dialog dialog =
+                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        final Runnable apply = () -> {
+            dialog.dismiss();
+            applyManualTitle(title, number(season.getText().toString(), 1),
+                    number(episode.getText().toString(), -1), episodes);
+        };
+
+        // One action, at the end of its own line: the way back is the arrow in the header, and a panel
+        // that answers with numbers still needs something to press when they are right.
+        final com.google.android.material.button.MaterialButton ok =
+                new com.google.android.material.button.MaterialButton(ctx, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        ok.setText(android.R.string.ok);
+        ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
+        ok.setInsetTop(0);
+        ok.setInsetBottom(0);
+        ok.setMinHeight(ui.dpS(48));
+        Utils.focusRing(ok);
+        ok.setOnClickListener(v -> apply.run());
+        episode.setOnEditorActionListener((v, actionId, event) -> {
+            apply.run();
+            return true;
+        });
+        final LinearLayout actions = new LinearLayout(ctx);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.END);
+        final LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionsLp.topMargin = Utils.dpToPx(12);
+        actions.addView(ok);
+        root.addView(actions, actionsLp);
+
+        // Sideways the keyboard can leave less than this panel is tall, and a card that cannot be
+        // reached to the end is worse than one that scrolls.
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(ctx);
+        scroll.addView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        Utils.pickerWindow(this, ui, dialog, scroll);
+        Utils.keyboardPanel(dialog, scroll);
+        Utils.panelBack(dialog, back);
+        season.requestFocus();
+        showPickerDialog(dialog);
+    }
+
+    /**
+     * The id to open the search panel on: imdb where it is known, tmdb otherwise.
+     *
+     * <p>A hand-picked title is the id in force from then on, and {@link #mediaIdAt(int)} drops the
+     * launcher's imdb with it — it names the title that was wrong. What it does not drop is the picked
+     * title's own imdb, which the season list resolves anyway, so the panel keeps opening on the same
+     * kind of id before and after a pick rather than turning into a bare number.
+     */
+    private String playingId() {
+        if (manualTmdbId != null) {
+            return manualImdbId != null ? manualImdbId : manualTmdbId;
+        }
+        final MediaId playing = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
+        if (playing == null || playing.isEmpty()) {
+            return null;
+        }
+        return playing.imdb != null ? "tt" + playing.imdbNumeric() : playing.tmdb;
     }
 
     /** A typed number, or {@code fallback} for anything that is not one. */
@@ -8475,6 +8687,31 @@ public class PlayerActivity extends Activity {
     private void applyManualTitle(TitleSearch.Title title, int season, int episode,
                                   List<TitleSearch.Episode> episodes) {
         manualTmdbId = title.tmdb;
+        manualImdbId = title.tmdb != null && title.tmdb.equals(resolvedImdbOf) ? resolvedImdb : null;
+        if (manualImdbId == null && title.tmdb != null) {
+            // A film never goes through the season list, so nothing has looked its imdb id up yet. One
+            // request, off the main thread, and only for the title still in force when it lands.
+            final String tmdb = title.tmdb;
+            final boolean movie = title.movie;
+            final Thread worker = new Thread(() -> {
+                String imdb = null;
+                try {
+                    imdb = SegmentFinder.tmdbExternalImdb(Long.parseLong(tmdb), movie);
+                } catch (Exception e) {
+                    Utils.log("titles: imdb lookup " + e);
+                }
+                final String resolved = imdb;
+                runOnUiThread(() -> {
+                    resolvedImdbOf = tmdb;
+                    resolvedImdb = resolved;
+                    if (tmdb.equals(manualTmdbId)) {
+                        manualImdbId = resolved;
+                    }
+                });
+            }, "TitleImdb");
+            worker.setDaemon(true);
+            worker.start();
+        }
         manualMovie = title.movie;
         manualSeason = season;
         manualEpisode = episode;
@@ -8546,7 +8783,10 @@ public class PlayerActivity extends Activity {
         note.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
                 ContextCompat.getColor(ctx, R.color.ink_secondary)));
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
-        note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+        // A one-line list item where the rows would be: same left edge, same height.
+        note.setMinHeight(ui.dpS(56));
+        note.setGravity(Gravity.CENTER_VERTICAL);
+        note.setPadding(Utils.dpToPx(12), 0, Utils.dpToPx(12), 0);
         return note;
     }
 
@@ -8562,26 +8802,12 @@ public class PlayerActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setClickable(true);
         row.setFocusable(true);
-        row.setMinimumHeight(ui.rowMinHeight());
-        // Separated rather than padded, and the difference is what a press lands on. These rows used to
-        // carry 6dp of their own padding and sit flush against each other, so between two posters lay a
-        // 12dp band that looked like a gap and belonged, from its middle down, to the row below. A touch
-        // log from the owner's phone caught exactly that: y=24 inside a 216px row, 8dp past a boundary
-        // the eye had no way to see. The gap is real space now, owned by neither, and every pixel a row
-        // can be pressed on is a pixel it draws.
-        final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.bottomMargin = Utils.dpToPx(8);
-        row.setLayoutParams(rowLp);
-        final GradientDrawable content = new GradientDrawable();
-        content.setCornerRadius(Utils.dpToPx(8));
-        content.setColor(Color.TRANSPARENT);
-        final GradientDrawable mask = new GradientDrawable();
-        mask.setCornerRadius(Utils.dpToPx(8));
-        mask.setColor(Color.WHITE);
-        row.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                        ContextCompat.getColor(ctx, R.color.ripple_chrome))), content, mask));
+        // A Material two-line list item: 72dp, rows flush against each other. The poster is 60dp and the
+        // 6dp above and below it belong to the row. Sideways it is the same 12dp inset every other panel
+        // row carries, so a poster starts on the line a track name starts on.
+        row.setMinimumHeight(ui.dpS(72));
+        row.setPadding(Utils.dpToPx(12), ui.dpS(6), Utils.dpToPx(12), ui.dpS(6));
+        row.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT));
 
         final ImageView art = new ImageView(ctx);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -8600,7 +8826,7 @@ public class PlayerActivity extends Activity {
             }
         });
         final LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(imageW, imageH);
-        artLp.setMarginEnd(Utils.dpToPx(12));
+        artLp.setMarginEnd(Utils.dpToPx(16));
         art.setLayoutParams(artLp);
         row.addView(art);
         if (imageUrl != null) {
@@ -8623,7 +8849,7 @@ public class PlayerActivity extends Activity {
             detailView.setText(detail);
             detailView.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
                     ContextCompat.getColor(ctx, R.color.ink_secondary)));
-            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSupporting());
             textBlock.addView(detailView);
         }
         row.addView(textBlock);
@@ -9741,13 +9967,13 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
+        showFieldDialog(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(code)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> joinRoom(code, input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)
-                .show());
+                .create());
     }
 
     /**
@@ -9860,7 +10086,7 @@ public class PlayerActivity extends Activity {
         // truthfully and quite uselessly, that no such room exists.
         final EditText password = Utils.textField(fields, getString(R.string.together_password));
 
-        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
+        showFieldDialog(new MaterialAlertDialogBuilder(dialogContext)
                 .setTitle(R.string.together_join)
                 .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -9872,7 +10098,7 @@ public class PlayerActivity extends Activity {
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show());
+                .create());
     }
 
     /** Enter a room by code; the room says what it is playing as soon as we are in. */

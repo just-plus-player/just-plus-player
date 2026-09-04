@@ -65,6 +65,7 @@ class Prefs {
     private static final String PREF_KEY_REPEAT_TOGGLE = "repeatToggle";
     private static final String PREF_KEY_TV_SINGLE_BACK = "tvSingleBack";
     private static final String PREF_KEY_KEEP_AWAKE_ON_PAUSE = "keepAwakeOnPause";
+    private static final String PREF_KEY_AUDIO_PASSTHROUGH = "audioPassthrough";
     private static final String PREF_KEY_SPEED = "speed";
     private static final String PREF_KEY_FILE_ACCESS = "fileAccess";
     private static final String PREF_KEY_DECODER_PRIORITY = "decoderPriority";
@@ -209,6 +210,12 @@ class Prefs {
     public boolean repeatToggle = false;
     public boolean tvSingleBack = false;
     public boolean keepAwakeOnPause = true;
+    // Whether compressed surround (Dolby, DTS) may be bitstreamed to the receiver. Off by default: every
+    // track is decoded in the player to PCM (see PlayerActivity's audio sink), multichannel included -
+    // only the compressed bitstream path is refused. That path is the whole fragile chain on a box whose
+    // HDMI audio route drops the bitstream across a pause, and the reference players decode by default
+    // for the same reason. On is for a receiver that should render Atmos, DTS:X or lossless itself.
+    public boolean audioPassthrough = false;
     public String fileAccess = "auto";
     public int decoderPriority = DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON;
     public boolean mapDV7ToHevc = false;
@@ -390,6 +397,7 @@ class Prefs {
         repeatToggle = mSharedPreferences.getBoolean(PREF_KEY_REPEAT_TOGGLE, repeatToggle);
         tvSingleBack = mSharedPreferences.getBoolean(PREF_KEY_TV_SINGLE_BACK, tvSingleBack);
         keepAwakeOnPause = mSharedPreferences.getBoolean(PREF_KEY_KEEP_AWAKE_ON_PAUSE, keepAwakeOnPause);
+        audioPassthrough = mSharedPreferences.getBoolean(PREF_KEY_AUDIO_PASSTHROUGH, audioPassthrough);
         fileAccess = mSharedPreferences.getString(PREF_KEY_FILE_ACCESS, fileAccess);
         decoderPriority = Integer.parseInt(mSharedPreferences.getString(PREF_KEY_DECODER_PRIORITY, String.valueOf(decoderPriority)));
         mapDV7ToHevc = mSharedPreferences.getBoolean(PREF_KEY_MAP_DV7, mapDV7ToHevc);

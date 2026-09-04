@@ -120,6 +120,7 @@ import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
 import androidx.media3.exoplayer.DecoderCounters;
+import androidx.media3.exoplayer.DecoderReuseEvaluation;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
@@ -137,8 +138,11 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.source.LoadEventInfo;
+import androidx.media3.exoplayer.source.MediaLoadData;
 import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.source.TrackGroupArray;
+import androidx.media3.exoplayer.video.MediaCodecVideoDecoderException;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -180,6 +184,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -316,6 +321,16 @@ public class PlayerActivity extends Activity {
     // fetch from cold. That load is slow, not stuck, and killing it mid-download was the failure users
     // saw as a timeout on big files over a connection that never dropped.
     private long loadWatchdogBytes;
+    // Windows in a row that passed with the loader still connected and nothing arriving. Bytes alone are
+    // not enough: a torrent backend answers the range request at once and then sends nothing at all until
+    // the piece around a seek target is in, which on a thin swarm is more than one window with the
+    // connection alive throughout. Stopping there did worse than wait — the stop and the play that follows
+    // rebuild the decoder, and a vendor decoder that fails on being rebuilt (0x80001000 on a Realtek TV)
+    // turned a slow seek into an error screen. So a connected loader gets LOAD_SILENT_WINDOWS_MAX windows,
+    // about the read timeout of MEDIA_HTTP_CLIENT, before it counts as stuck; a loader that is not even
+    // running, and a local file, still get one.
+    private int loadWatchdogSilentWindows;
+    private static final int LOAD_SILENT_WINDOWS_MAX = 4;
     // Progress below this over a whole window is not a load: 8 KB/s is far under anything playable, so it
     // is a socket dribbling keepalives rather than a source that is still working. Wait only for real bytes.
     private static final long LOAD_PROGRESS_MIN_BYTES = 256 * 1024;
@@ -362,6 +377,11 @@ public class PlayerActivity extends Activity {
     private Dv7Converter dv7Converter;
     // Per process, not per player: a device that keeps needing the fallback must not re-report it.
     private static boolean dolbyVisionFallbackReported;
+    // Starting the screen over is the last thing left when the decoder will not be re-created (see
+    // recoverByRestartingTheScreen). Static because the instance is exactly what that throws away: the
+    // budget and the pending resume have to reach the activity that comes next.
+    private static boolean screenRestartUsed;
+    private static boolean resumeAfterScreenRestart;
     // Names of the decoders that actually opened, for the error report. The mime does not tell them apart
     // — c2.android.* (software) and OMX.<vendor>.* (hardware) decode the same hevc very differently — and
     // "the device decoder wedged" is unreadable without knowing which one it was. Written on the app
@@ -371,7 +391,10 @@ public class PlayerActivity extends Activity {
     // Audio mimes this run has dropped from passthrough to a decoder (see recoverByRevokingAudioMime).
     // Deliberately not reset by initializePlayer: that recovery rebuilds the player, and the rebuild has
     // to come up with the fallback already in force or it fails again on the same frame.
-    private final Set<String> sessionRevokedAudioMimes = new HashSet<>();
+    // Static, not per screen: recoverByRestartingTheScreen throws the instance away, and a mime this
+    // run has already proven cannot bitstream must not be offered passthrough again by the activity
+    // that comes next - which is how a dead audio route and the decoder death behind it would repeat.
+    private static final Set<String> sessionRevokedAudioMimes = new HashSet<>();
     // One-shot guard for recoverByLoweringQuality(). Deliberately not reset by initializePlayer: the
     // downgrade itself rebuilds the player, and a variant that is still beyond the device has to fail
     // once rather than walk the whole list.
@@ -387,9 +410,10 @@ public class PlayerActivity extends Activity {
      *
      * <p>Patient on purpose: a torrent backend goes quiet while it fetches pieces from peers, and the old
      * thirty-second read timeout turned that silence into a source error and a re-read of the whole
-     * container. Nothing is lost by waiting — the load watchdog still stops the player at thirty seconds
-     * of no progress and says so, which is the message the viewer needs; what goes away is the retry
-     * storm behind it. The same figures the reference player uses (dddplayer, PlayerManager.kt).
+     * container. Nothing is lost by waiting — the load watchdog still stops the player once nothing has
+     * arrived for about as long (see loadWatchdogSilentWindows) and says so, which is the message the
+     * viewer needs; what goes away is the retry storm behind it. The same figures the reference player
+     * uses (dddplayer, PlayerManager.kt).
      */
     private static final okhttp3.OkHttpClient MEDIA_HTTP_CLIENT = new okhttp3.OkHttpClient.Builder()
             .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
@@ -403,18 +427,120 @@ public class PlayerActivity extends Activity {
         public void onVideoDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
                                              long initializedTimestampMs, long initializationDurationMs) {
             videoDecoderName = decoderName;
+            Utils.log("video decoder: init " + decoderName + " in " + initializationDurationMs + " ms");
         }
 
         @Override
         public void onAudioDecoderInitialized(AnalyticsListener.EventTime eventTime, String decoderName,
                                               long initializedTimestampMs, long initializationDurationMs) {
             audioDecoderName = decoderName;
+            Utils.log("audio decoder: init " + decoderName);
         }
 
         @Override
         public void onBandwidthEstimate(AnalyticsListener.EventTime eventTime, int totalLoadTimeMs,
                                         long totalBytesLoaded, long bitrateEstimate) {
             bandwidthBitrate = bitrateEstimate;
+        }
+
+        // The rest is the timeline a field report needs and nothing else records: when each renderer was
+        // torn down and rebuilt (a track reselect, a rebuild rung), whether the codec produced anything,
+        // what the source did on every request, and the non-fatal errors that come before a fatal one.
+        // Names and URIs stay out — the report has the media URI once, sanitised, and needs nothing else.
+        @Override
+        public void onVideoDecoderReleased(AnalyticsListener.EventTime eventTime, String decoderName) {
+            Utils.log("video decoder: released " + decoderName);
+        }
+
+        @Override
+        public void onVideoEnabled(AnalyticsListener.EventTime eventTime, DecoderCounters counters) {
+            Utils.log("video renderer: enabled");
+        }
+
+        @Override
+        public void onVideoDisabled(AnalyticsListener.EventTime eventTime, DecoderCounters counters) {
+            Utils.log("video renderer: disabled after " + counters.renderedOutputBufferCount + " rendered, "
+                    + counters.droppedBufferCount + " dropped");
+        }
+
+        @Override
+        public void onAudioEnabled(AnalyticsListener.EventTime eventTime, DecoderCounters counters) {
+            Utils.log("audio renderer: enabled");
+        }
+
+        @Override
+        public void onAudioDisabled(AnalyticsListener.EventTime eventTime, DecoderCounters counters) {
+            Utils.log("audio renderer: disabled");
+        }
+
+        @Override
+        public void onAudioTrackInitialized(AnalyticsListener.EventTime eventTime,
+                                            AudioSink.AudioTrackConfig config) {
+            Utils.log("audio track: init encoding=" + config.encoding + " rate=" + config.sampleRate
+                    + " tunneling=" + config.tunneling + " offload=" + config.offload);
+        }
+
+        @Override
+        public void onAudioTrackReleased(AnalyticsListener.EventTime eventTime,
+                                         AudioSink.AudioTrackConfig config) {
+            Utils.log("audio track: released encoding=" + config.encoding);
+        }
+
+        @Override
+        public void onVideoInputFormatChanged(AnalyticsListener.EventTime eventTime, Format format,
+                                              @Nullable DecoderReuseEvaluation evaluation) {
+            Utils.log("video input: " + format.sampleMimeType + " " + format.codecs + " "
+                    + format.width + "x" + format.height
+                    + (evaluation != null ? " reuse=" + evaluation.result : ""));
+        }
+
+        @Override
+        public void onVideoCodecError(AnalyticsListener.EventTime eventTime, Exception error) {
+            Utils.log("video codec error: " + error + " " + codecDetails(error));
+        }
+
+        @Override
+        public void onAudioCodecError(AnalyticsListener.EventTime eventTime, Exception error) {
+            Utils.log("audio codec error: " + error + " " + codecDetails(error));
+        }
+
+        @Override
+        public void onAudioSinkError(AnalyticsListener.EventTime eventTime, Exception error) {
+            Utils.log("audio sink error: " + error);
+        }
+
+        @Override
+        public void onLoadStarted(AnalyticsListener.EventTime eventTime, LoadEventInfo info,
+                                  MediaLoadData data, int retryCount) {
+            // No offset here: the DataSpec a load starts with is rebuilt with the real position on the
+            // load thread, so only the end of a load knows where it read from.
+            Utils.log("load: start type=" + data.dataType + (retryCount > 0 ? " retry " + retryCount : ""));
+        }
+
+        @Override
+        public void onLoadCompleted(AnalyticsListener.EventTime eventTime, LoadEventInfo info,
+                                    MediaLoadData data) {
+            Utils.log("load: done type=" + data.dataType + " at " + info.dataSpec.position + ", "
+                    + info.bytesLoaded + " B in " + info.loadDurationMs + " ms");
+        }
+
+        @Override
+        public void onLoadCanceled(AnalyticsListener.EventTime eventTime, LoadEventInfo info,
+                                   MediaLoadData data) {
+            Utils.log("load: canceled type=" + data.dataType + " at " + info.dataSpec.position + " after "
+                    + info.bytesLoaded + " B in " + info.loadDurationMs + " ms");
+        }
+
+        @Override
+        public void onLoadError(AnalyticsListener.EventTime eventTime, LoadEventInfo info,
+                                MediaLoadData data, IOException error, boolean wasCanceled) {
+            Utils.log("load: error at " + info.dataSpec.position + " after " + info.bytesLoaded + " B in "
+                    + info.loadDurationMs + " ms: " + error);
+        }
+
+        @Override
+        public void onSurfaceSizeChanged(AnalyticsListener.EventTime eventTime, int width, int height) {
+            Utils.log("surface: " + width + "x" + height);
         }
     };
     // A fatal report has just been shown for the current clip. onStart re-initialises the player every
@@ -497,6 +623,12 @@ public class PlayerActivity extends Activity {
         final boolean stalledWithData = (state == Player.STATE_READY || state == Player.STATE_BUFFERING)
                 && player.getVideoFormat() != null && player.getTotalBufferedDuration() > 0;
         if (state == Player.STATE_IDLE || stalledWithData) {
+            // A rebuild here re-creates the decoder inside the window it has just failed to come back to.
+            // On a TV box that has to be a fresh window (see recoverByRestartingTheScreen).
+            if (recoverByRestartingTheScreen(null)) {
+                return;
+            }
+            Utils.log("resume watchdog: no frame, rebuilding from state " + stateName(state));
             sourceSwitchKeepPaused = true;
             releasePlayer(false);
             initializePlayer();
@@ -667,6 +799,21 @@ public class PlayerActivity extends Activity {
         if (player == null || player.getPlayWhenReady() || player.isPlaying()) {
             return;
         }
+        // Letting the source go means re-preparing it on resume, and a re-prepare re-instantiates the
+        // video decoder. On a TV box that is the one move that can fail for good: a Realtek 4K Dolby
+        // Vision decoder re-init after teardown returns OMX_ErrorInsufficientResources (0x80001000),
+        // reports it unrecoverable, and no rung of the recovery ladder can get it back — while a cold app
+        // start allocates the very same decoder in half a second (field trace, S01E05, 4K dvhe.08.06).
+        // So on a TV box the idle socket and the held buffer are the cheaper cost; keep them. Phones
+        // re-instantiate decoders without complaint and keep the optimisation. The exclusive passthrough
+        // route this stop() also used to hand back is handed back by onStop instead, which is where a
+        // real trip to the background — the case that route contention actually comes from — goes.
+        // ponytail: gated by device class, not by probing the format, because there is no ask-in-advance
+        // for "will this decoder re-init", and a held buffer on a five-minute TV pause is nothing next to
+        // an error screen. Revisit if a TV box turns up that both needs the socket freed and re-inits fine.
+        if (isTvBox) {
+            return;
+        }
         Utils.log("pause: releasing the source after " + PAUSE_RELEASE_MS / 1000 + "s");
         stoppedForPause = true;
         // Not releasePlayer(): stop() leaves the item, the position and the surface in place, so this
@@ -727,8 +874,13 @@ public class PlayerActivity extends Activity {
     // the steps the gate skipped are made good by one commit once the presses stop.
     private long keyScrubTarget = -1;   // -1 = no scrub in progress
     private long keyScrubSeeked = -1;   // the last target a press actually seeked to
-    private int keyScrubSteps;          // presses in a row (drives the step size)
+    private int keyScrubSteps;          // presses in a row, one way (drives the step size)
+    private boolean keyScrubForward;    // direction of the last press; a reversal restarts the ladder
     private long keyScrubLastMs;
+    // A held key repeats at the platform's rate, about 57 ms measured on a Shield, which is far faster
+    // than a step can be aimed at. One step per floor makes a hold the same speed on any box and any
+    // remote; clicks arrive further apart than this and are untouched.
+    private static final long KEY_HOLD_STEP_FLOOR_MS = 200;
     private final Runnable keyScrubCommit = this::commitKeyScrub;
     // A passthrough AudioTrack that has been paused and resumed comes back silent on a fair number of TVs
     // and receivers: the bitstream still leaves the box but nothing downstream re-locks onto it. Video keeps
@@ -772,6 +924,28 @@ public class PlayerActivity extends Activity {
     // and the boxes this feature is for are the ones that do not (see the heavy-audio block); this is cleared by
     // the return to playing itself, however late that is.
     private boolean audioRestartSettling;
+    // A reselect that took the player down to BUFFERING and left it there: the buffer is full, the loader
+    // is idle and READY never comes back — seen on a Realtek TV after a resume, roughly one reselect in
+    // three, with 15–46 s of media ahead the whole time (field traces, 2026-09-03). Media3 reports nothing
+    // for it — no error, and no progress to measure. What tells it apart is visible at once: a reselect
+    // that settles never passes through BUFFERING at all (every good resume in the traces goes straight on
+    // playing), so BUFFERING while the reselect is still settling, with more than a refill's worth of media
+    // ahead, is the wedge — checked half a second after that transition, long enough for a renderer that
+    // is honestly re-enabling and short enough that the viewer does not sit on a spinner. The cure is the
+    // one a seek has always been for the passthrough output: it releases the
+    // AudioOutput and the next buffer opens a fresh track, and it re-drives both renderers from inside the
+    // buffer, so it costs no re-read and, unlike stop(), never touches the video decoder. Bounded to a few
+    // in a row: the seek latches a reselect of its own, and a box that wedges on that one as well gets the
+    // watchdog's hold rather than a seek every three seconds. The budget comes back with the first reselect
+    // that settles on its own.
+    private static final long RESELECT_WEDGE_MS = 500L;
+    // Below this much media ahead a BUFFERING state is an honest refill — DefaultLoadControl's own
+    // bufferForPlaybackAfterRebuffer for streams — and the loader's business, not a wedge.
+    private static final long RESELECT_WEDGE_MIN_AHEAD_MS = 5_000L;
+    private static final int MAX_RESELECT_NUDGES = 2;
+    private int reselectNudges;
+    private boolean nudgedThisReselect;
+    private final Runnable reselectWedgeRunnable = this::nudgeWedgedReselect;
     // Whether the current item has ever actually played. The first start of an item opens its own fresh
     // output, so there is nothing to re-lock — and recreating the track at that exact instant is what left
     // roughly one opening in three with no sound at all, twice. Spending the latch waits for a real second
@@ -2474,6 +2648,8 @@ public class PlayerActivity extends Activity {
     public void onStart() {
         super.onStart();
         alive = true;
+        Utils.log("onStart" + (player == null ? ", no player" : player.getPlayerError() != null
+                ? ", player failed while away" : ", state " + stateName(player.getPlaybackState())));
         updateSubtitleStyle(this);
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
@@ -2497,10 +2673,13 @@ public class PlayerActivity extends Activity {
             initializePlayer();
         } else if (player.getPlayerError() != null) {
             // The session survived being backgrounded but the player did not: Media3 stops it when the
-            // surface detach times out (see onPlayerError), so resuming would show a dead picture.
-            sourceSwitchKeepPaused = true;
-            releasePlayer(false);
-            initializePlayer();
+            // surface detach times out (see onPlayerError), so resuming would show a dead picture. Same
+            // window rule as the resume watchdog: a TV box gets a fresh one rather than a rebuild.
+            if (!recoverByRestartingTheScreen(player.getPlayerError())) {
+                sourceSwitchKeepPaused = true;
+                releasePlayer(false);
+                initializePlayer();
+            }
         } else {
             // The audio track type onStop disabled to hand the receiver's route back. The track this builds
             // is unstarted, since the player is paused; the latch the pause armed recreates it on play.
@@ -2552,6 +2731,7 @@ public class PlayerActivity extends Activity {
     public void onStop() {
         super.onStop();
         alive = false;
+        Utils.log("onStop" + (isFinishing() ? ", finishing" : ""));
         // Stop the empty-state pulse while backgrounded: no point ticking the Choreographer with no media
         // loaded and the activity stopped. It does not come back on return — the page is already revealed.
         emptyState.stopPulse();
@@ -2620,7 +2800,13 @@ public class PlayerActivity extends Activity {
         // not change across the trip and onPlaybackStateChanged never re-fires.
         cancelLoadWatchdog();
         playerView.removeCallbacks(resumeWatchdogRunnable);
-        playerView.postDelayed(backgroundReleaseRunnable, BACKGROUND_RELEASE_MS);
+        // Not on a TV box: the return would rebuild the decoder inside the same window, which is what
+        // pauseReleaseRunnable stopped doing there for the same reason. The exclusive route is handed
+        // back above; what stays is an idle socket and the buffer, and the system reclaims the process
+        // if it needs the memory - that return is a cold start, which is the one that works.
+        if (!isTvBox) {
+            playerView.postDelayed(backgroundReleaseRunnable, BACKGROUND_RELEASE_MS);
+        }
     }
 
     /**
@@ -3084,6 +3270,17 @@ public class PlayerActivity extends Activity {
                 // Handled in onBackPressed(), the one path every API level shares. The case still has to
                 // exist so Back does not fall into default: below, which would show the controller.
                 break;
+            case KeyEvent.KEYCODE_ESCAPE:
+                // A TV remote's EXIT key commonly arrives as ESCAPE. Left unhandled it falls into default:
+                // below, which consumes it to raise the controller — so the ESCAPE→BACK fallback the
+                // framework would otherwise synthesise never happens, and the key cannot leave the player
+                // in the one state it still could: with the controls up, where default: lets it through.
+                // Route it to the same exit path as Back instead. Consuming it here is what keeps that
+                // fallback from firing a second Back on top. Dialogs are unaffected — they own the window,
+                // so this never runs while one is up and EXIT keeps closing them.
+                if (event.getRepeatCount() == 0)
+                    onBackPressed();
+                return true;
             case KeyEvent.KEYCODE_UNKNOWN:
                 return super.onKeyDown(keyCode, event);
             default:
@@ -3126,6 +3323,8 @@ public class PlayerActivity extends Activity {
     private boolean seekWithKey(boolean forward, boolean held) {
         if (player == null)
             return false;
+        if (held && SystemClock.uptimeMillis() - keyScrubLastMs < KEY_HOLD_STEP_FLOOR_MS)
+            return true;
         playerView.removeCallbacks(playerView.textClearRunnable);
         // The bar the touch gestures raise is what lets their readout carry only the delta; the one path
         // where the readout is all there is got the least of it.
@@ -3146,7 +3345,10 @@ public class PlayerActivity extends Activity {
             return true;
         }
         final long now = SystemClock.uptimeMillis();
-        keyScrubSteps = held || now - keyScrubLastMs < 450 ? keyScrubSteps + 1 : 0;
+        // A reversal is the correction after an overshoot, so the ladder starts over: the step that
+        // carried past the mark must not carry back past it just as fast.
+        keyScrubSteps = forward == keyScrubForward && (held || now - keyScrubLastMs < 450) ? keyScrubSteps + 1 : 0;
+        keyScrubForward = forward;
         keyScrubLastMs = now;
         final long from = keyScrubTarget >= 0 ? keyScrubTarget : pos;
         final long step = keyScrubStep(duration);
@@ -3178,10 +3380,12 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * 3s → 10s → 30s → 1m → 2% of the duration (≈2.5 min per press in a 2-hour film). The first rung is
-     * what a single click is worth: small enough to land back on the line of dialogue that was missed,
-     * which is most of what a click is for. The rungs above it are reached two presses later than they
-     * used to be, and a held key still climbs the whole ladder in well under a second.
+     * 3s → 10s → 30s → 1m. The first rung is what a single click is worth: small enough to land back on
+     * the line of dialogue that was missed, which is most of what a click is for. The top rung is the
+     * biggest stride that can still be stood on: seeking from the picture is the fine adjustment, the
+     * long jump across a film is the bar's job (a minute per press there), so the ladder stops short of
+     * the bar's territory instead of climbing to a share of the duration that has no position between
+     * two presses. The share only keeps a rung from outgrowing a short file.
      */
     private long keyScrubStep(long duration) {
         if (keyScrubSteps < 2)
@@ -3190,9 +3394,7 @@ public class PlayerActivity extends Activity {
             return 10_000;
         if (keyScrubSteps < 8)
             return 30_000;
-        if (keyScrubSteps < 15)
-            return 60_000;
-        return Math.max(120_000, duration / 50);
+        return Math.min(60_000, duration / 10);
     }
 
     private void showKeySeekMessage(long target) {
@@ -10230,6 +10432,11 @@ public class PlayerActivity extends Activity {
     // seekToCurrentPosition() with no playing period and throws (JPP-15). The caller re-prepares instead.
     private static final class AudioPassthroughDenylistSink extends ForwardingAudioSink {
         private final Set<String> deniedMimes;
+        // When set, every non-PCM (compressed) format is refused, so the renderer always decodes to PCM
+        // and never bitstreams. This is "surround pass-through off": it keeps multichannel PCM (the sink's
+        // real channel capabilities are untouched) but takes away the bitstream route and, with it, the
+        // whole reselect/wedge/dead-route chain that route drags in on some boxes across a pause.
+        private final boolean forceDecode;
         // True while the sink bitstreams a compressed format: the renderer configures us with a non-PCM
         // format only when it runs in bypass (passthrough), never when a decoder feeds us. Read on the app
         // thread by restartPassthroughAudio(), written here on the playback thread. Deliberately
@@ -10238,9 +10445,15 @@ public class PlayerActivity extends Activity {
         // config in pendingConfiguration when we read it. Both only ever cost one needless seek.
         private volatile boolean passthrough;
 
-        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied) {
+        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied, boolean forceDecode) {
             super(sink);
             this.deniedMimes = new CopyOnWriteArraySet<>(initiallyDenied);
+            this.forceDecode = forceDecode;
+        }
+
+        private boolean refused(Format format) {
+            return deniedMimes.contains(format.sampleMimeType)
+                    || (forceDecode && !MimeTypes.AUDIO_RAW.equals(format.sampleMimeType));
         }
 
         @Override
@@ -10255,13 +10468,12 @@ public class PlayerActivity extends Activity {
 
         @Override
         public int getFormatSupport(Format format) {
-            return deniedMimes.contains(format.sampleMimeType)
-                    ? AudioSink.SINK_FORMAT_UNSUPPORTED : super.getFormatSupport(format);
+            return refused(format) ? AudioSink.SINK_FORMAT_UNSUPPORTED : super.getFormatSupport(format);
         }
 
         @Override
         public boolean supportsFormat(Format format) {
-            return !deniedMimes.contains(format.sampleMimeType) && super.supportsFormat(format);
+            return !refused(format) && super.supportsFormat(format);
         }
 
         // Called from the app thread by recoverByRevokingAudioMime(). deniedMimes is read on the
@@ -10320,6 +10532,9 @@ public class PlayerActivity extends Activity {
             decoderRetries = 0;
             videoFreezeRecoveries = 0;
         }
+        Utils.log("init: network=" + isNetworkUri + " keepPaused=" + keepPaused
+                + " forceHevc=" + forceHevcForDolbyVision + " retries source=" + sourceRetries
+                + " decoder=" + decoderRetries + " freeze=" + videoFreezeRecoveries);
         liveStallRecoveries = 0;
         frameOutputSeen = -1;
         playerStartPositionMs = C.TIME_UNSET;
@@ -10332,6 +10547,9 @@ public class PlayerActivity extends Activity {
         audioEverStarted = false;
         audioReselectAtMs = 0;
         playerView.removeCallbacks(rebufferArmRunnable);
+        playerView.removeCallbacks(reselectWedgeRunnable);
+        reselectNudges = 0;
+        nudgedThisReselect = false;
         audioRestartPending = false;
         audioReleasedForBackground = false;
 
@@ -10428,7 +10646,7 @@ public class PlayerActivity extends Activity {
                 // (see mediaUri above), and by then this list is fixed — so on a TV the fallback has to
                 // be in it already or a hidden platform decoder would leave the track with nothing.
                 super.buildAudioRenderers(context,
-                        (isTvBox || !revokedAudioMimes.isEmpty())
+                        (isTvBox || !revokedAudioMimes.isEmpty() || !mPrefs.audioPassthrough)
                                 && extensionRendererMode == EXTENSION_RENDERER_MODE_OFF
                                 ? EXTENSION_RENDERER_MODE_ON : extensionRendererMode,
                         mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler,
@@ -10447,7 +10665,7 @@ public class PlayerActivity extends Activity {
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                         .setAudioProcessors(new AudioProcessor[]{boostProcessor})
                         .build();
-                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes);
+                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes, !mPrefs.audioPassthrough);
                 return audioSink;
             }
 
@@ -10769,9 +10987,14 @@ public class PlayerActivity extends Activity {
 
             updateLoading(true);
 
-            if ((mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial) && !keepPaused) {
+            // resumeAfterScreenRestart carries the viewer's own play across the restart the decoder
+            // needed; without it a film resumed mid-way would come back paused, since only a zero position
+            // plays by itself.
+            if ((mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial || resumeAfterScreenRestart)
+                    && !keepPaused) {
                 play = true;
             }
+            resumeAfterScreenRestart = false;
 
             updateTopInfo();
 
@@ -10982,8 +11205,14 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    // Start a fresh window, remembering how much had been transferred when it opened.
+    // Start a fresh wait: the silent-window count starts over, then the first window opens.
     private void armLoadWatchdog() {
+        loadWatchdogSilentWindows = 0;
+        rearmLoadWatchdog();
+    }
+
+    // Open another window on the same wait, remembering how much had been transferred when it opened.
+    private void rearmLoadWatchdog() {
         if (playerView == null) {
             return;
         }
@@ -11076,6 +11305,8 @@ public class PlayerActivity extends Activity {
      * INFO, like a recovered stall — playback carries on, so it is not a crash.
      */
     private void reportVideoFreeze(final String recoveredAs) {
+        Utils.log("video freeze: " + recoveredAs + " (" + videoFreezeRecoveries + "/"
+                + MAX_VIDEO_FREEZE_RECOVERIES + ")");
         io.sentry.Sentry.captureMessage("Video frozen while audio plays", scope -> {
             scope.setFingerprint(Arrays.asList("video-freeze", recoveredAs));
             scope.setTag("player.freeze_recovery", recoveredAs);
@@ -11093,10 +11324,40 @@ public class PlayerActivity extends Activity {
         // Still downloading — give it another window instead of stopping it. The user is not left
         // guessing: the loading ring carries the transfer rate (loadingSpeedRunnable), so a slow fill
         // reads as "alive, just slow", and Back still leaves whenever they have had enough.
-        if (TrackNameParsingDataSource.bytesRead.get() - loadWatchdogBytes >= LOAD_PROGRESS_MIN_BYTES) {
+        final long progressed = TrackNameParsingDataSource.bytesRead.get() - loadWatchdogBytes;
+        if (progressed >= LOAD_PROGRESS_MIN_BYTES) {
+            Utils.log("watchdog: +" + progressed + " B, still loading");
             armLoadWatchdog();
             return;
         }
+        // Nothing arrived, but the loader is still on the line waiting for the server to send — a torrent
+        // backend fetching the piece behind a seek looks exactly like this (see loadWatchdogSilentWindows).
+        // Wait it out, up to the bound; a dead socket ends its own wait through the read timeout, as a
+        // source error, and takes the re-read ladder from there.
+        final boolean connected = player.isLoading() && Utils.isSupportedNetworkUri(currentMediaUri());
+        if (connected && ++loadWatchdogSilentWindows < LOAD_SILENT_WINDOWS_MAX) {
+            Utils.log("watchdog: +" + progressed + " B, loader connected, silent window "
+                    + loadWatchdogSilentWindows + "/" + LOAD_SILENT_WINDOWS_MAX);
+            rearmLoadWatchdog();
+            return;
+        }
+        // A stuck load on a TV box must not be answered with stop(): that releases the video decoder, and
+        // a Realtek 4K Dolby Vision decoder does not come back — the resume prepare() fails for good with
+        // 0x80001000, the same death pauseReleaseRunnable was taught to avoid. The load is stuck, the
+        // decoder is not, so leave it be: hold the player on the position it already has and let a seek
+        // back into buffered data, or the source finally answering the right range, resume on that same
+        // decoder. The spinner stays (its rate readout still reads 0), the episode arrows come back, and
+        // the message is shown once. Only once playback has actually started (playerStartPositionMs set):
+        // a cold open that never reached READY has no decoder to protect and takes the honest stop below.
+        if (isTvBox && playerStartPositionMs != C.TIME_UNSET) {
+            Utils.log("watchdog: +" + progressed + " B, loading=" + player.isLoading()
+                    + ", TV box, holding the decoder");
+            reportOutcome("load-stalled-held", null);
+            setEpisodeNavLoading(false);
+            showSnack(getString(R.string.error_playback_stalled), null);
+            return;
+        }
+        Utils.log("watchdog: +" + progressed + " B, loading=" + player.isLoading() + ", stopping");
         // A silent stall (buffering never reached READY). Stop the loaders: they keep pulling bytes for as
         // long as the player sits in BUFFERING, and hiding the spinner below hides the rate readout with
         // it, so the wait turns into an invisible download that shows nothing. Stopped, not released or
@@ -11104,7 +11365,10 @@ public class PlayerActivity extends Activity {
         // it. STATE_IDLE keeps the timeline and the position, so the play button (dispatchPlayPause ->
         // handlePlayButtonAction) re-prepares this very item, which is what the message asks for.
         player.stop();
-        // Not sent to Sentry — it is usually an upstream/network condition, not an app bug.
+        // Usually an upstream/network condition rather than an app bug, so information rather than an
+        // error — but it is a way playback ends that nothing else reports, and the trace it carries is
+        // what says whether the server went quiet or the player stopped asking.
+        reportOutcome("load-timeout", null);
         updateLoading(false);
         // Entering the wait disabled the episode arrows (showLoadingRunnable) and only STATE_READY and the
         // error paths ever re-enabled them, so a timeout left the one escape from a stuck episode dead.
@@ -11125,6 +11389,9 @@ public class PlayerActivity extends Activity {
     }
 
     public void releasePlayer(boolean save) {
+        if (player != null) {
+            Utils.log("release player" + (save ? ", saving" : ""));
+        }
         cancelLoadWatchdog();
         // A pending source re-read belongs to the session being torn down here, same as errorToShow below.
         // So do both watchdogs that guard a retained session (see onStop / onStart): whatever path got
@@ -11135,6 +11402,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(backgroundReleaseRunnable);
             playerView.removeCallbacks(resumeWatchdogRunnable);
             playerView.removeCallbacks(passthroughRestartRunnable);
+            playerView.removeCallbacks(reselectWedgeRunnable);
             playerView.removeCallbacks(rebufferArmRunnable);
             playerView.removeCallbacks(pauseReleaseRunnable);
             stoppedForPause = false;
@@ -11268,6 +11536,7 @@ public class PlayerActivity extends Activity {
         // Also fires when a destroyed surface comes back, which is what the resume watchdog waits for.
         @Override
         public void onRenderedFirstFrame() {
+            Utils.log("first frame rendered");
             resumeFrameRendered = true;
             // Fires again after every seek's flush, which is the only signal a seek that never left
             // STATE_READY gives. Without it the one-seek-at-a-time gate the scrubbing and swipe-seek
@@ -11292,6 +11561,12 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
                                             Player.PositionInfo newPosition, int reason) {
+            // Not while scrubbing: a drag is dozens of seeks, each a different line the fold cannot merge.
+            if (!isScrubbing) {
+                Utils.log("discontinuity reason=" + reason + " " + oldPosition.positionMs + " -> "
+                        + newPosition.positionMs + (oldPosition.mediaItemIndex != newPosition.mediaItemIndex
+                        ? " item " + oldPosition.mediaItemIndex + " -> " + newPosition.mediaItemIndex : ""));
+            }
             // A new item starts its own playback, so progress is measured from where it begins — otherwise
             // an item that wedges on its first frame would look mid-stream because the previous one played.
             // Only on an item change: rebasing on every discontinuity would also rebase on a seek (the user
@@ -11347,6 +11622,8 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+            Utils.log("item transition reason=" + reason
+                    + (player != null ? " index=" + player.getCurrentMediaItemIndex() : ""));
             // Keep the playlist start index (and mediaUri) tracking the item that is actually
             // playing. They would otherwise stay frozen at the session's initial episode, so a
             // rebuild after onStop (setMediaItems uses apiPlaylistStartIndex) would restart the
@@ -11433,12 +11710,16 @@ public class PlayerActivity extends Activity {
             // audio button flicker.
             if (audioRestartInFlight) {
                 audioRestartInFlight = false;
+                Utils.log("audio reselect: restore");
                 if (player != null) {
                     player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                             .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false).build());
                 }
                 return;
             }
+            Utils.log("tracks: video=" + selectedMime(tracks, C.TRACK_TYPE_VIDEO)
+                    + " audio=" + selectedMime(tracks, C.TRACK_TYPE_AUDIO)
+                    + " passthrough=" + (audioSink != null && audioSink.isPassthrough()));
             // Tracks are now known — (re)map any container names onto them, then refresh the header.
             resolveTrackNames();
             updateMediaInfo();
@@ -11514,7 +11795,9 @@ public class PlayerActivity extends Activity {
             }
             // Whatever was posted would now run against a paused player, which is the one thing to avoid.
             playerView.removeCallbacks(passthroughRestartRunnable);
+            playerView.removeCallbacks(reselectWedgeRunnable);
             audioRestartPending = true;
+            Utils.log("audio restart latched: playWhenReady off, reason " + reason);
         }
 
         // The one place a stale bitstream output is rebuilt, and the one place the remaining stalls are
@@ -11526,6 +11809,8 @@ public class PlayerActivity extends Activity {
         // playWhenReady survives both, and a latch armed there would be spent on whatever output comes next.
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
+            Utils.log("playing=" + isPlaying + (player != null ? " playWhenReady=" + player.getPlayWhenReady()
+                    + " state=" + stateName(player.getPlaybackState()) : ""));
             // Subtitles are painted off the media position, which only moves while this is true.
             if (subtitleOffset != null) {
                 subtitleOffset.wake();
@@ -11538,7 +11823,14 @@ public class PlayerActivity extends Activity {
                 // the last window measured belongs to a playback that has since stopped.
                 frameOutputSeen = -1;
                 playerView.removeCallbacks(rebufferArmRunnable);
+                playerView.removeCallbacks(reselectWedgeRunnable);
                 audioRestartSettling = false;
+                // A reselect that settled on its own hands the nudge budget back; one that needed a nudge
+                // keeps counting, so a box that wedges on every seek-latched reselect runs out.
+                if (!nudgedThisReselect) {
+                    reselectNudges = 0;
+                }
+                nudgedThisReselect = false;
                 if (audioEverStarted) {
                     if (audioRestartPending) {
                         requestPassthroughRestart();
@@ -11608,6 +11900,9 @@ public class PlayerActivity extends Activity {
         @SuppressLint("SourceLockedOrientationActivity")
         @Override
         public void onPlaybackStateChanged(int state) {
+            Utils.log("state " + stateName(state) + " pos=" + player.getCurrentPosition()
+                    + " buf=" + player.getBufferedPosition() + " loading=" + player.isLoading()
+                    + " playWhenReady=" + player.getPlayWhenReady());
             boolean isNearEnd = false;
             final long duration = player.getDuration();
             if (duration != C.TIME_UNSET) {
@@ -11623,6 +11918,15 @@ public class PlayerActivity extends Activity {
                 cancelLoadWatchdog();
                 // Loaded successfully — clear any pending resolver-handshake flag from a prior attempt.
                 resolverNotReadyUri = null;
+                // Playing again, so the screen has earned another restart if it ever needs one.
+                screenRestartUsed = false;
+                // Playback that only got here by spending a recovery budget is worth one line: without it a
+                // stall that resolved after twenty seconds of re-reads leaves no trace anywhere.
+                if (decoderRetries > 0 || sourceRetries > 0 || videoFreezeRecoveries > 0) {
+                    Utils.log("recovered: retries source=" + sourceRetries + " decoder=" + decoderRetries
+                            + " freeze=" + videoFreezeRecoveries);
+                    reportOutcome("recovered", null);
+                }
                 decoderRetries = 0;
                 // Same for the re-read budget, which was per player build: a stream that recovered and
                 // played on has not spent anything. Three hiccups spread over a long film — a torrent
@@ -11744,6 +12048,12 @@ public class PlayerActivity extends Activity {
                     restoreVideoQuality();
                 }
             } else if (state == Player.STATE_BUFFERING) {
+                // Buffering while a passthrough reselect is settling is the wedge signature (see
+                // reselectWedgeRunnable); give a renderer that is merely re-enabling half a second first.
+                if (audioRestartSettling) {
+                    playerView.removeCallbacks(reselectWedgeRunnable);
+                    playerView.postDelayed(reselectWedgeRunnable, RESELECT_WEDGE_MS);
+                }
                 // Buffering (e.g. switching episodes) — show the spinner in place of play and disable the
                 // arrows, but only once the wait is worth showing (see LOADING_INDICATOR_DELAY_MS).
                 playerView.postDelayed(showLoadingRunnable, LOADING_INDICATOR_DELAY_MS);
@@ -11768,6 +12078,11 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onPlayerError(PlaybackException error) {
+            Utils.log("error " + error.getErrorCodeName() + ": " + ErrorActivity.rootMessage(error)
+                    + (error instanceof ExoPlaybackException
+                        && ((ExoPlaybackException) error).rendererFormat != null
+                        ? " format=" + ((ExoPlaybackException) error).rendererFormat.codecs : "")
+                    + " " + codecDetails(error));
             updateLoading(false);
             cancelLoadWatchdog();
             // The Lampac stream resolver returned its handshake ({"rch":…}) instead of media: it
@@ -11874,6 +12189,7 @@ public class PlayerActivity extends Activity {
                 // what failed is the channel, not this clip. The report stays reachable behind "Details"
                 // so support does not have to go to the crash reporter for it.
                 if (player != null && player.isCurrentMediaItemLive()) {
+                    reportOutcome("live-interrupted", error);
                     stopWithMessage(getString(R.string.error_stream_interrupted), errorReport(error));
                     return;
                 }
@@ -11908,6 +12224,14 @@ public class PlayerActivity extends Activity {
                     && recoverByLoweringQuality()) {
                 return;
             }
+            // On a TV box the window goes first, not last. Every re-read and rebuild below hands the codec
+            // back to the window it has just failed in, and the field trace of the box this was written for
+            // shows twelve such retries and four Dolby Vision rebuilds, every one refused with the same
+            // 0x80001000 - twenty seconds of spinner before the one step that works. The budget inside
+            // still keeps a box whose decoder really is gone from starting itself over for ever.
+            if (isDecoderFailure(error) && recoverByRestartingTheScreen(error)) {
+                return;
+            }
             if ((isDecoderFailure(error) || isUnexpectedPlaybackError(error))
                     && recoverFromDecoderFailure()) {
                 return;
@@ -11933,6 +12257,7 @@ public class PlayerActivity extends Activity {
             // updateMedia only drops the in-memory URI, so nothing remembered in prefs is lost.
             final int unavailable = mediaUnavailableMessage(error);
             if (unavailable != 0) {
+                reportOutcome("media-unavailable", error);
                 // A playlist keeps everything: the other episodes are still watchable, and the user may
                 // want to step back to the one they were on (an accidental switch, say). So never tear the
                 // view down and never walk the list on its own — that would march past every episode with
@@ -11969,6 +12294,7 @@ public class PlayerActivity extends Activity {
             // line is all the user can act on, so no full-screen stack trace, and nothing to report: the
             // same bad host otherwise files a fresh issue on every attempt.
             if (isBrokenNetworkSource(error)) {
+                reportOutcome("stream-broken", error);
                 // Prefer the status the server actually returned over the generic wording, so the user
                 // (and support) sees the real cause.
                 final HttpDataSource.InvalidResponseCodeException httpError = httpStatusFailure(error);
@@ -12114,7 +12440,9 @@ public class PlayerActivity extends Activity {
         // Doubling, not a flat second: a server that just failed a read is often a server under load, and
         // three re-reads a second apart are three container re-parses inside the window it needed to
         // recover. 1 s, 2 s, 4 s gives it that room and still gives up inside eight seconds.
-        playerView.postDelayed(sourceRetryRunnable, 1_000L << (sourceRetries - 1));
+        final long delayMs = 1_000L << (sourceRetries - 1);
+        Utils.log("source retry " + sourceRetries + "/" + MAX_SOURCE_RETRIES + " in " + delayMs + " ms");
+        playerView.postDelayed(sourceRetryRunnable, delayMs);
         return true;
     }
 
@@ -12157,6 +12485,7 @@ public class PlayerActivity extends Activity {
                 scope.setTag("media.video_codecs", String.valueOf(failingFormat.codecs));
             });
         }
+        Utils.log("rebuild: Dolby Vision " + failingFormat.codecs + " as HEVC");
         forceHevcForDolbyVision = true;
         pendingStuckRecovery = true;
         // Only resume if it was playing: a decode failure can also reach a paused clip (a codec reclaimed
@@ -12169,6 +12498,39 @@ public class PlayerActivity extends Activity {
             releasePlayer();
             initializePlayer();
         });
+        return true;
+    }
+
+    /**
+     * Start the screen over, keeping the clip and the position, because the decoder will not come back
+     * any other way.
+     *
+     * <p>Four triggers were closed one at a time to stop anything from re-creating this box's 4K Dolby
+     * Vision codec, and a fifth kept turning up, because Media3 releases the renderers on the way out of
+     * every error and the way back in is always a prepare(). What the traces do carry is one re-creation
+     * that worked: the one after the activity itself had gone and been built again, 305 ms, quicker than
+     * that session's own cold start. Hiding the SurfaceView is not the same thing and was measured not to
+     * be - the Surface lives through it, same object, still valid - so the window itself has to go.
+     *
+     * <p>It is what the viewer does by hand today, and it costs a couple of seconds against an error
+     * screen that ends the film. Once between successful playbacks: the budget comes back at STATE_READY,
+     * so a failure an hour later gets its own and a restart that solves nothing cannot loop.
+     */
+    private boolean recoverByRestartingTheScreen(@Nullable final PlaybackException error) {
+        if (!isTvBox || screenRestartUsed || !haveMedia || player == null) {
+            return false;
+        }
+        screenRestartUsed = true;
+        // playWhenReady survives the error, so this is what the viewer was doing, not what the player was
+        // managing to do.
+        resumeAfterScreenRestart = player.getPlayWhenReady();
+        Utils.log(error != null ? "restarting the screen: the decoder will not come back on this one"
+                : "restarting the screen: the retained decoder did not come back with the window");
+        reportOutcome("screen-restarted", error);
+        // Saving is the whole point of going through releasePlayer here: recreate() takes the instance
+        // with it, the position is written to prefs, and an api session rides out in onSaveInstanceState.
+        releasePlayer();
+        playerView.post(this::recreate);
         return true;
     }
 
@@ -12293,6 +12655,7 @@ public class PlayerActivity extends Activity {
             return false;
         }
         softwareVideoDowngraded = true;
+        Utils.log("quality lowered to " + bestLabel);
         final String label = bestLabel;
         final String url = bestUrl;
         playerView.post(() -> {
@@ -12341,6 +12704,7 @@ public class PlayerActivity extends Activity {
             liveRejoinReported = true;
             reportStall(error, stuck, "live-rejoin");
         }
+        Utils.log("live stall: rejoin " + liveStallRecoveries + "/" + MAX_LIVE_STALL_RECOVERIES);
         updateLoading(true);
         playerView.post(sourceRetryRunnable);
         return true;
@@ -12393,6 +12757,7 @@ public class PlayerActivity extends Activity {
                 || playerStartPositionMs == C.TIME_UNSET || !stalledAtStart()) {
             return false;
         }
+        Utils.log("rebuild: tunneling off");
         mPrefs.disableTunneling();
         Toast.makeText(this, R.string.notice_tunneling_disabled, Toast.LENGTH_LONG).show();
         restorePlayState = true;
@@ -12439,6 +12804,7 @@ public class PlayerActivity extends Activity {
         // verdict would have stayed for good — the box would decode AC-3 in software in every film after
         // one dropped HDMI route. Those keep to their own run, and the user can clear the remembered ones
         // from Settings.
+        Utils.log("audio passthrough revoked: " + mime + (persist ? ", persisted" : ""));
         sessionRevokedAudioMimes.add(mime);
         if (persist) {
             mPrefs.revokeAudioMime(mime);
@@ -12480,6 +12846,8 @@ public class PlayerActivity extends Activity {
         // exists to prevent. Dropping the request instead of waiting is the other way to lose: the trigger is
         // spent and nothing retries.
         if (audioRestartInFlight || !player.isPlaying()) {
+            Utils.log("audio reselect: waiting, inFlight=" + audioRestartInFlight
+                    + " playing=" + player.isPlaying());
             if (audioRestartRetries < 5) {
                 audioRestartRetries++;
                 playerView.postDelayed(passthroughRestartRunnable, 100);
@@ -12494,8 +12862,37 @@ public class PlayerActivity extends Activity {
         audioRestartInFlight = true;
         audioRestartSettling = true;
         audioReselectAtMs = SystemClock.elapsedRealtime();
+        Utils.log("audio reselect: disable");
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
+    }
+
+    // A reselect is still settling, the player went to BUFFERING under it and is still there, and there is
+    // more than a refill's worth of media already in the buffer: nothing is being waited for, the renderers
+    // are simply not coming back. Seek to where it stands (see the field comment).
+    private void nudgeWedgedReselect() {
+        if (player == null || !audioRestartSettling || !player.getPlayWhenReady()
+                || player.getPlaybackState() != Player.STATE_BUFFERING) {
+            return;
+        }
+        final long position = player.getCurrentPosition();
+        final long ahead = player.getBufferedPosition() - position;
+        if (ahead < RESELECT_WEDGE_MIN_AHEAD_MS) {
+            return;
+        }
+        if (reselectNudges >= MAX_RESELECT_NUDGES) {
+            Utils.log("reselect wedged: " + ahead + " ms ahead, nudge budget spent");
+            return;
+        }
+        reselectNudges++;
+        nudgedThisReselect = true;
+        Utils.log("reselect wedged: " + ahead + " ms ahead, loading=" + player.isLoading()
+                + ", nudging with a seek (" + reselectNudges + "/" + MAX_RESELECT_NUDGES + ")");
+        reportOutcome("reselect-wedged", null);
+        // Same two load-bearing lines as videoFreezeTick: a same-position seek is a no-op, and without
+        // EXACT the millisecond back lands on the previous sync sample and rewinds the picture by seconds.
+        player.setSeekParameters(SeekParameters.EXACT);
+        player.seekTo(Math.max(0, position - 1));
     }
 
     /** One restart request, with a fresh retry budget. */
@@ -12529,6 +12926,88 @@ public class PlayerActivity extends Activity {
             }
         }
         return null;
+    }
+
+    /**
+     * What the codec itself said, read out of the cause chain: the platform's error code with its transient
+     * and recoverable verdicts, the vendor's diagnostic string, and whether the surface the decoder was
+     * rendering to was still valid. The exception message alone ("Error 0x80001000") names none of that,
+     * and it is all a vendor decoder failing mid-stream leaves behind. Empty when there is no codec in it.
+     */
+    private static String codecDetails(final Throwable error) {
+        final StringBuilder sb = new StringBuilder();
+        final MediaCodecVideoDecoderException video = firstCause(error, MediaCodecVideoDecoderException.class);
+        if (video != null) {
+            sb.append("surfaceValid=").append(video.isSurfaceValid);
+        }
+        final android.media.MediaCodec.CodecException codec =
+                firstCause(error, android.media.MediaCodec.CodecException.class);
+        if (codec != null) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append("codec error=0x").append(Integer.toHexString(codec.getErrorCode()))
+                    .append(" transient=").append(codec.isTransient())
+                    .append(" recoverable=").append(codec.isRecoverable())
+                    .append(" diagnostic=").append(codec.getDiagnosticInfo());
+        }
+        return sb.toString();
+    }
+
+    /** The first throwable of the given type in the cause chain, the error itself included, or null. */
+    @Nullable
+    private static <T extends Throwable> T firstCause(final Throwable error, final Class<T> type) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (type.isInstance(cause)) {
+                return type.cast(cause);
+            }
+        }
+        return null;
+    }
+
+    private static String stateName(final int state) {
+        switch (state) {
+            case Player.STATE_IDLE:
+                return "IDLE";
+            case Player.STATE_BUFFERING:
+                return "BUFFERING";
+            case Player.STATE_READY:
+                return "READY";
+            case Player.STATE_ENDED:
+                return "ENDED";
+            default:
+                return String.valueOf(state);
+        }
+    }
+
+    /** The sample mime of the selected track of that type, or "none". */
+    private static String selectedMime(final Tracks tracks, final int trackType) {
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() == trackType && group.isSelected()) {
+                for (int i = 0; i < group.length; i++) {
+                    if (group.isTrackSelected(i)) {
+                        return String.valueOf(group.getTrackFormat(i).sampleMimeType);
+                    }
+                }
+            }
+        }
+        return "none";
+    }
+
+    /**
+     * A playback that ended without an exception ever reaching Sentry — a wait the watchdog stopped, a
+     * stream still broken after its re-reads, media that is gone — or one that only got through by spending
+     * a recovery budget. Information, one fingerprint per outcome: what these carry is the trace, which says
+     * what the player, the source and the codec did on the way there, and they must not pile onto the issue
+     * of the exception that may follow. Not one per recovery rung: a stream that flickers for an hour would
+     * file hundreds, and the client-side rate limit that answers those drops the one event that matters.
+     */
+    private void reportOutcome(final String outcome, @Nullable final PlaybackException error) {
+        io.sentry.Sentry.captureMessage("Playback " + outcome, scope -> {
+            scope.setFingerprint(Arrays.asList("outcome", outcome));
+            scope.setLevel(io.sentry.SentryLevel.INFO);
+            enrichPlaybackScope(error, scope);
+        });
     }
 
     // A transient MediaCodec allocation race (common right after boot, or when another app just
@@ -12566,6 +13045,8 @@ public class PlayerActivity extends Activity {
         }
         decoderRetries++;
         updateLoading(true);
+        Utils.log("decoder retry " + decoderRetries + "/" + MAX_DECODER_RETRIES + " in "
+                + 1_200L * decoderRetries + " ms");
         playerView.postDelayed(decoderRetryRunnable, 1_200L * decoderRetries);
         return true;
     }
@@ -13286,6 +13767,10 @@ public class PlayerActivity extends Activity {
             // never leaves the device — the formats below say everything a decoder bug needs anyway.
             sb.append("\nMedia: ").append(uri.getScheme()).append(" (local)");
         }
+        final String codec = codecDetails(error);
+        if (!codec.isEmpty()) {
+            sb.append("\nCodec: ").append(codec);
+        }
         appendPlayerState(sb);
         return sb.append("\n\n").append(ErrorActivity.stackTrace(error)).toString();
     }
@@ -13333,8 +13818,9 @@ public class PlayerActivity extends Activity {
         sb.append("\nPosition: ").append(player.getCurrentPosition()).append('/')
                 .append(duration == C.TIME_UNSET ? "unknown" : String.valueOf(duration))
                 .append(" ms, buffered ").append(player.getBufferedPosition())
-                .append(" ms, state ").append(player.getPlaybackState())
-                .append(player.isPlaying() ? " (playing)" : " (paused)")
+                .append(" ms, state ").append(stateName(player.getPlaybackState()))
+                .append(player.isPlaying() ? " (playing)"
+                        : player.getPlayWhenReady() ? " (play when ready)" : " (paused)")
                 .append(", item ").append(player.getCurrentMediaItemIndex() + 1)
                 .append('/').append(player.getMediaItemCount());
         final long liveOffset = player.getCurrentLiveOffset();
@@ -13347,8 +13833,18 @@ public class PlayerActivity extends Activity {
                 .append(mPrefs.tunneling ? ", tunneling" : "")
                 .append(mPrefs.frameRateMatching ? ", frame rate matching" : "")
                 .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "");
-        if (forceHevcForDolbyVision) {
-            sb.append("\nRecovery: forced HEVC for Dolby Vision");
+        // What the recovery ladder had already spent, and where the passthrough restart stood: a decoder
+        // that failed right after a reselect and one that failed on its own are the two suspects a report
+        // from a TV box has to tell apart.
+        sb.append("\nRecovery: retries source=").append(sourceRetries).append(" decoder=")
+                .append(decoderRetries).append(" freeze=").append(videoFreezeRecoveries)
+                .append(forceHevcForDolbyVision ? ", forced HEVC for Dolby Vision" : "")
+                .append("; audio restart pending=").append(audioRestartPending)
+                .append(" inFlight=").append(audioRestartInFlight)
+                .append(" settling=").append(audioRestartSettling);
+        if (audioReselectAtMs != 0) {
+            sb.append(", last reselect ").append(SystemClock.elapsedRealtime() - audioReselectAtMs)
+                    .append(" ms ago");
         }
         final String dv7Status = dv7Converter != null ? dv7Converter.status() : null;
         if (dv7Status != null) {
@@ -13417,9 +13913,34 @@ public class PlayerActivity extends Activity {
         if (audioSink != null) {
             scope.setTag("audio.sink_passthrough", String.valueOf(audioSink.isPassthrough()));
         }
+        if (error != null) {
+            final android.media.MediaCodec.CodecException codec =
+                    firstCause(error, android.media.MediaCodec.CodecException.class);
+            if (codec != null) {
+                scope.setTag("codec.error_code", "0x" + Integer.toHexString(codec.getErrorCode()));
+                scope.setTag("codec.transient", String.valueOf(codec.isTransient()));
+                scope.setTag("codec.recoverable", String.valueOf(codec.isRecoverable()));
+                scope.setExtra("codec_diagnostic", String.valueOf(codec.getDiagnosticInfo()));
+            }
+            final MediaCodecVideoDecoderException video =
+                    firstCause(error, MediaCodecVideoDecoderException.class);
+            if (video != null) {
+                scope.setTag("video.surface_valid", String.valueOf(video.isSurfaceValid));
+            }
+        }
+        if (audioReselectAtMs != 0) {
+            scope.setTag("player.reselect_ms_ago",
+                    String.valueOf(SystemClock.elapsedRealtime() - audioReselectAtMs));
+        }
         final StringBuilder state = new StringBuilder();
         appendPlayerState(state);
         scope.setExtra("player_state", state.toString());
+        // The same trace as a file: an extra of this size is cut short on the server, an attachment is not.
+        // Sanitised on the way out like every other string — the trace never holds a URI on purpose, but
+        // that is a convention, and this is the check.
+        scope.addAttachment(new io.sentry.Attachment(
+                Utils.stripUrlQuery(Utils.recentLog()).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "trace.txt"));
     }
 
     /** What stalled — device_decoder means the playback clock froze, which is the only decoder verdict. */

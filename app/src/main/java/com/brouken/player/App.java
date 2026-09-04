@@ -47,6 +47,15 @@ public class App extends Application {
             options.setRelease(BuildConfig.APPLICATION_ID + "@" + BuildConfig.VERSION_NAME);
             options.setDist(String.valueOf(BuildConfig.VERSION_CODE));
             options.setEnvironment(BuildConfig.DEBUG ? "debug" : "release");
+            // The player's own trace (Utils.log) doubles as breadcrumbs. A playback session that is
+            // recovering logs a line per load, state change and rung, so the default hundred would hold
+            // only the last minute of it.
+            options.setMaxBreadcrumbs(500);
+            // Breadcrumbs bypass beforeSend, so they get the same sanitisation on their own way in.
+            options.setBeforeBreadcrumb((breadcrumb, hint) -> {
+                breadcrumb.setMessage(Utils.stripUrlQuery(breadcrumb.getMessage()));
+                return breadcrumb;
+            });
             options.setBeforeSend((event, hint) -> {
                 // Honor the user's consent toggle. Checked per event (and for events cached offline or
                 // from a crash and sent on the next launch), so switching it off takes effect immediately.

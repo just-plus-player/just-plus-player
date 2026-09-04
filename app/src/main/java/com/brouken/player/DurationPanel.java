@@ -214,17 +214,22 @@ final class DurationPanel {
         readoutColumn.addView(valueRow);
 
         final int backspaceBox = ui.dp(48);
+        // Material's floor between two touch targets, and the reason it is needed here rather than
+        // assumed: the button used to be a bare glyph, so nothing of it reached the field. A circle with
+        // an edge does, and at no gap at all it read as attached to the minutes.
+        final int backspaceGap = ui.dp(8);
         final int colonW = ui.dp(20);
         // Portrait has the room to hang the backspace off the end and still centre the fields, which is
         // what the leading spacer buys; half a landscape panel does not, so there the pair sits from the
         // start edge and the backspace follows it.
         final boolean centred = !landscape;
         if (centred) {
-            valueRow.addView(new View(ctx), new LinearLayout.LayoutParams(backspaceBox, 1));
+            valueRow.addView(new View(ctx),
+                    new LinearLayout.LayoutParams(backspaceBox + backspaceGap, 1));
         }
         // Material's field is 96dp wide; narrower only when the column cannot seat two of them.
         final int boxW = Math.min(ui.dpS(96),
-                (colW - colonW - backspaceBox - (centred ? backspaceBox : 0)) / 2);
+                (colW - colonW - (backspaceBox + backspaceGap) * (centred ? 2 : 1)) / 2);
         // And 72dp tall, except where the height is the scarce dimension: sideways the column has 206dp
         // for the end-of-file button, the readout, its wall-clock line and the actions, and at Material's
         // own size the actions came to rest below the bottom of the card.
@@ -259,9 +264,19 @@ final class DurationPanel {
         // down by half the difference — the row is as tall as a field plus the unit named under it, so
         // arithmetic from the row's own top put the circle 22dp below the middle of the fields.
         final FrameLayout backspaceSlot = new FrameLayout(ctx);
+        // Optically, not geometrically: the glyph's box is centred but its mass is not — the left end
+        // is an arrow point and the right a full-height rectangle, which puts its ink centroid 1.10dp
+        // right of the middle. Padding is asymmetric by that much, since MaterialButton lays the icon
+        // against paddingStart; the circle it sits in does not move.
+        final int nudge = ui.dp(1);
+        backspace.setPadding(backspace.getPaddingLeft() - nudge, backspace.getPaddingTop(),
+                backspace.getPaddingRight() + nudge, backspace.getPaddingBottom());
         backspaceSlot.addView(backspace,
                 new FrameLayout.LayoutParams(backspaceBox, backspaceBox, Gravity.CENTER));
-        valueRow.addView(backspaceSlot, new LinearLayout.LayoutParams(backspaceBox, boxH));
+        final LinearLayout.LayoutParams slotLp =
+                new LinearLayout.LayoutParams(backspaceBox, boxH);
+        slotLp.setMarginStart(backspaceGap);
+        valueRow.addView(backspaceSlot, slotLp);
 
         // Where the duration lands in wall-clock terms — the same phrasing the header uses for the end
         // of the video, since it answers the same question.

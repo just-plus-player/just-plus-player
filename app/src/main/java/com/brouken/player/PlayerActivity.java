@@ -1558,7 +1558,12 @@ public class PlayerActivity extends Activity {
         buttonAudio.setOnClickListener(view -> showAudioDialog());
 
         buttonMore = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonMore.setImageResource(R.drawable.ic_settings_24dp);
+        // The overflow glyph, not a gear. A gear here meant three things at once: press it for this
+        // panel, hold it for the settings screen, and find a row called Settings inside the panel it
+        // opens — all behind the one symbol every other Android app spends on settings alone. The gear
+        // is now only that row, and the long press is what it always was: a shortcut nobody reads off a
+        // glyph anyway.
+        buttonMore.setImageResource(R.drawable.ic_more_vert_24dp);
         buttonMore.setId(View.generateViewId());
         buttonMore.setContentDescription(getString(R.string.button_more));
         buttonMore.setOnClickListener(view -> showMoreMenu());

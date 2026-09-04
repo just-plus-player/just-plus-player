@@ -278,9 +278,7 @@ final class SpeedPanel {
 
     private static MaterialButton iconButton(final Context ctx, final UiMetrics ui, final int icon,
                                              final String description) {
-        final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialIconButtonOutlinedStyle);
-        button.setIconResource(icon);
+        final MaterialButton button = Utils.iconButton(ctx, ui, icon, description, true);
         // Two states, not one colour: these are the only ± in the app that can be disabled — at a
         // quarter speed and at four times it — and a flat ColorStateList had them shine at the ends of
         // the range exactly as brightly as in the middle of it. 97/255 is Material's 38% for disabled
@@ -289,16 +287,6 @@ final class SpeedPanel {
         button.setIconTint(new ColorStateList(
                 new int[][]{{-android.R.attr.state_enabled}, {}},
                 new int[]{MaterialColors.compositeARGBWithAlpha(ink, 97), ink}));
-        button.setContentDescription(description);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        // Material's icon button is a 20dp glyph in 10dp of padding — a 40dp box, and with the insets
-        // taken off, 40dp tall. The platform's floor for anything a finger has to hit is 48.
-        button.setMinWidth(ui.dpS(48));
-        button.setMinHeight(ui.dpS(48));
-        button.setMinimumWidth(ui.dpS(48));
-        button.setMinimumHeight(ui.dpS(48));
-        Utils.focusRing(button);
         return button;
     }
 }

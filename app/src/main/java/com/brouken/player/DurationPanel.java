@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -254,12 +255,13 @@ final class DurationPanel {
         final MaterialButton backspace = Utils.iconButton(ctx, ui, R.drawable.ic_backspace_24dp,
                 R.string.sleep_timer_backspace, true);
         // Square, not the field's height: it is a circle now that it carries an edge, and a 48 × 72 one
-        // is an oval. Nudged down by half the difference so it still centres on the fields beside it,
-        // which is what the row's TOP gravity was giving it for free while it was as tall as they are.
-        final LinearLayout.LayoutParams backspaceLp =
-                new LinearLayout.LayoutParams(backspaceBox, backspaceBox);
-        backspaceLp.topMargin = (boxH - backspaceBox) / 2;
-        valueRow.addView(backspace, backspaceLp);
+        // is an oval. It takes a slot as tall as a field and centres in it, rather than being nudged
+        // down by half the difference — the row is as tall as a field plus the unit named under it, so
+        // arithmetic from the row's own top put the circle 22dp below the middle of the fields.
+        final FrameLayout backspaceSlot = new FrameLayout(ctx);
+        backspaceSlot.addView(backspace,
+                new FrameLayout.LayoutParams(backspaceBox, backspaceBox, Gravity.CENTER));
+        valueRow.addView(backspaceSlot, new LinearLayout.LayoutParams(backspaceBox, boxH));
 
         // Where the duration lands in wall-clock terms — the same phrasing the header uses for the end
         // of the video, since it answers the same question.

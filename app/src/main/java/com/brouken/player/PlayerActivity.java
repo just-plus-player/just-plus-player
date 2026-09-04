@@ -9786,8 +9786,8 @@ public class PlayerActivity extends Activity {
      */
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
-        // Unnamed: the rules below already divide the three bands, and a caption over the first of them
-        // said what the rows under it say for themselves.
+        // The bands are divided by the rules below rather than by captions: a caption over the first of
+        // them said what the rows under it say for themselves.
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
                     // Quiet at 1x, like every other row here: a summary reports what has been changed,
@@ -9840,9 +9840,12 @@ public class PlayerActivity extends Activity {
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
         items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
-        // No title: every group in here already names itself, and "More" only repeated the button
-        // that opened the panel.
-        showSideMenu(null, items);
+        // Titled after the button that opens it. The title was dropped once, when every panel drew a
+        // header line only if it had something to put on it and "More" would have bought a line to
+        // repeat a word. Every panel carries a close button now, so the line is drawn either way — and
+        // an empty one reads as a mistake rather than as restraint. Not "Settings", which the panel's
+        // own last row already means: one word, two destinations, is what the title said before that.
+        showSideMenu(getString(R.string.button_more), items);
     }
 
     // --- Watch together -------------------------------------------------------------------------

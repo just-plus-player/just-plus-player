@@ -781,34 +781,52 @@ class Utils {
     /** A 48dp glyph on nothing, in the colour a panel gives its quieter text. */
     static com.google.android.material.button.MaterialButton iconButton(
             final Context ctx, final UiMetrics ui, final int icon, final int description) {
-        return iconButton(ctx, ui, icon, description, false);
+        return iconButton(ctx, ui, icon, ctx.getString(description), false);
+    }
+
+    static com.google.android.material.button.MaterialButton iconButton(
+            final Context ctx, final UiMetrics ui, final int icon, final int description,
+            final boolean outlined) {
+        return iconButton(ctx, ui, icon, ctx.getString(description), outlined);
     }
 
     /**
      * The same glyph, with or without an edge of its own.
+     *
+     * <p>The box is padding plus glyph, never a minimum width around a smaller one. MaterialButton lays
+     * its icon against {@code paddingStart} and does not move it when the view is stretched by
+     * {@code minWidth}, so a 24dp glyph in a 40dp button widened to 48 sits 4dp left of the middle —
+     * measured on the ± of the offset panel, and 2dp on the panels' close button, which had been that
+     * way unseen for as long as those buttons drew no background. Padding is symmetric, so the glyph is
+     * centred by construction whatever the box is.
      *
      * @param outlined true for a control that stands alone — a ± beside a number, a backspace — and so
      *                 has to say where it begins; false for one of a row inside a header or a bar,
      *                 which is already a frame and does not want a second one drawn inside it
      */
     static com.google.android.material.button.MaterialButton iconButton(
-            final Context ctx, final UiMetrics ui, final int icon, final int description,
+            final Context ctx, final UiMetrics ui, final int icon, final CharSequence description,
             final boolean outlined) {
         final com.google.android.material.button.MaterialButton button =
                 new com.google.android.material.button.MaterialButton(ctx, null, outlined
                         ? com.google.android.material.R.attr.materialIconButtonOutlinedStyle
                         : com.google.android.material.R.attr.materialIconButtonStyle);
+        final int glyph = ui.dpS(24);
+        final int box = ui.dpS(48); // the platform's floor for anything a finger has to hit
         button.setIconResource(icon);
-        button.setIconSize(ui.dpS(24));
+        button.setIconSize(glyph);
         button.setIconTint(ColorStateList.valueOf(MaterialColors.getColor(ctx,
                 R.attr.colorOnSurfaceVariant, ContextCompat.getColor(ctx, R.color.ink_secondary))));
-        button.setContentDescription(ctx.getString(description));
+        button.setContentDescription(description);
         button.setInsetTop(0);
         button.setInsetBottom(0);
-        button.setMinWidth(ui.dpS(48));
-        button.setMinHeight(ui.dpS(48));
-        button.setMinimumWidth(ui.dpS(48));
-        button.setMinimumHeight(ui.dpS(48));
+        final int pad = (box - glyph) / 2;
+        button.setPadding(pad, pad, pad, pad);
+        // Kept as a floor, not as the thing that makes the box: see the note above.
+        button.setMinWidth(box);
+        button.setMinHeight(box);
+        button.setMinimumWidth(box);
+        button.setMinimumHeight(box);
         focusRing(button);
         return button;
     }

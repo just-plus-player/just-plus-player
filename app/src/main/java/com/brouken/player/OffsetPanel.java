@@ -410,8 +410,8 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
         // which is where it belongs. Slider has no key-increment setter, hence the key listener.
         final int keyStep = Math.max(2, (int) Math.round(maxSec / 90 / stepSec));
 
-        final MaterialButton minus = iconButton(ctx, R.drawable.ic_remove_24dp, "-");
-        final MaterialButton plus = iconButton(ctx, R.drawable.ic_add_24dp, "+");
+        final MaterialButton minus = iconButton(ctx, ui, R.drawable.ic_remove_24dp, "-");
+        final MaterialButton plus = iconButton(ctx, ui, R.drawable.ic_add_24dp, "+");
 
         final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -498,23 +498,11 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
     }
 
     /** A ± button: Material's icon button, as legible on a light panel as on a dark one. */
-    private static MaterialButton iconButton(final Context ctx, final int icon,
+    private static MaterialButton iconButton(final Context ctx, final UiMetrics ui, final int icon,
                                              final String description) {
-        final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialIconButtonOutlinedStyle);
-        button.setIconResource(icon);
+        final MaterialButton button = Utils.iconButton(ctx, ui, icon, description, true);
         button.setIconTint(ColorStateList.valueOf(
                 MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE)));
-        button.setContentDescription(description);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        // Material's icon button is a 20dp glyph in 10dp of padding — a 40dp box, and with the insets
-        // taken off, 40dp tall. The platform's floor for anything a finger has to hit is 48.
-        button.setMinWidth(Utils.dpToPx(48));
-        button.setMinHeight(Utils.dpToPx(48));
-        button.setMinimumWidth(Utils.dpToPx(48));
-        button.setMinimumHeight(Utils.dpToPx(48));
-        Utils.focusRing(button);
         return button;
     }
 

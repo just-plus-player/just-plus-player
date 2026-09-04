@@ -1,525 +1,619 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Grouping rule: a block of up to four rows stays visible under its header, five or more moves
-         behind a row of its own (Skip segments, Watch together, subtitle Appearance). Paying a tap to
-         reveal three switches is worse than reading them. -->
+    <!-- The root is navigation and nothing else: four sections of two or three rows, each row a screen
+         of its own. It used to be every setting the app has on one scroll - ten headers and some thirty
+         rows - where finding one meant reading past the rest.
 
-    <PreferenceCategory app:title="@string/pref_appearance_header">
+         Grouping rule inside a screen: a block of up to four rows stays visible under its header, five
+         or more moves behind a row of its own (Skip segments, Watch together, subtitle Appearance).
+         Paying a tap to reveal three switches is worse than reading them.
 
-        <!-- Written by SettingsActivity, which also binds the segmented control this row is. -->
-        <Preference
-            app:key="themeMode"
-            app:layout="@layout/preference_theme_mode"
-            app:persistent="false"
-            app:selectable="false" />
+         Only these top rows carry a glyph. It says "this leads somewhere"; inside a screen every row is
+         a setting, and a column of icons there would say nothing. The glyphs are the player's own, drawn
+         white for video, so SettingsFragment tints them to the surface accent. -->
 
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:key="amoledBlack"
-            app:summary="@string/pref_amoled_summary"
-            app:title="@string/pref_amoled" />
+    <PreferenceCategory app:title="@string/pref_section_interface">
 
-    </PreferenceCategory>
-
-    <PreferenceCategory app:title="@string/pref_general_header">
-
-        <ListPreference
-            app:defaultValue="auto"
-            app:entries="@array/file_access_entries"
-            app:entryValues="@array/file_access_values"
-            app:key="fileAccess"
-            app:title="@string/pref_file_access"
-            app:useSimpleSummaryProvider="true" />
-
-        <SwitchPreferenceCompat
-            app:key="frameRateMatching"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_framerate_matching_on"
-            app:summaryOff="@string/pref_framerate_matching_off"
-            app:title="@string/pref_framerate_matching" />
-
-        <SwitchPreferenceCompat
-            app:key="allowSystemFrameRate"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_allow_system_framerate_on"
-            app:summaryOff="@string/pref_allow_system_framerate_off"
-            app:title="@string/pref_allow_system_framerate" />
-
-        <SwitchPreferenceCompat
-            app:key="autoPiP"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_auto_pip_on"
-            app:summaryOff="@string/pref_auto_pip_off"
-            app:title="@string/pref_auto_pip" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory app:title="@string/pref_audio_header">
-
-        <!-- Ordered list of languages, edited in LanguagePriorityDialog; the summary lists them.
-             No defaultValue: Prefs seeds the key from the device languages on first run. -->
-        <Preference
-            app:key="languageAudio"
-            app:title="@string/pref_language_audio" />
-
-        <SwitchPreferenceCompat
-            app:key="audioPassthrough"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_audio_passthrough_on"
-            app:summaryOff="@string/pref_audio_passthrough_off"
-            app:title="@string/pref_audio_passthrough" />
-
-        <Preference
-            app:key="resetRevokedAudioMimes"
-            app:title="@string/pref_reset_audio_workarounds"
-            app:summary="@string/pref_reset_audio_workarounds_summary" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory app:title="@string/pref_subtitle_header">
-
-        <!-- Ordered list of languages, edited in LanguagePriorityDialog; the summary lists them.
-             No defaultValue: unset means no preferred subtitle language at all. -->
-        <Preference
-            app:key="languageSubtitle"
-            app:title="@string/pref_language_subtitle" />
-
-        <!-- Everything the second line has, behind one row. It was two halves on two screens — the
-             language here, the look inside Appearance — which is one place too few to find any of it
-             and one row too many for this category, which the rule at the top of this file caps at
-             four. The summary names the mode, so "is there a second line at all" reads without a tap. -->
         <PreferenceScreen
-            app:key="subtitleSecondaryScreen"
-            app:title="@string/pref_subtitle_secondary_header">
+            app:key="appearanceScreen"
+            app:icon="@drawable/ic_palette_24dp"
+            app:summary="@string/pref_appearance_header_summary"
+            app:title="@string/pref_appearance_header">
 
-            <!-- Off takes the feature away rather than just the line: no row in the player's subtitle
-                 picker, nothing searched for it, no band under the first line. Always is what the second
-                 line did before it had a mode, and so the default: an absent value means no change for
-                 anyone already watching with two lines. -->
-            <ListPreference
-                app:key="subtitleSecondaryMode"
-                app:defaultValue="always"
-                app:entries="@array/subtitle_secondary_mode_entries"
-                app:entryValues="@array/subtitle_secondary_mode_values"
-                app:title="@string/pref_subtitle_secondary_mode"
-                app:useSimpleSummaryProvider="true" />
-
-            <!-- The second line's own list, and the whole of "start with two subtitle lines": with a
-                 language in here the player looks for one and turns it on by itself. Separate from the
-                 first line's list because the two want opposite things — the language being learned on
-                 the first, the one already known on the second. A language in both lists belongs to the
-                 first line: the same words twice, once under the other, is not a hint. -->
+            <!-- Written by SettingsActivity, which also binds the segmented control this row is. -->
             <Preference
-                app:key="languageSubtitleSecondary"
-                app:title="@string/pref_language_subtitle_secondary" />
+                app:key="themeMode"
+                app:layout="@layout/preference_theme_mode"
+                app:persistent="false"
+                app:selectable="false" />
 
-            <!-- Size, colour and plate of its own. Edge and weight stay inherited from the first line —
-                 nobody sets an outline for one line and not the other. The same three lists the main
-                 line uses, so the colour chips and the clash check in SettingsActivity cover these for
-                 free. The defaults are chosen so that nobody has to come here: the same size as the
-                 main subtitles, dimmed text on a translucent plate, which is what tells a hint apart from the
-                 line being read. -->
-            <ListPreference
-                app:key="subtitleSecondaryScale"
-                app:defaultValue="1.0"
-                app:entries="@array/subtitle_scale_entries"
-                app:entryValues="@array/subtitle_scale_values"
-                app:title="@string/pref_subtitle_scale"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:key="subtitleSecondaryTextColor"
-                app:defaultValue="#FFCCCCCC"
-                app:entries="@array/subtitle_text_color_entries"
-                app:entryValues="@array/subtitle_text_color_values"
-                app:title="@string/pref_subtitle_text_color"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:key="subtitleSecondaryBackground"
-                app:defaultValue="#80000000"
-                app:entries="@array/subtitle_background_entries"
-                app:entryValues="@array/subtitle_background_values"
-                app:title="@string/pref_subtitle_background"
-                app:useSimpleSummaryProvider="true" />
+            <SwitchPreferenceCompat
+                app:defaultValue="false"
+                app:key="amoledBlack"
+                app:summary="@string/pref_amoled_summary"
+                app:title="@string/pref_amoled" />
 
         </PreferenceScreen>
 
-        <!-- One door for the whole online search. Its switches used to be two checkboxes inside the
-             language dialog above, which put the feature's satellites on the settings screen and the
-             feature itself behind a row that does not mention it. The summary is filled in by
-             SettingsActivity so its state reads without a tap. -->
         <PreferenceScreen
-            app:key="subtitleSearchScreen"
-            app:title="@string/pref_subtitle_search_screen">
+            app:key="controlsScreen"
+            app:icon="@drawable/ic_tune_24dp"
+            app:summary="@string/pref_controls_header_summary"
+            app:title="@string/pref_controls_header">
 
-            <ListPreference
-                app:key="subtitleSearchMode"
-                app:defaultValue="off"
-                app:entries="@array/subtitle_search_entries"
-                app:entryValues="@array/subtitle_search_values"
-                app:title="@string/pref_subtitle_search_when"
-                app:useSimpleSummaryProvider="true" />
-
-            <!-- Everything below configures a search. With none running they are live rows that do
-                 nothing, so SettingsActivity greys them out — app:dependency keys off a parent's
-                 enablement rather than off its value, so a ListPreference cannot drive it. -->
-            <!-- The summary names who the text is handed to: a machine translation is somebody else's
-                 service, and that belongs next to the switch that turns it on, not in a changelog. -->
             <SwitchPreferenceCompat
-                app:key="subtitleTranslateOn"
+                app:key="systemVolume"
                 app:defaultValue="true"
-                android:summaryOn="@string/pref_subtitle_translate_on"
-                android:summaryOff="@string/pref_subtitle_translate_off"
-                app:title="@string/pref_subtitle_translate" />
-
-            <!-- Enabled endpoints in the order to try them, edited in LanguagePriorityDialog; the
-                 summary lists them. No defaultValue: SubtitleTranslate owns it. -->
-            <Preference
-                app:key="subtitleTranslateBackends"
-                app:title="@string/pref_subtitle_translate_backends" />
+                app:summaryOn="@string/pref_system_volume_on"
+                app:summaryOff="@string/pref_system_volume_off"
+                app:title="@string/pref_system_volume" />
 
             <SwitchPreferenceCompat
-                app:key="subtitleSearchLanguage"
+                app:key="disableVolumeBrightnessGestures"
                 app:defaultValue="false"
-                app:summary="@string/pref_subtitle_search_language_summary"
-                app:title="@string/pref_subtitle_search_language" />
+                app:summaryOn="@string/pref_disable_volume_brightness_gestures_on"
+                app:summaryOff="@string/pref_disable_volume_brightness_gestures_off"
+                app:title="@string/pref_disable_volume_brightness_gestures" />
 
-            <!-- Asked all at once and answered top to bottom, which is why OpenSubtitles.com stands
-                 first: it is the only one that knows whether a file is machine-translated, so it is
-                 the only one whose answer says anything about quality. Individually switchable so a
-                 single source can be exercised on its own when a result looks wrong — a testing
-                 affordance, which is why it sits at the bottom of a sub-screen and not on the way to
-                 anything. -->
-            <PreferenceCategory
-                app:key="subtitleSourcesCategory"
-                app:title="@string/pref_subtitle_sources">
+            <ListPreference
+                app:key="holdSpeedMode"
+                app:defaultValue="adjust"
+                app:entries="@array/hold_speed_entries"
+                app:entryValues="@array/hold_speed_values"
+                app:title="@string/pref_hold_speed"
+                app:useSimpleSummaryProvider="true" />
 
-                <SwitchPreferenceCompat
-                    app:key="subtitleSourceOpenSubtitles"
-                    app:defaultValue="true"
-                    app:summary="@string/pref_subtitle_source_opensubtitles_summary"
-                    app:title="@string/pref_subtitle_source_opensubtitles" />
+            <SwitchPreferenceCompat
+                app:key="repeatToggle"
+                app:defaultValue="false"
+                app:summary="@string/pref_repeat_toggle_summary"
+                app:title="@string/pref_repeat_toggle" />
 
-                <SwitchPreferenceCompat
-                    app:key="subtitleSourceRest"
-                    app:defaultValue="true"
-                    app:summary="@string/pref_subtitle_source_rest_summary"
-                    app:title="@string/pref_subtitle_source_rest" />
-
-                <SwitchPreferenceCompat
-                    app:key="subtitleSourceStremio"
-                    app:defaultValue="true"
-                    app:summary="@string/pref_subtitle_source_stremio_summary"
-                    app:title="@string/pref_subtitle_source_stremio" />
-
-                <SwitchPreferenceCompat
-                    app:key="subtitleSourceShegu"
-                    app:defaultValue="true"
-                    app:summary="@string/pref_subtitle_source_shegu_summary"
-                    app:title="@string/pref_subtitle_source_shegu" />
-
-            </PreferenceCategory>
+            <SwitchPreferenceCompat
+                app:key="tvSingleBack"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_tv_single_back_on"
+                app:summaryOff="@string/pref_tv_single_back_off"
+                app:title="@string/pref_tv_single_back" />
 
         </PreferenceScreen>
-
 
         <PreferenceScreen
-            app:key="subtitleAppearance"
-            app:summary="@string/pref_subtitle_appearance_summary"
-            app:title="@string/pref_subtitle_appearance">
-
-            <ListPreference
-                app:key="subtitleScale"
-                app:defaultValue="1.0"
-                app:entries="@array/subtitle_scale_entries"
-                app:entryValues="@array/subtitle_scale_values"
-                app:title="@string/pref_subtitle_scale"
-                app:useSimpleSummaryProvider="true" />
-
-            <!-- Entries get a colour chip in SettingsActivity, and the pair is checked there so the
-                 text cannot be set to the colour of its own background. -->
-            <ListPreference
-                app:key="subtitleTextColor"
-                app:defaultValue="#FFFFFFFF"
-                app:entries="@array/subtitle_text_color_entries"
-                app:entryValues="@array/subtitle_text_color_values"
-                app:title="@string/pref_subtitle_text_color"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:key="subtitleBackground"
-                app:defaultValue="#00000000"
-                app:entries="@array/subtitle_background_entries"
-                app:entryValues="@array/subtitle_background_values"
-                app:title="@string/pref_subtitle_background"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:key="subtitleEdge"
-                app:defaultValue="1"
-                app:entries="@array/subtitle_edge_entries"
-                app:entryValues="@array/subtitle_edge_values"
-                app:title="@string/pref_subtitle_edge"
-                app:useSimpleSummaryProvider="true" />
+            app:key="onscreenScreen"
+            app:icon="@drawable/ic_visibility_24dp"
+            app:summary="@string/pref_onscreen_header_summary"
+            app:title="@string/pref_onscreen_header">
 
             <SwitchPreferenceCompat
-                app:key="subtitleStyleBold"
+                app:key="showClock"
                 app:defaultValue="false"
-                android:summaryOn="@string/pref_subtitle_style_bold_on"
-                android:summaryOff="@string/pref_subtitle_style_bold_off"
-                app:title="@string/pref_subtitle_style_bold" />
+                app:summaryOn="@string/pref_show_clock_on"
+                app:summaryOff="@string/pref_show_clock_off"
+                app:title="@string/pref_show_clock" />
+
+            <SwitchPreferenceCompat
+                app:key="timeRemaining"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_time_remaining_on"
+                app:summaryOff="@string/pref_time_remaining_off"
+                app:title="@string/pref_time_remaining" />
+
+            <SwitchPreferenceCompat
+                app:key="showStats"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_show_stats_on"
+                app:summaryOff="@string/pref_show_stats_off"
+                app:title="@string/stats_title" />
+
+            <SwitchPreferenceCompat
+                app:key="showTransfer"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_show_transfer_on"
+                app:summaryOff="@string/pref_show_transfer_off"
+                app:title="@string/pref_show_transfer" />
+
+            <SwitchPreferenceCompat
+                app:key="keepAwakeOnPause"
+                app:defaultValue="true"
+                app:summaryOn="@string/pref_keep_awake_on_pause_on"
+                app:summaryOff="@string/pref_keep_awake_on_pause_off"
+                app:title="@string/pref_keep_awake_on_pause" />
 
         </PreferenceScreen>
 
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/pref_controls_header">
+    <PreferenceCategory app:title="@string/pref_section_playback">
 
-        <SwitchPreferenceCompat
-            app:key="systemVolume"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_system_volume_on"
-            app:summaryOff="@string/pref_system_volume_off"
-            app:title="@string/pref_system_volume" />
+        <PreferenceScreen
+            app:key="videoScreen"
+            app:icon="@drawable/ic_movie_24dp"
+            app:summary="@string/pref_video_header_summary"
+            app:title="@string/pref_video_header">
 
-        <SwitchPreferenceCompat
-            app:key="disableVolumeBrightnessGestures"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_disable_volume_brightness_gestures_on"
-            app:summaryOff="@string/pref_disable_volume_brightness_gestures_off"
-            app:title="@string/pref_disable_volume_brightness_gestures" />
+            <ListPreference
+                app:defaultValue="auto"
+                app:entries="@array/file_access_entries"
+                app:entryValues="@array/file_access_values"
+                app:key="fileAccess"
+                app:title="@string/pref_file_access"
+                app:useSimpleSummaryProvider="true" />
 
-        <ListPreference
-            app:key="holdSpeedMode"
-            app:defaultValue="adjust"
-            app:entries="@array/hold_speed_entries"
-            app:entryValues="@array/hold_speed_values"
-            app:title="@string/pref_hold_speed"
-            app:useSimpleSummaryProvider="true" />
+            <SwitchPreferenceCompat
+                app:key="frameRateMatching"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_framerate_matching_on"
+                app:summaryOff="@string/pref_framerate_matching_off"
+                app:title="@string/pref_framerate_matching" />
 
-        <SwitchPreferenceCompat
-            app:key="repeatToggle"
-            app:defaultValue="false"
-            app:summary="@string/pref_repeat_toggle_summary"
-            app:title="@string/pref_repeat_toggle" />
+            <SwitchPreferenceCompat
+                app:key="allowSystemFrameRate"
+                app:defaultValue="true"
+                app:summaryOn="@string/pref_allow_system_framerate_on"
+                app:summaryOff="@string/pref_allow_system_framerate_off"
+                app:title="@string/pref_allow_system_framerate" />
 
-        <SwitchPreferenceCompat
-            app:key="tvSingleBack"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_tv_single_back_on"
-            app:summaryOff="@string/pref_tv_single_back_off"
-            app:title="@string/pref_tv_single_back" />
+            <SwitchPreferenceCompat
+                app:key="autoPiP"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_auto_pip_on"
+                app:summaryOff="@string/pref_auto_pip_off"
+                app:title="@string/pref_auto_pip" />
 
-    </PreferenceCategory>
+        </PreferenceScreen>
 
-    <PreferenceCategory app:title="@string/pref_onscreen_header">
+        <PreferenceScreen
+            app:key="audioScreen"
+            app:icon="@drawable/ic_audiotrack_24dp"
+            app:summary="@string/pref_audio_header_summary"
+            app:title="@string/pref_audio_header">
 
-        <SwitchPreferenceCompat
-            app:key="showClock"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_show_clock_on"
-            app:summaryOff="@string/pref_show_clock_off"
-            app:title="@string/pref_show_clock" />
+            <!-- Ordered list of languages, edited in LanguagePriorityDialog; the summary lists them.
+                 No defaultValue: Prefs seeds the key from the device languages on first run. -->
+            <Preference
+                app:key="languageAudio"
+                app:title="@string/pref_language_audio" />
 
-        <SwitchPreferenceCompat
-            app:key="timeRemaining"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_time_remaining_on"
-            app:summaryOff="@string/pref_time_remaining_off"
-            app:title="@string/pref_time_remaining" />
+            <SwitchPreferenceCompat
+                app:key="audioPassthrough"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_audio_passthrough_on"
+                app:summaryOff="@string/pref_audio_passthrough_off"
+                app:title="@string/pref_audio_passthrough" />
 
-        <SwitchPreferenceCompat
-            app:key="showStats"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_show_stats_on"
-            app:summaryOff="@string/pref_show_stats_off"
-            app:title="@string/stats_title" />
+            <Preference
+                app:key="resetRevokedAudioMimes"
+                app:title="@string/pref_reset_audio_workarounds"
+                app:summary="@string/pref_reset_audio_workarounds_summary" />
 
-        <SwitchPreferenceCompat
-            app:key="showTransfer"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_show_transfer_on"
-            app:summaryOff="@string/pref_show_transfer_off"
-            app:title="@string/pref_show_transfer" />
+        </PreferenceScreen>
 
-        <SwitchPreferenceCompat
-            app:key="keepAwakeOnPause"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_keep_awake_on_pause_on"
-            app:summaryOff="@string/pref_keep_awake_on_pause_off"
-            app:title="@string/pref_keep_awake_on_pause" />
+        <PreferenceScreen
+            app:key="subtitlesScreen"
+            app:icon="@drawable/ic_subtitles_24dp"
+            app:summary="@string/pref_subtitle_header_summary"
+            app:title="@string/pref_subtitle_header">
+
+            <!-- Ordered list of languages, edited in LanguagePriorityDialog; the summary lists them.
+                 No defaultValue: unset means no preferred subtitle language at all. -->
+            <Preference
+                app:key="languageSubtitle"
+                app:title="@string/pref_language_subtitle" />
+
+            <!-- Everything the second line has, behind one row. It was two halves on two screens — the
+                 language here, the look inside Appearance — which is one place too few to find any of it
+                 and one row too many for this category, which the rule at the top of this file caps at
+                 four. The summary names the mode, so "is there a second line at all" reads without a tap. -->
+            <PreferenceScreen
+                app:key="subtitleSecondaryScreen"
+                app:title="@string/pref_subtitle_secondary_header">
+
+                <!-- Off takes the feature away rather than just the line: no row in the player's subtitle
+                     picker, nothing searched for it, no band under the first line. Always is what the second
+                     line did before it had a mode, and so the default: an absent value means no change for
+                     anyone already watching with two lines. -->
+                <ListPreference
+                    app:key="subtitleSecondaryMode"
+                    app:defaultValue="always"
+                    app:entries="@array/subtitle_secondary_mode_entries"
+                    app:entryValues="@array/subtitle_secondary_mode_values"
+                    app:title="@string/pref_subtitle_secondary_mode"
+                    app:useSimpleSummaryProvider="true" />
+
+                <!-- The second line's own list, and the whole of "start with two subtitle lines": with a
+                     language in here the player looks for one and turns it on by itself. Separate from the
+                     first line's list because the two want opposite things — the language being learned on
+                     the first, the one already known on the second. A language in both lists belongs to the
+                     first line: the same words twice, once under the other, is not a hint. -->
+                <Preference
+                    app:key="languageSubtitleSecondary"
+                    app:title="@string/pref_language_subtitle_secondary" />
+
+                <!-- Size, colour and plate of its own. Edge and weight stay inherited from the first line —
+                     nobody sets an outline for one line and not the other. The same three lists the main
+                     line uses, so the colour chips and the clash check in SettingsActivity cover these for
+                     free. The defaults are chosen so that nobody has to come here: the same size as the
+                     main subtitles, dimmed text on a translucent plate, which is what tells a hint apart from the
+                     line being read. -->
+                <ListPreference
+                    app:key="subtitleSecondaryScale"
+                    app:defaultValue="1.0"
+                    app:entries="@array/subtitle_scale_entries"
+                    app:entryValues="@array/subtitle_scale_values"
+                    app:title="@string/pref_subtitle_scale"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:key="subtitleSecondaryTextColor"
+                    app:defaultValue="#FFCCCCCC"
+                    app:entries="@array/subtitle_text_color_entries"
+                    app:entryValues="@array/subtitle_text_color_values"
+                    app:title="@string/pref_subtitle_text_color"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:key="subtitleSecondaryBackground"
+                    app:defaultValue="#80000000"
+                    app:entries="@array/subtitle_background_entries"
+                    app:entryValues="@array/subtitle_background_values"
+                    app:title="@string/pref_subtitle_background"
+                    app:useSimpleSummaryProvider="true" />
+
+            </PreferenceScreen>
+
+            <!-- One door for the whole online search. Its switches used to be two checkboxes inside the
+                 language dialog above, which put the feature's satellites on the settings screen and the
+                 feature itself behind a row that does not mention it. The summary is filled in by
+                 SettingsActivity so its state reads without a tap. -->
+            <PreferenceScreen
+                app:key="subtitleSearchScreen"
+                app:title="@string/pref_subtitle_search_screen">
+
+                <ListPreference
+                    app:key="subtitleSearchMode"
+                    app:defaultValue="off"
+                    app:entries="@array/subtitle_search_entries"
+                    app:entryValues="@array/subtitle_search_values"
+                    app:title="@string/pref_subtitle_search_when"
+                    app:useSimpleSummaryProvider="true" />
+
+                <!-- Everything below configures a search. With none running they are live rows that do
+                     nothing, so SettingsActivity greys them out — app:dependency keys off a parent's
+                     enablement rather than off its value, so a ListPreference cannot drive it. -->
+                <!-- The summary names who the text is handed to: a machine translation is somebody else's
+                     service, and that belongs next to the switch that turns it on, not in a changelog. -->
+                <SwitchPreferenceCompat
+                    app:key="subtitleTranslateOn"
+                    app:defaultValue="true"
+                    android:summaryOn="@string/pref_subtitle_translate_on"
+                    android:summaryOff="@string/pref_subtitle_translate_off"
+                    app:title="@string/pref_subtitle_translate" />
+
+                <!-- Enabled endpoints in the order to try them, edited in LanguagePriorityDialog; the
+                     summary lists them. No defaultValue: SubtitleTranslate owns it. -->
+                <Preference
+                    app:key="subtitleTranslateBackends"
+                    app:title="@string/pref_subtitle_translate_backends" />
+
+                <SwitchPreferenceCompat
+                    app:key="subtitleSearchLanguage"
+                    app:defaultValue="false"
+                    app:summary="@string/pref_subtitle_search_language_summary"
+                    app:title="@string/pref_subtitle_search_language" />
+
+                <!-- Asked all at once and answered top to bottom, which is why OpenSubtitles.com stands
+                     first: it is the only one that knows whether a file is machine-translated, so it is
+                     the only one whose answer says anything about quality. Individually switchable so a
+                     single source can be exercised on its own when a result looks wrong — a testing
+                     affordance, which is why it sits at the bottom of a sub-screen and not on the way to
+                     anything. -->
+                <PreferenceCategory
+                    app:key="subtitleSourcesCategory"
+                    app:title="@string/pref_subtitle_sources">
+
+                    <SwitchPreferenceCompat
+                        app:key="subtitleSourceOpenSubtitles"
+                        app:defaultValue="true"
+                        app:summary="@string/pref_subtitle_source_opensubtitles_summary"
+                        app:title="@string/pref_subtitle_source_opensubtitles" />
+
+                    <SwitchPreferenceCompat
+                        app:key="subtitleSourceRest"
+                        app:defaultValue="true"
+                        app:summary="@string/pref_subtitle_source_rest_summary"
+                        app:title="@string/pref_subtitle_source_rest" />
+
+                    <SwitchPreferenceCompat
+                        app:key="subtitleSourceStremio"
+                        app:defaultValue="true"
+                        app:summary="@string/pref_subtitle_source_stremio_summary"
+                        app:title="@string/pref_subtitle_source_stremio" />
+
+                    <SwitchPreferenceCompat
+                        app:key="subtitleSourceShegu"
+                        app:defaultValue="true"
+                        app:summary="@string/pref_subtitle_source_shegu_summary"
+                        app:title="@string/pref_subtitle_source_shegu" />
+
+                </PreferenceCategory>
+
+            </PreferenceScreen>
+
+
+            <PreferenceScreen
+                app:key="subtitleAppearance"
+                app:summary="@string/pref_subtitle_appearance_summary"
+                app:title="@string/pref_subtitle_appearance">
+
+                <ListPreference
+                    app:key="subtitleScale"
+                    app:defaultValue="1.0"
+                    app:entries="@array/subtitle_scale_entries"
+                    app:entryValues="@array/subtitle_scale_values"
+                    app:title="@string/pref_subtitle_scale"
+                    app:useSimpleSummaryProvider="true" />
+
+                <!-- Entries get a colour chip in SettingsActivity, and the pair is checked there so the
+                     text cannot be set to the colour of its own background. -->
+                <ListPreference
+                    app:key="subtitleTextColor"
+                    app:defaultValue="#FFFFFFFF"
+                    app:entries="@array/subtitle_text_color_entries"
+                    app:entryValues="@array/subtitle_text_color_values"
+                    app:title="@string/pref_subtitle_text_color"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:key="subtitleBackground"
+                    app:defaultValue="#00000000"
+                    app:entries="@array/subtitle_background_entries"
+                    app:entryValues="@array/subtitle_background_values"
+                    app:title="@string/pref_subtitle_background"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:key="subtitleEdge"
+                    app:defaultValue="1"
+                    app:entries="@array/subtitle_edge_entries"
+                    app:entryValues="@array/subtitle_edge_values"
+                    app:title="@string/pref_subtitle_edge"
+                    app:useSimpleSummaryProvider="true" />
+
+                <SwitchPreferenceCompat
+                    app:key="subtitleStyleBold"
+                    app:defaultValue="false"
+                    android:summaryOn="@string/pref_subtitle_style_bold_on"
+                    android:summaryOff="@string/pref_subtitle_style_bold_off"
+                    app:title="@string/pref_subtitle_style_bold" />
+
+            </PreferenceScreen>
+
+        </PreferenceScreen>
 
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_features_header">
 
+            <PreferenceScreen
+                app:key="skipScreen"
+            app:icon="@drawable/ic_fast_forward_24dp"
+                app:summary="@string/pref_skip_header_summary"
+                app:title="@string/pref_skip_header">
+
+                <SwitchPreferenceCompat
+                    app:key="skipEnabled"
+                    app:defaultValue="true"
+                    app:summaryOn="@string/pref_skip_enabled_on"
+                    app:summaryOff="@string/pref_skip_enabled_off"
+                    app:title="@string/pref_skip_enabled" />
+
+                <ListPreference
+                    app:defaultValue="brief"
+                    app:dependency="skipEnabled"
+                    app:entries="@array/skip_mode_entries"
+                    app:entryValues="@array/skip_mode_values"
+                    app:key="skipMode"
+                    app:title="@string/pref_skip_mode"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:defaultValue="brief"
+                    app:dependency="skipEnabled"
+                    app:entries="@array/skip_mode_entries"
+                    app:entryValues="@array/skip_mode_values"
+                    app:key="skipModeCredits"
+                    app:title="@string/pref_skip_mode_credits"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:defaultValue="all"
+                    app:dependency="skipEnabled"
+                    app:entries="@array/skip_undo_entries"
+                    app:entryValues="@array/skip_undo_values"
+                    app:key="skipUndo"
+                    app:title="@string/pref_skip_undo"
+                    app:useSimpleSummaryProvider="true" />
+
+                <SwitchPreferenceCompat
+                    app:key="skipFetchOnline"
+                    app:defaultValue="true"
+                    app:dependency="skipEnabled"
+                    app:summaryOn="@string/pref_skip_fetch_on"
+                    app:summaryOff="@string/pref_skip_fetch_off"
+                    app:title="@string/pref_skip_fetch" />
+
+                <SwitchPreferenceCompat
+                    app:key="skipHideWhenLocked"
+                    app:defaultValue="false"
+                    app:dependency="skipEnabled"
+                    app:summaryOn="@string/pref_skip_hide_locked_on"
+                    app:summaryOff="@string/pref_skip_hide_locked_off"
+                    app:title="@string/pref_skip_hide_locked" />
+
+            </PreferenceScreen>
+
+            <PreferenceScreen
+                app:key="togetherScreen"
+            app:icon="@drawable/ic_together_24dp"
+                app:summary="@string/pref_together_header_summary"
+                app:title="@string/together_title">
+
+                <EditTextPreference
+                    app:dialogLayout="@layout/preference_dialog_text_field"
+                    app:key="togetherNick"
+                    app:title="@string/pref_together_nick"
+                    app:dialogTitle="@string/pref_together_nick"
+                    app:useSimpleSummaryProvider="true" />
+
+                <Preference
+                    app:key="togetherNickRandom"
+                    app:title="@string/pref_together_nick_random"
+                    app:summary="@string/pref_together_nick_random_summary" />
+
+                <EditTextPreference
+                    app:dialogLayout="@layout/preference_dialog_text_field"
+                    app:key="togetherPassword"
+                    app:title="@string/pref_together_password"
+                    app:dialogTitle="@string/pref_together_password"
+                    app:dialogMessage="@string/pref_together_password_summary" />
+
+                <EditTextPreference
+                    app:dialogLayout="@layout/preference_dialog_url_field"
+                    app:key="togetherRelay"
+                    app:title="@string/pref_together_relay"
+                    app:dialogTitle="@string/pref_together_relay"
+                    app:dialogMessage="@string/pref_together_relay_summary" />
+
+                <EditTextPreference
+                    app:dialogLayout="@layout/preference_dialog_url_field"
+                    app:key="togetherInvitePage"
+                    app:title="@string/pref_together_invite_page"
+                    app:dialogTitle="@string/pref_together_invite_page"
+                    app:dialogMessage="@string/pref_together_invite_page_summary" />
+
+            </PreferenceScreen>
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/pref_section_system">
+
         <PreferenceScreen
-            app:key="skipScreen"
-            app:summary="@string/pref_skip_header_summary"
-            app:title="@string/pref_skip_header">
+            app:key="advancedScreen"
+            app:icon="@drawable/ic_memory_24dp"
+            app:summary="@string/pref_decoding_header_summary"
+            app:title="@string/pref_decoding_header">
 
-            <SwitchPreferenceCompat
-                app:key="skipEnabled"
-                app:defaultValue="true"
-                app:summaryOn="@string/pref_skip_enabled_on"
-                app:summaryOff="@string/pref_skip_enabled_off"
-                app:title="@string/pref_skip_enabled" />
-
-            <ListPreference
-                app:defaultValue="brief"
-                app:dependency="skipEnabled"
-                app:entries="@array/skip_mode_entries"
-                app:entryValues="@array/skip_mode_values"
-                app:key="skipMode"
-                app:title="@string/pref_skip_mode"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:defaultValue="brief"
-                app:dependency="skipEnabled"
-                app:entries="@array/skip_mode_entries"
-                app:entryValues="@array/skip_mode_values"
-                app:key="skipModeCredits"
-                app:title="@string/pref_skip_mode_credits"
-                app:useSimpleSummaryProvider="true" />
-
-            <ListPreference
-                app:defaultValue="all"
-                app:dependency="skipEnabled"
-                app:entries="@array/skip_undo_entries"
-                app:entryValues="@array/skip_undo_values"
-                app:key="skipUndo"
-                app:title="@string/pref_skip_undo"
-                app:useSimpleSummaryProvider="true" />
-
-            <SwitchPreferenceCompat
-                app:key="skipFetchOnline"
-                app:defaultValue="true"
-                app:dependency="skipEnabled"
-                app:summaryOn="@string/pref_skip_fetch_on"
-                app:summaryOff="@string/pref_skip_fetch_off"
-                app:title="@string/pref_skip_fetch" />
-
-            <SwitchPreferenceCompat
-                app:key="skipHideWhenLocked"
-                app:defaultValue="false"
-                app:dependency="skipEnabled"
-                app:summaryOn="@string/pref_skip_hide_locked_on"
-                app:summaryOff="@string/pref_skip_hide_locked_off"
-                app:title="@string/pref_skip_hide_locked" />
-
-        </PreferenceScreen>
-
-        <PreferenceScreen
-            app:key="togetherScreen"
-            app:summary="@string/pref_together_header_summary"
-            app:title="@string/together_title">
-
-            <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_text_field"
-                app:key="togetherNick"
-                app:title="@string/pref_together_nick"
-                app:dialogTitle="@string/pref_together_nick"
-                app:useSimpleSummaryProvider="true" />
-
+            <!-- Keyed so SettingsActivity can make it focusable on a remote: unselectable, a D-pad steps
+                 from the header straight to the decoder rows and never lands on the warning about them. -->
             <Preference
-                app:key="togetherNickRandom"
-                app:title="@string/pref_together_nick_random"
-                app:summary="@string/pref_together_nick_random_summary" />
+                app:key="dangerousWarning"
+                app:selectable="false"
+                app:summary="@string/pref_dangerous_warning" />
 
-            <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_text_field"
-                app:key="togetherPassword"
-                app:title="@string/pref_together_password"
-                app:dialogTitle="@string/pref_together_password"
-                app:dialogMessage="@string/pref_together_password_summary" />
+            <ListPreference
+                app:defaultValue="1"
+                app:entries="@array/decoder_priority_entries"
+                app:entryValues="@array/decoder_priority_values"
+                app:key="decoderPriority"
+                app:title="@string/pref_decoder_priority"
+                app:useSimpleSummaryProvider="true" />
 
-            <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_url_field"
-                app:key="togetherRelay"
-                app:title="@string/pref_together_relay"
-                app:dialogTitle="@string/pref_together_relay"
-                app:dialogMessage="@string/pref_together_relay_summary" />
+            <SwitchPreferenceCompat
+                app:key="tunneling"
+                app:defaultValue="false"
+                app:summary="@string/pref_tunneling_summary"
+                app:title="@string/pref_tunneling" />
 
-            <EditTextPreference
-                app:dialogLayout="@layout/preference_dialog_url_field"
-                app:key="togetherInvitePage"
-                app:title="@string/pref_together_invite_page"
-                app:dialogTitle="@string/pref_together_invite_page"
-                app:dialogMessage="@string/pref_together_invite_page_summary" />
+            <SwitchPreferenceCompat
+                app:key="mapDV7ToHevc"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_map_dv7_on"
+                app:summaryOff="@string/pref_map_dv7_off"
+                app:title="@string/pref_map_dv7" />
+
+        <PreferenceCategory
+            app:key="privacyCategory"
+            app:title="@string/pref_privacy_header">
+
+            <SwitchPreferenceCompat
+                app:key="crashReporting"
+                app:defaultValue="false"
+                app:summaryOn="@string/pref_crash_reporting_on"
+                app:summaryOff="@string/pref_crash_reporting_off"
+                app:title="@string/pref_crash_reporting" />
+
+        </PreferenceCategory>
 
         </PreferenceScreen>
 
-    </PreferenceCategory>
+        <PreferenceScreen
+            app:key="aboutScreen"
+            app:icon="@drawable/ic_info_24dp"
+            app:summary="@string/pref_about_header_summary"
+            app:title="@string/pref_about_header">
 
-    <PreferenceCategory app:title="@string/pref_dangerous_header">
+            <!-- Name and version, in their own block rather than as a row saying "Current version".
+                 Written by SettingsActivity, which is where the version number lives. -->
+            <Preference
+                app:key="aboutHeader"
+                app:layout="@layout/preference_about_header"
+                app:persistent="false"
+                app:selectable="false" />
 
-        <!-- Keyed so SettingsActivity can make it focusable on a remote: unselectable, a D-pad steps
-             from the header straight to the decoder rows and never lands on the warning about them. -->
-        <Preference
-            app:key="dangerousWarning"
-            app:selectable="false"
-            app:summary="@string/pref_dangerous_warning" />
+            <PreferenceCategory app:title="@string/pref_about_project">
 
-        <ListPreference
-            app:defaultValue="1"
-            app:entries="@array/decoder_priority_entries"
-            app:entryValues="@array/decoder_priority_values"
-            app:key="decoderPriority"
-            app:title="@string/pref_decoder_priority"
-            app:useSimpleSummaryProvider="true" />
+                <Preference
+                    app:icon="@drawable/ic_person_24dp"
+                    app:key="aboutDeveloper"
+                    app:selectable="false"
+                    app:summary="@string/about_developer"
+                    app:title="@string/pref_about_developer" />
 
-        <SwitchPreferenceCompat
-            app:key="tunneling"
-            app:defaultValue="false"
-            app:summary="@string/pref_tunneling_summary"
-            app:title="@string/pref_tunneling" />
+                <!-- Opens a browser, or on a television a code a phone camera can take. -->
+                <Preference
+                    app:icon="@drawable/ic_code_24dp"
+                    app:key="aboutSource"
+                    app:persistent="false"
+                    app:summary="@string/about_github_repo"
+                    app:title="@string/pref_about_source" />
 
-        <SwitchPreferenceCompat
-            app:key="mapDV7ToHevc"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_map_dv7_on"
-            app:summaryOff="@string/pref_map_dv7_off"
-            app:title="@string/pref_map_dv7" />
+            </PreferenceCategory>
 
-    </PreferenceCategory>
+            <!-- Keyed so a build without the updater hides the whole group, leaving About with what
+                 is true everywhere: what this is and which version of it is running. -->
+            <PreferenceCategory
+                app:key="updateCategory"
+                app:title="@string/pref_update_header">
 
-    <!-- Hidden unless BuildConfig.ENABLE_CRASH_REPORTING — see SettingsActivity. -->
-    <PreferenceCategory
-        app:key="privacyCategory"
-        app:title="@string/pref_privacy_header">
+                <SwitchPreferenceCompat
+                    app:key="autoUpdate"
+                    app:defaultValue="true"
+                    app:summaryOn="@string/pref_auto_update_on"
+                    app:summaryOff="@string/pref_auto_update_off"
+                    app:title="@string/pref_auto_update" />
 
-        <SwitchPreferenceCompat
-            app:key="crashReporting"
-            app:defaultValue="false"
-            app:summaryOn="@string/pref_crash_reporting_on"
-            app:summaryOff="@string/pref_crash_reporting_off"
-            app:title="@string/pref_crash_reporting" />
+                <!-- A row, not a filled button: it sits in a card of rows beside a switch, and the
+                     one loud control on a quiet screen read as an alarm rather than as an action. -->
+                <Preference
+                    app:key="checkUpdateNow"
+                    app:persistent="false"
+                    app:title="@string/pref_check_update" />
 
-    </PreferenceCategory>
+            </PreferenceCategory>
 
-    <PreferenceCategory
-        app:key="updateCategory"
-        app:title="@string/pref_update_header">
+            <!-- Its own group, so the badge gets a card of its own rather than joining the one above:
+                 a titleless category is the list's own way of saying "a new card starts here". -->
+            <PreferenceCategory>
 
-        <Preference
-            app:key="currentVersion"
-            app:selectable="false"
-            app:title="@string/pref_current_version" />
+                <Preference
+                    app:key="aboutStand"
+                    app:layout="@layout/preference_stand_with_ukraine"
+                    app:persistent="false"
+                    app:selectable="false" />
 
-        <SwitchPreferenceCompat
-            app:key="autoUpdate"
-            app:defaultValue="true"
-            app:summaryOn="@string/pref_auto_update_on"
-            app:summaryOff="@string/pref_auto_update_off"
-            app:title="@string/pref_auto_update" />
+            </PreferenceCategory>
 
-        <Preference
-            app:key="checkUpdateNow"
-            app:summary="@string/pref_check_update_summary"
-            app:title="@string/pref_check_update" />
+        </PreferenceScreen>
 
     </PreferenceCategory>
 

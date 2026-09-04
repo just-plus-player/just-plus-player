@@ -33,6 +33,13 @@
 
             <data android:mimeType="text/plain" />
         </intent>
+        <!-- The same question for a link. From API 30 a browser is invisible without this, so the
+             source row would offer "Open" on a television with nothing to open it. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+
+            <data android:scheme="https" />
+        </intent>
     </queries>
 
     <application

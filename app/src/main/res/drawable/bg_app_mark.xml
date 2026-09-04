@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The tile the launcher icon is: the app icon's own ground, with the corner a launcher gives it.
+     The mark sits on top at the same share of the tile the adaptive icon's safe zone gives it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/app_icon_ground" />
+    <corners android:radius="18dp" />
+</shape>

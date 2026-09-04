@@ -9,6 +9,6 @@
         android:centerX="0.5"
         android:centerY="0.52"
         android:gradientRadius="75%p"
-        android:startColor="#1C0F42"
+        android:startColor="@color/brand_plum"
         android:endColor="@color/black" />
 </shape>

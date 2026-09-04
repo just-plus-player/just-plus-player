@@ -257,8 +257,8 @@
     <string name="video_orientation_system">Ориентация устройства</string>
     <string name="pref_map_dv7_off">Воспроизведение содержимого UHD Blu-ray, содержащего Dolby Vision, как есть</string>
     <string name="pref_map_dv7">Резервный вариант профиля 7 Dolby Vision</string>
-    <string name="pref_dangerous_header">Опасный⚠️</string>
-    <string name="pref_dangerous_warning">Переключение параметров в этой категории может нарушить воспроизведение обычно совместимого контента</string>
+    <string name="pref_decoding_header">Декодирование</string>
+    <string name="pref_dangerous_warning">Переключение этих параметров может нарушить воспроизведение обычно совместимого контента</string>
     <string name="pref_language_audio">Звуковая дорожка по умолчанию</string>
     <string name="pref_language_track_device">Языки устройства</string>
     <string name="pref_language_track_default">По умолчанию</string>
@@ -366,4 +366,34 @@
     <string name="sleep_timer_backspace">Удалить цифру</string>
     <string name="duration_hours">Часы</string>
     <string name="duration_minutes">Минуты</string>
+
+    <!-- Settings hub: four sections, each row a screen of its own. -->
+    <string name="pref_section_interface">Вид и управление</string>
+    <string name="pref_section_playback">Воспроизведение</string>
+    <string name="pref_section_system">Система</string>
+    <string name="pref_video_header">Видео и файлы</string>
+    <string name="pref_appearance_header_summary">Тема, чёрный AMOLED</string>
+    <string name="pref_controls_header_summary">Громкость, жесты, удержание для ускорения</string>
+    <string name="pref_onscreen_header_summary">Часы, время до конца, статистика</string>
+    <string name="pref_video_header_summary">Доступ к файлам, частота кадров, картинка в картинке</string>
+    <string name="pref_audio_header_summary">Предпочитаемые языки, прямая передача</string>
+    <string name="pref_subtitle_header_summary">Языки, вторая строка, поиск, вид</string>
+    <string name="pref_decoding_header_summary">Приоритет декодера, туннелирование, Dolby Vision</string>
+    <string name="pref_about_header">О приложении</string>
+    <string name="pref_about_header_summary">Версия, обновления</string>
+
+    <string name="pref_auto_update">Автоматические обновления</string>
+    <string name="pref_auto_update_on">Проверять новые выпуски в фоне и предлагать установку</string>
+    <string name="pref_auto_update_off">Никогда не проверять обновления автоматически</string>
+    <string name="pref_check_update">Проверить обновления</string>
+
+    <string name="pref_about_device">Об устройстве</string>
+
+    <string name="about_github_qr">Отсканируйте камерой телефона, чтобы открыть страницу проекта.</string>
+
+    <string name="pref_about_project">Проект</string>
+    <string name="pref_about_developer">Разработчик</string>
+    <string name="pref_about_source">Исходный код</string>
+
+
 </resources>

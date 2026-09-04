@@ -172,12 +172,10 @@
     <string name="pref_crash_reporting_on">Automatically report crashes and playback errors to help fix them</string>
     <string name="pref_crash_reporting_off">No crash or error data leaves the device</string>
     <string name="pref_update_header">Updates</string>
-    <string name="pref_current_version">Current version</string>
     <string name="pref_auto_update">Automatic updates</string>
     <string name="pref_auto_update_on">Check for new releases in the background and offer to install them</string>
     <string name="pref_auto_update_off">Never check for updates automatically</string>
     <string name="pref_check_update">Check for updates</string>
-    <string name="pref_check_update_summary">Look for a newer release now</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_available">Update available: %1$s → %2$s</string>
     <string name="update_none">You already have the latest version</string>
@@ -269,8 +267,8 @@
     <string name="pref_file_access">File access</string>
     <string name="pref_file_access_auto">Auto</string>
     <string name="mediastore_empty">No video files found</string>
-    <string name="pref_dangerous_header">Dangerous ⚠️</string>
-    <string name="pref_dangerous_warning">Switching options in this category may break playback of normally compatible content</string>
+    <string name="pref_decoding_header">Decoding</string>
+    <string name="pref_dangerous_warning">Switching these options may break playback of normally compatible content</string>
     <string name="pref_shortcuts_header">Shortcuts</string>
     <string name="pref_decoder_priority">Decoder priority</string>
     <string name="pref_decoder_priority_prefer_device">Prefer device decoders (default)</string>
@@ -376,4 +374,39 @@
     <string name="sleep_timer_backspace">Delete</string>
     <string name="duration_hours">Hours</string>
     <string name="duration_minutes">Minutes</string>
+
+    <!-- Settings hub: four sections, each row a screen of its own. -->
+    <string name="pref_section_interface">Look and controls</string>
+    <string name="pref_section_playback">Playback</string>
+    <string name="pref_section_system">System</string>
+    <string name="pref_video_header">Video and files</string>
+    <string name="pref_appearance_header_summary">Theme, AMOLED black</string>
+    <string name="pref_controls_header_summary">Volume, gestures, hold to speed up</string>
+    <string name="pref_onscreen_header_summary">Clock, remaining time, statistics</string>
+    <string name="pref_video_header_summary">File access, frame rate, picture in picture</string>
+    <string name="pref_audio_header_summary">Preferred languages, passthrough</string>
+    <string name="pref_subtitle_header_summary">Languages, second line, search, look</string>
+    <string name="pref_decoding_header_summary">Decoder priority, tunnelling, Dolby Vision</string>
+    <string name="pref_about_header">About</string>
+    <string name="pref_about_header_summary">Version, updates</string>
+
+    <string name="pref_about_device">Device info</string>
+
+    <string name="about_github" translatable="false">GitHub</string>
+    <string name="about_github_url" translatable="false">https://github.com/just-plus-player/just-plus-player</string>
+
+    <string name="about_github_qr">Scan with a phone camera to open the project page.</string>
+
+    <string name="pref_about_project">Project</string>
+    <string name="pref_about_developer">Developer</string>
+    <string name="pref_about_source">Source code</string>
+
+    <string name="about_developer" translatable="false">@levende</string>
+    <string name="about_github_repo" translatable="false">github.com/just-plus-player/just-plus-player</string>
+
+
+    <!-- The badge is lettered in English wherever the app is read. -->
+    <string name="stand_with" translatable="false">STAND WITH</string>
+    <string name="stand_ukraine" translatable="false">UKRAINE</string>
+
 </resources>

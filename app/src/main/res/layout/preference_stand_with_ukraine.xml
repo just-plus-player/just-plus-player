@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn rather than drawn on: two halves and two lines of type, so it is as sharp as the screen it
+     is on and grows with the system font size instead of pixelating. It needs no corners of its own -
+     GroupCards clips every row to the card it fills, and this row fills one by itself. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/ua_blue"
+        android:fontFamily="sans-serif-black"
+        android:gravity="center"
+        android:letterSpacing="0.02"
+        android:paddingTop="14dp"
+        android:paddingBottom="12dp"
+        android:text="@string/stand_with"
+        android:textColor="@color/white"
+        android:textSize="26sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/ua_yellow"
+        android:fontFamily="sans-serif-black"
+        android:gravity="center"
+        android:letterSpacing="0.02"
+        android:paddingTop="12dp"
+        android:paddingBottom="14dp"
+        android:text="@string/stand_ukraine"
+        android:textColor="@color/white"
+        android:textSize="26sp" />
+
+</LinearLayout>

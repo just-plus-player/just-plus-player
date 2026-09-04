@@ -874,8 +874,13 @@ public class PlayerActivity extends Activity {
     // the steps the gate skipped are made good by one commit once the presses stop.
     private long keyScrubTarget = -1;   // -1 = no scrub in progress
     private long keyScrubSeeked = -1;   // the last target a press actually seeked to
-    private int keyScrubSteps;          // presses in a row (drives the step size)
+    private int keyScrubSteps;          // presses in a row, one way (drives the step size)
+    private boolean keyScrubForward;    // direction of the last press; a reversal restarts the ladder
     private long keyScrubLastMs;
+    // A held key repeats at the platform's rate, about 57 ms measured on a Shield, which is far faster
+    // than a step can be aimed at. One step per floor makes a hold the same speed on any box and any
+    // remote; clicks arrive further apart than this and are untouched.
+    private static final long KEY_HOLD_STEP_FLOOR_MS = 200;
     private final Runnable keyScrubCommit = this::commitKeyScrub;
     // A passthrough AudioTrack that has been paused and resumed comes back silent on a fair number of TVs
     // and receivers: the bitstream still leaves the box but nothing downstream re-locks onto it. Video keeps
@@ -3318,6 +3323,8 @@ public class PlayerActivity extends Activity {
     private boolean seekWithKey(boolean forward, boolean held) {
         if (player == null)
             return false;
+        if (held && SystemClock.uptimeMillis() - keyScrubLastMs < KEY_HOLD_STEP_FLOOR_MS)
+            return true;
         playerView.removeCallbacks(playerView.textClearRunnable);
         // The bar the touch gestures raise is what lets their readout carry only the delta; the one path
         // where the readout is all there is got the least of it.
@@ -3338,7 +3345,10 @@ public class PlayerActivity extends Activity {
             return true;
         }
         final long now = SystemClock.uptimeMillis();
-        keyScrubSteps = held || now - keyScrubLastMs < 450 ? keyScrubSteps + 1 : 0;
+        // A reversal is the correction after an overshoot, so the ladder starts over: the step that
+        // carried past the mark must not carry back past it just as fast.
+        keyScrubSteps = forward == keyScrubForward && (held || now - keyScrubLastMs < 450) ? keyScrubSteps + 1 : 0;
+        keyScrubForward = forward;
         keyScrubLastMs = now;
         final long from = keyScrubTarget >= 0 ? keyScrubTarget : pos;
         final long step = keyScrubStep(duration);
@@ -3370,10 +3380,12 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * 3s → 10s → 30s → 1m → 2% of the duration (≈2.5 min per press in a 2-hour film). The first rung is
-     * what a single click is worth: small enough to land back on the line of dialogue that was missed,
-     * which is most of what a click is for. The rungs above it are reached two presses later than they
-     * used to be, and a held key still climbs the whole ladder in well under a second.
+     * 3s → 10s → 30s → 1m. The first rung is what a single click is worth: small enough to land back on
+     * the line of dialogue that was missed, which is most of what a click is for. The top rung is the
+     * biggest stride that can still be stood on: seeking from the picture is the fine adjustment, the
+     * long jump across a film is the bar's job (a minute per press there), so the ladder stops short of
+     * the bar's territory instead of climbing to a share of the duration that has no position between
+     * two presses. The share only keeps a rung from outgrowing a short file.
      */
     private long keyScrubStep(long duration) {
         if (keyScrubSteps < 2)
@@ -3382,9 +3394,7 @@ public class PlayerActivity extends Activity {
             return 10_000;
         if (keyScrubSteps < 8)
             return 30_000;
-        if (keyScrubSteps < 15)
-            return 60_000;
-        return Math.max(120_000, duration / 50);
+        return Math.min(60_000, duration / 10);
     }
 
     private void showKeySeekMessage(long target) {

@@ -589,9 +589,14 @@ class Utils {
      * a phone by the Upload button and a TV box by its QR.
      *
      * <p>Bounded, and consecutive duplicates are folded: onTracksChanged fires several times per item,
-     * so the same "not searching" line would otherwise push everything useful out of the window.
+     * so the same "not searching" line would otherwise push everything useful out of the window. Sized
+     * for a playback session that is recovering — a line per load, state change and recovery rung — so
+     * the report still reaches back to what started it.
+     *
+     * <p>Every line is also a Sentry breadcrumb (a no-op unless Sentry was initialised), so the report
+     * and the event carry the same timeline.
      */
-    private static final int LOG_LINES = 200;
+    private static final int LOG_LINES = 500;
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
     private static final long LOG_BASE_MS = SystemClock.elapsedRealtime();
     private static String lastLogged;
@@ -601,6 +606,7 @@ class Utils {
         if (BuildConfig.DEBUG) {
             Log.d("JustPlayer", text);
         }
+        io.sentry.Sentry.addBreadcrumb(text);
         synchronized (LOG) {
             if (text.equals(lastLogged)) {
                 lastLoggedRepeats++;

@@ -30,7 +30,9 @@ def localPropsFile = rootProject.file('local.properties')
 if (localPropsFile.exists()) {
     localPropsFile.withInputStream { localProps.load(it) }
 }
-def sentryDsn = localProps.getProperty('SENTRY_DSN') ?: project.findProperty('SENTRY_DSN') ?: System.getenv('SENTRY_DSN') ?: ''
+// The command line wins over local.properties, so a one-off build can be pointed at another project
+// without editing the file.
+def sentryDsn = project.findProperty('SENTRY_DSN') ?: localProps.getProperty('SENTRY_DSN') ?: System.getenv('SENTRY_DSN') ?: ''
 
 android {
     namespace 'com.brouken.player'

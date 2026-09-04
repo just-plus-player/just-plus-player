@@ -240,6 +240,9 @@
     <string name="pref_language_audio_move_down">Ниже</string>
     <string name="pref_language_audio_remove">Убрать</string>
     <string name="pref_map_dv7_on">Воспроизведение контента Dolby Vision profile 7 на дисплеях HDR</string>
+    <string name="pref_audio_passthrough">Прямая передача объёмного звука</string>
+    <string name="pref_audio_passthrough_on">Дорожки Dolby и DTS передаются на ресивер без декодирования</string>
+    <string name="pref_audio_passthrough_off">Все дорожки декодирует плеер; включите для ресивера, который сам воспроизводит Atmos, DTS:X или lossless</string>
     <string name="pref_reset_audio_workarounds">Сбросить выученные аудио-обходы</string>
     <string name="pref_reset_audio_workarounds_summary">Забыть аудиоформаты, которые это устройство научилось декодировать вместо прямой передачи</string>
     <string name="pref_reset_audio_workarounds_done">Очищено</string>

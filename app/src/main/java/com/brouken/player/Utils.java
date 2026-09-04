@@ -24,6 +24,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
@@ -43,6 +44,7 @@ import android.view.KeyEvent;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
+import android.util.StateSet;
 import android.view.Display;
 import android.view.LayoutInflater;
 import android.util.TypedValue;
@@ -707,12 +709,42 @@ class Utils {
      * @param fill the row's own colour, or {@link Color#TRANSPARENT} for a row that is not the current one
      */
     public static Drawable pickerRow(final Context ctx, final int fill) {
+        return pickerRow(ctx, fill, false);
+    }
+
+    /**
+     * The same tile, optionally with an edge at rest.
+     *
+     * <p>A row inside a list does not want one — the card it sits in is its frame, and twenty rows each
+     * boxed is a grid, not a list. A key on a keypad has no such frame: without an edge it is a digit
+     * printed on the panel, and twelve of them read as a table of numbers rather than as twelve things
+     * to press. So the key keeps a hairline in the surface's outline colour, and the focus ring is that
+     * same edge widened — the signal is a change of shape, which the eye catches without being aimed
+     * at it, rather than an edge appearing out of nothing.
+     *
+     * @param outlined true to draw the resting hairline
+     */
+    public static Drawable pickerRow(final Context ctx, final int fill, final boolean outlined) {
         final int corner = dpToPx(8);
         final GradientDrawable content = new GradientDrawable();
         content.setCornerRadius(corner);
         content.setColor(fill);
         content.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
                 ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        Drawable layer = content;
+        if (outlined) {
+            // Two widths, so two drawables: a GradientDrawable's stroke width is not state-dependent,
+            // and a hairline that only changes colour is the weakest focus event this app has —
+            // measured 2.76:1 where a ring appearing reads 16.30:1.
+            final GradientDrawable rest = new GradientDrawable();
+            rest.setCornerRadius(corner);
+            rest.setColor(fill);
+            rest.setStroke(dpToPx(1), ContextCompat.getColorStateList(ctx, R.color.focus_ring_outlined));
+            final StateListDrawable states = new StateListDrawable();
+            states.addState(new int[]{android.R.attr.state_focused}, content);
+            states.addState(StateSet.WILD_CARD, rest);
+            layer = states;
+        }
         final GradientDrawable mask = new GradientDrawable();
         mask.setCornerRadius(corner);
         mask.setColor(Color.WHITE);
@@ -724,7 +756,7 @@ class Utils {
         return new RippleDrawable(new ColorStateList(
                 new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
                 new int[]{Color.TRANSPARENT, press}),
-                content, mask);
+                layer, mask);
     }
 
     /**
@@ -747,11 +779,25 @@ class Utils {
     }
 
     /** A 48dp glyph on nothing, in the colour a panel gives its quieter text. */
-    private static com.google.android.material.button.MaterialButton iconButton(
+    static com.google.android.material.button.MaterialButton iconButton(
             final Context ctx, final UiMetrics ui, final int icon, final int description) {
+        return iconButton(ctx, ui, icon, description, false);
+    }
+
+    /**
+     * The same glyph, with or without an edge of its own.
+     *
+     * @param outlined true for a control that stands alone — a ± beside a number, a backspace — and so
+     *                 has to say where it begins; false for one of a row inside a header or a bar,
+     *                 which is already a frame and does not want a second one drawn inside it
+     */
+    static com.google.android.material.button.MaterialButton iconButton(
+            final Context ctx, final UiMetrics ui, final int icon, final int description,
+            final boolean outlined) {
         final com.google.android.material.button.MaterialButton button =
-                new com.google.android.material.button.MaterialButton(ctx, null,
-                        com.google.android.material.R.attr.materialIconButtonStyle);
+                new com.google.android.material.button.MaterialButton(ctx, null, outlined
+                        ? com.google.android.material.R.attr.materialIconButtonOutlinedStyle
+                        : com.google.android.material.R.attr.materialIconButtonStyle);
         button.setIconResource(icon);
         button.setIconSize(ui.dpS(24));
         button.setIconTint(ColorStateList.valueOf(MaterialColors.getColor(ctx,
@@ -859,16 +905,21 @@ class Utils {
     }
 
     /**
-     * One segment of a picker's toggle group: outlined, at least 48dp tall, lettering that shrinks
-     * rather than wraps, and the app's focus ring. Shared by the panels that offer a row of ready-made
-     * answers — the sleep timer's durations and the speed panel's rates — so the two say "pick one of
-     * these" in one shape.
+     * One segment of a picker's toggle group: outlined, 8dp at the corners, at least 48dp tall,
+     * lettering that shrinks rather than wraps, and the app's focus ring. Shared by every panel that
+     * offers a row of ready-made answers — the sleep timer's durations, the speed panel's rates, the
+     * skip panel's modes — so they all say "pick one of these" in one shape.
      */
     public static com.google.android.material.button.MaterialButton pickerSegment(
-            final Context ctx, final UiMetrics ui, final String label) {
+            final Context ctx, final UiMetrics ui, final CharSequence label) {
         final com.google.android.material.button.MaterialButton button =
                 new com.google.android.material.button.MaterialButton(ctx, null,
                         com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        // A style is not a theme overlay — passing R.style.Widget_JustPlus_Button_Segment to the
+        // constructor would be ignored — so the one thing that style adds arrives here instead, read
+        // from the same resource the XML segments use.
+        button.setShapeAppearanceModel(ShapeAppearanceModel
+                .builder(ctx, R.style.ShapeAppearance_JustPlus_Segment, 0).build());
         button.setId(View.generateViewId()); // a toggle group tracks its buttons by id
         button.setText(label);
         button.setMaxLines(1);
@@ -905,6 +956,20 @@ class Utils {
             end--;
         }
         return number.substring(0, end);
+    }
+
+    /**
+     * The ink an outlined action letters in: the surface's quieter one, never the accent.
+     *
+     * <p>Material gives an outlined button {@code colorPrimary}, which is the rule this repository
+     * already overrode for a dialog's Cancel — the accent marks the one action that moves things
+     * forward, and a second control wearing it makes the two look like equal choices. It reads the same
+     * on a panel: Off beside a filled Start, Reset under a coral readout. A segment is left alone, since
+     * its own selector already answers checked and unchecked.
+     */
+    static void quietInk(final MaterialButton button) {
+        button.setTextColor(ContextCompat.getColorStateList(button.getContext(),
+                R.color.dialog_button_dismissive));
     }
 
     /**

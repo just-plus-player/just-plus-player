@@ -6105,8 +6105,11 @@ public class PlayerActivity extends Activity {
             modeButton.setInsetTop(0);
             modeButton.setInsetBottom(0);
             modeButton.setIconSize(ui.dpS(24));
-            modeButton.setMinWidth(ui.clusterBox());
-            modeButton.setMinHeight(ui.clusterBox());
+            // 48, not the 40dp cluster box: this one sits in a header row beside the close button, which
+            // is 48, and it is the platform's floor for anything a finger has to hit. The cluster box is
+            // for the glyphs packed into the chrome's pill over video, where the row is the target.
+            modeButton.setMinWidth(ui.dpS(48));
+            modeButton.setMinHeight(ui.dpS(48));
             Utils.focusRing(modeButton);
             // The panel is built from scratch every time it opens, so switching is opening it again — and
             // showPlaylistDialog dismisses the one on screen itself before it builds the next.
@@ -8616,9 +8619,11 @@ public class PlayerActivity extends Activity {
 
         // One action, at the end of its own line: the way back is the arrow in the header, and a panel
         // that answers with numbers still needs something to press when they are right.
+        // Filled: it is the only action this panel has and the whole reason to open it, and a panel is
+        // allowed exactly one such control.
         final com.google.android.material.button.MaterialButton ok =
                 new com.google.android.material.button.MaterialButton(ctx, null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                        com.google.android.material.R.attr.materialButtonStyle);
         ok.setText(android.R.string.ok);
         ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
         ok.setInsetTop(0);

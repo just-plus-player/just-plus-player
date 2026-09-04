@@ -153,6 +153,7 @@ final class SpeedPanel {
         reset.setInsetTop(0);
         reset.setInsetBottom(0);
         reset.setMinHeight(ui.dpS(48));
+        Utils.quietInk(reset);
         Utils.focusRing(reset);
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -278,7 +279,7 @@ final class SpeedPanel {
     private static MaterialButton iconButton(final Context ctx, final UiMetrics ui, final int icon,
                                              final String description) {
         final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialIconButtonStyle);
+                com.google.android.material.R.attr.materialIconButtonOutlinedStyle);
         button.setIconResource(icon);
         // Two states, not one colour: these are the only ± in the app that can be disabled — at a
         // quarter speed and at four times it — and a flat ColorStateList had them shine at the ends of
@@ -297,6 +298,7 @@ final class SpeedPanel {
         button.setMinHeight(ui.dpS(48));
         button.setMinimumWidth(ui.dpS(48));
         button.setMinimumHeight(ui.dpS(48));
+        Utils.focusRing(button);
         return button;
     }
 }

@@ -15,7 +15,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/theme_mode_dark"
-        style="?attr/materialButtonOutlinedStyle"
+        style="@style/Widget.JustPlus.Button.Segment"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
@@ -25,7 +25,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/theme_mode_light"
-        style="?attr/materialButtonOutlinedStyle"
+        style="@style/Widget.JustPlus.Button.Segment"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
@@ -35,7 +35,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/theme_mode_system"
-        style="?attr/materialButtonOutlinedStyle"
+        style="@style/Widget.JustPlus.Button.Segment"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"

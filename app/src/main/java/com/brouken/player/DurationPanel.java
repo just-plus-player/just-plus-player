@@ -3,7 +3,6 @@ package com.brouken.player;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -14,8 +13,6 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageButton;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -250,18 +247,19 @@ final class DurationPanel {
         valueRow.addView(landscape ? minutes
                 : unitColumn(ctx, ui, minutes, activity.getString(R.string.duration_minutes), dim));
 
-        final ImageButton backspace = new ImageButton(ctx, null, 0,
-                R.style.ExoStyledControls_Button_Bottom);
-        backspace.setImageResource(R.drawable.ic_backspace_24dp);
-        backspace.setContentDescription(activity.getString(R.string.sleep_timer_backspace));
-        // The style behind it draws for the chrome over video, which is never light: white on a light
-        // panel is a glyph that is not there. Tinted like the unit labels beside it instead.
-        backspace.setImageTintList(ColorStateList.valueOf(dim));
-        // And it scales fitXY, which is fine for the square buttons of the control row but not here: the
-        // button is as tall as the field it belongs to, so the 24dp glyph came out 24 × 48 and read as a
-        // narrow sliver. Drawn at its own size, centred in whatever the button measures.
-        backspace.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        valueRow.addView(backspace, new LinearLayout.LayoutParams(backspaceBox, boxH));
+        // A Material icon button with an edge, like the ± of the other panels: it stands beside the
+        // fields rather than inside a bar, so nothing else says where it begins. It replaced a Media3
+        // ExoStyledControls button, which drew for the chrome over video — white on a light panel is a
+        // glyph that is not there — and scaled fitXY, which stretched the 24dp glyph to 24 × 48.
+        final MaterialButton backspace = Utils.iconButton(ctx, ui, R.drawable.ic_backspace_24dp,
+                R.string.sleep_timer_backspace, true);
+        // Square, not the field's height: it is a circle now that it carries an edge, and a 48 × 72 one
+        // is an oval. Nudged down by half the difference so it still centres on the fields beside it,
+        // which is what the row's TOP gravity was giving it for free while it was as tall as they are.
+        final LinearLayout.LayoutParams backspaceLp =
+                new LinearLayout.LayoutParams(backspaceBox, backspaceBox);
+        backspaceLp.topMargin = (boxH - backspaceBox) / 2;
+        valueRow.addView(backspace, backspaceLp);
 
         // Where the duration lands in wall-clock terms — the same phrasing the header uses for the end
         // of the video, since it answers the same question.
@@ -282,12 +280,12 @@ final class DurationPanel {
         actionsLp.topMargin = Utils.dpToPx(landscape ? 8 : 16);
         actions.setLayoutParams(actionsLp);
 
-        final MaterialButton off = action(ctx, ui, ctx.getString(R.string.sleep_timer_off));
+        final MaterialButton off = action(ctx, ui, ctx.getString(R.string.sleep_timer_off), false);
         off.setOnClickListener(v -> {
             listener.onDurationPicked(0);
             dialog.dismiss();
         });
-        final MaterialButton start = action(ctx, ui, ctx.getString(R.string.sleep_timer_start));
+        final MaterialButton start = action(ctx, ui, ctx.getString(R.string.sleep_timer_start), true);
         final LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         startLp.setMarginStart(Utils.dpToPx(8));
@@ -492,10 +490,17 @@ final class DurationPanel {
         return column;
     }
 
-    /** One of the two actions at the foot — outlined, as every button this app's panels carry is. */
-    private static MaterialButton action(final Context ctx, final UiMetrics ui, final String label) {
-        final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle);
+    /**
+     * One of the two actions at the foot.
+     *
+     * @param filled the one action that arms the timer; everything else on a surface is outlined, and a
+     *               panel is allowed exactly one filled control — the thing it exists to do
+     */
+    private static MaterialButton action(final Context ctx, final UiMetrics ui, final String label,
+                                         final boolean filled) {
+        final MaterialButton button = new MaterialButton(ctx, null, filled
+                ? com.google.android.material.R.attr.materialButtonStyle
+                : com.google.android.material.R.attr.materialButtonOutlinedStyle);
         button.setText(label);
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
         button.setMaxLines(1);
@@ -504,6 +509,9 @@ final class DurationPanel {
         button.setInsetTop(0);
         button.setInsetBottom(0);
         button.setMinHeight(ui.dpS(48));
+        if (!filled) {
+            Utils.quietInk(button);
+        }
         Utils.focusRing(button);
         return button;
     }
@@ -534,7 +542,7 @@ final class DurationPanel {
         // them in pixels instead is what once squeezed this keypad down to its middle column.
         key.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        key.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT));
+        key.setBackground(Utils.pickerRow(ctx, Color.TRANSPARENT, true));
         key.setOnClickListener(v -> onTap.run());
         return key;
     }

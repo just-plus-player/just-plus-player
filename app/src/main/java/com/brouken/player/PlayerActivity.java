@@ -3265,6 +3265,17 @@ public class PlayerActivity extends Activity {
                 // Handled in onBackPressed(), the one path every API level shares. The case still has to
                 // exist so Back does not fall into default: below, which would show the controller.
                 break;
+            case KeyEvent.KEYCODE_ESCAPE:
+                // A TV remote's EXIT key commonly arrives as ESCAPE. Left unhandled it falls into default:
+                // below, which consumes it to raise the controller — so the ESCAPE→BACK fallback the
+                // framework would otherwise synthesise never happens, and the key cannot leave the player
+                // in the one state it still could: with the controls up, where default: lets it through.
+                // Route it to the same exit path as Back instead. Consuming it here is what keeps that
+                // fallback from firing a second Back on top. Dialogs are unaffected — they own the window,
+                // so this never runs while one is up and EXIT keeps closing them.
+                if (event.getRepeatCount() == 0)
+                    onBackPressed();
+                return true;
             case KeyEvent.KEYCODE_UNKNOWN:
                 return super.onKeyDown(keyCode, event);
             default:

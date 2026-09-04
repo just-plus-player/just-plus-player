@@ -86,7 +86,7 @@ public final class UpdateUi {
 
         if (onSkip != null) {
             final MaterialButton skip = new MaterialButton(dialogContext, null,
-                    androidx.appcompat.R.attr.borderlessButtonStyle);
+                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
             skip.setText(R.string.update_skip);
             // Not the brand: this dialog letters its confirming action in the accent and everything else
             // in the quieter ink, and skipping a version is not what anybody came here to do.
@@ -102,8 +102,9 @@ public final class UpdateUi {
             });
             final LinearLayout.LayoutParams skipLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            // Lettering flush with the message above it: a text button carries 12dp of its own padding.
-            skipLp.setMargins(padH - dp(dialogContext, 12), dp(dialogContext, 8), padH, 0);
+            // Aligned with the message above it. An outlined button pads 24dp a side, but the border is
+            // where the control now starts, so the margin is the dialog's own — no negative inset.
+            skipLp.setMargins(padH, dp(dialogContext, 8), padH, 0);
             content.addView(skip, skipLp);
         }
         dialog.show();

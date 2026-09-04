@@ -96,6 +96,7 @@
         <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
         <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
         <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
              primary colour, which with a coral primary is a red band across the top of the screen.
@@ -135,10 +136,11 @@
          at it - it applies the second itself, and whatever that names wins over the theme underneath. -->
     <style name="ThemeOverlay.JustPlus.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="android:windowBackground">@drawable/bg_dialog_material3</item>
-        <!-- Only the confirming action is coral. The ripple is left as it was: on a television the
-             focus wash of these buttons comes from it. -->
-        <item name="buttonBarNegativeButtonStyle">@style/Widget.JustPlus.Button.Dialog.Dismissive</item>
-        <item name="buttonBarNeutralButtonStyle">@style/Widget.JustPlus.Button.Dialog.Neutral</item>
+        <!-- Every action carries a contour: the confirming one is filled, the rest are outlined. The
+             ripple is left as it was: on a television the focus wash of these buttons comes from it. -->
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.JustPlus.Button.Dialog.Filled</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.JustPlus.Button.Dialog.Outlined</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.JustPlus.Button.Dialog.Outlined.Flush</item>
     </style>
 
     <!--
@@ -156,9 +158,26 @@
         <item name="strokeColor">@color/focus_ring</item>
     </style>
 
+    <!--
+        Material insets an icon button 4dp at each side and none at top or bottom, so a 48dp box draws
+        its background 40 wide by 48 tall. Nothing showed while that background was a transparent
+        ripple; the moment one of these carries an edge — the focus ring on a television, the outline of
+        the style below — the "circle" is an upright oval. Both insets go, and the shape is the box.
+    -->
     <style name="Widget.JustPlus.Button.Quiet.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
         <item name="strokeWidth">@dimen/focus_ring_width</item>
         <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <!-- A glyph that is a button in its own right — a ± beside a number, the backspace of a keypad —
+         rather than one of a row inside a bar, where the bar is the frame. It keeps its edge at rest,
+         like every other standalone action, and Utils.focusRing widens that edge on a remote. -->
+    <style name="Widget.JustPlus.Button.Icon.Outlined" parent="Widget.Material3.Button.IconButton.Outlined">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="strokeColor">@color/focus_ring_outlined</item>
     </style>
 
     <!-- The one style whose stroke is not only the ring: it is also the border that makes the button
@@ -167,8 +186,30 @@
          changes colour is a weak event — measured 2.76:1 between the same pixels focused and not,
          where a ring appearing on a picker row reads 16.30:1. -->
     <style name="Widget.JustPlus.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="strokeWidth">2dp</item>
+        <!-- Material's own outline width (m3_comp_outlined_button_outline_width). It used to be 2dp,
+             from before the outline was a resting border on many controls rather than a focus signal on
+             a few: at 2dp a row of segments reads as a grid of boxes instead of one control. -->
+        <item name="strokeWidth">1dp</item>
         <item name="strokeColor">@color/focus_ring_outlined</item>
+    </style>
+
+    <!--
+        A segment of a toggle group. Material draws segmented buttons fully round, which is where its
+        common buttons are; here the shape says what a control IS. A pill is a verb — press it and
+        something happens — and a segment is a value the viewer picks out of a set, so it takes the
+        8dp of a chip, the shape this app already gives every other value: a picker row, a keypad key,
+        a status badge, the readout of a number.
+
+        Only the outer corners survive: MaterialButtonToggleGroup flattens the inner ones itself, so the
+        row still reads as one control rather than five.
+    -->
+    <style name="ShapeAppearance.JustPlus.Segment" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Segment" parent="Widget.JustPlus.Button.Outlined">
+        <item name="shapeAppearance">@style/ShapeAppearance.JustPlus.Segment</item>
     </style>
 
     <style name="Widget.JustPlus.Button.Filled" parent="Widget.Material3.Button">
@@ -176,13 +217,46 @@
         <item name="strokeColor">@color/focus_ring</item>
     </style>
 
-    <style name="Widget.JustPlus.Button.Dialog.Dismissive" parent="Widget.Material3.Button.TextButton.Dialog">
+    <!--
+        A dialog's actions, both of them with an edge. Material 3 letters them as text buttons, which
+        leaves a panel whose only pressable things are two words floating in it — nothing says where the
+        button ends, and on a phone the pair reads as a caption. The appearance is the one the three
+        styles above already define; what is restated here is the dialog bar's own geometry, which
+        Widget.Material3.Button.TextButton.Dialog would have carried: minWidth 64dp
+        (m3_btn_dialog_btn_min_width), 8dp between buttons (m3_btn_dialog_btn_spacing), and one line
+        that ellipsizes rather than wraps. The values are written out because neither dimen is in
+        Material's public.txt.
+
+        The pair costs 48dp more than the text buttons did — a filled or outlined button pads 24dp a
+        side where a text one pads 12 — so a bar that was close to stacking will stack sooner. That is
+        AppCompat's ButtonBarLayout doing what it exists for, and the update dialog was already cut to
+        two actions for it.
+    -->
+    <style name="Widget.JustPlus.Button.Dialog.Filled" parent="Widget.JustPlus.Button.Filled">
+        <item name="android:minWidth">64dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:layout_marginLeft">8dp</item>
+        <item name="android:lines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- Only the confirming action is coral: an outlined button letters itself in colorPrimary by
+         default, which would put the brand on Cancel as well and make the two look like equal choices. -->
+    <style name="Widget.JustPlus.Button.Dialog.Outlined" parent="Widget.JustPlus.Button.Outlined">
         <item name="android:textColor">@color/dialog_button_dismissive</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:layout_marginLeft">8dp</item>
+        <item name="android:lines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:singleLine">true</item>
     </style>
 
     <!-- The third action sits at the far edge, so it keeps Material's flush geometry. -->
-    <style name="Widget.JustPlus.Button.Dialog.Neutral" parent="Widget.Material3.Button.TextButton.Dialog.Flush">
-        <item name="android:textColor">@color/dialog_button_dismissive</item>
+    <style name="Widget.JustPlus.Button.Dialog.Outlined.Flush">
+        <item name="android:layout_marginStart">0dp</item>
+        <item name="android:layout_marginLeft">0dp</item>
     </style>
 
     <!-- AMOLED: the M3 dark scheme with its greys taken out, for a panel that costs nothing to leave
@@ -206,12 +280,16 @@
         <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
         <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
         <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- Not @color/brand: this theme is light whatever the system is doing, and the bright coral
              cannot be read on it. @color/brand_accent is the one value that works on both. -->
         <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <!-- Black, as Theme.Settings already has it: this is the ink on a filled accent, and on
+             #D6493C white measures 4.31:1 where black measures 4.88:1. A dialog's confirming action is
+             14sp, which is small text, so the difference is the AA line. -->
+        <item name="colorOnPrimary">@color/brand_accent_on</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
              segment of a toggle group, the current row of a picker, the track of a switch. Material
              would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
@@ -239,12 +317,16 @@
         <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
         <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
         <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
         <!-- The same accent the light panel uses, so a switch does not change colour with the theme.
              @color/brand stays what it always was: the chrome over video, which is never light. -->
         <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <!-- Black, as Theme.Settings already has it: this is the ink on a filled accent, and on
+             #D6493C white measures 4.31:1 where black measures 4.88:1. A dialog's confirming action is
+             14sp, which is small text, so the difference is the AA line. -->
+        <item name="colorOnPrimary">@color/brand_accent_on</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
              segment of a toggle group, the current row of a picker, the track of a switch. Material
              would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the

@@ -1558,7 +1558,12 @@ public class PlayerActivity extends Activity {
         buttonAudio.setOnClickListener(view -> showAudioDialog());
 
         buttonMore = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonMore.setImageResource(R.drawable.ic_settings_24dp);
+        // The overflow glyph, not a gear. A gear here meant three things at once: press it for this
+        // panel, hold it for the settings screen, and find a row called Settings inside the panel it
+        // opens — all behind the one symbol every other Android app spends on settings alone. The gear
+        // is now only that row, and the long press is what it always was: a shortcut nobody reads off a
+        // glyph anyway.
+        buttonMore.setImageResource(R.drawable.ic_more_vert_24dp);
         buttonMore.setId(View.generateViewId());
         buttonMore.setContentDescription(getString(R.string.button_more));
         buttonMore.setOnClickListener(view -> showMoreMenu());
@@ -6105,8 +6110,11 @@ public class PlayerActivity extends Activity {
             modeButton.setInsetTop(0);
             modeButton.setInsetBottom(0);
             modeButton.setIconSize(ui.dpS(24));
-            modeButton.setMinWidth(ui.clusterBox());
-            modeButton.setMinHeight(ui.clusterBox());
+            // 48, not the 40dp cluster box: this one sits in a header row beside the close button, which
+            // is 48, and it is the platform's floor for anything a finger has to hit. The cluster box is
+            // for the glyphs packed into the chrome's pill over video, where the row is the target.
+            modeButton.setMinWidth(ui.dpS(48));
+            modeButton.setMinHeight(ui.dpS(48));
             Utils.focusRing(modeButton);
             // The panel is built from scratch every time it opens, so switching is opening it again — and
             // showPlaylistDialog dismisses the one on screen itself before it builds the next.
@@ -8616,9 +8624,11 @@ public class PlayerActivity extends Activity {
 
         // One action, at the end of its own line: the way back is the arrow in the header, and a panel
         // that answers with numbers still needs something to press when they are right.
+        // Filled: it is the only action this panel has and the whole reason to open it, and a panel is
+        // allowed exactly one such control.
         final com.google.android.material.button.MaterialButton ok =
                 new com.google.android.material.button.MaterialButton(ctx, null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                        com.google.android.material.R.attr.materialButtonStyle);
         ok.setText(android.R.string.ok);
         ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
         ok.setInsetTop(0);
@@ -9781,8 +9791,8 @@ public class PlayerActivity extends Activity {
      */
     private void showMoreMenu() {
         final List<MenuItem> items = new ArrayList<>();
-        // Unnamed: the rules below already divide the three bands, and a caption over the first of them
-        // said what the rows under it say for themselves.
+        // The bands are divided by the rules below rather than by captions: a caption over the first of
+        // them said what the rows under it say for themselves.
         if (player != null) {
             items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
                     // Quiet at 1x, like every other row here: a summary reports what has been changed,
@@ -9835,9 +9845,12 @@ public class PlayerActivity extends Activity {
         items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
         items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
         items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
-        // No title: every group in here already names itself, and "More" only repeated the button
-        // that opened the panel.
-        showSideMenu(null, items);
+        // Titled after the button that opens it. The title was dropped once, when every panel drew a
+        // header line only if it had something to put on it and "More" would have bought a line to
+        // repeat a word. Every panel carries a close button now, so the line is drawn either way — and
+        // an empty one reads as a mistake rather than as restraint. Not "Settings", which the panel's
+        // own last row already means: one word, two destinations, is what the title said before that.
+        showSideMenu(getString(R.string.button_more), items);
     }
 
     // --- Watch together -------------------------------------------------------------------------

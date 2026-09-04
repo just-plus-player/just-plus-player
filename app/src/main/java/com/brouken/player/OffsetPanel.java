@@ -19,7 +19,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
-import androidx.core.widget.TextViewCompat;
 
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.button.MaterialButton;
@@ -226,6 +225,7 @@ final class OffsetPanel {
         reset.setInsetTop(0);
         reset.setInsetBottom(0);
         reset.setMinHeight(ui.dpS(48)); // a target this small is missed as often as it is hit
+        Utils.quietInk(reset);
         Utils.focusRing(reset);
         final LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -288,22 +288,7 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
 
         final MaterialButton[] pills = new MaterialButton[choice.values.length];
         for (int i = 0; i < choice.values.length; i++) {
-            final MaterialButton pill = new MaterialButton(ctx, null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
-            pill.setId(View.generateViewId()); // the group tracks its buttons by id
-            pill.setText(choice.labels[i]);
-            pill.setMaxLines(1);
-            pill.setInsetTop(0);
-            pill.setInsetBottom(0);
-            pill.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
-            Utils.focusRing(pill);
-            pill.setPadding(ui.dpS(4), pill.getPaddingTop(), ui.dpS(4), pill.getPaddingBottom());
-            // Shrunk rather than wrapped or clipped: the widest label already fills its share of the
-            // row at the ordinary size, so a longer language or a system font a notch up used to break
-            // one word across two lines and leave the row ragged.
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    pill, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
-                    TypedValue.COMPLEX_UNIT_SP);
+            final MaterialButton pill = Utils.pickerSegment(ctx, ui, choice.labels[i]);
             // Equal shares of the row rather than each button's own width: four words of different
             // lengths read as a set this way, and the widest of them decides nothing. The group is a
             // LinearLayout, so weights work and it joins the segments into one control itself.
@@ -425,8 +410,8 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
         // which is where it belongs. Slider has no key-increment setter, hence the key listener.
         final int keyStep = Math.max(2, (int) Math.round(maxSec / 90 / stepSec));
 
-        final MaterialButton minus = iconButton(ctx, R.drawable.ic_remove_24dp, "-");
-        final MaterialButton plus = iconButton(ctx, R.drawable.ic_add_24dp, "+");
+        final MaterialButton minus = iconButton(ctx, ui, R.drawable.ic_remove_24dp, "-");
+        final MaterialButton plus = iconButton(ctx, ui, R.drawable.ic_add_24dp, "+");
 
         final LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -513,22 +498,11 @@ Utils.pickerWindow(activity, ui, dialog, scroller);
     }
 
     /** A ± button: Material's icon button, as legible on a light panel as on a dark one. */
-    private static MaterialButton iconButton(final Context ctx, final int icon,
+    private static MaterialButton iconButton(final Context ctx, final UiMetrics ui, final int icon,
                                              final String description) {
-        final MaterialButton button = new MaterialButton(ctx, null,
-                com.google.android.material.R.attr.materialIconButtonStyle);
-        button.setIconResource(icon);
+        final MaterialButton button = Utils.iconButton(ctx, ui, icon, description, true);
         button.setIconTint(ColorStateList.valueOf(
                 MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE)));
-        button.setContentDescription(description);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        // Material's icon button is a 20dp glyph in 10dp of padding — a 40dp box, and with the insets
-        // taken off, 40dp tall. The platform's floor for anything a finger has to hit is 48.
-        button.setMinWidth(Utils.dpToPx(48));
-        button.setMinHeight(Utils.dpToPx(48));
-        button.setMinimumWidth(Utils.dpToPx(48));
-        button.setMinimumHeight(Utils.dpToPx(48));
         return button;
     }
 

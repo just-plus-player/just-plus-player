@@ -92,14 +92,25 @@ final class DurationPanel {
         // backspace on the other, and neither wins by being asked first.
         final int colW = landscape ? (usableW - colGap) / 2 : usableW;
 
-        // Portrait has height to spare, so the rows simply take VLC's own size. Landscape has to divide
-        // what is left of the window: a phone held sideways is 411dp tall and the docked card gets 346
-        // of that once the margins and the bars are out, of which the padding, the title and the
-        // durations row spend 140. Hence the 205 — 64 of insets and margins the panel never sees plus
-        // those 140 — and hence the keypad standing beside the readout rather than under it.
-        final int rowHeight = ui.dp(landscape
-                ? Math.max(36, Math.min(52, (cfg.screenHeightDp - 205) / 4 - 8))
-                : 52);
+        // Sideways the keypad turns: four columns by three rows rather than three by four. Three rows
+        // of 48dp with their gaps are 160, which is exactly what the readout's column beside it needs
+        // for its own three controls — so the two columns match line for line, and every key is the
+        // size of every other control in the panel instead of the 36dp that were left over. The digits
+        // keep their 3x3 block and the fourth column takes what is not a digit; a keypad is read by the
+        // shape of that block, and the shape does not move.
+        //
+        // A short window sideways cannot hold both ways of naming a duration. Measured on a phone held
+        // sideways — 360dp tall, of which insets and margins take 88 and the card's own padding and
+        // title another 84 — the body is left 132dp, and the keypad alone wants 168 at its smallest
+        // legal row. The ready-made durations are the 56dp that unblock it, and they are the half the
+        // keypad can say in two presses; a length nobody thought to offer has no other way in at all.
+        // So they stand down on a window this short, and nowhere else: a television is 541dp tall and
+        // keeps both, as does any tablet.
+        final boolean presets = !landscape || cfg.screenHeightDp >= 420;
+        // Portrait has height to spare, so the rows simply take VLC's own size. Landscape divides what
+        // is left: 205 is 64dp of insets and margins the panel never sees plus the 140 the padding, the
+        // title and the durations row spend — less those 56 when the durations are not there.
+        final int rowHeight = landscape ? ui.dpS(48) : ui.dp(52);
 
         // Built against the appearance choice rather than the player's own dark theme — see
         // OffsetPanel for the same move and Utils.dialogContext for what it resolves.
@@ -144,7 +155,9 @@ final class DurationPanel {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         durationsLp.topMargin = Utils.dpToPx(8);
         durations.setLayoutParams(durationsLp);
-        root.addView(durations);
+        if (presets) {
+            root.addView(durations);
+        }
 
         // What is armed is checked by the readout pass below, never here: check() fires the same
         // listener a press does, and a panel that armed the running timer again as it opened would
@@ -174,7 +187,8 @@ final class DurationPanel {
         readoutColumn.setOrientation(LinearLayout.VERTICAL);
         readoutColumn.setLayoutParams(new LinearLayout.LayoutParams(
                 landscape ? colW : ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+                landscape ? ViewGroup.LayoutParams.MATCH_PARENT
+                        : ViewGroup.LayoutParams.WRAP_CONTENT));
         body.addView(readoutColumn);
 
         // A duration and "however long this file has left" are one choice — what stops the film — so
@@ -202,6 +216,13 @@ final class DurationPanel {
         // rather than an input: the keypad below fills them, and a tap on one picks nothing.
         final LinearLayout valueRow = new LinearLayout(ctx);
         valueRow.setOrientation(LinearLayout.HORIZONTAL);
+        // A horizontal LinearLayout lines its children up by the baseline of their text unless told not
+        // to, and that is what cut the fields off. The row is as tall as the colon and the backspace
+        // beside them; the fields, shifted down to put their baseline on the colon's, then ran 5dp past
+        // its bottom and were clipped there — square corners under rounded ones, and the digits' feet
+        // gone with them. They are all centred in boxes of the same height, so the baseline they would
+        // be aligned to is the one they already share.
+        valueRow.setBaselineAligned(false);
         // Top, so the colon and the backspace centre on the fields themselves rather than on the
         // fields plus the unit named under them. Centred as well where the row is wider than the two
         // fields, the spacer and the backspace it holds — packed from the start edge, the pair of
@@ -209,7 +230,9 @@ final class DurationPanel {
         valueRow.setGravity(landscape ? Gravity.TOP : (Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         final LinearLayout.LayoutParams valueLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        valueLp.topMargin = Utils.dpToPx(24); // the gap that separates the picked from the typed
+        // The gap that separates the picked from the typed. Sideways there is no height to spend on
+        // saying it twice — the column already sets the readout apart by standing it under a button.
+        valueLp.topMargin = Utils.dpToPx(landscape ? 8 : 24);
         valueRow.setLayoutParams(valueLp);
         readoutColumn.addView(valueRow);
 
@@ -233,7 +256,11 @@ final class DurationPanel {
         // And 72dp tall, except where the height is the scarce dimension: sideways the column has 206dp
         // for the end-of-file button, the readout, its wall-clock line and the actions, and at Material's
         // own size the actions came to rest below the bottom of the card.
-        final int boxH = ui.dpS(landscape ? 56 : 72);
+        // Material's 72dp field upright. Sideways it is exactly one row of the keypad standing beside
+        // it — the readout, the button above it and the actions below then draw the same three lines as
+        // the keys do, which is the whole point of putting them side by side. The digits are 40sp,
+        // whose cap height is about 28dp, so they sit in 48 without touching its edges.
+        final int boxH = landscape ? rowHeight : ui.dpS(72);
         final int fieldFill = MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
                 ContextCompat.getColor(ctx, R.color.sheet_surface));
 
@@ -285,7 +312,13 @@ final class DurationPanel {
         endsAt.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAt.setGravity(centred ? Gravity.CENTER_HORIZONTAL : Gravity.START);
         endsAt.setPadding(0, Utils.dpToPx(4), 0, 0);
-        readoutColumn.addView(endsAt);
+        // Portrait only. Sideways this is the one line in the column that is derived rather than
+        // pressed — the readout right above it already says how long is left — and it is what put the
+        // actions past the bottom of the card on both short windows: 11dp on a phone, 12 on a
+        // television, where every control is a third larger again.
+        if (!landscape) {
+            readoutColumn.addView(endsAt);
+        }
 
         // Right-aligned at the foot, as Material ends a sheet: the way out of a running timer, then the
         // one action a typed length needs.
@@ -371,13 +404,16 @@ final class DurationPanel {
         final LinearLayout.LayoutParams keypadLp = new LinearLayout.LayoutParams(
                 landscape ? colW : ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        keypadLp.topMargin = Utils.dpToPx(8);
+        // Sideways this column stands beside the readout rather than under it, so the gap belongs to the
+        // rows inside it — with both, the keypad started 8dp below the button it sits next to.
+        keypadLp.topMargin = landscape ? 0 : Utils.dpToPx(8);
         if (landscape) {
             keypadLp.setMarginStart(colGap);
         }
         keypad.setLayoutParams(keypadLp);
+        final int cols = landscape ? 4 : 3;
         for (int row = 0; row < 3; row++) {
-            final LinearLayout line = keyRow(ctx, rowHeight);
+            final LinearLayout line = keyRow(ctx, rowHeight, cols);
             for (int col = 0; col < 3; col++) {
                 final int digit = row * 3 + col + 1;
                 final View key = keyButton(ctx, ui, String.valueOf(digit),
@@ -385,20 +421,37 @@ final class DurationPanel {
                 digitKeys[digit] = key;
                 line.addView(key);
             }
+            if (landscape) {
+                // The fourth column, top to bottom: the two minute values worth a shortcut, then the
+                // zero — where a calculator keeps it, and the only one of the three that is a digit.
+                if (row == 0) {
+                    line.addView(keyButton(ctx, ui, ":00", () -> appendMinutes(typed, 0, render)));
+                } else if (row == 1) {
+                    line.addView(keyButton(ctx, ui, ":30", () -> appendMinutes(typed, 30, render)));
+                } else {
+                    digitKeys[0] = keyButton(ctx, ui, "0", () -> appendDigit(typed, 0, render));
+                    line.addView(digitKeys[0]);
+                }
+            }
             keypad.addView(line);
         }
-        // Last row as VLC has it: the two minute values worth a shortcut, either side of the zero.
-        final LinearLayout lastRow = keyRow(ctx, rowHeight);
-        lastRow.addView(keyButton(ctx, ui, ":00", () -> appendMinutes(typed, 0, render)));
-        digitKeys[0] = keyButton(ctx, ui, "0", () -> appendDigit(typed, 0, render));
-        lastRow.addView(digitKeys[0]);
-        lastRow.addView(keyButton(ctx, ui, ":30", () -> appendMinutes(typed, 30, render)));
-        keypad.addView(lastRow);
+        if (!landscape) {
+            // Last row as VLC has it: the two minute values worth a shortcut, either side of the zero.
+            final LinearLayout lastRow = keyRow(ctx, rowHeight, cols);
+            lastRow.addView(keyButton(ctx, ui, ":00", () -> appendMinutes(typed, 0, render)));
+            digitKeys[0] = keyButton(ctx, ui, "0", () -> appendDigit(typed, 0, render));
+            lastRow.addView(digitKeys[0]);
+            lastRow.addView(keyButton(ctx, ui, ":30", () -> appendMinutes(typed, 30, render)));
+            keypad.addView(lastRow);
+        }
         body.addView(keypad);
 
         // The foot of its own column either way: under the readout when the keypad is beside it, under
-        // everything when the keypad is below it.
+        // everything when the keypad is below it. Sideways the column is as tall as the keypad standing
+        // next to it, so a spring above the actions puts them on the keypad's own last line — two
+        // columns that end together read as one block, and two that end 11dp apart read as a mistake.
         if (landscape) {
+            readoutColumn.addView(new View(ctx), new LinearLayout.LayoutParams(1, 0, 1f));
             readoutColumn.addView(actions);
         } else {
             root.addView(actions);
@@ -481,11 +534,18 @@ final class DurationPanel {
         box.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textValue());
         box.setFontFeatureSettings("tnum"); // fixed-width digits: the readout stops twitching as it fills
         box.setGravity(Gravity.CENTER);
+        // Without this a 40sp digit carries about 5dp of font padding it never draws in, which is what
+        // made the readout 53dp tall inside a 48dp box sideways — and a column 5dp taller than the
+        // keypad beside it takes those 5 out of the actions at its foot. The glyphs stay centred.
+        box.setIncludeFontPadding(false);
         box.setMinHeight(height); // a minimum, not a height: the digits follow the system font scale
         final GradientDrawable container = new GradientDrawable();
         container.setCornerRadius(ui.pillCorner()); // 8dp, Material's small corner, as its field wears
         container.setColor(fill);
         box.setBackground(container);
+        // A minimum and not a fixed height: forced to exactly the row's height the box came out shorter
+        // than the digits it holds and cut their feet off. Without the font padding the 40sp numerals
+        // measure just under a 48dp row, so the minimum is what decides the box and nothing is clipped.
         box.setLayoutParams(new LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT));
         return box;
     }
@@ -533,10 +593,10 @@ final class DurationPanel {
         return button;
     }
 
-    private static LinearLayout keyRow(final Context ctx, final int rowHeight) {
+    private static LinearLayout keyRow(final Context ctx, final int rowHeight, final int cols) {
         final LinearLayout line = new LinearLayout(ctx);
         line.setOrientation(LinearLayout.HORIZONTAL);
-        line.setWeightSum(3f);
+        line.setWeightSum(cols);
         final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, rowHeight);
         lp.topMargin = Utils.dpToPx(8);

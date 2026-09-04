@@ -10411,6 +10411,11 @@ public class PlayerActivity extends Activity {
     // seekToCurrentPosition() with no playing period and throws (JPP-15). The caller re-prepares instead.
     private static final class AudioPassthroughDenylistSink extends ForwardingAudioSink {
         private final Set<String> deniedMimes;
+        // When set, every non-PCM (compressed) format is refused, so the renderer always decodes to PCM
+        // and never bitstreams. This is "surround pass-through off": it keeps multichannel PCM (the sink's
+        // real channel capabilities are untouched) but takes away the bitstream route and, with it, the
+        // whole reselect/wedge/dead-route chain that route drags in on some boxes across a pause.
+        private final boolean forceDecode;
         // True while the sink bitstreams a compressed format: the renderer configures us with a non-PCM
         // format only when it runs in bypass (passthrough), never when a decoder feeds us. Read on the app
         // thread by restartPassthroughAudio(), written here on the playback thread. Deliberately
@@ -10419,9 +10424,15 @@ public class PlayerActivity extends Activity {
         // config in pendingConfiguration when we read it. Both only ever cost one needless seek.
         private volatile boolean passthrough;
 
-        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied) {
+        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied, boolean forceDecode) {
             super(sink);
             this.deniedMimes = new CopyOnWriteArraySet<>(initiallyDenied);
+            this.forceDecode = forceDecode;
+        }
+
+        private boolean refused(Format format) {
+            return deniedMimes.contains(format.sampleMimeType)
+                    || (forceDecode && !MimeTypes.AUDIO_RAW.equals(format.sampleMimeType));
         }
 
         @Override
@@ -10436,13 +10447,12 @@ public class PlayerActivity extends Activity {
 
         @Override
         public int getFormatSupport(Format format) {
-            return deniedMimes.contains(format.sampleMimeType)
-                    ? AudioSink.SINK_FORMAT_UNSUPPORTED : super.getFormatSupport(format);
+            return refused(format) ? AudioSink.SINK_FORMAT_UNSUPPORTED : super.getFormatSupport(format);
         }
 
         @Override
         public boolean supportsFormat(Format format) {
-            return !deniedMimes.contains(format.sampleMimeType) && super.supportsFormat(format);
+            return !refused(format) && super.supportsFormat(format);
         }
 
         // Called from the app thread by recoverByRevokingAudioMime(). deniedMimes is read on the
@@ -10615,7 +10625,7 @@ public class PlayerActivity extends Activity {
                 // (see mediaUri above), and by then this list is fixed — so on a TV the fallback has to
                 // be in it already or a hidden platform decoder would leave the track with nothing.
                 super.buildAudioRenderers(context,
-                        (isTvBox || !revokedAudioMimes.isEmpty())
+                        (isTvBox || !revokedAudioMimes.isEmpty() || !mPrefs.audioPassthrough)
                                 && extensionRendererMode == EXTENSION_RENDERER_MODE_OFF
                                 ? EXTENSION_RENDERER_MODE_ON : extensionRendererMode,
                         mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler,
@@ -10634,7 +10644,7 @@ public class PlayerActivity extends Activity {
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                         .setAudioProcessors(new AudioProcessor[]{boostProcessor})
                         .build();
-                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes);
+                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes, !mPrefs.audioPassthrough);
                 return audioSink;
             }
 

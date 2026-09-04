@@ -163,6 +163,9 @@
     <string name="pref_map_dv7">Резервний варіант Dolby Vision profile 7</string>
     <string name="pref_map_dv7_on">Відтворення контенту Dolby Vision profile 7 на дисплеях HDR</string>
     <string name="pref_map_dv7_off">Відтворення вмісту UHD Blu-ray, що містить Dolby Vision, як є</string>
+    <string name="pref_audio_passthrough">Пряма передача об\'ємного звуку</string>
+    <string name="pref_audio_passthrough_on">Доріжки Dolby і DTS передаються на ресивер без декодування</string>
+    <string name="pref_audio_passthrough_off">Усі доріжки декодує плеєр; увімкніть для ресивера, який сам відтворює Atmos, DTS:X чи lossless</string>
     <string name="pref_reset_audio_workarounds">Скинути вивчені аудіо-обхідні рішення</string>
     <string name="pref_reset_audio_workarounds_summary">Забути аудіоформати, які цей пристрій навчився декодувати замість прямої передачі</string>
     <string name="pref_reset_audio_workarounds_done">Очищено</string>

@@ -46,6 +46,13 @@
             app:key="languageAudio"
             app:title="@string/pref_language_audio" />
 
+        <SwitchPreferenceCompat
+            app:key="audioPassthrough"
+            app:defaultValue="false"
+            app:summaryOn="@string/pref_audio_passthrough_on"
+            app:summaryOff="@string/pref_audio_passthrough_off"
+            app:title="@string/pref_audio_passthrough" />
+
         <Preference
             app:key="resetRevokedAudioMimes"
             app:title="@string/pref_reset_audio_workarounds"

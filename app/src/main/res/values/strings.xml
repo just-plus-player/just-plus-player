@@ -185,6 +185,9 @@
     <string name="pref_map_dv7">Dolby Vision profile 7 fallback</string>
     <string name="pref_map_dv7_on">Play Dolby Vision profile 7 content on HDR displays</string>
     <string name="pref_map_dv7_off">Play UHD Blu-ray content containing Dolby Vision as is</string>
+    <string name="pref_audio_passthrough">Surround sound pass-through</string>
+    <string name="pref_audio_passthrough_on">Dolby and DTS tracks are sent to the receiver as they are</string>
+    <string name="pref_audio_passthrough_off">Every track is decoded in the player; turn on for a receiver that should render Atmos, DTS:X or lossless itself</string>
     <string name="pref_reset_audio_workarounds">Reset learned audio workarounds</string>
     <string name="pref_reset_audio_workarounds_summary">Forget audio formats this device learned to decode instead of passing through</string>
     <string name="pref_reset_audio_workarounds_done">Cleared</string>

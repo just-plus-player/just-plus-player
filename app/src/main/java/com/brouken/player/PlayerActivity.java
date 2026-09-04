@@ -8587,13 +8587,24 @@ public class PlayerActivity extends Activity {
         final int pad = Utils.dpToPx(10);
         root.setPadding(pad, pad, pad, pad);
 
+        // Made before the header, because stepping back has to close this panel as well as raise the
+        // one before it. Every other panel with a back arrow is the shared menuDialog, which showSideMenu
+        // dismisses on the way in; this one is held by nobody, so without the dismiss it stayed standing
+        // under the season list and then under the search panel — two cards at once.
+        final android.app.Dialog dialog =
+                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        final Runnable step = () -> {
+            dialog.dismiss();
+            back.run();
+        };
+
         final TextView header = new TextView(ctx);
         header.setText(getString(R.string.subtitle_search_type));
         header.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
-        root.addView(Utils.pickerHeader(ctx, ui, header, back));
+        root.addView(Utils.pickerHeader(ctx, ui, header, step));
 
         // Labelled, not hinted: prefilling is the normal case here — the whole point is to correct one
         // digit of what is already believed — and a hint leaves the moment a field is filled, so both
@@ -8614,8 +8625,6 @@ public class PlayerActivity extends Activity {
             episode.setText(String.valueOf(current.episode));
         }
 
-        final android.app.Dialog dialog =
-                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
         final Runnable apply = () -> {
             dialog.dismiss();
             applyManualTitle(title, number(season.getText().toString(), 1),
@@ -8657,7 +8666,7 @@ public class PlayerActivity extends Activity {
 
         Utils.pickerWindow(this, ui, dialog, scroll);
         Utils.keyboardPanel(dialog, scroll);
-        Utils.panelBack(dialog, back);
+        Utils.panelBack(dialog, step);
         season.requestFocus();
         showPickerDialog(dialog);
     }

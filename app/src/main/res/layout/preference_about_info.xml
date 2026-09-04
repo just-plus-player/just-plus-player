@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The report as one object: heading, lines, and the press that copies all of it. The 8dp of padding
+     is pulled back out by the same margin, so the ripple has room to be a tile while the text stays on
+     the same line as the name above it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/about_info"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="-8dp"
+    android:layout_marginEnd="-8dp"
+    android:background="@drawable/bg_press_wash"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <include layout="@layout/preference_about_heading" />
+
+    <include layout="@layout/preference_about_lines" />
+
+</LinearLayout>

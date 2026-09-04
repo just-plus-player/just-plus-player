@@ -1,7 +1,11 @@
 package com.brouken.player;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
@@ -14,16 +18,21 @@ import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ImageSpan;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.StaticLayout;
 import android.text.TextUtils;
+import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
@@ -35,8 +44,12 @@ import android.widget.Toast;
 import androidx.appcompat.app.ActionBar;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.OneShotPreDrawListener;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.media3.common.MediaLibraryInfo;
+import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
@@ -55,6 +68,7 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
 import com.brouken.player.together.AliasGenerator;
@@ -170,9 +184,6 @@ public class SettingsActivity extends AppCompatActivity
                         windowInsets.getSystemWindowInsetTop(),
                         windowInsets.getSystemWindowInsetRight(),
                         0);
-                if (recyclerView != null) {
-                    recyclerView.setPadding(0,0,0, windowInsets.getSystemWindowInsetBottom());
-                }
                 windowInsets.consumeSystemWindowInsets();
                 return windowInsets;
             });
@@ -233,6 +244,19 @@ public class SettingsActivity extends AppCompatActivity
     }
 
     /**
+     * What the list keeps clear at its foot: the system bars, and on a television the overscan strip a
+     * set may not show. The sides already keep 48dp of it ({@link #contentSideInset}); the foot kept
+     * none, so the last row came to rest on the very edge of the screen - which is why a badge at the
+     * end of About read as cut off there, and sat under the navigation bar on a phone.
+     *
+     * <p>Held as padding with {@code clipToPadding} false, so it is scrollable room rather than a gap:
+     * the list still fills the screen, and its end can now come up past the strip.
+     */
+    static int listBottomInset(final Context context) {
+        return Utils.isTvBox(context) ? Utils.dpToPx(48) : 0;
+    }
+
+    /**
      * Repaints the surfaces the AMOLED option owns, so toggling it does not need the window rebuilt.
      * Rebuilding was visible: the pressed row lit, the switch travelled, and only then did the whole
      * screen cut over in one frame — two beats where the eye expects none.
@@ -288,6 +312,23 @@ public class SettingsActivity extends AppCompatActivity
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
 
+        /** Every icon on the screen, recoloured for the surface it is drawn on. */
+        private static void tintIcons(final PreferenceGroup group, final int color) {
+            for (int i = 0; i < group.getPreferenceCount(); i++) {
+                final Preference preference = group.getPreference(i);
+                final Drawable icon = preference.getIcon();
+                if (icon != null) {
+                    // Mutated, or the tint reaches every row sharing the drawable's constant state.
+                    final Drawable own = icon.mutate();
+                    own.setTint(color);
+                    preference.setIcon(own);
+                }
+                if (preference instanceof PreferenceGroup) {
+                    tintIcons((PreferenceGroup) preference, color);
+                }
+            }
+        }
+
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             // Inflation materializes switch defaults, so record whether the key was already
@@ -303,6 +344,12 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+            // The hub's glyphs are the player's own, drawn white for the chrome over video, and white
+            // on a settings card is invisible in the light appearance. They take the surface accent
+            // instead - the Two Grounds Rule, learned three times already in the panels.
+            tintIcons(getPreferenceScreen(),
+                    MaterialColors.getColor(requireContext(), R.attr.colorPrimary, Color.WHITE));
 
             final Preference dangerousWarning = findPreference("dangerousWarning");
             if (dangerousWarning != null && Utils.isTvBox(requireContext())) {
@@ -550,38 +597,219 @@ public class SettingsActivity extends AppCompatActivity
                 privacyCategory.setVisible(false);
             }
 
-            PreferenceCategory updateCategory = findPreference("updateCategory");
-            if (!BuildConfig.ENABLE_UPDATE) {
-                if (updateCategory != null) {
-                    updateCategory.setVisible(false);
-                }
-            } else {
-                Preference currentVersion = findPreference("currentVersion");
-                if (currentVersion != null) {
-                    currentVersion.setSummary(BuildConfig.VERSION_NAME);
-                }
-                Preference checkUpdate = findPreference("checkUpdateNow");
-                if (checkUpdate != null) {
-                    checkUpdate.setOnPreferenceClickListener(preference -> {
-                        final Activity activity = getActivity();
-                        if (activity == null) {
-                            return true;
-                        }
-                        say(activity, R.string.update_checking);
-                        Updater.find(info -> activity.runOnUiThread(() -> {
-                            if (activity.isFinishing()) {
-                                return;
-                            }
-                            if (info != null) {
-                                UpdateUi.showAvailableDialog(activity, activity, info, null, false);
-                            } else {
-                                say(activity, R.string.update_none);
-                            }
-                        }));
-                        return true;
-                    });
-                }
+            final Preference stand = findPreference("aboutStand");
+            if (stand != null && Utils.isTvBox(requireContext())) {
+                // The badge is the last thing on the screen and does nothing, so a remote would stop at
+                // the row above it and never scroll far enough to show it. Selectable on a television
+                // for the same reason the decoder warning is: a D-pad only reaches what it can land on.
+                stand.setSelectable(true);
             }
+
+            Preference checkUpdate = findPreference("checkUpdateNow");
+            if (checkUpdate != null) {
+                checkUpdate.setOnPreferenceClickListener(preference -> {
+                    checkForUpdate();
+                    return true;
+                });
+            }
+
+            Preference source = findPreference("aboutSource");
+            if (source != null) {
+                source.setOnPreferenceClickListener(preference -> {
+                    openSource();
+                    return true;
+                });
+            }
+
+            // Only the group: About itself stands in every build, because what it says first -
+            // what this is and which version is running - is true with or without an updater.
+            PreferenceCategory updateCategory = findPreference("updateCategory");
+            if (updateCategory != null && !BuildConfig.ENABLE_UPDATE) {
+                updateCategory.setVisible(false);
+            }
+        }
+
+        /**
+         * The About block: the version, the lines under it, and the press that copies them. Views
+         * inside a row's own layout rather than a title and a summary, so they are filled in where
+         * every other custom layout in this screen is - see {@link #bindThemeMode}.
+         */
+        private void bindAbout(final PreferenceViewHolder holder, final Preference preference) {
+            if (preference == null) {
+                return;
+            }
+            if ("aboutHeader".equals(preference.getKey())) {
+                final View version = holder.findViewById(R.id.about_version);
+                if (version instanceof TextView) {
+                    ((TextView) version).setText("v" + BuildConfig.VERSION_NAME);
+                }
+                final View device = holder.findViewById(R.id.about_device);
+                if (device instanceof TextView) {
+                    ((TextView) device).setText(facts());
+                }
+                final View info = holder.findViewById(R.id.about_info);
+                final View hint = holder.findViewById(R.id.about_copy_hint);
+                // Nothing on a television reads a clipboard, and nothing there can tap either: the
+                // report is read off the screen, so the press and the mark that promises it both go.
+                final boolean canCopy = !Utils.isTvBox(requireContext());
+                if (hint != null) {
+                    hint.setVisibility(canCopy ? View.VISIBLE : View.GONE);
+                }
+                if (info != null) {
+                    // The listener first: setOnClickListener makes a view clickable even when what it
+                    // is handed is null, so clearing the flag before it does nothing.
+                    info.setOnClickListener(canCopy ? v -> copy(report()) : null);
+                    info.setClickable(canCopy);
+                    info.setFocusable(false);
+                    info.setContentDescription(canCopy ? getString(R.string.error_copy) : null);
+                }
+                return;
+            }
+        }
+
+        /**
+         * What a bug report needs, in the shape {@code ErrorActivity} already pastes: the build, then
+         * the device, then the hardware. Three lines rather than that screen's full dump, because this
+         * one is read on screen as well as pasted.
+         */
+        private static String facts() {
+            final StringBuilder sb = new StringBuilder();
+            sb.append("Android: ").append(Build.VERSION.RELEASE)
+                    .append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
+            sb.append("Device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
+                    .append(" (").append(Build.DEVICE).append(")\n");
+            sb.append("ABI: ").append(primaryAbi()).append('\n');
+            sb.append("Media3: ").append(MediaLibraryInfo.VERSION);
+            // The extension decoder is what plays AC3/EAC3/DTS here, and whether it loaded at all is
+            // the first question a "no sound" report raises.
+            if (FfmpegLibrary.isAvailable()) {
+                sb.append("\nFFmpeg: ").append(FfmpegLibrary.getVersion());
+            }
+            return sb.toString();
+        }
+
+        /**
+         * What a bug report needs, in the shape {@code ErrorActivity} already pastes: the build, then
+         * everything the block shows, then the firmware the lines above cannot pin.
+         */
+        private static String report() {
+            return BuildConfig.APPLICATION_ID + "@" + BuildConfig.VERSION_NAME
+                    + " (build " + BuildConfig.VERSION_CODE + ", " + BuildConfig.FLAVOR
+                    + (BuildConfig.DEBUG ? " debug)" : " release)") + "\n"
+                    + facts() + "\n"
+                    + "Build: " + Build.FINGERPRINT;
+        }
+
+        private static String primaryAbi() {
+            return Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "?";
+        }
+
+        /**
+         * The project's address, handed over by the first means this device actually has: share it,
+         * failing that open it, failing that keep it, and on a television the code, always. No menu -
+         * the viewer pressed a row that names one thing, and being asked how to do it is a question
+         * they did not ask.
+         *
+         * <p>The two intents are resolved the way the room invite already resolves its own; copying is
+         * judged rather than resolved, because no API says whether there is anywhere to paste.
+         */
+        private void openSource() {
+            final Activity activity = getActivity();
+            if (activity == null) {
+                return;
+            }
+            final String url = getString(R.string.about_github_url);
+            // A television first, whatever else resolves there: reading a page with a remote is not
+            // why anyone presses this row, and a phone camera is the way off that screen.
+            if (Utils.isTvBox(activity)) {
+                if (!showQr(activity, url)) {
+                    copy(url);
+                }
+                return;
+            }
+            final Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, url);
+            if (canHandle(activity, share)) {
+                startActivity(Intent.createChooser(share, getString(R.string.error_share)));
+                return;
+            }
+            final Intent open = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            if (canHandle(activity, open)) {
+                startActivity(open);
+                return;
+            }
+            copy(url);
+        }
+
+        private static boolean canHandle(final Activity activity, final Intent intent) {
+            return !activity.getPackageManager().queryIntentActivities(intent, 0).isEmpty();
+        }
+
+        /** The link as a code a phone can read, or false where one could not be drawn. */
+        private boolean showQr(final Activity activity, final String url) {
+            final Context dialogContext = Utils.dialogContext(activity);
+            final DisplayMetrics metrics = getResources().getDisplayMetrics();
+            // Half the shorter side, and pinned to that: left to fill the dialog's width, a code on a
+            // television grew until the OK button underneath it was off the bottom of the screen.
+            final int side = (int) (Math.min(metrics.widthPixels, metrics.heightPixels) * 0.5f);
+            final Bitmap qr = Utils.qrBitmap(url, side);
+            if (qr == null) {
+                return false;
+            }
+            final ImageView image = new ImageView(dialogContext);
+            image.setImageBitmap(qr);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            final FrameLayout frame = new FrameLayout(dialogContext);
+            final int padding = Math.round(16 * metrics.density);
+            frame.setPadding(padding, padding, padding, padding);
+            frame.addView(image, new FrameLayout.LayoutParams(side, side, Gravity.CENTER));
+            new MaterialAlertDialogBuilder(dialogContext)
+                    .setTitle(R.string.about_github)
+                    .setMessage(R.string.about_github_qr)
+                    .setView(frame)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return true;
+        }
+
+        private void copyReport() {
+            copy(report());
+        }
+
+        private void copy(final String text) {
+            final Activity activity = getActivity();
+            if (activity == null) {
+                return;
+            }
+            final ClipboardManager clipboard =
+                    (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) {
+                return;
+            }
+            clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.pref_about_header), text));
+            // From 33 the system shows its own copy confirmation, and two of them is one too many.
+            if (Build.VERSION.SDK_INT < 33) {
+                say(activity, R.string.error_copied);
+            }
+        }
+
+        /** Asks GitHub, and says so either way: silence reads as a row that did nothing. */
+        private void checkForUpdate() {
+            final Activity activity = getActivity();
+            if (activity == null) {
+                return;
+            }
+            say(activity, R.string.update_checking);
+            Updater.find(info -> activity.runOnUiThread(() -> {
+                if (activity.isFinishing()) {
+                    return;
+                }
+                if (info != null) {
+                    UpdateUi.showAvailableDialog(activity, activity, info, null, false);
+                } else {
+                    say(activity, R.string.update_none);
+                }
+            }));
         }
 
         /**
@@ -602,11 +830,27 @@ public class SettingsActivity extends AppCompatActivity
                         // card's side insets make the line shorter still. Let it wrap instead.
                         title.setSingleLine(false);
                         title.setEllipsize(null);
+                        restoreReadoutInk(title, getItem(position));
                     }
                     reserveTallerSummary(holder, getItem(position));
                     bindThemeMode(holder, getItem(position));
+                    bindAbout(holder, getItem(position));
                 }
             };
+        }
+
+        /**
+         * A row that cannot be selected is lettered like a row that is switched off - the library
+         * dims both by the same rule. That is right for something unavailable and wrong for something
+         * simply not pressable: measured on the About screen, the developer's name came out 8.13:1
+         * against its card where the source line beside it reads 14.85:1, and the pair looked like one
+         * row was greyed out. Enabled and unselectable takes the full ink back.
+         */
+        private static void restoreReadoutInk(final TextView title, final Preference preference) {
+            if (preference == null || preference.isSelectable() || !preference.isEnabled()) {
+                return;
+            }
+            title.setTextColor(MaterialColors.getColor(title, R.attr.colorOnSurface));
         }
 
         /**
@@ -779,6 +1023,14 @@ public class SettingsActivity extends AppCompatActivity
             // Unconditionally: the inset padding below wants it only on 29+, but repaintAmoledSurfaces
             // needs the list on every SDK, or the cards keep the old tone on 23-28 until the next launch.
             recyclerView = getListView();
+            final int overscan = listBottomInset(requireContext());
+            recyclerView.setClipToPadding(false);
+            ViewCompat.setOnApplyWindowInsetsListener(recyclerView, (list, insets) -> {
+                list.setPadding(0, 0, 0, overscan
+                        + insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom);
+                return insets;
+            });
+            ViewCompat.requestApplyInsets(recyclerView);
             if (getArguments() != null) {
                 // A sub-screen is a replaced fragment, and a replaced fragment starts with nothing
                 // focused: the first D-pad press then goes wherever the view root guesses instead
@@ -832,7 +1084,11 @@ public class SettingsActivity extends AppCompatActivity
                     return false;
                 }
                 final View focused = list.findFocus();
-                if (focused == null || focused instanceof MaterialButtonToggleGroup) {
+                // A control that has horizontal neighbours of its own keeps the axis: the theme
+                // control moves between its three segments, and the About block between Copy and
+                // GitHub. Jumping a section from there would swallow the move a remote means.
+                if (focused == null || focused instanceof MaterialButtonToggleGroup
+                        || focused instanceof MaterialButton) {
                     return false;
                 }
                 final int from = list.getChildAdapterPosition(list.findContainingItemView(focused));

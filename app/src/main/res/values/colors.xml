@@ -33,6 +33,19 @@
          The player's current picker row takes it too, so a selected row and a switch that is on are the
          same colour rather than two different dimmings of the same accent. -->
     <color name="brand_container">#FF7A2019</color>
+
+    <!-- The mark's plum, the ground the app gives itself where it speaks for itself: the empty state,
+         the error screen, the About block. Named here because three places draw it. -->
+    <color name="brand_plum">#FF1C0F42</color>
+
+    <!-- The launcher icon's own ground, a shade under the wash's plum. Named because the About block
+         draws the same tile the launcher does. -->
+    <color name="app_icon_ground">#FF150B33</color>
+
+    <!-- The flag, at its published values. A badge rather than a palette entry: nothing else in the
+         app reads these, and nothing else should. -->
+    <color name="ua_blue">#FF0057B7</color>
+    <color name="ua_yellow">#FFFFD700</color>
     <!-- M3 on-primary: the ink that sits on the brand, e.g. the switch handle when it is on. -->
     <color name="brand_on">#FF5F1411</color>
     <!-- AMOLED: the card tone over a pure black window, still a shade above it so cards read as cards. -->

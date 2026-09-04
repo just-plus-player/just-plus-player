@@ -180,6 +180,27 @@
         <item name="strokeColor">@color/focus_ring_outlined</item>
     </style>
 
+    <!-- A glyph button drawn on the app's own wash. An outline there has no contrast guarantee - the
+         ground under it moves - so the frame is the plate the player already draws over video, and the
+         glyph is white against it. Utils.focusRing still widens the ring on a remote. -->
+    <style name="Widget.JustPlus.Button.Icon.Plate" parent="Widget.JustPlus.Button.Quiet.Icon">
+        <!-- The vertical twin of the trap above: Material insets a button 6dp at top and bottom, so a
+             48dp box drew its plate 48 by 36 - a lying-down oval, and the focus ring traced it. -->
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <!-- The box is padding plus glyph, never a fixed width around a smaller one: MaterialButton
+             lays its icon against paddingStart and does not move it when the view is stretched, so a
+             24dp glyph in a 48dp box sat 4.5dp left of the middle. The same recipe Utils.iconButton
+             already carries for the panels' glyphs, written here for the two the layout builds. -->
+        <item name="android:padding">12dp</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="backgroundTint">@color/ui_controls_background</item>
+        <item name="iconTint">@color/white</item>
+    </style>
+
     <!-- The one style whose stroke is not only the ring: it is also the border that makes the button
          outlined. So it keeps the thin border at rest and Utils.focusRing widens it to the ring's own
          width while it holds focus, which is the second half of the signal. A grey border that only

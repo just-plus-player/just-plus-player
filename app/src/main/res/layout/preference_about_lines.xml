@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by SettingsActivity: Android, the device, the ABI, and the two decoders this app carries
+     its own copies of. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/about_device"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:lineSpacingExtra="2dp"
+    android:textAppearance="?attr/textAppearanceBodySmall"
+    android:textColor="@color/ink_secondary" />

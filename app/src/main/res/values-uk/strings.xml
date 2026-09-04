@@ -259,8 +259,8 @@
     <string name="pref_file_access">Доступ до файлів</string>
     <string name="pref_file_access_auto">Автоматично</string>
     <string name="mediastore_empty">Відеофайли не знайдено</string>
-    <string name="pref_dangerous_header">Увага⚠️</string>
-    <string name="pref_dangerous_warning">Перемикання параметрів у цій категорії може порушити відтворення зазвичай сумісного контенту</string>
+    <string name="pref_decoding_header">Декодування</string>
+    <string name="pref_dangerous_warning">Перемикання цих параметрів може порушити відтворення зазвичай сумісного контенту</string>
     <string name="pref_shortcuts_header">Ярлики</string>
     <string name="pref_decoder_priority">Пріоритет декодера</string>
     <string name="pref_decoder_priority_prefer_device">Надавати перевагу декодерам пристрою</string>
@@ -366,4 +366,34 @@
     <string name="sleep_timer_backspace">Видалити цифру</string>
     <string name="duration_hours">Години</string>
     <string name="duration_minutes">Хвилини</string>
+
+    <!-- Settings hub: four sections, each row a screen of its own. -->
+    <string name="pref_section_interface">Вигляд і керування</string>
+    <string name="pref_section_playback">Відтворення</string>
+    <string name="pref_section_system">Система</string>
+    <string name="pref_video_header">Відео та файли</string>
+    <string name="pref_appearance_header_summary">Тема, чорний AMOLED</string>
+    <string name="pref_controls_header_summary">Гучність, жести, утримання для прискорення</string>
+    <string name="pref_onscreen_header_summary">Годинник, час до кінця, статистика</string>
+    <string name="pref_video_header_summary">Доступ до файлів, частота кадрів, картинка в картинці</string>
+    <string name="pref_audio_header_summary">Бажані мови, пряме передавання</string>
+    <string name="pref_subtitle_header_summary">Мови, другий рядок, пошук, вигляд</string>
+    <string name="pref_decoding_header_summary">Пріоритет декодера, тунелювання, Dolby Vision</string>
+    <string name="pref_about_header">Про застосунок</string>
+    <string name="pref_about_header_summary">Версія, оновлення</string>
+
+    <string name="pref_auto_update">Автоматичні оновлення</string>
+    <string name="pref_auto_update_on">Перевіряти нові випуски у фоні й пропонувати встановити</string>
+    <string name="pref_auto_update_off">Ніколи не перевіряти оновлення автоматично</string>
+    <string name="pref_check_update">Перевірити оновлення</string>
+
+    <string name="pref_about_device">Про пристрій</string>
+
+    <string name="about_github_qr">Скануйте камерою телефона, щоб відкрити сторінку проєкту.</string>
+
+    <string name="pref_about_project">Проєкт</string>
+    <string name="pref_about_developer">Розробник</string>
+    <string name="pref_about_source">Вихідний код</string>
+
+
 </resources>

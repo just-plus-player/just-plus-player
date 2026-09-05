@@ -21,18 +21,35 @@
             app:summary="@string/pref_appearance_header_summary"
             app:title="@string/pref_appearance_header">
 
-            <!-- Written by SettingsActivity, which also binds the segmented control this row is. -->
-            <Preference
-                app:key="themeMode"
-                app:layout="@layout/preference_theme_mode"
-                app:persistent="false"
-                app:selectable="false" />
+            <!-- Its own section, and first: what the app is read in is not one of the things a theme
+                 decides, and a row sharing a card with the theme control reads as if it were. Opened by
+                 SettingsActivity; the summary is the language in force. -->
+            <PreferenceCategory app:title="@string/pref_section_language">
 
-            <SwitchPreferenceCompat
-                app:defaultValue="false"
-                app:key="amoledBlack"
-                app:summary="@string/pref_amoled_summary"
-                app:title="@string/pref_amoled" />
+                <Preference
+                    app:icon="@drawable/ic_language_24dp"
+                    app:key="appLanguage"
+                    app:persistent="false"
+                    app:title="@string/pref_app_language" />
+
+            </PreferenceCategory>
+
+            <PreferenceCategory app:title="@string/pref_section_theme">
+
+                <!-- Written by SettingsActivity, which also binds the segmented control this row is. -->
+                <Preference
+                    app:key="themeMode"
+                    app:layout="@layout/preference_theme_mode"
+                    app:persistent="false"
+                    app:selectable="false" />
+
+                <SwitchPreferenceCompat
+                    app:defaultValue="false"
+                    app:key="amoledBlack"
+                    app:summary="@string/pref_amoled_summary"
+                    app:title="@string/pref_amoled" />
+
+            </PreferenceCategory>
 
         </PreferenceScreen>
 

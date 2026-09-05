@@ -12,17 +12,15 @@
 
     <dimen name="marker_width">3dp</dimen>
 
-    <!-- The D-pad focus ring, everywhere one is drawn: the three button styles in themes.xml, the
-         picker row, the slider thumb and the skip pill. One number, because it used to be five
-         literal 2dp's reached by three different paths, and they did not agree — Utils.dpToPx
+    <!-- The D-pad focus contour, everywhere one is drawn: the three button styles in themes.xml, the
+         picker row, the slider thumb, the skip pill and the chrome over video. One number, because it used
+         to be five literal 2dp's reached by three different paths, and they did not agree — Utils.dpToPx
          truncates, so the row's "2dp" arrived 50% thinner than the buttons' identical 2dp.
 
-         A television gets a wider one (values-television, values-notouch). Everything else in the
-         player's geometry grows with UiMetrics.dpS, which this cannot: a style in XML has no way to
-         reach it. Contrast is not thickness — at three metres a hairline is lost where a line reads
-         at once, and 2dp on a 720p set is three pixels. Outlined buttons are the exception: their
-         stroke is also their resting border, so they stay thin at rest and thicken to this on focus
-         (see Utils.focusRing). -->
+         The same 2dp on a television, where it used to be 4dp. A focus mark is read, not measured: 2dp is
+         4px on a 1080p set, which subtends about 3 arcmin at three metres — three times the eye's limit —
+         while 4dp around a 44dp tile is a ninth of the tile and reads as a slab, not a line. Contrast does
+         the carrying instead: the contour is always drawn on a plate, never on the picture. -->
     <dimen name="focus_ring_width">2dp</dimen>
 
     <dimen name="level_bar_width">6dp</dimen>

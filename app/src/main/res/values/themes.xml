@@ -39,6 +39,9 @@
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
 
+    <!-- Split from the base so a qualifier folder could override the theme without redefining it. The
+         values-television / values-notouch overlay that once gave a remote a white focus wash here is
+         gone: focus is a ring every control draws for itself. -->
     <style name="Theme.Player" parent="BaseTheme.Player">
     </style>
 
@@ -48,7 +51,7 @@
         <item name="android:layout_height">54dp</item>
         <item name="android:padding">14dp</item>
         <item name="android:scaleType">fitCenter</item>
-        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">@null</item>
         <item name="android:tint">@color/white</item>
         <item name="android:focusable">true</item>
     </style>
@@ -75,8 +78,9 @@
         <item name="android:colorControlActivated">@color/brand</item>
     </style>
 
-    <!-- Split like Theme.Player, so values-television and values-notouch can give the error screen the
-         same white focus highlight the player already gets there. -->
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
     <style name="Theme.Error" parent="BaseTheme.Error">
     </style>
 
@@ -119,9 +123,9 @@
         <item name="android:colorControlActivated">@color/brand_accent</item>
     </style>
 
-    <!-- Split like Theme.Player and Theme.Error, so values-television and values-notouch can give the
-         settings list the white focus highlight a remote needs. This is the screen a remote spends
-         the most presses in, and it was the one theme that never got the override. -->
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
     <style name="Theme.Settings" parent="BaseTheme.Settings">
     </style>
 
@@ -307,9 +311,7 @@
              cannot be read on it. @color/brand_accent is the one value that works on both. -->
         <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <!-- Black, as Theme.Settings already has it: this is the ink on a filled accent, and on
-             #D6493C white measures 4.31:1 where black measures 4.88:1. A dialog's confirming action is
-             14sp, which is small text, so the difference is the AA line. -->
+        <!-- The same ink Theme.Settings uses on a filled accent; colors.xml says why it is white. -->
         <item name="colorOnPrimary">@color/brand_accent_on</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
              segment of a toggle group, the current row of a picker, the track of a switch. Material
@@ -325,8 +327,9 @@
         <item name="colorAccent">@color/brand_accent</item>
     </style>
 
-    <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
-         white focus wash a remote needs without redefining everything above. -->
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
     <style name="Theme.Dialogs.Light" parent="BaseTheme.Dialogs.Light">
     </style>
 
@@ -344,9 +347,7 @@
              @color/brand stays what it always was: the chrome over video, which is never light. -->
         <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorPrimaryContainer">@color/brand_container</item>
-        <!-- Black, as Theme.Settings already has it: this is the ink on a filled accent, and on
-             #D6493C white measures 4.31:1 where black measures 4.88:1. A dialog's confirming action is
-             14sp, which is small text, so the difference is the AA line. -->
+        <!-- The same ink Theme.Settings uses on a filled accent; colors.xml says why it is white. -->
         <item name="colorOnPrimary">@color/brand_accent_on</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
              segment of a toggle group, the current row of a picker, the track of a switch. Material
@@ -362,8 +363,9 @@
         <item name="colorAccent">@color/brand_accent</item>
     </style>
 
-    <!-- Split like Theme.Player, so values-television and values-notouch can give a panel the
-         white focus wash a remote needs without redefining everything above. -->
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
     <style name="Theme.Dialogs.Dark" parent="BaseTheme.Dialogs.Dark">
     </style>
 

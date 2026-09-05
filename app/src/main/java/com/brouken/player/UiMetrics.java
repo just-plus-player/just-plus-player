@@ -71,7 +71,12 @@ final class UiMetrics {
     // ---- alignment / chrome tokens (single producer each — see plan §A) ----
     int gridH()             { return dpS(14); }   // shared right-edge content grid
     int pillCorner()        { return dpS(8); }
-    int pillPadH()          { return dpS(4); }
+    // The focus contour inside a control pill: the button box less this on every side, so the line has air
+    // against the pill's edge and against the next button. Its corner is the pill's less that inset, which
+    // is Material's rule for a shape nested in another — the two curves stay parallel instead of one being
+    // a circle cut into a rounded box.
+    int contourInset()      { return dpS(4); }
+    int contourCorner()     { return dpS(4); }
     int clusterBox()        { return dpS(40); }
     int clusterPad()        { return dpS(8); }
     int heroBox()           { return dpS(90); }   // central play/pause tap target (was exo_icon_size)

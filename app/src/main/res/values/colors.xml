@@ -24,9 +24,12 @@
          section header it lands at 4.11:1 light and 4.30:1 dark — short of AA, and still twice what
          the bright coral managed on white. -->
     <color name="brand_accent">#FFD6493C</color>
-    <!-- Ink on that accent. Near-black wins the arithmetic on a mid-toned fill: 4.88:1, where white is
-         4.31:1 and fails small text. -->
-    <color name="brand_accent_on">@color/black</color>
+    <!-- Ink on that accent. White. WCAG 2 arithmetic prefers near-black here (4.88:1 against white's
+         4.31:1), and that is the metric's known blind spot on a saturated mid-tone: perceptually (APCA)
+         black reads Lc 35, short even of the large-text floor, where white reads Lc 74 and clears a
+         14sp medium label. The eye agrees with APCA. The fill is not darkened to buy white the WCAG
+         tick — that would cost the button its own edge against a dark dialog surface. -->
+    <color name="brand_accent_on">@color/white</color>
 
     <!-- M3 primary container (switch track when on, tonal surfaces): the brand at container tone.
          One value for both day and night — a deep coral reads on white and on the dark settings list alike.
@@ -104,8 +107,15 @@
 
     <!-- Press feedback, one tone for every player surface. The three it replaced looked like a scale
          keyed to how bright the ground is, but they were not: a picker row and an OffsetPanel pill sit
-         on the same dark panel — @color/pill_off_fill is barely a fill — and took #40 and #20. -->
-    <color name="ripple_chrome">#40FFFFFF</color>
+         on the same dark panel — @color/pill_off_fill is barely a fill — and took #40 and #20.
+
+         The brand, not white: a press on chrome is the app's own touch, and a neutral wash on a neutral
+         plate reads as the plate getting lighter rather than as the control answering. Material sizes a
+         state layer by its colour — 0.10 for a content-coloured one — and coral at 0.10 over the plate is
+         barely there, so it runs at 0.20, which lands within a point of L* of the white 0.10 it replaces
+         (over black: #1A1A1A against #331613) while carrying the hue. A press fills the shape the focus
+         contour outlines; it does not repaint it. -->
+    <color name="ripple_chrome">#33FE6F61</color>
 
     <!-- Segment highlights (see CustomDefaultTimeBar): a *_fill band across the segment plus a crisp
          boundary hairline in the lighter *_edge colour. Three-colour timeline system — coral =
@@ -119,8 +129,11 @@
     <color name="ad_fill">#C7FFA000</color>
 
     <!-- The translucent black chrome: the control cluster, the lock and stats pills, the round discs,
-         swipe-to-unlock, the navigation bar, and the Media3 colours below that alias to it. -->
-    <color name="ui_controls_background">#98000000</color>
+         swipe-to-unlock, the navigation bar, and the Media3 colours below that alias to it. 80%, not the
+         60% it was: the plate now carries coloured ink (the hero's coral glyph, an on state) and a white
+         focus contour, and at 60% it resolves to #676767 over a white frame, where brand is 2.06:1. At 80%
+         it is #333333 there, and brand holds 4.61:1 on the brightest frame a picture can be. -->
+    <color name="ui_controls_background">#CC000000</color>
     <color name="exo_bottom_bar_background" tools:keep="@color/exo_bottom_bar_background">@color/ui_controls_background</color>
     <color name="exo_black_opacity_70" tools:keep="@color/exo_black_opacity_70">@color/ui_controls_background</color>
     <color name="exo_styled_error_message_background" tools:keep="@color/exo_styled_error_message_background">@color/ui_controls_background</color>

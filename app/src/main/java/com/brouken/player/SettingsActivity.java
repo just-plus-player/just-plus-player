@@ -12,8 +12,10 @@ import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -286,7 +288,15 @@ public class SettingsActivity extends AppCompatActivity
     /** Up from a sub-screen goes back one level, not out of the settings altogether. */
     @Override
     public boolean onSupportNavigateUp() {
-        return getSupportFragmentManager().popBackStackImmediate() || super.onSupportNavigateUp();
+        if (getSupportFragmentManager().popBackStackImmediate()) {
+            return true;
+        }
+        // Never the framework's Up: it synthesises a launch of the manifest parent — PlayerActivity with
+        // no data — and a player asked to start with nothing to play opens the empty state over the session
+        // that was running. This screen is always entered from somewhere, so leaving it is a finish: the
+        // caller comes back exactly as it was, and gets its result.
+        finish();
+        return true;
     }
 
     /**
@@ -357,6 +367,15 @@ public class SettingsActivity extends AppCompatActivity
                 // safety text in front of the two settings that can stop video from playing. It does
                 // nothing when pressed, which is the correct amount for a warning.
                 dangerousWarning.setSelectable(true);
+            }
+
+            final Preference language = findPreference("appLanguage");
+            if (language != null) {
+                language.setSummary(AppLanguage.summary(requireContext()));
+                language.setOnPreferenceClickListener(preference -> {
+                    AppLanguage.showPicker(requireContext());
+                    return true;
+                });
             }
 
             final Preference preferenceAmoled = findPreference("amoledBlack");
@@ -805,7 +824,13 @@ public class SettingsActivity extends AppCompatActivity
                     return;
                 }
                 if (info != null) {
-                    UpdateUi.showAvailableDialog(activity, activity, info, null, false);
+                    // The same three actions the background offer carries. Asking for the check does not
+                    // mean wanting the version: ignoring it here is what stops it being offered again.
+                    UpdateUi.showAvailableDialog(activity, activity, info, () -> {
+                        final Prefs prefs = new Prefs(activity);
+                        prefs.setUpdateSkippedVersionCode(info.versionCode);
+                        prefs.setUpdatePending(null);
+                    }, false);
                 } else {
                     say(activity, R.string.update_none);
                 }
@@ -813,8 +838,8 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * Rows are corner-clipped to the card they sit in, so a ripple — and the focus highlight a
-         * D-pad leaves on TV — stops at the rounded corner instead of squaring it off.
+         * Rows are corner-clipped to the card they sit in, so a ripple stops at the rounded corner
+         * instead of squaring it off, and each wears the D-pad focus ring on that same outline.
          */
         @Override
         protected RecyclerView.Adapter onCreateAdapter(@NonNull PreferenceScreen preferenceScreen) {
@@ -1005,6 +1030,13 @@ public class SettingsActivity extends AppCompatActivity
         @Override
         public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
+            // A sub-screen is titled when it is opened, and the activity forgets that the moment it is
+            // built again — a rotation, or the language row taking effect. The screen it is rooted at
+            // knows its own name, so it says it here as well.
+            if (getArguments() != null && getArguments().getString(ARG_PREFERENCE_ROOT) != null
+                    && getPreferenceScreen() != null && getPreferenceScreen().getTitle() != null) {
+                requireActivity().setTitle(getPreferenceScreen().getTitle());
+            }
             final RecyclerView cardList = getListView();
             if (cardList != null) {
                 // The card's own hairlines replace the list's full-width dividers, which would cut
@@ -1049,9 +1081,17 @@ public class SettingsActivity extends AppCompatActivity
                 openAtPreference(returning, 3);
             } else if (savedInstanceState == null) {
                 // Long-pressing a player button lands on the section that button is about, the way
-                // a quick-settings tile opens its own page.
+                // a quick-settings tile opens its own page. When the key names a section rather than a
+                // row, the section is opened: the subtitle button used to name a preference that has
+                // since moved inside one, and naming a row that is no longer on this list left the
+                // screen at the top with nothing said.
                 final String key = activity.getIntent().getStringExtra(EXTRA_SCROLL_TO);
-                if (key != null) {
+                final Preference target = key == null ? null : findPreference(key);
+                if (target instanceof PreferenceScreen) {
+                    // After this pass, not during it: replacing the fragment while it is still being
+                    // created leaves the screen blank.
+                    view.post(() -> activity.onPreferenceStartScreen(this, (PreferenceScreen) target));
+                } else if (key != null) {
                     openAtPreference(key, 3);
                 } else if (Utils.isTvBox(activity)) {
                     // Opened from the player menu with no section to land on. A remote needs
@@ -1409,9 +1449,10 @@ public class SettingsActivity extends AppCompatActivity
      * Groups the list the way a Material settings screen is grouped: every run of rows under one
      * category is one rounded card, inset from the edges, with a hairline between its rows.
      *
-     * Drawn behind the rows instead of being set as their background, so each row keeps the ripple
-     * and the D-pad focus highlight that androidx.preference gives it — replacing the background is
-     * what costs a TV remote its focus indicator.
+     * Drawn behind the rows instead of being set as their background: a card behind a row is one
+     * drawable, a card cut into row backgrounds is one per row that has to know where in the card it
+     * sits. The row's own background is the press ripple; the D-pad focus is a ring on the row's outline,
+     * as it is on every other control in the app, in place of the wash androidx.preference gives it.
      */
     private static final class GroupCards extends RecyclerView.ItemDecoration {
 
@@ -1499,9 +1540,11 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * The hairlines go on top of the rows, not under them: a pressed or focused row paints a state
-         * layer over its whole height, and a divider drawn beneath it would vanish for as long as the
-         * touch lasts.
+         * The hairlines go on top of the rows rather than under them, so that a row's own state layer
+         * cannot tint them — but a lit row takes the two lines that touch it with it. That is what the
+         * system settings do: while a row is pressed the dividers at its edges are gone and the highlight
+         * is the only edge, instead of a line running through it. A line belongs to the row above it, so
+         * both the row it is drawn for and the row below have to be quiet for it to appear.
          */
         @Override
         public void onDrawOver(@NonNull Canvas canvas, @NonNull RecyclerView parent,
@@ -1513,10 +1556,18 @@ public class SettingsActivity extends AppCompatActivity
                         || isCardBottom(parent, position)) {
                     continue;
                 }
+                if (isLit(row) || isLit(i + 1 < parent.getChildCount() ? parent.getChildAt(i + 1) : null)) {
+                    continue;
+                }
                 final float y = row.getBottom();
                 canvas.drawLine(row.getLeft() + hairlineInset, y,
                         row.getRight() - hairlineInset, y, hairline);
             }
+        }
+
+        /** Whether a row is currently wearing a mark of its own: the press state layer, or the focus contour. */
+        private static boolean isLit(final View row) {
+            return row != null && (row.isPressed() || row.isFocused());
         }
 
         /** Corner-clips one row to its card: rounded at the card's ends, square inside it. */
@@ -1540,6 +1591,13 @@ public class SettingsActivity extends AppCompatActivity
                 }
             });
             row.setClipToOutline(true);
+            // The slice of the card this row is: rounded where the card is, square where the next row
+            // continues it. The focus ring traces exactly that, so it is never cut by the clip above.
+            final float t = top ? RADIUS : 0;
+            final float b = bottom ? RADIUS : 0;
+            row.setForeground(Utils.focusOutline(row.getContext(), new float[]{t, t, t, t, b, b, b, b}));
+            row.setBackground(new RippleDrawable(Utils.pressOnly(MaterialColors.getColor(row,
+                    R.attr.colorControlHighlight)), null, new ColorDrawable(Color.WHITE)));
         }
 
         private static boolean isCardTop(final RecyclerView parent, final int position) {

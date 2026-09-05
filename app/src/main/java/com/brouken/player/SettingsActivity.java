@@ -288,7 +288,15 @@ public class SettingsActivity extends AppCompatActivity
     /** Up from a sub-screen goes back one level, not out of the settings altogether. */
     @Override
     public boolean onSupportNavigateUp() {
-        return getSupportFragmentManager().popBackStackImmediate() || super.onSupportNavigateUp();
+        if (getSupportFragmentManager().popBackStackImmediate()) {
+            return true;
+        }
+        // Never the framework's Up: it synthesises a launch of the manifest parent — PlayerActivity with
+        // no data — and a player asked to start with nothing to play opens the empty state over the session
+        // that was running. This screen is always entered from somewhere, so leaving it is a finish: the
+        // caller comes back exactly as it was, and gets its result.
+        finish();
+        return true;
     }
 
     /**

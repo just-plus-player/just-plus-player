@@ -1396,9 +1396,10 @@ public class PlayerActivity extends Activity {
             // that session on here instead of opening the empty state over a video that is still running.
             setIntent(inheritedIntent);
             handleViewIntent(inheritedIntent);
-        } else {
+        } else if (isLauncherStart(launchIntent)) {
             // Nothing came in — a launcher start opens on the empty state instead of resuming
-            // whatever was last watched.
+            // whatever was last watched. Only a launcher start: every other way an activity is handed a
+            // data-less intent is a return to a session, not a request to forget it.
             mPrefs.suppressResume = true;
         }
         // After the intent, so a session being restored wins over the launch extras it was started with.
@@ -3187,6 +3188,17 @@ public class PlayerActivity extends Activity {
                 }
             }
         }
+    }
+
+    /**
+     * A start from the home screen icon, and nothing else. An intent with no data can also arrive from an
+     * Up navigation synthesised out of a manifest parent, or from a system relaunch of the task, and those
+     * are returns to what is already playing: treating them as "the icon was tapped" both opened the empty
+     * state over a running session and wrote suppressResume, which then outlived the mistake.
+     */
+    private static boolean isLauncherStart(final Intent intent) {
+        return intent != null && Intent.ACTION_MAIN.equals(intent.getAction())
+                && intent.hasCategory(Intent.CATEGORY_LAUNCHER);
     }
 
     @SuppressLint("GestureBackNavigation")

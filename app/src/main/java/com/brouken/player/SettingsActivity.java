@@ -1502,9 +1502,11 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * The hairlines go on top of the rows, not under them: a pressed or focused row paints a state
-         * layer over its whole height, and a divider drawn beneath it would vanish for as long as the
-         * touch lasts.
+         * The hairlines go on top of the rows rather than under them, so that a row's own state layer
+         * cannot tint them — but a lit row takes the two lines that touch it with it. That is what the
+         * system settings do: while a row is pressed the dividers at its edges are gone and the highlight
+         * is the only edge, instead of a line running through it. A line belongs to the row above it, so
+         * both the row it is drawn for and the row below have to be quiet for it to appear.
          */
         @Override
         public void onDrawOver(@NonNull Canvas canvas, @NonNull RecyclerView parent,
@@ -1516,10 +1518,18 @@ public class SettingsActivity extends AppCompatActivity
                         || isCardBottom(parent, position)) {
                     continue;
                 }
+                if (isLit(row) || isLit(i + 1 < parent.getChildCount() ? parent.getChildAt(i + 1) : null)) {
+                    continue;
+                }
                 final float y = row.getBottom();
                 canvas.drawLine(row.getLeft() + hairlineInset, y,
                         row.getRight() - hairlineInset, y, hairline);
             }
+        }
+
+        /** Whether a row is currently wearing a mark of its own: the press state layer, or the focus contour. */
+        private static boolean isLit(final View row) {
+            return row != null && (row.isPressed() || row.isFocused());
         }
 
         /** Corner-clips one row to its card: rounded at the card's ends, square inside it. */

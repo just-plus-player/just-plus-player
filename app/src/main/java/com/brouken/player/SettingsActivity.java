@@ -369,6 +369,15 @@ public class SettingsActivity extends AppCompatActivity
                 dangerousWarning.setSelectable(true);
             }
 
+            final Preference language = findPreference("appLanguage");
+            if (language != null) {
+                language.setSummary(AppLanguage.summary(requireContext()));
+                language.setOnPreferenceClickListener(preference -> {
+                    AppLanguage.showPicker(requireContext());
+                    return true;
+                });
+            }
+
             final Preference preferenceAmoled = findPreference("amoledBlack");
             if (preferenceAmoled != null) {
                 preferenceAmoled.setOnPreferenceChangeListener((preference, value) -> {
@@ -1021,6 +1030,13 @@ public class SettingsActivity extends AppCompatActivity
         @Override
         public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
+            // A sub-screen is titled when it is opened, and the activity forgets that the moment it is
+            // built again — a rotation, or the language row taking effect. The screen it is rooted at
+            // knows its own name, so it says it here as well.
+            if (getArguments() != null && getArguments().getString(ARG_PREFERENCE_ROOT) != null
+                    && getPreferenceScreen() != null && getPreferenceScreen().getTitle() != null) {
+                requireActivity().setTitle(getPreferenceScreen().getTitle());
+            }
             final RecyclerView cardList = getListView();
             if (cardList != null) {
                 // The card's own hairlines replace the list's full-width dividers, which would cut

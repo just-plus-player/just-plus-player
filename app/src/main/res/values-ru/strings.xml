@@ -54,6 +54,10 @@
     <string name="pref_allow_system_framerate_off">Не менять частоту обновления экрана во время воспроизведения</string>
     <string name="pref_general_header">Общие</string>
     <string name="pref_appearance_header">Внешний вид</string>
+    <string name="pref_section_language">Язык</string>
+    <string name="pref_section_theme">Тема</string>
+    <string name="pref_app_language">Язык приложения</string>
+    <string name="pref_app_language_system">Системный</string>
     <string name="pref_theme_dark">Тёмная</string>
     <string name="pref_theme_light">Светлая</string>
     <string name="pref_theme_system">Системная</string>

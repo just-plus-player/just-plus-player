@@ -19,14 +19,18 @@ public final class UpdateInfo {
     public final String apkUrl;
     /** APK size in bytes (0 if unknown). */
     public final long size;
+    /** When the release was published, as GitHub gives it ({@code 2026-09-04T10:23:27Z}); empty if unknown. */
+    public final String publishedAt;
 
-    public UpdateInfo(int versionCode, String tagName, String versionName, String changelog, String apkUrl, long size) {
+    public UpdateInfo(int versionCode, String tagName, String versionName, String changelog, String apkUrl,
+                      long size, String publishedAt) {
         this.versionCode = versionCode;
         this.tagName = tagName;
         this.versionName = versionName;
         this.changelog = changelog;
         this.apkUrl = apkUrl;
         this.size = size;
+        this.publishedAt = publishedAt == null ? "" : publishedAt;
     }
 
     /**
@@ -43,6 +47,7 @@ public final class UpdateInfo {
             json.put("changelog", changelog);
             json.put("apkUrl", apkUrl);
             json.put("size", size);
+            json.put("publishedAt", publishedAt);
         } catch (JSONException e) {
             return null;
         }
@@ -58,7 +63,7 @@ public final class UpdateInfo {
             final JSONObject json = new JSONObject(raw);
             return new UpdateInfo(json.optInt("versionCode"), json.optString("tagName"),
                     json.optString("versionName"), json.optString("changelog"),
-                    json.optString("apkUrl"), json.optLong("size"));
+                    json.optString("apkUrl"), json.optLong("size"), json.optString("publishedAt"));
         } catch (JSONException e) {
             return null;
         }

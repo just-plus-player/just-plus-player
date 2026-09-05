@@ -106,7 +106,8 @@ public final class Updater {
                         tag.startsWith("v") ? tag.substring(1) : tag,
                         release.optString("body", ""),
                         apk.optString("browser_download_url", ""),
-                        apk.optLong("size", 0));
+                        apk.optLong("size", 0),
+                        release.optString("published_at", ""));
             }
         } catch (Exception e) {
             return null;

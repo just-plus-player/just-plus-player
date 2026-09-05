@@ -815,7 +815,13 @@ public class SettingsActivity extends AppCompatActivity
                     return;
                 }
                 if (info != null) {
-                    UpdateUi.showAvailableDialog(activity, activity, info, null, false);
+                    // The same three actions the background offer carries. Asking for the check does not
+                    // mean wanting the version: ignoring it here is what stops it being offered again.
+                    UpdateUi.showAvailableDialog(activity, activity, info, () -> {
+                        final Prefs prefs = new Prefs(activity);
+                        prefs.setUpdateSkippedVersionCode(info.versionCode);
+                        prefs.setUpdatePending(null);
+                    }, false);
                 } else {
                     say(activity, R.string.update_none);
                 }

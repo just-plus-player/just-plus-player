@@ -26,57 +26,40 @@
         <item name="accentSkip">#0696BB</item>
         <item name="accentFill">@color/brand</item>
         <item name="accentOnFill">@color/brand_on</item>
-        <item name="accentContainer">@color/brand_container</item>
-        <item name="accentGround">#1B1413</item>
-        <item name="accentCard">#2D1B19</item>
-        <item name="accentRaised">#341E1C</item>
+        <item name="accentContainer">#6C3029</item>
+        <item name="accentOnContainer">#FFDBD6</item>
+        <item name="accentGround">#291613</item>
+        <item name="accentCard">#3A1D19</item>
+        <item name="accentRaised">#40201C</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Coral.Light">
         <item name="accentFill">@color/brand_accent</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">@color/brand_container</item>
+        <item name="accentContainer">#F9E4E2</item>
+        <item name="accentOnContainer">#BA3E33</item>
         <item name="accentGround">#FFF8F6</item>
         <item name="accentCard">#FDEDEB</item>
         <item name="accentRaised">#FAE5E2</item>
-    </style>
-
-    <!-- Doom -->
-    <style name="ThemeOverlay.JustPlus.Accent.Doom" parent="">
-        <item name="accentInk">#FF6B6B</item>
-        <item name="accentOnInk">#5E1414</item>
-        <item name="accentSkip">#159FBD</item>
-        <item name="accentFill">#FF6B6B</item>
-        <item name="accentOnFill">#5E1414</item>
-        <item name="accentContainer">#831D1D</item>
-        <item name="accentGround">#1A1010</item>
-        <item name="accentCard">#2C1717</item>
-        <item name="accentRaised">#331A1A</item>
-    </style>
-    <style name="ThemeOverlay.JustPlus.Accent.Doom.Light">
-        <item name="accentFill">#BB2929</item>
-        <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#F5DFDF</item>
-        <item name="accentGround">#FFF8F7</item>
-        <item name="accentCard">#FBECEB</item>
-        <item name="accentRaised">#F8E1E0</item>
     </style>
 
     <!-- Rose Gold / Рожеве золото / Розовое золото -->
     <style name="ThemeOverlay.JustPlus.Accent.RoseGold" parent="">
         <item name="accentInk">#E8A9B0</item>
         <item name="accentOnInk">#5C373C</item>
-        <item name="accentSkip">#15A0B7</item>
+        <item name="accentSkip">#15A2AE</item>
         <item name="accentFill">#E8A9B0</item>
         <item name="accentOnFill">#5C373C</item>
-        <item name="accentContainer">#804D55</item>
-        <item name="accentGround">#1A1315</item>
-        <item name="accentCard">#2A1F21</item>
-        <item name="accentRaised">#312426</item>
+        <item name="accentContainer">#6E313B</item>
+        <item name="accentOnContainer">#FFDADD</item>
+        <item name="accentGround">#291518</item>
+        <item name="accentCard">#382124</item>
+        <item name="accentRaised">#3E2529</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.RoseGold.Light">
         <item name="accentFill">#B76E79</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#F4E9EB</item>
+        <item name="accentOnContainer">#965962</item>
         <item name="accentGround">#FFF5F5</item>
         <item name="accentCard">#FBEDEE</item>
         <item name="accentRaised">#F7E6E7</item>
@@ -86,18 +69,20 @@
     <style name="ThemeOverlay.JustPlus.Accent.Strawberry" parent="">
         <item name="accentInk">#F48FB1</item>
         <item name="accentOnInk">#6C0E30</item>
-        <item name="accentSkip">#15A1B0</item>
+        <item name="accentSkip">#15A3A7</item>
         <item name="accentFill">#F48FB1</item>
         <item name="accentOnFill">#6C0E30</item>
-        <item name="accentContainer">#971343</item>
-        <item name="accentGround">#1A1015</item>
-        <item name="accentCard">#2B1A21</item>
-        <item name="accentRaised">#321E26</item>
+        <item name="accentContainer">#6B3045</item>
+        <item name="accentOnContainer">#FFD9E4</item>
+        <item name="accentGround">#28151B</item>
+        <item name="accentCard">#381F27</item>
+        <item name="accentRaised">#3E222C</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Strawberry.Light">
         <item name="accentFill">#D81B60</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#F9DDE7</item>
+        <item name="accentOnContainer">#C41756</item>
         <item name="accentGround">#FFF5F8</item>
         <item name="accentCard">#FDE8EF</item>
         <item name="accentRaised">#FBDDE7</item>
@@ -106,40 +91,44 @@
     <!-- Cotton Candy / Цукрова вата / Сладкая вата -->
     <style name="ThemeOverlay.JustPlus.Accent.CottonCandy" parent="">
         <item name="accentInk">#FFB1D5</item>
-        <item name="accentOnInk">#643B52</item>
-        <item name="accentSkip">#15A2AC</item>
+        <item name="accentOnInk">#723256</item>
+        <item name="accentSkip">#15A3A3</item>
         <item name="accentFill">#FFB1D5</item>
-        <item name="accentOnFill">#643B52</item>
-        <item name="accentContainer">#8D5372</item>
-        <item name="accentGround">#1A1418</item>
-        <item name="accentCard">#2C2127</item>
-        <item name="accentRaised">#33252D</item>
+        <item name="accentOnFill">#723256</item>
+        <item name="accentContainer">#6C314F</item>
+        <item name="accentOnContainer">#FFD8E9</item>
+        <item name="accentGround">#27151E</item>
+        <item name="accentCard">#38212D</item>
+        <item name="accentRaised">#3F2632</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.CottonCandy.Light">
-        <item name="accentFill">#C976A3</item>
+        <item name="accentFill">#E363AD</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#F7EAF1</item>
+        <item name="accentContainer">#FBE8F3</item>
+        <item name="accentOnContainer">#B04383</item>
         <item name="accentGround">#FFF8FA</item>
-        <item name="accentCard">#FCF0F5</item>
-        <item name="accentRaised">#F9EAF0</item>
+        <item name="accentCard">#FDEFF5</item>
+        <item name="accentRaised">#FCE8F2</item>
     </style>
 
     <!-- Orchid / Орхідея / Орхидея -->
     <style name="ThemeOverlay.JustPlus.Accent.Orchid" parent="">
         <item name="accentInk">#E8B5EF</item>
         <item name="accentOnInk">#3C2840</item>
-        <item name="accentSkip">#15A49C</item>
+        <item name="accentSkip">#15A592</item>
         <item name="accentFill">#E8B5EF</item>
         <item name="accentOnFill">#3C2840</item>
-        <item name="accentContainer">#55375A</item>
-        <item name="accentGround">#161217</item>
-        <item name="accentCard">#271F28</item>
-        <item name="accentRaised">#2D242F</item>
+        <item name="accentContainer">#63336A</item>
+        <item name="accentOnContainer">#F5DAF9</item>
+        <item name="accentGround">#231725</item>
+        <item name="accentCard">#332435</item>
+        <item name="accentRaised">#39283B</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Orchid.Light">
         <item name="accentFill">#794F81</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#EBE5EC</item>
+        <item name="accentOnContainer">#794F81</item>
         <item name="accentGround">#FFF7FB</item>
         <item name="accentCard">#F7EDF4</item>
         <item name="accentRaised">#F0E5EE</item>
@@ -149,10 +138,11 @@
     <style name="ThemeOverlay.JustPlus.Accent.Violet" parent="">
         <item name="accentInk">#CE93D8</item>
         <item name="accentOnInk">#350E4D</item>
-        <item name="accentSkip">#15A49C</item>
+        <item name="accentSkip">#15A592</item>
         <item name="accentFill">#CE93D8</item>
         <item name="accentOnFill">#350E4D</item>
-        <item name="accentContainer">#4A136C</item>
+        <item name="accentContainer">#5A2E62</item>
+        <item name="accentOnContainer">#F5DAF9</item>
         <item name="accentGround">#150D1A</item>
         <item name="accentCard">#241829</item>
         <item name="accentRaised">#291C2F</item>
@@ -161,6 +151,7 @@
         <item name="accentFill">#6A1B9A</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E9DDF0</item>
+        <item name="accentOnContainer">#6A1B9A</item>
         <item name="accentGround">#FCF5FF</item>
         <item name="accentCard">#F3E8F9</item>
         <item name="accentRaised">#ECDDF4</item>
@@ -170,10 +161,11 @@
     <style name="ThemeOverlay.JustPlus.Accent.RosePine" parent="">
         <item name="accentInk">#C4A7E7</item>
         <item name="accentOnInk">#483D54</item>
-        <item name="accentSkip">#15A691</item>
+        <item name="accentSkip">#15A786</item>
         <item name="accentFill">#C4A7E7</item>
         <item name="accentOnFill">#483D54</item>
-        <item name="accentContainer">#655576</item>
+        <item name="accentContainer">#5F3A84</item>
+        <item name="accentOnContainer">#ECDDFF</item>
         <item name="accentGround">#232136</item>
         <item name="accentCard">#302C44</item>
         <item name="accentRaised">#353049</item>
@@ -182,6 +174,7 @@
         <item name="accentFill">#907AA9</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#EEEBF2</item>
+        <item name="accentOnContainer">#776190</item>
         <item name="accentGround">#FAF4ED</item>
         <item name="accentCard">#F4EDE9</item>
         <item name="accentRaised">#EEE7E6</item>
@@ -191,10 +184,11 @@
     <style name="ThemeOverlay.JustPlus.Accent.Dracula" parent="">
         <item name="accentInk">#BD93F9</item>
         <item name="accentOnInk">#313952</item>
-        <item name="accentSkip">#15A68F</item>
+        <item name="accentSkip">#15A783</item>
         <item name="accentFill">#BD93F9</item>
         <item name="accentOnFill">#313952</item>
-        <item name="accentContainer">#455073</item>
+        <item name="accentContainer">#633F90</item>
+        <item name="accentOnContainer">#EADEFF</item>
         <item name="accentGround">#282A36</item>
         <item name="accentCard">#343246</item>
         <item name="accentRaised">#38364B</item>
@@ -203,6 +197,7 @@
         <item name="accentFill">#6272A4</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E7EAF1</item>
+        <item name="accentOnContainer">#57679D</item>
         <item name="accentGround">#F8F8F2</item>
         <item name="accentCard">#EFF0ED</item>
         <item name="accentRaised">#E8E9E9</item>
@@ -212,18 +207,20 @@
     <style name="ThemeOverlay.JustPlus.Accent.Lavender" parent="">
         <item name="accentInk">#CFBCFF</item>
         <item name="accentOnInk">#3E2D5C</item>
-        <item name="accentSkip">#15A68C</item>
+        <item name="accentSkip">#15A780</item>
         <item name="accentFill">#CFBCFF</item>
         <item name="accentOnFill">#3E2D5C</item>
-        <item name="accentContainer">#573F81</item>
-        <item name="accentGround">#16121A</item>
-        <item name="accentCard">#25202C</item>
-        <item name="accentRaised">#2A2533</item>
+        <item name="accentContainer">#50367F</item>
+        <item name="accentOnContainer">#E7DFFF</item>
+        <item name="accentGround">#1D1829</item>
+        <item name="accentCard">#2B253A</item>
+        <item name="accentRaised">#312A41</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Lavender.Light">
         <item name="accentFill">#7C5AB8</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#EBE6F4</item>
+        <item name="accentOnContainer">#7756B1</item>
         <item name="accentGround">#FCF8FF</item>
         <item name="accentCard">#F4EFFB</item>
         <item name="accentRaised">#EEE7F7</item>
@@ -233,10 +230,11 @@
     <style name="ThemeOverlay.JustPlus.Accent.Catppuccin" parent="">
         <item name="accentInk">#9BA8CF</item>
         <item name="accentOnInk">#26364D</item>
-        <item name="accentSkip">#15A876</item>
+        <item name="accentSkip">#15AA62</item>
         <item name="accentFill">#9BA8CF</item>
         <item name="accentOnFill">#26364D</item>
-        <item name="accentContainer">#354B6C</item>
+        <item name="accentContainer">#2E3F98</item>
+        <item name="accentOnContainer">#DBE4FF</item>
         <item name="accentGround">#1E1E2E</item>
         <item name="accentCard">#28293B</item>
         <item name="accentRaised">#2C2D40</item>
@@ -245,6 +243,7 @@
         <item name="accentFill">#4C6B9A</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E4E9F0</item>
+        <item name="accentOnContainer">#4B6A98</item>
         <item name="accentGround">#EFF1F5</item>
         <item name="accentCard">#E5E9F0</item>
         <item name="accentRaised">#DDE2EB</item>
@@ -254,18 +253,20 @@
     <style name="ThemeOverlay.JustPlus.Accent.Periwinkle" parent="">
         <item name="accentInk">#ADC6FF</item>
         <item name="accentOnInk">#283C66</item>
-        <item name="accentSkip">#15A971</item>
+        <item name="accentSkip">#15AA5B</item>
         <item name="accentFill">#ADC6FF</item>
         <item name="accentOnFill">#283C66</item>
-        <item name="accentContainer">#395390</item>
-        <item name="accentGround">#13161C</item>
-        <item name="accentCard">#1F242E</item>
-        <item name="accentRaised">#242935</item>
+        <item name="accentContainer">#223F98</item>
+        <item name="accentOnContainer">#D9E5FF</item>
+        <item name="accentGround">#151B2B</item>
+        <item name="accentCard">#21293C</item>
+        <item name="accentRaised">#262E42</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Periwinkle.Light">
         <item name="accentFill">#5177CD</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E5EBF8</item>
+        <item name="accentOnContainer">#3B64C7</item>
         <item name="accentGround">#F7FAFF</item>
         <item name="accentCard">#EDF2FC</item>
         <item name="accentRaised">#E5ECFA</item>
@@ -275,18 +276,20 @@
     <style name="ThemeOverlay.JustPlus.Accent.Kanagawa" parent="">
         <item name="accentInk">#7E9CD8</item>
         <item name="accentOnInk">#28363C</item>
-        <item name="accentSkip">#15A96E</item>
+        <item name="accentSkip">#15AB55</item>
         <item name="accentFill">#7E9CD8</item>
         <item name="accentOnFill">#28363C</item>
-        <item name="accentContainer">#3F535D</item>
-        <item name="accentGround">#1F1F28</item>
-        <item name="accentCard">#272936</item>
-        <item name="accentRaised">#292D3B</item>
+        <item name="accentContainer">#25448A</item>
+        <item name="accentOnContainer">#D8E5FF</item>
+        <item name="accentGround">#18202F</item>
+        <item name="accentCard">#202A3D</item>
+        <item name="accentRaised">#232E42</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Kanagawa.Light">
         <item name="accentFill">#5A7785</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E6EBED</item>
+        <item name="accentOnContainer">#526D79</item>
         <item name="accentGround">#F2ECBC</item>
         <item name="accentCard">#E9E5B9</item>
         <item name="accentRaised">#E1DFB6</item>
@@ -294,33 +297,59 @@
 
     <!-- Tokyo Night -->
     <style name="ThemeOverlay.JustPlus.Accent.TokyoNight" parent="">
-        <item name="accentInk">#7E9DC3</item>
+        <item name="accentInk">#7F9DC2</item>
         <item name="accentOnInk">#1E2D40</item>
-        <item name="accentSkip">#15AA62</item>
-        <item name="accentFill">#7E9DC3</item>
+        <item name="accentSkip">#15AC3B</item>
+        <item name="accentFill">#7F9DC2</item>
         <item name="accentOnFill">#1E2D40</item>
-        <item name="accentContainer">#2B3F5A</item>
+        <item name="accentContainer">#294668</item>
+        <item name="accentOnContainer">#D3E7FF</item>
         <item name="accentGround">#1A1B26</item>
-        <item name="accentCard">#222533</item>
+        <item name="accentCard">#222532</item>
         <item name="accentRaised">#252937</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.TokyoNight.Light">
         <item name="accentFill">#3D5A80</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E2E6EC</item>
+        <item name="accentOnContainer">#3D5A80</item>
         <item name="accentGround">#F0F1F5</item>
         <item name="accentCard">#E5E8EE</item>
         <item name="accentRaised">#DCE0E8</item>
+    </style>
+
+    <!-- Ayu Mirage -->
+    <style name="ThemeOverlay.JustPlus.Accent.Ayu" parent="">
+        <item name="accentInk">#FFCC66</item>
+        <item name="accentOnInk">#5E4400</item>
+        <item name="accentSkip">#5089FC</item>
+        <item name="accentFill">#FFCC66</item>
+        <item name="accentOnFill">#5E4400</item>
+        <item name="accentContainer">#5E4F31</item>
+        <item name="accentOnContainer">#F5E2C0</item>
+        <item name="accentGround">#1F2430</item>
+        <item name="accentCard">#313134</item>
+        <item name="accentRaised">#383636</item>
+    </style>
+    <style name="ThemeOverlay.JustPlus.Accent.Ayu.Light">
+        <item name="accentFill">#BB8900</item>
+        <item name="accentOnFill">@color/white</item>
+        <item name="accentContainer">#F5EDD9</item>
+        <item name="accentOnContainer">#8B6500</item>
+        <item name="accentGround">#FAFAFA</item>
+        <item name="accentCard">#F6F3EB</item>
+        <item name="accentRaised">#F3EEDE</item>
     </style>
 
     <!-- Sapphire / Сапфір / Сапфир -->
     <style name="ThemeOverlay.JustPlus.Accent.Sapphire" parent="">
         <item name="accentInk">#64B5F6</item>
         <item name="accentOnInk">#0F4472</item>
-        <item name="accentSkip">#F43ABA</item>
+        <item name="accentSkip">#F444A6</item>
         <item name="accentFill">#64B5F6</item>
         <item name="accentOnFill">#0F4472</item>
-        <item name="accentContainer">#155FA0</item>
+        <item name="accentContainer">#29455D</item>
+        <item name="accentOnContainer">#CEE8FF</item>
         <item name="accentGround">#0D1620</item>
         <item name="accentCard">#142331</item>
         <item name="accentRaised">#172738</item>
@@ -329,6 +358,7 @@
         <item name="accentFill">#1E88E5</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#DDEDFB</item>
+        <item name="accentOnContainer">#166CB7</item>
         <item name="accentGround">#F3F8FF</item>
         <item name="accentCard">#E6F1FD</item>
         <item name="accentRaised">#DCECFC</item>
@@ -338,18 +368,20 @@
     <style name="ThemeOverlay.JustPlus.Accent.Midnight" parent="">
         <item name="accentInk">#90CAF9</item>
         <item name="accentOnInk">#062450</item>
-        <item name="accentSkip">#F439BB</item>
+        <item name="accentSkip">#F443A7</item>
         <item name="accentFill">#90CAF9</item>
         <item name="accentOnFill">#062450</item>
-        <item name="accentContainer">#093271</item>
-        <item name="accentGround">#0D1117</item>
-        <item name="accentCard">#172029</item>
-        <item name="accentRaised">#1B2530</item>
+        <item name="accentContainer">#2D4B63</item>
+        <item name="accentOnContainer">#CEE8FF</item>
+        <item name="accentGround">#0E1D2A</item>
+        <item name="accentCard">#182B3B</item>
+        <item name="accentRaised">#1C3041</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Midnight.Light">
         <item name="accentFill">#0D47A1</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#DBE3F1</item>
+        <item name="accentOnContainer">#0D47A1</item>
         <item name="accentGround">#F5F9FF</item>
         <item name="accentCard">#E7EEF9</item>
         <item name="accentRaised">#DBE5F5</item>
@@ -359,10 +391,11 @@
     <style name="ThemeOverlay.JustPlus.Accent.Nord" parent="">
         <item name="accentInk">#88C0D0</item>
         <item name="accentOnInk">#2F4056</item>
-        <item name="accentSkip">#E938E0</item>
+        <item name="accentSkip">#F038CC</item>
         <item name="accentFill">#88C0D0</item>
         <item name="accentOnFill">#2F4056</item>
-        <item name="accentContainer">#425A78</item>
+        <item name="accentContainer">#3E6671</item>
+        <item name="accentOnContainer">#C0EDFB</item>
         <item name="accentGround">#2E3440</item>
         <item name="accentCard">#353F4C</item>
         <item name="accentRaised">#384350</item>
@@ -371,19 +404,44 @@
         <item name="accentFill">#5E81AC</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E7ECF3</item>
+        <item name="accentOnContainer">#4E6C91</item>
         <item name="accentGround">#ECEFF4</item>
         <item name="accentCard">#E3E8F0</item>
         <item name="accentRaised">#DCE3EC</item>
+    </style>
+
+    <!-- Solarized -->
+    <style name="ThemeOverlay.JustPlus.Accent.Solarized" parent="">
+        <item name="accentInk">#2EA1F2</item>
+        <item name="accentOnInk">#0D314A</item>
+        <item name="accentSkip">#F444A6</item>
+        <item name="accentFill">#2EA1F2</item>
+        <item name="accentOnFill">#0D314A</item>
+        <item name="accentContainer">#31526C</item>
+        <item name="accentOnContainer">#CEE8FF</item>
+        <item name="accentGround">#002B36</item>
+        <item name="accentCard">#043445</item>
+        <item name="accentRaised">#05384B</item>
+    </style>
+    <style name="ThemeOverlay.JustPlus.Accent.Solarized.Light">
+        <item name="accentFill">#268BD2</item>
+        <item name="accentOnFill">@color/white</item>
+        <item name="accentContainer">#DEEEF8</item>
+        <item name="accentOnContainer">#1C6EA8</item>
+        <item name="accentGround">#FDF6E3</item>
+        <item name="accentCard">#F0F0E2</item>
+        <item name="accentRaised">#E5EAE1</item>
     </style>
 
     <!-- Ocean / Океан / Океан -->
     <style name="ThemeOverlay.JustPlus.Accent.Ocean" parent="">
         <item name="accentInk">#4DD0E1</item>
         <item name="accentOnInk">#003032</item>
-        <item name="accentSkip">#E339EE</item>
+        <item name="accentSkip">#EB38DA</item>
         <item name="accentFill">#4DD0E1</item>
         <item name="accentOnFill">#003032</item>
-        <item name="accentContainer">#004346</item>
+        <item name="accentContainer">#2B484D</item>
+        <item name="accentOnContainer">#BFEFF6</item>
         <item name="accentGround">#0A1A1C</item>
         <item name="accentCard">#0F292C</item>
         <item name="accentRaised">#112E32</item>
@@ -392,6 +450,7 @@
         <item name="accentFill">#006064</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#D9E7E8</item>
+        <item name="accentOnContainer">#006064</item>
         <item name="accentGround">#F0FFFF</item>
         <item name="accentCard">#E2F5F6</item>
         <item name="accentRaised">#D6EEEE</item>
@@ -401,52 +460,103 @@
     <style name="ThemeOverlay.JustPlus.Accent.Teal" parent="">
         <item name="accentInk">#80CBC4</item>
         <item name="accentOnInk">#003C36</item>
-        <item name="accentSkip">#CA5AF3</item>
+        <item name="accentSkip">#DF3DF3</item>
         <item name="accentFill">#80CBC4</item>
         <item name="accentOnFill">#003C36</item>
-        <item name="accentContainer">#00554B</item>
-        <item name="accentGround">#0F1A18</item>
-        <item name="accentCard">#182826</item>
-        <item name="accentRaised">#1B2D2B</item>
+        <item name="accentContainer">#2F4F4C</item>
+        <item name="accentOnContainer">#C0F0EB</item>
+        <item name="accentGround">#06211F</item>
+        <item name="accentCard">#102F2C</item>
+        <item name="accentRaised">#133431</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Teal.Light">
         <item name="accentFill">#00796B</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#D9EBE9</item>
+        <item name="accentOnContainer">#007467</item>
         <item name="accentGround">#F2FFFD</item>
         <item name="accentCard">#E3F7F4</item>
         <item name="accentRaised">#D7F0ED</item>
     </style>
 
+    <!-- Everblush -->
+    <style name="ThemeOverlay.JustPlus.Accent.Everblush" parent="">
+        <item name="accentInk">#8CCF7E</item>
+        <item name="accentOnInk">#344F30</item>
+        <item name="accentSkip">#A677F3</item>
+        <item name="accentFill">#8CCF7E</item>
+        <item name="accentOnFill">#344F30</item>
+        <item name="accentContainer">#3B5F34</item>
+        <item name="accentOnContainer">#D4EDCE</item>
+        <item name="accentGround">#202D1E</item>
+        <item name="accentCard">#293A26</item>
+        <item name="accentRaised">#2C3F29</item>
+    </style>
+    <style name="ThemeOverlay.JustPlus.Accent.Everblush.Light">
+        <item name="accentFill">#699E5F</item>
+        <item name="accentOnFill">@color/white</item>
+        <item name="accentContainer">#E8F0E7</item>
+        <item name="accentOnContainer">#4D7545</item>
+        <item name="accentGround">#F7FCF6</item>
+        <item name="accentCard">#EEF6ED</item>
+        <item name="accentRaised">#E7F2E5</item>
+    </style>
+
     <!-- Tako -->
     <style name="ThemeOverlay.JustPlus.Accent.Tako" parent="">
         <item name="accentInk">#A5D6A7</item>
-        <item name="accentOnInk">#27522A</item>
-        <item name="accentSkip">#9A6EFC</item>
+        <item name="accentOnInk">#2C522E</item>
+        <item name="accentSkip">#AB74F3</item>
         <item name="accentFill">#A5D6A7</item>
-        <item name="accentOnFill">#27522A</item>
-        <item name="accentContainer">#37723A</item>
-        <item name="accentGround">#121A12</item>
-        <item name="accentCard">#1E291E</item>
-        <item name="accentRaised">#222F22</item>
+        <item name="accentOnFill">#2C522E</item>
+        <item name="accentContainer">#2F5332</item>
+        <item name="accentOnContainer">#D0EED1</item>
+        <item name="accentGround">#122013</item>
+        <item name="accentCard">#1E2F1F</item>
+        <item name="accentRaised">#223423</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Tako.Light">
-        <item name="accentFill">#4EA353</item>
+        <item name="accentFill">#58A35C</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#E4F1E5</item>
+        <item name="accentContainer">#E6F1E7</item>
+        <item name="accentOnContainer">#3F7842</item>
         <item name="accentGround">#F5FFF5</item>
-        <item name="accentCard">#EBF9EB</item>
-        <item name="accentRaised">#E3F5E3</item>
+        <item name="accentCard">#ECF9EC</item>
+        <item name="accentRaised">#E4F5E4</item>
+    </style>
+
+    <!-- Everforest -->
+    <style name="ThemeOverlay.JustPlus.Accent.Everforest" parent="">
+        <item name="accentInk">#A7C080</item>
+        <item name="accentOnInk">#424C00</item>
+        <item name="accentSkip">#9471FC</item>
+        <item name="accentFill">#A7C080</item>
+        <item name="accentOnFill">#424C00</item>
+        <item name="accentContainer">#56663B</item>
+        <item name="accentOnContainer">#DCEBC7</item>
+        <item name="accentGround">#303725</item>
+        <item name="accentCard">#3A422C</item>
+        <item name="accentRaised">#3D462F</item>
+    </style>
+    <style name="ThemeOverlay.JustPlus.Accent.Everforest.Light">
+        <item name="accentFill">#849701</item>
+        <item name="accentOnFill">@color/white</item>
+        <item name="accentContainer">#EDEFD9</item>
+        <item name="accentOnContainer">#637100</item>
+        <item name="accentGround">#FDF6E3</item>
+        <item name="accentCard">#F6F0D5</item>
+        <item name="accentRaised">#F0ECCA</item>
     </style>
 
     <!-- Forest / Ліс / Лес -->
     <style name="ThemeOverlay.JustPlus.Accent.Forest" parent="">
         <item name="accentInk">#66BB6A</item>
         <item name="accentOnInk">#0E2F10</item>
-        <item name="accentSkip">#9D7CF3</item>
+        <item name="accentSkip">#AA74F3</item>
         <item name="accentFill">#66BB6A</item>
         <item name="accentOnFill">#0E2F10</item>
-        <item name="accentContainer">#134216</item>
+        <item name="accentContainer">#2A4C2C</item>
+        <item name="accentOnContainer">#D1EED1</item>
         <item name="accentGround">#0D1A0D</item>
         <item name="accentCard">#142714</item>
         <item name="accentRaised">#172C17</item>
@@ -455,132 +565,122 @@
         <item name="accentFill">#1B5E20</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#DDE7DE</item>
+        <item name="accentOnContainer">#1B5E20</item>
         <item name="accentGround">#F1F8E9</item>
         <item name="accentCard">#E4EFDD</item>
         <item name="accentRaised">#D9E7D3</item>
     </style>
 
-    <!-- Green Apple / Зелене яблуко / Зелёное яблоко -->
-    <style name="ThemeOverlay.JustPlus.Accent.GreenApple" parent="">
-        <item name="accentInk">#81C784</item>
-        <item name="accentOnInk">#173E19</item>
-        <item name="accentSkip">#9A6EFC</item>
-        <item name="accentFill">#81C784</item>
-        <item name="accentOnFill">#173E19</item>
-        <item name="accentContainer">#205823</item>
-        <item name="accentGround">#0F1A0F</item>
-        <item name="accentCard">#182818</item>
-        <item name="accentRaised">#1C2D1C</item>
+    <!-- Monokai -->
+    <style name="ThemeOverlay.JustPlus.Accent.Monokai" parent="">
+        <item name="accentInk">#A6E22E</item>
+        <item name="accentOnInk">#394E0E</item>
+        <item name="accentSkip">#9670FC</item>
+        <item name="accentFill">#A6E22E</item>
+        <item name="accentOnFill">#394E0E</item>
+        <item name="accentContainer">#4A5B33</item>
+        <item name="accentOnContainer">#DBEBC8</item>
+        <item name="accentGround">#232A19</item>
+        <item name="accentCard">#2D391B</item>
+        <item name="accentRaised">#313E1B</item>
     </style>
-    <style name="ThemeOverlay.JustPlus.Accent.GreenApple.Light">
-        <item name="accentFill">#2E7D32</item>
+    <style name="ThemeOverlay.JustPlus.Accent.Monokai.Light">
+        <item name="accentFill">#729D1D</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#E0ECE0</item>
-        <item name="accentGround">#F6FFF6</item>
-        <item name="accentCard">#EAF7EA</item>
-        <item name="accentRaised">#E0F1E0</item>
+        <item name="accentContainer">#EAF0DD</item>
+        <item name="accentOnContainer">#557613</item>
+        <item name="accentGround">#F8F8F2</item>
+        <item name="accentCard">#F0F3E5</item>
+        <item name="accentRaised">#E9EEDB</item>
     </style>
 
     <!-- Amber / Бурштин / Янтарь -->
     <style name="ThemeOverlay.JustPlus.Accent.Amber" parent="">
         <item name="accentInk">#FFCA28</item>
-        <item name="accentOnInk">#6C3D06</item>
-        <item name="accentSkip">#5B87FC</item>
+        <item name="accentOnInk">#6D3C00</item>
+        <item name="accentSkip">#6285FC</item>
         <item name="accentFill">#FFCA28</item>
-        <item name="accentOnFill">#6C3D06</item>
-        <item name="accentContainer">#985509</item>
+        <item name="accentOnFill">#6D3C00</item>
+        <item name="accentContainer">#4C4127</item>
+        <item name="accentOnContainer">#F2E3BF</item>
         <item name="accentGround">#1A1508</item>
         <item name="accentCard">#2C230B</item>
         <item name="accentRaised">#33290C</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Amber.Light">
-        <item name="accentFill">#D97A0D</item>
+        <item name="accentFill">#DA7900</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#F9EBDB</item>
+        <item name="accentContainer">#F9EBD9</item>
+        <item name="accentOnContainer">#A15800</item>
         <item name="accentGround">#FFFBF0</item>
         <item name="accentCard">#FDF3E2</item>
-        <item name="accentRaised">#FBEDD7</item>
+        <item name="accentRaised">#FBEDD6</item>
     </style>
 
     <!-- Cloudflare -->
     <style name="ThemeOverlay.JustPlus.Accent.Cloudflare" parent="">
         <item name="accentInk">#FFB77C</item>
-        <item name="accentOnInk">#713A06</item>
-        <item name="accentSkip">#1499DD</item>
+        <item name="accentOnInk">#703B0E</item>
+        <item name="accentSkip">#1499DC</item>
         <item name="accentFill">#FFB77C</item>
-        <item name="accentOnFill">#713A06</item>
-        <item name="accentContainer">#9E5109</item>
-        <item name="accentGround">#1A1612</item>
-        <item name="accentCard">#2C231A</item>
-        <item name="accentRaised">#33281E</item>
+        <item name="accentOnFill">#703B0E</item>
+        <item name="accentContainer">#5E422B</item>
+        <item name="accentOnContainer">#FFDDC4</item>
+        <item name="accentGround">#27180C</item>
+        <item name="accentCard">#382515</item>
+        <item name="accentRaised">#3F2918</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Cloudflare.Light">
-        <item name="accentFill">#E2740D</item>
+        <item name="accentFill">#E0761B</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#FBEADB</item>
+        <item name="accentContainer">#FAEADD</item>
+        <item name="accentOnContainer">#A65611</item>
         <item name="accentGround">#FFFBF7</item>
-        <item name="accentCard">#FDF3E9</item>
-        <item name="accentRaised">#FCECDD</item>
+        <item name="accentCard">#FDF3EA</item>
+        <item name="accentRaised">#FCECDF</item>
     </style>
 
     <!-- Gruvbox -->
     <style name="ThemeOverlay.JustPlus.Accent.Gruvbox" parent="">
         <item name="accentInk">#D89B6A</item>
         <item name="accentOnInk">#4E2E20</item>
-        <item name="accentSkip">#1499DD</item>
+        <item name="accentSkip">#1499DC</item>
         <item name="accentFill">#D89B6A</item>
         <item name="accentOnFill">#4E2E20</item>
-        <item name="accentContainer">#6E402C</item>
-        <item name="accentGround">#282828</item>
-        <item name="accentCard">#36312D</item>
-        <item name="accentRaised">#3B352F</item>
+        <item name="accentContainer">#6A4B31</item>
+        <item name="accentOnContainer">#FFDDC4</item>
+        <item name="accentGround">#342418</item>
+        <item name="accentCard">#412E1F</item>
+        <item name="accentRaised">#463121</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Gruvbox.Light">
         <item name="accentFill">#9D5B3F</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#F0E6E2</item>
+        <item name="accentOnContainer">#97573C</item>
         <item name="accentGround">#FBF1C7</item>
         <item name="accentCard">#F5E8BF</item>
         <item name="accentRaised">#F1E0B8</item>
-    </style>
-
-    <!-- Yotsuba -->
-    <style name="ThemeOverlay.JustPlus.Accent.Yotsuba" parent="">
-        <item name="accentInk">#FFAB91</item>
-        <item name="accentOnInk">#703826</item>
-        <item name="accentSkip">#159DC7</item>
-        <item name="accentFill">#FFAB91</item>
-        <item name="accentOnFill">#703826</item>
-        <item name="accentContainer">#9E4E34</item>
-        <item name="accentGround">#1A1412</item>
-        <item name="accentCard">#2C201C</item>
-        <item name="accentRaised">#332520</item>
-    </style>
-    <style name="ThemeOverlay.JustPlus.Accent.Yotsuba.Light">
-        <item name="accentFill">#E16F4B</item>
-        <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#FAE9E4</item>
-        <item name="accentGround">#FFF8F5</item>
-        <item name="accentCard">#FDF0EB</item>
-        <item name="accentRaised">#FCE9E2</item>
     </style>
 
     <!-- Sunset / Захід сонця / Закат -->
     <style name="ThemeOverlay.JustPlus.Accent.Sunset" parent="">
         <item name="accentInk">#FF9E80</item>
         <item name="accentOnInk">#732800</item>
-        <item name="accentSkip">#159DC7</item>
+        <item name="accentSkip">#159FBD</item>
         <item name="accentFill">#FF9E80</item>
         <item name="accentOnFill">#732800</item>
-        <item name="accentContainer">#A13900</item>
-        <item name="accentGround">#1A120D</item>
-        <item name="accentCard">#2C1D16</item>
-        <item name="accentRaised">#33211A</item>
+        <item name="accentContainer">#68382A</item>
+        <item name="accentOnContainer">#FFDCD1</item>
+        <item name="accentGround">#291611</item>
+        <item name="accentCard">#3A211A</item>
+        <item name="accentRaised">#41251D</item>
     </style>
     <style name="ThemeOverlay.JustPlus.Accent.Sunset.Light">
         <item name="accentFill">#E65100</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#FBE5D9</item>
+        <item name="accentOnContainer">#BB4000</item>
         <item name="accentGround">#FFF5F0</item>
         <item name="accentCard">#FEEBE2</item>
         <item name="accentRaised">#FCE3D6</item>
@@ -593,7 +693,8 @@
         <item name="accentSkip">#0696BB</item>
         <item name="accentFill">#BCAAA4</item>
         <item name="accentOnFill">#3C2A24</item>
-        <item name="accentContainer">#553B32</item>
+        <item name="accentContainer">#424242</item>
+        <item name="accentOnContainer">#E4E4E4</item>
         <item name="accentGround">#1A1512</item>
         <item name="accentCard">#27211E</item>
         <item name="accentRaised">#2C2522</item>
@@ -602,6 +703,7 @@
         <item name="accentFill">#795548</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#EBE6E4</item>
+        <item name="accentOnContainer">#795548</item>
         <item name="accentGround">#FFF9F5</item>
         <item name="accentCard">#F7EFEB</item>
         <item name="accentRaised">#F0E7E2</item>
@@ -614,7 +716,8 @@
         <item name="accentSkip">#0696BB</item>
         <item name="accentFill">#90A4AE</item>
         <item name="accentOnFill">#222D32</item>
-        <item name="accentContainer">#303F46</item>
+        <item name="accentContainer">#424242</item>
+        <item name="accentOnContainer">#E4E4E4</item>
         <item name="accentGround">#151A1C</item>
         <item name="accentCard">#1F2528</item>
         <item name="accentRaised">#23292C</item>
@@ -623,30 +726,10 @@
         <item name="accentFill">#455A64</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#E3E6E8</item>
+        <item name="accentOnContainer">#455A64</item>
         <item name="accentGround">#F5F7F8</item>
         <item name="accentCard">#EAEEEF</item>
         <item name="accentRaised">#E2E6E8</item>
-    </style>
-
-    <!-- Yin Yang / Інь-ян / Инь-ян -->
-    <style name="ThemeOverlay.JustPlus.Accent.YinYang" parent="">
-        <item name="accentInk">#BDBDBD</item>
-        <item name="accentOnInk">#212121</item>
-        <item name="accentSkip">#0696BB</item>
-        <item name="accentFill">#BDBDBD</item>
-        <item name="accentOnFill">#212121</item>
-        <item name="accentContainer">#2E2E2E</item>
-        <item name="accentGround">#121212</item>
-        <item name="accentCard">#202020</item>
-        <item name="accentRaised">#252525</item>
-    </style>
-    <style name="ThemeOverlay.JustPlus.Accent.YinYang.Light">
-        <item name="accentFill">#424242</item>
-        <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">#E3E3E3</item>
-        <item name="accentGround">#FAFAFA</item>
-        <item name="accentCard">#EFEFEF</item>
-        <item name="accentRaised">#E6E6E6</item>
     </style>
 
     <!-- Monochrome / Монохром / Монохром -->
@@ -656,7 +739,8 @@
         <item name="accentSkip">#0696BB</item>
         <item name="accentFill">#E0E0E0</item>
         <item name="accentOnFill">#101010</item>
-        <item name="accentContainer">#171717</item>
+        <item name="accentContainer">#424242</item>
+        <item name="accentOnContainer">#E4E4E4</item>
         <item name="accentGround">#0A0A0A</item>
         <item name="accentCard">#1B1B1B</item>
         <item name="accentRaised">#222222</item>
@@ -665,6 +749,7 @@
         <item name="accentFill">#212121</item>
         <item name="accentOnFill">@color/white</item>
         <item name="accentContainer">#DEDEDE</item>
+        <item name="accentOnContainer">#212121</item>
         <item name="accentGround">#FFFFFF</item>
         <item name="accentCard">#F2F2F2</item>
         <item name="accentRaised">#E7E7E7</item>

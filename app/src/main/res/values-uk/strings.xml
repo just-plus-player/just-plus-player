@@ -63,12 +63,10 @@
     <string name="pref_accent_ocean">Океан</string>
     <string name="pref_accent_teal">Бірюза</string>
     <string name="pref_accent_forest">Ліс</string>
-    <string name="pref_accent_greenapple">Зелене яблуко</string>
     <string name="pref_accent_amber">Бурштин</string>
     <string name="pref_accent_sunset">Захід сонця</string>
     <string name="pref_accent_mocha">Мокко</string>
     <string name="pref_accent_slate">Сланець</string>
-    <string name="pref_accent_yinyang">Інь-ян</string>
     <string name="pref_accent_monochrome">Монохром</string>
     <string name="pref_amoled">AMOLED-чорний</string>
     <string name="pref_amoled_summary">Чисто чорне тло в темній темі</string>

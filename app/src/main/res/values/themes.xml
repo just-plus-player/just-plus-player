@@ -9,10 +9,11 @@
         <item name="accentSkip">@color/skip_fill</item>
         <item name="accentFill">@color/brand</item>
         <item name="accentOnFill">@color/brand_on</item>
-        <item name="accentContainer">@color/brand_container</item>
-        <item name="accentGround">#1B1413</item>
-        <item name="accentCard">#2D1B19</item>
-        <item name="accentRaised">#341E1C</item>
+        <item name="accentContainer">#6C3029</item>
+        <item name="accentOnContainer">#FFDBD6</item>
+        <item name="accentGround">#291613</item>
+        <item name="accentCard">#3A1D19</item>
+        <item name="accentRaised">#40201C</item>
         <!-- The Snackbar is the one component in this app that reads Material's inverse roles, and
              nothing here had ever set them: it arrived in the baseline lavender with a mauve action,
              which belongs to no other pixel on this screen. Pointed at the chrome the app already
@@ -31,15 +32,17 @@
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="colorPrimary">?attr/accentInk</item>
         <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
         <item name="colorOnPrimary">?attr/accentOnInk</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
-             segment of a toggle group, the current row of a picker, the track of a switch. Material
-             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
-             three said it three different ways — and the coral container the rows used measured 1.59:1
-             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
-             read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">?attr/accentInk</item>
-        <item name="colorOnSecondaryContainer">?attr/accentOnInk</item>
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
         <!-- colorAccent is NOT derived from colorPrimary: Theme.Material3.Dark inherits it through
              Theme.MaterialComponents, where Base.V14.Theme.MaterialComponents sets it to
              ?attr/colorSecondary — a role this app leaves at the M3 default on purpose. Drop this line
@@ -77,10 +80,11 @@
         <item name="accentSkip">@color/skip_fill</item>
         <item name="accentFill">@color/brand</item>
         <item name="accentOnFill">@color/brand_on</item>
-        <item name="accentContainer">@color/brand_container</item>
-        <item name="accentGround">#1B1413</item>
-        <item name="accentCard">#2D1B19</item>
-        <item name="accentRaised">#341E1C</item>
+        <item name="accentContainer">#6C3029</item>
+        <item name="accentOnContainer">#FFDBD6</item>
+        <item name="accentGround">#291613</item>
+        <item name="accentCard">#3A1D19</item>
+        <item name="accentRaised">#40201C</item>
         <!-- The wash is the window background, not the layout's, so the one gradient covers the
              system bars too — a bar painted in a flat colour would cut a seam across it. -->
         <item name="android:windowBackground">@drawable/bg_brand_wash</item>
@@ -89,15 +93,17 @@
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="colorPrimary">?attr/accentInk</item>
         <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
         <item name="colorOnPrimary">?attr/accentOnInk</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
-             segment of a toggle group, the current row of a picker, the track of a switch. Material
-             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
-             three said it three different ways — and the coral container the rows used measured 1.59:1
-             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
-             read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">?attr/accentInk</item>
-        <item name="colorOnSecondaryContainer">?attr/accentOnInk</item>
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
         <item name="colorAccent">?attr/accentInk</item>
         <item name="android:colorControlActivated">?attr/accentInk</item>
     </style>
@@ -118,7 +124,8 @@
         <item name="accentSkip">@color/skip_fill</item>
         <item name="accentFill">@color/brand_accent</item>
         <item name="accentOnFill">@color/white</item>
-        <item name="accentContainer">@color/brand_container</item>
+        <item name="accentContainer">#F9E4E2</item>
+        <item name="accentOnContainer">#BA3E33</item>
         <item name="accentGround">#FFF8F6</item>
         <item name="accentCard">#FDEDEB</item>
         <item name="accentRaised">#FAE5E2</item>
@@ -148,6 +155,7 @@
              tone accentFill holds is decided by which variant of the overlay was applied. -->
         <item name="colorPrimary">?attr/accentFill</item>
         <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
         <item name="colorOnPrimary">?attr/accentOnFill</item>
         <!-- The window and its cards are the accent theme's own grounds, not M3's neutral ramp — a
              theme here changes what the surfaces sit on, not only what is drawn on them. AMOLED still
@@ -159,13 +167,14 @@
         <item name="colorSurfaceContainerHighest">?attr/accentRaised</item>
         <item name="colorSurfaceVariant">?attr/accentRaised</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
-             segment of a toggle group, the current row of a picker, the track of a switch. Material
-             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
-             three said it three different ways — and the coral container the rows used measured 1.59:1
-             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
-             read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">?attr/accentFill</item>
-        <item name="colorOnSecondaryContainer">?attr/accentOnFill</item>
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
         <item name="colorAccent">?attr/accentFill</item>
         <item name="android:colorControlActivated">?attr/accentFill</item>
     </style>
@@ -341,6 +350,17 @@
 
     <!-- AMOLED: the M3 dark scheme with its greys taken out, for a panel that costs nothing to leave
          black. Applied to the settings window at runtime, and only when the theme is actually dark. -->
+    <!-- And its inverse. applyStyle cannot be undone: once the overlay below has been on a theme,
+         colorSurface is the literal black for the life of that theme, and everything read back from
+         it afterwards is black too. So turning the option off applies this instead, which puts the
+         four roles back on the accent theme's own grounds. -->
+    <style name="ThemeOverlay.JustPlus.Ground" parent="">
+        <item name="android:windowBackground">?attr/accentGround</item>
+        <item name="colorSurface">?attr/accentGround</item>
+        <item name="colorSurfaceContainer">?attr/accentCard</item>
+        <item name="colorSurfaceContainerHigh">?attr/accentCard</item>
+    </style>
+
     <style name="ThemeOverlay.JustPlus.Amoled" parent="">
         <item name="android:windowBackground">@color/black</item>
         <item name="colorSurface">@color/black</item>
@@ -367,17 +387,19 @@
              Utils.dialogContext applies — the light one here. -->
         <item name="colorPrimary">?attr/accentFill</item>
         <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
         <!-- The ink on a filled accent, which follows the mode with the fill: white on the light
              tone, the theme's own dark on-ink on the bright one. -->
         <item name="colorOnPrimary">?attr/accentOnFill</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
-             segment of a toggle group, the current row of a picker, the track of a switch. Material
-             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
-             three said it three different ways — and the coral container the rows used measured 1.59:1
-             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
-             read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">?attr/accentFill</item>
-        <item name="colorOnSecondaryContainer">?attr/accentOnFill</item>
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
@@ -413,17 +435,19 @@
              is the tone the chrome over video already uses. -->
         <item name="colorPrimary">?attr/accentFill</item>
         <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
         <!-- The ink on a filled accent, which follows the mode with the fill: white on the light
              tone, the theme's own dark on-ink on the bright one. -->
         <item name="colorOnPrimary">?attr/accentOnFill</item>
         <!-- One answer to "this one is chosen", for every control that has to say it: the checked
-             segment of a toggle group, the current row of a picker, the track of a switch. Material
-             would give a checked segment colorSecondaryContainer, which this app leaves neutral, so the
-             three said it three different ways — and the coral container the rows used measured 1.59:1
-             against a dark card, a selection you had to look for. Pointed at the accent pair, all three
-             read the same and clear 3:1 either way round. -->
-        <item name="colorSecondaryContainer">?attr/accentFill</item>
-        <item name="colorOnSecondaryContainer">?attr/accentOnFill</item>
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
         <!-- The player's panels are built against these themes now, so they need the accent the
              window themes carry: Material 3 derives colorAccent from colorSecondary, not from
              colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->

@@ -74,12 +74,10 @@
     <string name="pref_accent_ocean">Океан</string>
     <string name="pref_accent_teal">Бирюза</string>
     <string name="pref_accent_forest">Лес</string>
-    <string name="pref_accent_greenapple">Зелёное яблоко</string>
     <string name="pref_accent_amber">Янтарь</string>
     <string name="pref_accent_sunset">Закат</string>
     <string name="pref_accent_mocha">Мокко</string>
     <string name="pref_accent_slate">Сланец</string>
-    <string name="pref_accent_yinyang">Инь-ян</string>
     <string name="pref_accent_monochrome">Монохром</string>
     <string name="pref_amoled">AMOLED-чёрный</string>
     <string name="pref_amoled_summary">Чисто чёрный фон в тёмной теме</string>

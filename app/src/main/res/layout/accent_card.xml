@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- One accent theme as a value tile (the 8dp radius of the app's value controls, not a card of its
-     own — it already sits on the section's card): a preview in the theme's ground for the appearance
-     in force, carrying a dot of its fill, the name under it. A theme changes the ground as well as
-     the accent, so the tile shows both. Chosen = a 2dp edge and the name in the fill; focused = the
-     ring every control wears (Utils.focusRing's rule, restated in SettingsActivity for a card).
+     own — it already sits on the section's card): a small screen wearing the theme, for the appearance
+     in force, where every part is a thing the app really draws: the ground behind it, a toolbar and a
+     row raised off it, a control filled with the accent, a dot of the ink beside it, and at the foot a
+     row in the container — which is what "chosen" looks like. A tile showing one colour could not tell
+     thirty-two themes apart: twenty of the dark grounds are the same near-black, and a swatch of one
+     is a swatch of all.
 
-     A fixed width, not a weight: a weight inside a HorizontalScrollView measures to nothing. 116dp
-     plus the 4dp margins is a 124dp pitch — 2.8 tiles on a 360dp phone, so the cut third says the row
-     scrolls. -->
+     A fixed width, not a weight: a weight inside a HorizontalScrollView measures to nothing. 90dp of
+     preview and 8dp of margin is a 106dp pitch — three tiles and a cut fourth on a 360dp phone, so the
+     row says it scrolls. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="116dp"
+    android:layout_width="98dp"
     android:layout_height="wrap_content"
     android:layout_marginStart="4dp"
     android:layout_marginEnd="4dp"
@@ -30,32 +32,77 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="6dp">
 
-        <FrameLayout
+        <LinearLayout
+            android:id="@+id/accent_ground"
             android:layout_width="match_parent"
-            android:layout_height="36dp">
+            android:layout_height="124dp"
+            android:background="@drawable/bg_accent_swatch"
+            android:orientation="vertical"
+            android:padding="8dp">
 
+            <!-- A toolbar. -->
             <View
-                android:id="@+id/accent_ground"
+                android:id="@+id/accent_bar_top"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_accent_swatch" />
+                android:layout_height="12dp"
+                android:background="@drawable/bg_accent_slot" />
 
             <View
-                android:id="@+id/accent_dot"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:layout_gravity="start|center_vertical"
-                android:layout_marginStart="12dp"
-                android:background="@drawable/bg_accent_dot" />
-        </FrameLayout>
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- A row, carrying what a control filled with the accent looks like and the bright ink
+                 beside it. -->
+            <LinearLayout
+                android:id="@+id/accent_row"
+                android:layout_width="match_parent"
+                android:layout_height="30dp"
+                android:background="@drawable/bg_accent_slot"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp">
+
+                <View
+                    android:id="@+id/accent_pill"
+                    android:layout_width="22dp"
+                    android:layout_height="11dp"
+                    android:background="@drawable/bg_accent_pill" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <View
+                    android:id="@+id/accent_chip"
+                    android:layout_width="9dp"
+                    android:layout_height="9dp"
+                    android:background="@drawable/bg_accent_dot" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- A chosen row: the container, which is the one thing a checked control is filled
+                 with and the tone this set is easiest to get wrong. -->
+            <View
+                android:id="@+id/accent_chosen"
+                android:layout_width="match_parent"
+                android:layout_height="18dp"
+                android:background="@drawable/bg_accent_slot" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/accent_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:ellipsize="end"
             android:gravity="center_horizontal"
             android:maxLines="1"

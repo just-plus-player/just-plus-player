@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The accent, as nine roles rather than nine colours. Each ThemeOverlay.JustPlus.Accent.* fills
+    <!-- The accent, as ten roles rather than ten colours. Each ThemeOverlay.JustPlus.Accent.* fills
          them in; the window themes map Material's roles onto them, so a control reads colorPrimary and
          gets the tone its ground needs: the ink over video, the fill on a card.
 
-         Six of the nine differ by mode, so the overlay comes in two variants and the mode is decided
+         Seven of the ten differ by mode, so the overlay comes in two variants and the mode is decided
          where it is applied (Prefs.accentOverlay) rather than by a values-night/ qualifier — a dialog
          here follows the appearance pref, not the system's configuration. -->
     <declare-styleable name="Accent">
@@ -16,8 +16,12 @@
         <attr name="accentFill" format="color|reference" />
         <!-- Ink that sits on accentFill: white in light mode, accentOnInk in dark. -->
         <attr name="accentOnFill" format="color|reference" />
-        <!-- Container tone: the switch track when on, the picker's current row. -->
+        <!-- Container tone: what a surface says "this one is chosen" in — a checked segment, the
+             picker's current row. Material's tone 30 in a dark scheme, a pale tint in a light one. -->
         <attr name="accentContainer" format="color|reference" />
+        <!-- Ink on accentContainer: tone 90 in dark, a darkened fill in light. Not the on-ink, which
+             is dark: a bright fill lettered in dark ink is what was reported as unreadable twice. -->
+        <attr name="accentOnContainer" format="color|reference" />
         <!-- Ink that sits on accentInk: the switch handle when on, text on a checked segment. -->
         <attr name="accentOnInk" format="color|reference" />
         <!-- The timebar's skip band, which is told from the played run by hue alone. -->

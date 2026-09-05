@@ -132,11 +132,7 @@ public class SettingsActivity extends AppCompatActivity
         // takes its background out of the theme exactly as it stands at that moment. Pure black is a
         // dark-theme idea only.
         final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-        // Read before the overlay goes on, because applyStyle cannot be undone and these are the
-        // values AMOLED has to be able to go back to. Taken from this theme in this configuration —
-        // a ContextThemeWrapper built here does not carry the local night mode and answers light.
-        plainSurface = MaterialColors.getColor(this, R.attr.colorSurface, Color.BLACK);
-        plainCard = MaterialColors.getColor(this, R.attr.colorSurfaceContainer, Color.DKGRAY);
+        readPlainTones();
         if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
             getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
         }
@@ -300,17 +296,26 @@ public class SettingsActivity extends AppCompatActivity
      * manager works out where a fragment should end up and moves it there once. Two transactions
      * would have worked and would have torn down more than the colours needed.
      */
+    /**
+     * The theme's own ground and card, read from the accent overlay rather than from the live theme.
+     *
+     * <p>Reading them from the theme was where the AMOLED bug lived: its overlay replaces colorSurface
+     * with a literal black, applyStyle cannot be undone, and so a theme the option had ever been on
+     * answered black — which then became the tone the option was supposed to return to.
+     */
+    private void readPlainTones() {
+        final TypedArray a = obtainStyledAttributes(
+                Prefs.accentOverlay(this, Prefs.isLight(this)), R.styleable.Accent);
+        plainSurface = a.getColor(R.styleable.Accent_accentGround, Color.BLACK);
+        plainCard = a.getColor(R.styleable.Accent_accentCard, Color.DKGRAY);
+        a.recycle();
+    }
+
     void repaintAccent(final RecyclerView list) {
         getTheme().applyStyle(Prefs.accentOverlay(this, Prefs.isLight(this)), true);
-        // Read before AMOLED goes back on, exactly as onCreate does: these are the tones it has to be
-        // able to return to.
-        plainSurface = MaterialColors.getColor(this, R.attr.colorSurface, Color.BLACK);
-        plainCard = MaterialColors.getColor(this, R.attr.colorSurfaceContainer, Color.DKGRAY);
-        if (isNight() && Prefs.isAmoledBlack(this)) {
-            // Again, and last: the accent brings its own grounds with it, and they would otherwise
-            // sit on top of the black.
-            getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
-        }
+        readPlainTones();
+        // Which of the two ground overlays belongs on top is repaintAmoledSurfaces' business, and it
+        // is called for exactly that reason — the accent has just put its own grounds back.
         repaintAmoledSurfaces();
         if (list != null && list.getAdapter() != null && list.getLayoutManager() != null) {
             final Parcelable at = list.getLayoutManager().onSaveInstanceState();
@@ -322,6 +327,11 @@ public class SettingsActivity extends AppCompatActivity
 
     void repaintAmoledSurfaces() {
         final boolean amoled = isNight() && Prefs.isAmoledBlack(this);
+        // The theme as well as the pixels, and the option's own inverse when it is off: applyStyle
+        // cannot be undone, so a theme that has ever been black answers black for everything read
+        // back from it — which is how switching a theme while it was on left the black behind.
+        getTheme().applyStyle(amoled ? R.style.ThemeOverlay_JustPlus_Amoled
+                : R.style.ThemeOverlay_JustPlus_Ground, true);
         final int surface = amoled ? ContextCompat.getColor(this, R.color.black) : plainSurface;
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(surface));
         getWindow().setStatusBarColor(surface);
@@ -1034,9 +1044,17 @@ public class SettingsActivity extends AppCompatActivity
             }
         }
 
+        /** Tints one part of a tile's little screen with a role read off the theme's own overlay. */
+        private static void paint(final View tile, final int id, final TypedArray a,
+                                  final int role, final int fallback) {
+            tile.findViewById(id).setBackgroundTintList(
+                    ColorStateList.valueOf(a.getColor(role, fallback)));
+        }
+
         /**
-         * The accent row: one tile per theme, each painted in that theme's own ground and fill, read
-         * out of the theme's overlay style rather than from a table here — Prefs.Accent is the only
+         * The accent row: one tile per theme, each a small screen wearing that theme — the ground, a
+         * toolbar and a row raised off it, a control filled with the accent, a dot of the ink, and a
+         * chosen row in the container — read off the theme's overlay style rather than from a table here — Prefs.Accent is the only
          * place the set is listed. The tile shows the appearance in force: a Nord tile is Nord's light
          * ground under a light appearance and its dark one under a dark, because that is what picking
          * it will do to this screen. The chosen tile wears a 2dp edge in its fill and its name in the
@@ -1059,14 +1077,19 @@ public class SettingsActivity extends AppCompatActivity
                             .inflate(R.layout.accent_card, row, false);
                     tile.setTag(accent.key);
                     // Straight off the overlay that a pick would apply, so a tile cannot drift from
-                    // what it promises.
+                    // what it promises. Six roles, because a theme is judged on more than its accent:
+                    // the ground behind everything, the card tone its rows sit in, the accent a
+                    // control is filled with, and the container pair that says "chosen".
                     final TypedArray a = context.obtainStyledAttributes(
                             light ? accent.light : accent.dark, R.styleable.Accent);
+                    paint(tile, R.id.accent_ground, a, R.styleable.Accent_accentGround, Color.BLACK);
+                    paint(tile, R.id.accent_bar_top, a, R.styleable.Accent_accentRaised, Color.DKGRAY);
+                    paint(tile, R.id.accent_row, a, R.styleable.Accent_accentRaised, Color.DKGRAY);
+                    paint(tile, R.id.accent_chosen, a, R.styleable.Accent_accentContainer, Color.GRAY);
+                    paint(tile, R.id.accent_pill, a, R.styleable.Accent_accentFill, Color.GRAY);
+                    paint(tile, R.id.accent_chip, a, R.styleable.Accent_accentInk, Color.WHITE);
                     final int fill = a.getColor(R.styleable.Accent_accentFill, Color.GRAY);
-                    tile.findViewById(R.id.accent_ground).setBackgroundTintList(ColorStateList.valueOf(
-                            a.getColor(R.styleable.Accent_accentGround, Color.BLACK)));
                     a.recycle();
-                    tile.findViewById(R.id.accent_dot).setBackgroundTintList(ColorStateList.valueOf(fill));
                     ((TextView) tile.findViewById(R.id.accent_name)).setText(accent.name);
                     tile.setStrokeColor(new ColorStateList(new int[][]{
                             {android.R.attr.state_focused}, {android.R.attr.state_checked}, {}}, new int[]{

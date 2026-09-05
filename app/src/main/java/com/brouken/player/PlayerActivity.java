@@ -2366,7 +2366,7 @@ public class PlayerActivity extends Activity {
         exoSubtitle.setOnClickListener(v -> showSubtitleDialog());
 
         exoSubtitle.setOnLongClickListener(v -> {
-            openSettings("languageSubtitle");
+            openSettings("subtitlesScreen");
             return true;
         });
 

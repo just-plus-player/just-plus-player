@@ -1051,9 +1051,17 @@ public class SettingsActivity extends AppCompatActivity
                 openAtPreference(returning, 3);
             } else if (savedInstanceState == null) {
                 // Long-pressing a player button lands on the section that button is about, the way
-                // a quick-settings tile opens its own page.
+                // a quick-settings tile opens its own page. When the key names a section rather than a
+                // row, the section is opened: the subtitle button used to name a preference that has
+                // since moved inside one, and naming a row that is no longer on this list left the
+                // screen at the top with nothing said.
                 final String key = activity.getIntent().getStringExtra(EXTRA_SCROLL_TO);
-                if (key != null) {
+                final Preference target = key == null ? null : findPreference(key);
+                if (target instanceof PreferenceScreen) {
+                    // After this pass, not during it: replacing the fragment while it is still being
+                    // created leaves the screen blank.
+                    view.post(() -> activity.onPreferenceStartScreen(this, (PreferenceScreen) target));
+                } else if (key != null) {
                     openAtPreference(key, 3);
                 } else if (Utils.isTvBox(activity)) {
                     // Opened from the player menu with no section to land on. A remote needs

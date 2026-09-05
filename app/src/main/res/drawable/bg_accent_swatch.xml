@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The preview of an accent tile; tinted with the theme's ground in code. The hairline is what keeps
+     a dark ground readable on a dark card — Monochrome's is #0A0A0A, and Nord's #2E3440 is barely a
+     step off the card under it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="6dp" />
+    <stroke
+        android:width="1dp"
+        android:color="?attr/colorOutlineVariant" />
+    <solid android:color="@color/white" />
+</shape>

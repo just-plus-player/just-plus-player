@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The accent, as nine roles rather than nine colours. Each ThemeOverlay.JustPlus.Accent.* fills
+         them in; the window themes map Material's roles onto them, so a control reads colorPrimary and
+         gets the tone its ground needs: the ink over video, the fill on a card.
+
+         Six of the nine differ by mode, so the overlay comes in two variants and the mode is decided
+         where it is applied (Prefs.accentOverlay) rather than by a values-night/ qualifier — a dialog
+         here follows the appearance pref, not the system's configuration. -->
+    <declare-styleable name="Accent">
+        <!-- The bright tone, for chrome over video: the hero glyph, a selected icon, the played run. -->
+        <attr name="accentInk" format="color|reference" />
+        <!-- The tone a surface fills with: a switch track, a checked segment, a section header. The
+             ink again in dark mode, the theme's own light tone in light mode — across 31 hues there is
+             no single value that clears 3:1 on white and on a dark ground at once. -->
+        <attr name="accentFill" format="color|reference" />
+        <!-- Ink that sits on accentFill: white in light mode, accentOnInk in dark. -->
+        <attr name="accentOnFill" format="color|reference" />
+        <!-- Container tone: the switch track when on, the picker's current row. -->
+        <attr name="accentContainer" format="color|reference" />
+        <!-- Ink that sits on accentInk: the switch handle when on, text on a checked segment. -->
+        <attr name="accentOnInk" format="color|reference" />
+        <!-- The timebar's skip band, which is told from the played run by hue alone. -->
+        <attr name="accentSkip" format="color|reference" />
+        <!-- The ground every appearance-following surface sits on: the settings window, a dialog, a
+             side sheet, the wash behind the error screen. AMOLED black still wins, by being applied
+             after the accent. -->
+        <attr name="accentGround" format="color|reference" />
+        <!-- One step off the ground: a settings card, a dialog panel. -->
+        <attr name="accentCard" format="color|reference" />
+        <!-- Two steps off the ground: a field inside a card, a raised row. -->
+        <attr name="accentRaised" format="color|reference" />
+    </declare-styleable>
+</resources>

@@ -6,6 +6,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.hardware.display.DisplayManager;
@@ -63,6 +64,12 @@ public class ErrorActivity extends AppCompatActivity {
     private View uploadResult;
     private TextView uploadUrl;
     private ImageView qrImage;
+
+    @Override
+    protected void onApplyThemeResource(final Resources.Theme theme, final int resid, final boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        theme.applyStyle(Prefs.accentOverlay(this, false), true);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

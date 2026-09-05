@@ -43,6 +43,14 @@
                     app:persistent="false"
                     app:selectable="false" />
 
+                <!-- The accent themes, as a row of tiles that scrolls; bound by SettingsActivity like
+                     the row above. -->
+                <Preference
+                    app:key="accentTheme"
+                    app:layout="@layout/preference_accent"
+                    app:persistent="false"
+                    app:selectable="false" />
+
                 <SwitchPreferenceCompat
                     app:defaultValue="false"
                     app:key="amoledBlack"

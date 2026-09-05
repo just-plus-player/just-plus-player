@@ -13,6 +13,8 @@ import android.view.animation.LinearInterpolator;
 
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.color.MaterialColors;
+
 /**
  * The ground under the About block: the app's own container red and its plum, pooled at one corner
  * and drifting to the other and back. The row it fills is already clipped to the card's corners by
@@ -44,8 +46,12 @@ public class BrandWash extends View {
 
     public BrandWash(final Context context, final AttributeSet attrs) {
         super(context, attrs);
-        near = ContextCompat.getColor(context, R.color.brand_container);
-        far = ContextCompat.getColor(context, R.color.brand_plum);
+        near = MaterialColors.getColor(context, R.attr.colorPrimaryContainer,
+                ContextCompat.getColor(context, R.color.brand_container));
+        // The theme's own dark ground, not a fixed plum: the plum was the coral world's ground and
+        // reads as somebody else's colour under Nord or Forest.
+        far = MaterialColors.getColor(context, R.attr.accentGround,
+                ContextCompat.getColor(context, R.color.black));
     }
 
     @Override

@@ -1,10 +1,12 @@
 package com.brouken.player;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.view.animation.PathInterpolator;
 import android.view.MotionEvent;
 
 import androidx.annotation.Nullable;
@@ -17,6 +19,14 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
 
     Rect scrubberBar;
     private Rect progressBar;
+    // The bar's own height, and the field Media3 keeps it in: on a remote the bar has to say it holds the
+    // focus, and it has nothing else to say it with — no plate to draw a contour on, and a full-width line
+    // in white would be the loudest thing on the screen. So the rail itself doubles, the way a television
+    // player's does, and the scrubber is already at its dragged size while focused.
+    private Field barHeightField;
+    private int barHeightRest;
+    private ValueAnimator barHeightAnimator;
+    private static final long BAR_HEIGHT_DURATION_MS = 150;
     private boolean scrubbing;
     private int scrubbingStartX;
     private boolean scrubbingNow;
@@ -55,7 +65,11 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
             Field progressField = DefaultTimeBar.class.getDeclaredField("progressBar");
             progressField.setAccessible(true);
             progressBar = (Rect) progressField.get(this);
+            barHeightField = DefaultTimeBar.class.getDeclaredField("barHeight");
+            barHeightField.setAccessible(true);
+            barHeightRest = barHeightField.getInt(this);
         } catch (NoSuchFieldException | IllegalAccessException e) {
+            barHeightField = null;
             e.printStackTrace();
         }
         // The scrubber grows while the bar is being dragged (DefaultTimeBar.drawPlayhead), and the base
@@ -165,6 +179,54 @@ class CustomDefaultTimeBar extends DefaultTimeBar {
             return;
         }
         canvas.drawRect(left, progressBar.top, right, progressBar.bottom, skipPaint);
+    }
+
+    @Override
+    protected void onFocusChanged(final boolean gainFocus, final int direction,
+                                  @Nullable final Rect previouslyFocusedRect) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+        if (barHeightField == null) {
+            return;
+        }
+        if (barHeightAnimator != null) {
+            barHeightAnimator.cancel();
+        }
+        // The one place in the player that animates a focus change, and for the reason the rest do not: the
+        // mark here *is* a size, and a full-width line snapping from 2dp to 4dp reads as a flicker rather
+        // than a state. Material's short duration with its standard easing, so the bar grows in the time a
+        // remote step takes anyway.
+        final int from = currentBarHeight();
+        final int to = gainFocus ? barHeightRest * 2 : barHeightRest;
+        if (from == to) {
+            return;
+        }
+        barHeightAnimator = ValueAnimator.ofInt(from, to);
+        barHeightAnimator.setDuration(BAR_HEIGHT_DURATION_MS);
+        barHeightAnimator.setInterpolator(new PathInterpolator(0.2f, 0f, 0f, 1f));
+        barHeightAnimator.addUpdateListener(animation -> setBarHeight((int) animation.getAnimatedValue()));
+        barHeightAnimator.start();
+    }
+
+    private int currentBarHeight() {
+        try {
+            return barHeightField.getInt(this);
+        } catch (IllegalAccessException e) {
+            barHeightField = null;
+            return barHeightRest;
+        }
+    }
+
+    /** Media3 lays the three bars out from this height, so the rects follow on the next pass. */
+    private void setBarHeight(final int height) {
+        if (barHeightField == null) {
+            return;
+        }
+        try {
+            barHeightField.setInt(this, height);
+            requestLayout();
+        } catch (IllegalAccessException e) {
+            barHeightField = null;
+        }
     }
 
     /** The radius Media3 is currently drawing the scrubber with — same rule as DefaultTimeBar.drawPlayhead. */

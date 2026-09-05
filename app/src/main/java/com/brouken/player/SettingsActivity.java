@@ -4,7 +4,10 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -25,15 +28,18 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcelable;
 import android.text.StaticLayout;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
@@ -69,6 +75,7 @@ import androidx.recyclerview.widget.SimpleItemAnimator;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
@@ -104,6 +111,15 @@ public class SettingsActivity extends AppCompatActivity
     private int plainCard;
 
     @Override
+    protected void onApplyThemeResource(final Resources.Theme theme, final int resid, final boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        // Here and not in onCreate: when the appearance differs from the system's, AppCompat sets the
+        // window theme again on the way to the recreated activity, and an overlay put on in onCreate
+        // was gone by the time the list was built - the light appearance came up with coral glyphs.
+        theme.applyStyle(Prefs.accentOverlay(this, Prefs.isLight(this)), true);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
 
         // Before super.onCreate, or AppCompat applies the old mode first and then recreates.
@@ -116,11 +132,7 @@ public class SettingsActivity extends AppCompatActivity
         // takes its background out of the theme exactly as it stands at that moment. Pure black is a
         // dark-theme idea only.
         final int night = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-        // Read before the overlay goes on, because applyStyle cannot be undone and these are the
-        // values AMOLED has to be able to go back to. Taken from this theme in this configuration —
-        // a ContextThemeWrapper built here does not carry the local night mode and answers light.
-        plainSurface = MaterialColors.getColor(this, R.attr.colorSurface, Color.BLACK);
-        plainCard = MaterialColors.getColor(this, R.attr.colorSurfaceContainer, Color.DKGRAY);
+        readPlainTones();
         if (night == Configuration.UI_MODE_NIGHT_YES && Prefs.isAmoledBlack(this)) {
             getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
         }
@@ -267,8 +279,59 @@ public class SettingsActivity extends AppCompatActivity
      * next launch still carries the previous surface tone (a 20/255 difference on its background).
      * Give the overlay an inverse and apply that here if it ever shows.
      */
+    /**
+     * An accent pick, without rebuilding the activity. {@code recreate()} was what a pick used to do,
+     * and it read as a jerk: the window torn down and drawn again, the list rebuilt, the tile row
+     * starting at nought and jumping to its place, and on a television the focus lost with it. The
+     * overlay goes on the live theme instead — the trick the AMOLED toggle settled on for the same
+     * reason — and only what the theme actually paints is redone.
+     *
+     * <p>The rows have to be inflated again rather than merely re-bound: a switch track, a checked
+     * segment and a section header each resolve their colour when they are inflated and no later.
+     * Handing the list its own adapter back is what does it — every holder is built afresh, and the
+     * pool is emptied first or a recycled row comes back in the colours it was inflated in. The
+     * layout state goes there and back so the list does not jump to the top.
+     *
+     * <p>Not a fragment transaction: detach and attach in one of those cancel out, because the state
+     * manager works out where a fragment should end up and moves it there once. Two transactions
+     * would have worked and would have torn down more than the colours needed.
+     */
+    /**
+     * The theme's own ground and card, read from the accent overlay rather than from the live theme.
+     *
+     * <p>Reading them from the theme was where the AMOLED bug lived: its overlay replaces colorSurface
+     * with a literal black, applyStyle cannot be undone, and so a theme the option had ever been on
+     * answered black — which then became the tone the option was supposed to return to.
+     */
+    private void readPlainTones() {
+        final TypedArray a = obtainStyledAttributes(
+                Prefs.accentOverlay(this, Prefs.isLight(this)), R.styleable.Accent);
+        plainSurface = a.getColor(R.styleable.Accent_accentGround, Color.BLACK);
+        plainCard = a.getColor(R.styleable.Accent_accentCard, Color.DKGRAY);
+        a.recycle();
+    }
+
+    void repaintAccent(final RecyclerView list) {
+        getTheme().applyStyle(Prefs.accentOverlay(this, Prefs.isLight(this)), true);
+        readPlainTones();
+        // Which of the two ground overlays belongs on top is repaintAmoledSurfaces' business, and it
+        // is called for exactly that reason — the accent has just put its own grounds back.
+        repaintAmoledSurfaces();
+        if (list != null && list.getAdapter() != null && list.getLayoutManager() != null) {
+            final Parcelable at = list.getLayoutManager().onSaveInstanceState();
+            list.getRecycledViewPool().clear();
+            list.setAdapter(list.getAdapter());
+            list.getLayoutManager().onRestoreInstanceState(at);
+        }
+    }
+
     void repaintAmoledSurfaces() {
         final boolean amoled = isNight() && Prefs.isAmoledBlack(this);
+        // The theme as well as the pixels, and the option's own inverse when it is off: applyStyle
+        // cannot be undone, so a theme that has ever been black answers black for everything read
+        // back from it — which is how switching a theme while it was on left the black behind.
+        getTheme().applyStyle(amoled ? R.style.ThemeOverlay_JustPlus_Amoled
+                : R.style.ThemeOverlay_JustPlus_Ground, true);
         final int surface = amoled ? ContextCompat.getColor(this, R.color.black) : plainSurface;
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(surface));
         getWindow().setStatusBarColor(surface);
@@ -322,23 +385,6 @@ public class SettingsActivity extends AppCompatActivity
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
 
-        /** Every icon on the screen, recoloured for the surface it is drawn on. */
-        private static void tintIcons(final PreferenceGroup group, final int color) {
-            for (int i = 0; i < group.getPreferenceCount(); i++) {
-                final Preference preference = group.getPreference(i);
-                final Drawable icon = preference.getIcon();
-                if (icon != null) {
-                    // Mutated, or the tint reaches every row sharing the drawable's constant state.
-                    final Drawable own = icon.mutate();
-                    own.setTint(color);
-                    preference.setIcon(own);
-                }
-                if (preference instanceof PreferenceGroup) {
-                    tintIcons((PreferenceGroup) preference, color);
-                }
-            }
-        }
-
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             // Inflation materializes switch defaults, so record whether the key was already
@@ -354,12 +400,6 @@ public class SettingsActivity extends AppCompatActivity
             Prefs.getSubtitleTranslate(requireContext());
 
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
-
-            // The hub's glyphs are the player's own, drawn white for the chrome over video, and white
-            // on a settings card is invisible in the light appearance. They take the surface accent
-            // instead - the Two Grounds Rule, learned three times already in the panels.
-            tintIcons(getPreferenceScreen(),
-                    MaterialColors.getColor(requireContext(), R.attr.colorPrimary, Color.WHITE));
 
             final Preference dangerousWarning = findPreference("dangerousWarning");
             if (dangerousWarning != null && Utils.isTvBox(requireContext())) {
@@ -857,8 +897,10 @@ public class SettingsActivity extends AppCompatActivity
                         title.setEllipsize(null);
                         restoreReadoutInk(title, getItem(position));
                     }
+                    tintIcon(holder);
                     reserveTallerSummary(holder, getItem(position));
                     bindThemeMode(holder, getItem(position));
+                    bindAccent(holder, getItem(position));
                     bindAbout(holder, getItem(position));
                 }
             };
@@ -977,6 +1019,136 @@ public class SettingsActivity extends AppCompatActivity
                 ((SettingsActivity) requireActivity()).getDelegate()
                         .setLocalNightMode(Prefs.getNightMode(context));
             });
+        }
+
+        /** Where the tile row stood and whether a tile held the focus, carried across a repaint. */
+        private int accentScrollX = -1;
+        private boolean accentFocusWanted;
+
+        /**
+         * The hub's glyphs are the player's own, drawn white for the chrome over video, and white on
+         * a settings card is invisible in the light appearance. They take the surface accent instead
+         * — the Two Grounds Rule, learned three times already in the panels.
+         *
+         * <p>At bind and as a filter on the row's own view, not once on the preference tree: an
+         * accent picked while the screen is open repaints in place, and a colour baked into the
+         * drawable then would still be the old one. It also settles the older hazard the tree
+         * version had to mutate around — a filter on one ImageView cannot reach another row sharing
+         * the drawable's constant state.
+         */
+        private void tintIcon(final PreferenceViewHolder holder) {
+            final View icon = holder.findViewById(android.R.id.icon);
+            if (icon instanceof ImageView) {
+                ((ImageView) icon).setColorFilter(
+                        MaterialColors.getColor(icon.getContext(), R.attr.colorPrimary, Color.WHITE));
+            }
+        }
+
+        /** Tints one part of a tile's little screen with a role read off the theme's own overlay. */
+        private static void paint(final View tile, final int id, final TypedArray a,
+                                  final int role, final int fallback) {
+            tile.findViewById(id).setBackgroundTintList(
+                    ColorStateList.valueOf(a.getColor(role, fallback)));
+        }
+
+        /**
+         * The accent row: one tile per theme, each a small screen wearing that theme — the ground, a
+         * toolbar and a row raised off it, a control filled with the accent, a dot of the ink, and a
+         * chosen row in the container — read off the theme's overlay style rather than from a table here — Prefs.Accent is the only
+         * place the set is listed. The tile shows the appearance in force: a Nord tile is Nord's light
+         * ground under a light appearance and its dark one under a dark, because that is what picking
+         * it will do to this screen. The chosen tile wears a 2dp edge in its fill and its name in the
+         * same; a focused one the ring every control wears, by the same rule as Utils.focusRing (an
+         * edge that widens, drawn over its neighbours), restated here because that helper is typed to
+         * a button. A pick recreates the screen, as a change of Dark/Light already does.
+         */
+        private void bindAccent(final PreferenceViewHolder holder, final Preference preference) {
+            if (preference == null || !Prefs.ACCENT_KEY.equals(preference.getKey())
+                    || !(holder.itemView instanceof HorizontalScrollView)) {
+                return;
+            }
+            final HorizontalScrollView scroller = (HorizontalScrollView) holder.itemView;
+            final LinearLayout row = (LinearLayout) scroller.getChildAt(0);
+            final Context context = row.getContext();
+            final boolean light = Prefs.isLight(context);
+            if (row.getChildCount() == 0) {
+                for (final Prefs.Accent accent : Prefs.Accent.values()) {
+                    final MaterialCardView tile = (MaterialCardView) LayoutInflater.from(context)
+                            .inflate(R.layout.accent_card, row, false);
+                    tile.setTag(accent.key);
+                    // Straight off the overlay that a pick would apply, so a tile cannot drift from
+                    // what it promises. Six roles, because a theme is judged on more than its accent:
+                    // the ground behind everything, the card tone its rows sit in, the accent a
+                    // control is filled with, and the container pair that says "chosen".
+                    final TypedArray a = context.obtainStyledAttributes(
+                            light ? accent.light : accent.dark, R.styleable.Accent);
+                    paint(tile, R.id.accent_ground, a, R.styleable.Accent_accentGround, Color.BLACK);
+                    paint(tile, R.id.accent_bar_top, a, R.styleable.Accent_accentRaised, Color.DKGRAY);
+                    paint(tile, R.id.accent_row, a, R.styleable.Accent_accentRaised, Color.DKGRAY);
+                    paint(tile, R.id.accent_chosen, a, R.styleable.Accent_accentContainer, Color.GRAY);
+                    paint(tile, R.id.accent_pill, a, R.styleable.Accent_accentFill, Color.GRAY);
+                    paint(tile, R.id.accent_chip, a, R.styleable.Accent_accentInk, Color.WHITE);
+                    final int fill = a.getColor(R.styleable.Accent_accentFill, Color.GRAY);
+                    a.recycle();
+                    ((TextView) tile.findViewById(R.id.accent_name)).setText(accent.name);
+                    tile.setStrokeColor(new ColorStateList(new int[][]{
+                            {android.R.attr.state_focused}, {android.R.attr.state_checked}, {}}, new int[]{
+                            MaterialColors.getColor(context, R.attr.colorOnSurface, Color.WHITE), fill,
+                            MaterialColors.getColor(context, R.attr.colorOutlineVariant, Color.GRAY)}));
+                    tile.setOnFocusChangeListener((v, focused) -> {
+                        tile.setTranslationZ(focused ? 1f : 0f);
+                        edge(tile);
+                    });
+                    row.addView(tile);
+                }
+            }
+            final String chosen = Prefs.getAccent(context);
+            View current = null;
+            for (int i = 0; i < row.getChildCount(); i++) {
+                final MaterialCardView tile = (MaterialCardView) row.getChildAt(i);
+                final boolean checked = chosen.equals(tile.getTag());
+                tile.setChecked(checked);
+                if (checked)
+                    current = tile;
+                final int fill = tile.getStrokeColorStateList().getColorForState(
+                        new int[]{android.R.attr.state_checked}, 0);
+                ((TextView) tile.findViewById(R.id.accent_name)).setTextColor(checked ? fill
+                        : MaterialColors.getColor(context, R.attr.colorOnSurface, Color.WHITE));
+                edge(tile);
+                // The holder is recycled, so the listener from its last binding has to go first.
+                tile.setOnClickListener(checked ? null : v -> {
+                    Prefs.setAccent(context, (String) tile.getTag());
+                    // Kept so the repaint below does not move the row out from under the finger, and
+                    // so a remote goes on pointing at the tile it just pressed.
+                    accentScrollX = scroller.getScrollX();
+                    accentFocusWanted = tile.isFocused();
+                    ((SettingsActivity) requireActivity()).repaintAccent(getListView());
+                });
+            }
+            // Before the frame is drawn, not posted after it: a post shows the row at nought for one
+            // frame and then jumps it, which is the shift this was reported for. A repaint restores
+            // where the row stood; a fresh screen puts the chosen tile second from the left rather
+            // than first, so the row says it has a left as well as a right.
+            final View target = current;
+            final int restore = accentScrollX;
+            final boolean focus = accentFocusWanted;
+            accentScrollX = -1;
+            accentFocusWanted = false;
+            if (restore >= 0 || target != null) {
+                OneShotPreDrawListener.add(scroller, () -> {
+                    scroller.scrollTo(restore >= 0 ? restore
+                            : Math.max(0, target.getLeft() - target.getWidth()), 0);
+                    if (focus && target != null) {
+                        target.requestFocus();
+                    }
+                });
+            }
+        }
+
+        /** Chosen or focused, the edge is the ring's width; otherwise the hairline of an outlined tile. */
+        private static void edge(final MaterialCardView tile) {
+            tile.setStrokeWidth(tile.isChecked() || tile.isFocused()
+                    ? tile.getResources().getDimensionPixelSize(R.dimen.focus_ring_width) : Utils.dpToPx(1));
         }
 
         /**

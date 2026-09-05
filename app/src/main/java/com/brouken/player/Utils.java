@@ -1307,33 +1307,26 @@ class Utils {
     /**
      * A context for dialogs raised from the player, themed by the appearance choice instead of by the
      * window that raises them. The player's own theme is dark by design, so a dialog built against it
-     * cannot follow that choice at all: this wraps the chosen night mode around the configuration and
-     * hands back a DayNight theme carrying the app's colour roles.
+     * cannot follow that choice at all: this hands back one of two explicit dialog themes, carrying
+     * the app's colour roles and the accent theme's own grounds.
      *
      * Every view a dialog builds for itself has to come from this context too, or dark text lands on a
      * light panel.
      */
     public static Context dialogContext(final Context base) {
-        String mode = Prefs.getThemeMode(base);
-        if (Prefs.THEME_SYSTEM.equals(mode)) {
-            if (isTvBox(base)) {
-                // A TV box has no system theme worth following, and PlayerActivity makes dark the
-                // default there — so on TV a dialog follows the app rather than the box.
-                mode = Prefs.THEME_DARK;
-            } else {
-                final int night = base.getResources().getConfiguration().uiMode
-                        & Configuration.UI_MODE_NIGHT_MASK;
-                mode = night == Configuration.UI_MODE_NIGHT_YES ? Prefs.THEME_DARK : Prefs.THEME_LIGHT;
-            }
-        }
+        final boolean light = Prefs.isLight(base);
         // Wrapped straight around whatever it was handed — an Activity, in every real call — because a
         // ContextThemeWrapper keeps its base's window token and a dialog needs one to exist at all.
         final android.view.ContextThemeWrapper themed = new android.view.ContextThemeWrapper(base,
-                Prefs.THEME_LIGHT.equals(mode) ? R.style.Theme_Dialogs_Light
-                        : R.style.Theme_Dialogs_Dark);
+                light ? R.style.Theme_Dialogs_Light : R.style.Theme_Dialogs_Dark);
+        // Theme.Dialogs.* carries no accent of its own, so this is what decides it — not left to the
+        // wrapped context, whose accent may be older than the preference by the time a dialog opens.
+        // Above AMOLED and not below it: the accent brings the theme's own grounds with it now, and
+        // AMOLED's black has to land on top of them. Settings applies the two in the same order.
+        themed.getTheme().applyStyle(Prefs.accentOverlay(base, light), true);
         // AMOLED is part of the same appearance choice, and a panel is the largest dark surface the app
         // ever puts on screen — the one place the option is worth the most.
-        if (!Prefs.THEME_LIGHT.equals(mode) && Prefs.isAmoledBlack(base)) {
+        if (!light && Prefs.isAmoledBlack(base)) {
             themed.getTheme().applyStyle(R.style.ThemeOverlay_JustPlus_Amoled, true);
         }
         return themed;
@@ -1408,10 +1401,11 @@ class Utils {
         field.setHint(hint);
         field.setPlaceholderText(placeholder);
         // The accent the dark panel shares with the light one measures 3.3:1 on its card: enough for
-        // the 2dp outline, not for the 12sp label riding it. The label alone takes the brighter coral.
+        // the 2dp outline, not for the 12sp label riding it. The label alone takes the brighter ink —
+        // colorPrimaryInverse is the accent's ink in every window theme.
         if (!MaterialColors.isColorLight(MaterialColors.getColor(field, R.attr.colorSurface))) {
             field.setHintTextColor(ColorStateList.valueOf(
-                    ContextCompat.getColor(fields.getContext(), R.color.brand)));
+                    MaterialColors.getColor(field, R.attr.colorPrimaryInverse)));
         }
         fields.addView(field);
         return field.getEditText();

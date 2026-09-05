@@ -28,6 +28,7 @@ import android.graphics.Outline;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.content.res.ColorStateList;
+import android.content.res.Resources;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -1334,7 +1335,6 @@ public class PlayerActivity extends Activity {
         } else {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         }
-
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT == 28 && Build.MANUFACTURER.equalsIgnoreCase("xiaomi") &&
                 (Build.DEVICE.equalsIgnoreCase("oneday") || Build.DEVICE.equalsIgnoreCase("once"))) {
@@ -1440,7 +1440,7 @@ public class PlayerActivity extends Activity {
         heroLp.width = ui.heroBox();
         heroLp.height = ui.heroBox();
         exoPlayPause.setLayoutParams(heroLp);
-        exoPlayPause.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.brand)));
+        exoPlayPause.setImageTintList(ColorStateList.valueOf(brandColor()));
         // With the colour gone from the disc, presence has to come from the glyph. Media3 hands the button a
         // drawable whose canvas is exo_icon_size with the ink about a third of it; fitting that canvas to the
         // whole box instead of leaving it at its intrinsic size takes the ink to roughly half the disc, the
@@ -2307,8 +2307,9 @@ public class PlayerActivity extends Activity {
         timeBar.setAdMarkerColor(Color.argb(0x00, 0xFF, 0xFF, 0xFF));
         timeBar.setPlayedAdMarkerColor(Color.argb(0x98, 0xFF, 0xFF, 0xFF));
         // Brand the timeline: the played portion and the scrubber (the surfaces the user actually touches)
-        // share one colour, over a solid dark rail instead of Media3's wash of the frame behind.
-        final int timeBarPlayed = ContextCompat.getColor(this, R.color.timebar_played);
+        // share the accent ink of the Play glyph above, over a solid dark rail instead of Media3's wash
+        // of the frame behind.
+        final int timeBarPlayed = brandColor();
         timeBar.setPlayedColor(timeBarPlayed);
         timeBar.setScrubberColor(timeBarPlayed);
         timeBar.setUnplayedColor(ContextCompat.getColor(this, R.color.timebar_track));
@@ -2654,6 +2655,14 @@ public class PlayerActivity extends Activity {
             mPrefs.setUpdatePending(null);
             refreshUpdateButton();
         };
+    }
+
+    @Override
+    protected void onApplyThemeResource(final Resources.Theme theme, final int resid, final boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        // Here rather than in onCreate: the theme is rebuilt whenever it is (re)set, and an overlay
+        // put on in onCreate does not survive that.
+        theme.applyStyle(Prefs.accentOverlay(this, false), true);
     }
 
     @Override
@@ -4156,9 +4165,12 @@ public class PlayerActivity extends Activity {
         return value != null ? value : fallback;
     }
 
-    /** Brand accent color from {@code @color/brand}; pass an alpha (0x00..0xFF) for a translucent variant. */
+    /**
+     * The accent ink of this window's theme — the ThemeOverlay.JustPlus.Accent.* applied in onCreate
+     * decides which; pass an alpha (0x00..0xFF) for a translucent variant.
+     */
     private int brandColor() {
-        return ContextCompat.getColor(this, R.color.brand);
+        return MaterialColors.getColor(this, R.attr.colorPrimary, Color.WHITE);
     }
 
     private int brandColor(int alpha) {
@@ -4270,7 +4282,8 @@ public class PlayerActivity extends Activity {
         final int[] colors = new int[count];
         final int[] fillColors = new int[count];
         final int skipEdge = ContextCompat.getColor(this, R.color.skip_edge);
-        final int skipFill = ContextCompat.getColor(this, R.color.skip_fill);
+        final int skipFill = MaterialColors.getColor(this, R.attr.accentSkip,
+                ContextCompat.getColor(this, R.color.skip_fill));
         final int adEdge = ContextCompat.getColor(this, R.color.ad_edge);
         final int adFill = ContextCompat.getColor(this, R.color.ad_fill);
         for (int i = 0; i < count; i++) {
@@ -10445,7 +10458,7 @@ public class PlayerActivity extends Activity {
                 // but on the brand colour, because the room has stopped being in step and nothing else says so.
                 final int tint = together.connected()
                         ? ContextCompat.getColor(this, R.color.ink_high)
-                        : ContextCompat.getColor(this, R.color.brand);
+                        : brandColor();
                 roomPill.setTextColor(tint);
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
             }
@@ -10923,7 +10936,15 @@ public class PlayerActivity extends Activity {
             // but options like the decoder priority or tunneling are baked into it at build time. So
             // rebuild when the screen actually changed something — going in for a look costs nothing.
             // A missing snapshot means the activity was recreated meanwhile, so rebuild to be safe.
-            if (player != null && (before == null || !before.equals(mPrefs.snapshot()))) {
+            // A new accent is baked into the whole window, not just the player: the same path that
+            // restarts the screen on a dead decoder rebuilds it with the new theme, position kept.
+            final Map<String, ?> after = mPrefs.snapshot();
+            if (before != null && !Objects.equals(before.get(Prefs.ACCENT_KEY), after.get(Prefs.ACCENT_KEY))) {
+                releasePlayer();
+                playerView.post(this::recreate);
+                return;
+            }
+            if (player != null && (before == null || !before.equals(after))) {
                 sourceSwitchKeepPaused = true;
                 releasePlayer();
                 initializePlayer();

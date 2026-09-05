@@ -3,6 +3,7 @@ package com.brouken.player;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.view.accessibility.CaptioningManager;
@@ -66,6 +67,9 @@ class Prefs {
     public static final String THEME_DARK = "dark";
     public static final String THEME_LIGHT = "light";
     public static final String THEME_SYSTEM = "system";
+    /** The accent, as one of the {@link Accent} overlays; reaches every window. */
+    public static final String ACCENT_KEY = "accentTheme";
+    public static final String ACCENT_CORAL = "coral";
     private static final String PREF_KEY_HOLD_SPEED_MODE = "holdSpeedMode";
     private static final String PREF_KEY_TUNNELING = "tunneling";
     private static final String PREF_KEY_FRAMERATE_MATCHING = "frameRateMatching";
@@ -618,6 +622,167 @@ class Prefs {
         }
     }
 
+    /**
+     * The accent, as a theme rather than a colour: an overlay per entry, in two variants because six
+     * of its nine roles differ by mode (themes_accents.xml, generated). This enum is the one place
+     * the set is listed — the picker builds itself from values() and each tile paints itself from its
+     * own overlay's attributes, so adding a theme is a row here and a row in the generator.
+     */
+    public enum Accent {
+        CORAL("coral", R.string.pref_accent_coral,
+                R.style.ThemeOverlay_JustPlus_Accent_Coral,
+                R.style.ThemeOverlay_JustPlus_Accent_Coral_Light),
+        ROSEGOLD("rosegold", R.string.pref_accent_rosegold,
+                R.style.ThemeOverlay_JustPlus_Accent_RoseGold,
+                R.style.ThemeOverlay_JustPlus_Accent_RoseGold_Light),
+        STRAWBERRY("strawberry", R.string.pref_accent_strawberry,
+                R.style.ThemeOverlay_JustPlus_Accent_Strawberry,
+                R.style.ThemeOverlay_JustPlus_Accent_Strawberry_Light),
+        COTTONCANDY("cottoncandy", R.string.pref_accent_cottoncandy,
+                R.style.ThemeOverlay_JustPlus_Accent_CottonCandy,
+                R.style.ThemeOverlay_JustPlus_Accent_CottonCandy_Light),
+        ORCHID("orchid", R.string.pref_accent_orchid,
+                R.style.ThemeOverlay_JustPlus_Accent_Orchid,
+                R.style.ThemeOverlay_JustPlus_Accent_Orchid_Light),
+        VIOLET("violet", R.string.pref_accent_violet,
+                R.style.ThemeOverlay_JustPlus_Accent_Violet,
+                R.style.ThemeOverlay_JustPlus_Accent_Violet_Light),
+        ROSEPINE("rosepine", R.string.pref_accent_rosepine,
+                R.style.ThemeOverlay_JustPlus_Accent_RosePine,
+                R.style.ThemeOverlay_JustPlus_Accent_RosePine_Light),
+        DRACULA("dracula", R.string.pref_accent_dracula,
+                R.style.ThemeOverlay_JustPlus_Accent_Dracula,
+                R.style.ThemeOverlay_JustPlus_Accent_Dracula_Light),
+        LAVENDER("lavender", R.string.pref_accent_lavender,
+                R.style.ThemeOverlay_JustPlus_Accent_Lavender,
+                R.style.ThemeOverlay_JustPlus_Accent_Lavender_Light),
+        CATPPUCCIN("catppuccin", R.string.pref_accent_catppuccin,
+                R.style.ThemeOverlay_JustPlus_Accent_Catppuccin,
+                R.style.ThemeOverlay_JustPlus_Accent_Catppuccin_Light),
+        PERIWINKLE("periwinkle", R.string.pref_accent_periwinkle,
+                R.style.ThemeOverlay_JustPlus_Accent_Periwinkle,
+                R.style.ThemeOverlay_JustPlus_Accent_Periwinkle_Light),
+        KANAGAWA("kanagawa", R.string.pref_accent_kanagawa,
+                R.style.ThemeOverlay_JustPlus_Accent_Kanagawa,
+                R.style.ThemeOverlay_JustPlus_Accent_Kanagawa_Light),
+        TOKYONIGHT("tokyonight", R.string.pref_accent_tokyonight,
+                R.style.ThemeOverlay_JustPlus_Accent_TokyoNight,
+                R.style.ThemeOverlay_JustPlus_Accent_TokyoNight_Light),
+        AYU("ayu", R.string.pref_accent_ayu,
+                R.style.ThemeOverlay_JustPlus_Accent_Ayu,
+                R.style.ThemeOverlay_JustPlus_Accent_Ayu_Light),
+        SAPPHIRE("sapphire", R.string.pref_accent_sapphire,
+                R.style.ThemeOverlay_JustPlus_Accent_Sapphire,
+                R.style.ThemeOverlay_JustPlus_Accent_Sapphire_Light),
+        MIDNIGHT("midnight", R.string.pref_accent_midnight,
+                R.style.ThemeOverlay_JustPlus_Accent_Midnight,
+                R.style.ThemeOverlay_JustPlus_Accent_Midnight_Light),
+        NORD("nord", R.string.pref_accent_nord,
+                R.style.ThemeOverlay_JustPlus_Accent_Nord,
+                R.style.ThemeOverlay_JustPlus_Accent_Nord_Light),
+        SOLARIZED("solarized", R.string.pref_accent_solarized,
+                R.style.ThemeOverlay_JustPlus_Accent_Solarized,
+                R.style.ThemeOverlay_JustPlus_Accent_Solarized_Light),
+        OCEAN("ocean", R.string.pref_accent_ocean,
+                R.style.ThemeOverlay_JustPlus_Accent_Ocean,
+                R.style.ThemeOverlay_JustPlus_Accent_Ocean_Light),
+        TEAL("teal", R.string.pref_accent_teal,
+                R.style.ThemeOverlay_JustPlus_Accent_Teal,
+                R.style.ThemeOverlay_JustPlus_Accent_Teal_Light),
+        EVERBLUSH("everblush", R.string.pref_accent_everblush,
+                R.style.ThemeOverlay_JustPlus_Accent_Everblush,
+                R.style.ThemeOverlay_JustPlus_Accent_Everblush_Light),
+        TAKO("tako", R.string.pref_accent_tako,
+                R.style.ThemeOverlay_JustPlus_Accent_Tako,
+                R.style.ThemeOverlay_JustPlus_Accent_Tako_Light),
+        EVERFOREST("everforest", R.string.pref_accent_everforest,
+                R.style.ThemeOverlay_JustPlus_Accent_Everforest,
+                R.style.ThemeOverlay_JustPlus_Accent_Everforest_Light),
+        FOREST("forest", R.string.pref_accent_forest,
+                R.style.ThemeOverlay_JustPlus_Accent_Forest,
+                R.style.ThemeOverlay_JustPlus_Accent_Forest_Light),
+        MONOKAI("monokai", R.string.pref_accent_monokai,
+                R.style.ThemeOverlay_JustPlus_Accent_Monokai,
+                R.style.ThemeOverlay_JustPlus_Accent_Monokai_Light),
+        AMBER("amber", R.string.pref_accent_amber,
+                R.style.ThemeOverlay_JustPlus_Accent_Amber,
+                R.style.ThemeOverlay_JustPlus_Accent_Amber_Light),
+        CLOUDFLARE("cloudflare", R.string.pref_accent_cloudflare,
+                R.style.ThemeOverlay_JustPlus_Accent_Cloudflare,
+                R.style.ThemeOverlay_JustPlus_Accent_Cloudflare_Light),
+        GRUVBOX("gruvbox", R.string.pref_accent_gruvbox,
+                R.style.ThemeOverlay_JustPlus_Accent_Gruvbox,
+                R.style.ThemeOverlay_JustPlus_Accent_Gruvbox_Light),
+        SUNSET("sunset", R.string.pref_accent_sunset,
+                R.style.ThemeOverlay_JustPlus_Accent_Sunset,
+                R.style.ThemeOverlay_JustPlus_Accent_Sunset_Light),
+        MOCHA("mocha", R.string.pref_accent_mocha,
+                R.style.ThemeOverlay_JustPlus_Accent_Mocha,
+                R.style.ThemeOverlay_JustPlus_Accent_Mocha_Light),
+        SLATE("slate", R.string.pref_accent_slate,
+                R.style.ThemeOverlay_JustPlus_Accent_Slate,
+                R.style.ThemeOverlay_JustPlus_Accent_Slate_Light),
+        MONOCHROME("monochrome", R.string.pref_accent_monochrome,
+                R.style.ThemeOverlay_JustPlus_Accent_Monochrome,
+                R.style.ThemeOverlay_JustPlus_Accent_Monochrome_Light);
+
+        final String key;
+        final int name;
+        final int dark;
+        final int light;
+
+        Accent(final String key, final int name, final int dark, final int light) {
+            this.key = key;
+            this.name = name;
+            this.dark = dark;
+            this.light = light;
+        }
+
+        static Accent of(final String key) {
+            for (final Accent accent : values()) {
+                if (accent.key.equals(key))
+                    return accent;
+            }
+            return CORAL;
+        }
+    }
+
+    public static String getAccent(final Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(ACCENT_KEY, ACCENT_CORAL);
+    }
+
+    public static void setAccent(final Context context, final String accent) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(ACCENT_KEY, accent).apply();
+    }
+
+    /**
+     * The stored accent as the overlay to applyStyle(…, true) onto a window or dialog theme. The
+     * caller says which ground it is on, because the themes that read the roles cannot branch on the
+     * mode themselves: chrome over video is dark whatever the appearance choice says, a settings
+     * window or a dialog follows {@link #isLight}.
+     */
+    public static int accentOverlay(final Context context, final boolean light) {
+        final Accent accent = Accent.of(getAccent(context));
+        return light ? accent.light : accent.dark;
+    }
+
+    /** Whether the appearance choice, resolved, puts surfaces on a light ground. */
+    public static boolean isLight(final Context context) {
+        final String mode = getThemeMode(context);
+        if (THEME_LIGHT.equals(mode))
+            return true;
+        if (THEME_DARK.equals(mode))
+            return false;
+        // A TV box has no system theme worth following, and PlayerActivity makes dark the default
+        // there — so on TV the app answers for itself.
+        if (Utils.isTvBox(context))
+            return false;
+        return (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                != Configuration.UI_MODE_NIGHT_YES;
+    }
+
     public static boolean isAmoledBlack(final Context context) {
         return PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean(PREF_KEY_AMOLED, false);
@@ -1000,7 +1165,10 @@ class Prefs {
     /**
      * What the player screen compares before and after a trip to settings, to decide whether it has
      * to be rebuilt. Room settings are left out on purpose: they change nothing about how playback
-     * is built, and rebuilding for them would restart the film over a change of display name.
+     * is built, and rebuilding for them would restart the film over a change of display name. The
+     * appearance is left out for the same reason: the player's chrome is dark over the picture
+     * whichever appearance is chosen, so light/dark and AMOLED cost it nothing. The accent stays in
+     * — the player does show it, and the caller looks for that key by name.
      */
     public Map<String, ?> snapshot() {
         final Map<String, Object> all = new HashMap<>(mSharedPreferences.getAll());
@@ -1008,6 +1176,8 @@ class Prefs {
         all.remove(PREF_KEY_TOGETHER_PASSWORD);
         all.remove(PREF_KEY_TOGETHER_PUBLIC);
         all.remove(PREF_KEY_TOGETHER_RELAY);
+        all.remove(THEME_MODE_KEY);
+        all.remove(PREF_KEY_AMOLED);
         return all;
     }
 }

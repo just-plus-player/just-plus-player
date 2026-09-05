@@ -94,6 +94,10 @@ public class ErrorActivity extends AppCompatActivity {
         uploadUrl = findViewById(R.id.uploadUrl);
         qrImage = findViewById(R.id.qrImage);
 
+        // The four actions wear the contour every chrome control wears on a remote, not the theme's wash.
+        for (final int id : new int[]{R.id.btnCopy, R.id.btnShare, R.id.btnUpload, R.id.btnClose}) {
+            findViewById(id).setForeground(Utils.chromeForeground(this, 0));
+        }
         findViewById(R.id.btnCopy).setOnClickListener(v -> copy(report));
         // Nothing on a TV box can empty the clipboard — no keyboard, no text app — so Copy is a dead end
         // there and only takes a D-pad stop away from Upload, which is how a report actually leaves the box.

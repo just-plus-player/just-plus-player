@@ -23,9 +23,12 @@ import android.database.Cursor;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -748,15 +751,107 @@ class Utils {
         final GradientDrawable mask = new GradientDrawable();
         mask.setCornerRadius(corner);
         mask.setColor(Color.WHITE);
-        // Press only: a RippleDrawable washes on focus as well, and over the fill of the current row
-        // that wash lifted the accent to #DB5F54 from #D6493C — the very thing the ring exists to
-        // avoid. The edge says "here" and leaves the colour underneath it alone.
-        final int press = MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
-                ContextCompat.getColor(ctx, R.color.ripple_chrome));
-        return new RippleDrawable(new ColorStateList(
+        return coveringRipple(pressOnly(MaterialColors.getColor(ctx, R.attr.colorControlHighlight,
+                ContextCompat.getColor(ctx, R.color.ripple_chrome))), layer, mask);
+    }
+
+    /**
+     * A ripple that reaches the whole control. On the 90dp hero the wash stopped at about seven tenths of
+     * the disc — the press lit the middle of the button and never its edge — for two reasons, both fixed
+     * here. A RippleDrawable is a LayerDrawable, and its default padding mode nests each layer inside the
+     * padding of the one before: an {@link InsetDrawable} reports its inset as padding, so the mask came
+     * out inset twice and cut the wash to 50dp of a 70dp disc. And Android's own guess at a masked ripple's
+     * radius falls short of the corners, so the radius is set to the view's half-diagonal instead.
+     */
+    private static RippleDrawable coveringRipple(final ColorStateList color, final Drawable content,
+                                                 final Drawable mask) {
+        final RippleDrawable ripple = new RippleDrawable(color, content, mask) {
+            @Override
+            protected void onBoundsChange(final Rect bounds) {
+                super.onBoundsChange(bounds);
+                setRadius((int) Math.ceil(Math.hypot(bounds.width(), bounds.height()) / 2f));
+            }
+        };
+        ripple.setPaddingMode(LayerDrawable.PADDING_MODE_STACK);
+        return ripple;
+    }
+
+    /**
+     * A ripple colour that shows on press only. A RippleDrawable washes on focus as well, and over the
+     * fill of a current row that wash lifted the accent to #DB5F54 from #D6493C — the very thing the
+     * focus ring exists to avoid. The edge says "here" and leaves the colour underneath it alone.
+     */
+    public static ColorStateList pressOnly(final int color) {
+        return new ColorStateList(
                 new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
-                new int[]{Color.TRANSPARENT, press}),
-                layer, mask);
+                new int[]{Color.TRANSPARENT, color});
+    }
+
+    /**
+     * The D-pad focus ring by itself, in the ink of a Material surface, on a rounded rectangle: for a
+     * control whose fill is drawn by something else — a settings row, sliced out of its group's card.
+     *
+     * @param radii the eight corner radii the row's own outline has, so the ring is that outline
+     */
+    public static Drawable focusOutline(final Context ctx, final float[] radii) {
+        final GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadii(radii);
+        ring.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
+                ContextCompat.getColorStateList(ctx, R.color.focus_ring));
+        return ring;
+    }
+
+    /** A corner radius no box is big enough to show: a rectangle with it is drawn as a circle. */
+    public static final float CIRCLE = 10_000f;
+
+    /** A filled shape: a rectangle rounded by {@code radius}, a circle when it is {@link #CIRCLE}. */
+    public static GradientDrawable shape(final int color, final float radius) {
+        final GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(radius);
+        return d;
+    }
+
+    /** The translucent black plate every control over the picture is drawn on. */
+    public static GradientDrawable plate(final Context ctx, final float radius) {
+        return shape(ContextCompat.getColor(ctx, R.color.ui_controls_background), radius);
+    }
+
+    /**
+     * What a control over the picture wears on top of its plate: the press wash, and the D-pad focus
+     * contour. Focus is a white line on the control's own shape, drawn on the plate and never on the
+     * picture — which is what gives it a floor of 12.63:1 on the brightest frame a video can be, where an
+     * accent fill's own edge has 1.31:1. Fill and ink are left alone, so a control that is already on keeps
+     * saying so (coral glyph) while the contour says the focus is here.
+     *
+     * <p>The two marks are not the same size, and deliberately: a press belongs to the <em>whole</em>
+     * control, the way it does on the episode discs, so it fills the button's own box (inside a pill the
+     * box is square and the pill's clip rounds its ends); the contour is an indicator and sits inside that
+     * box, with air against the pill's edge and against the next button.
+     *
+     * @param radius the contour's corner: {@link #CIRCLE} for a disc, the concentric inner corner for a
+     *               tile inside a pill (the pill's corner less the inset, so the two stay parallel)
+     * @param inset  how far inside the view the contour sits
+     * @param pressRadius the corner of the press wash, {@link #CIRCLE} for a disc, 0 inside a pill
+     * @param pressInset  how far inside the view the plate sits, so the wash stops where the plate does
+     */
+    public static Drawable chromeForeground(final Context ctx, final float radius, final int inset,
+                                            final float pressRadius, final int pressInset) {
+        // Both marks carry their state in a colour list of their own: a StateListDrawable cannot express
+        // "nothing" — a null entry leaves the previously drawn state on screen.
+        final GradientDrawable contour = new GradientDrawable();
+        contour.setCornerRadius(radius);
+        contour.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
+                new ColorStateList(new int[][]{{android.R.attr.state_focused}, {}},
+                        new int[]{Color.WHITE, Color.TRANSPARENT}));
+        return coveringRipple(pressOnly(ContextCompat.getColor(ctx, R.color.ripple_chrome)),
+                new InsetDrawable((Drawable) contour, inset),
+                new InsetDrawable((Drawable) shape(Color.WHITE, pressRadius), pressInset));
+    }
+
+    /** {@link #chromeForeground} for a round control, where the press and the contour share the disc. */
+    public static Drawable chromeForeground(final Context ctx, final int discInset) {
+        return chromeForeground(ctx, CIRCLE, discInset, CIRCLE, discInset);
     }
 
     /**

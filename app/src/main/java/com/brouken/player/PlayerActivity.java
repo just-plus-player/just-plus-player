@@ -1427,25 +1427,28 @@ public class PlayerActivity extends Activity {
             });
         }
         exoPlayPause = findViewById(R.id.exo_play_pause);
-        // Brand hero: the central Play/Pause sits on a disc (inset from the large tap target) carrying the
-        // icon's ramp, with a white glyph. Doubles as a contrast anchor on bright frames, where a bare
-        // white glyph washes out. TR_BL is the direction the ramp runs in the mark itself.
-        final GradientDrawable playDisc = new GradientDrawable(GradientDrawable.Orientation.TR_BL,
-                new int[]{ContextCompat.getColor(this, R.color.brand_ramp_start),
-                        ContextCompat.getColor(this, R.color.brand_ramp_end)});
-        playDisc.setShape(GradientDrawable.OVAL);
-        exoPlayPause.setBackground(new InsetDrawable((Drawable) playDisc, ui.heroInset()));
+        // Brand hero: the central Play/Pause sits on the same chrome plate every control over the picture
+        // wears, and carries the brand in its glyph — the biggest plate on screen with the only coral on it.
+        // Coral is ink here, never a fill: a fill's own edge against a bright frame is 1.31:1, while the
+        // plate is the glyph's keyline and holds it at 4.6:1 on the brightest frame.
+        exoPlayPause.setBackground(new InsetDrawable((Drawable) Utils.plate(this, Utils.CIRCLE),
+                ui.heroInset()));
         // Hero size scales per device class (phone = 90dp, unchanged; larger on tablet/TV). Overrides the
         // Media3 style's exo_icon_size so the transport isn't tiny on a 10-foot screen.
         final ViewGroup.LayoutParams heroLp = exoPlayPause.getLayoutParams();
         heroLp.width = ui.heroBox();
         heroLp.height = ui.heroBox();
         exoPlayPause.setLayoutParams(heroLp);
-        exoPlayPause.setImageTintList(ColorStateList.valueOf(Color.WHITE));
-        // Replacing the button background drops the D-pad focus / touch-press highlight, so re-add both as a
-        // foreground — critical for TV navigation, harmless on touch. The ripple carries its own oval mask, so
-        // no outline clip is needed (which would also cut off the focus ring sitting outside the disc).
-        exoPlayPause.setForeground(discFocusForeground(ui.heroInset()));
+        exoPlayPause.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.brand)));
+        // With the colour gone from the disc, presence has to come from the glyph. Media3 hands the button a
+        // drawable whose canvas is exo_icon_size with the ink about a third of it; fitting that canvas to the
+        // whole box instead of leaving it at its intrinsic size takes the ink to roughly half the disc, the
+        // proportion the reference gives its own transport hero.
+        exoPlayPause.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        exoPlayPause.setPadding(0, 0, 0, 0);
+        // Replacing the button background drops the touch-press highlight, so re-add it as a foreground,
+        // together with the focus contour. Both carry their own oval mask, so no outline clip is needed.
+        exoPlayPause.setForeground(Utils.chromeForeground(this, ui.heroInset()));
         loadingProgressBar = findViewById(R.id.loading);
         // Keep the loading ring proportional to the hero it overlays.
         final ViewGroup.LayoutParams spinnerLp = loadingProgressBar.getLayoutParams();
@@ -1580,8 +1583,10 @@ public class PlayerActivity extends Activity {
         buttonUpdate.setId(View.generateViewId());
         buttonUpdate.setContentDescription(getString(R.string.button_update));
         buttonUpdate.setVisibility(View.GONE);
-        // Tint the glyph, never the background: a background on these buttons swallows it.
-        buttonUpdate.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.brand)));
+        // Tint the glyph, never the background: a background on these buttons swallows it. An offered update
+        // is a control that is on, and wears the same coral every on state wears.
+        buttonUpdate.setSelected(true);
+        buttonUpdate.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
         buttonUpdate.setOnClickListener(view -> {
             final UpdateInfo info = mPrefs.updatePending;
             if (info != null) {
@@ -1827,9 +1832,9 @@ public class PlayerActivity extends Activity {
         centerView.addView(topInfoPanel);
 
         // Skip button — a solid dark pill floating over the video (bottom-end), independent of the
-        // controller. Modern TV focus: a coral ring + slight scale-up on focus (replacing the dated flat
-        // grey selectableItemBackground wash), with the remaining-time countdown drawn as an underline
-        // integrated into the pill rather than a detached bar below it. Label and glyph stay white; only
+        // controller. TV focus is the white contour every chrome control wears (no wash, no scale), with the
+        // remaining-time countdown drawn as an underline integrated into the pill rather than a detached bar
+        // below it. Label and glyph stay white; only
         // what counts time down — the underline and the seconds inside the label — is on the brand accent,
         // so the timing reads at a glance without costing the wording its contrast over a bright frame.
         // Same token as the cluster pills (UiMetrics.pillCorner) rather than a raw 8dp, so the skip and
@@ -1917,8 +1922,8 @@ public class PlayerActivity extends Activity {
         // Add the pill straight to the coordinator, floating bottom-end. No wrapper view: the countdown
         // underline is baked into the button's own background, so the previous wrapping FrameLayout — which
         // stretched to full width inside the CoordinatorLayout and pinned the pill to the left edge — is gone.
-        // Modern TV focus: a coral ring on the pill (state-driven stroke) plus a slight scale-up, replacing
-        // the dated flat grey selectableItemBackground wash.
+        // Focus is the pill's own edge, in white: coral measured 2.74:1 against the brand and spent the
+        // accent on a state that is not "chosen", and a scale on every remote step read as lag.
         buttonSkip.setOnLongClickListener(v -> {
             // The panel from the one place where the question comes up by itself: the segment is on
             // screen, this is the button that would be pressed for it, and holding it says "do this
@@ -1931,11 +1936,8 @@ public class PlayerActivity extends Activity {
             showSkipOffsetDialog();
             return true;
         });
-        buttonSkip.setOnFocusChangeListener((v, hasFocus) -> {
-            skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, brandColor());
-            final float scale = hasFocus ? 1.06f : 1f;
-            buttonSkip.animate().scaleX(scale).scaleY(scale).setDuration(150).start();
-        });
+        buttonSkip.setOnFocusChangeListener((v, hasFocus) ->
+                skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, Color.WHITE));
         final CoordinatorLayout.LayoutParams skipButtonParams = new CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         skipButtonParams.gravity = Gravity.BOTTOM | Gravity.END;
@@ -4235,8 +4237,9 @@ public class PlayerActivity extends Activity {
         pill.setCornerRadius(ui.pillCorner());
         cluster.setBackground(pill);
         cluster.setClipToOutline(true);
-        final int padH = ui.pillPadH();
-        cluster.setPadding(padH, cluster.getPaddingTop(), padH, cluster.getPaddingBottom());
+        // No padding of its own: the button boxes tile the pill exactly, and the air around a focused
+        // button's contour — 4dp on every side, the pill's edge included — is the inset it is drawn with.
+        cluster.setPadding(0, 0, 0, 0);
     }
 
     private void updateSkipHighlights() {
@@ -5842,10 +5845,8 @@ public class PlayerActivity extends Activity {
         final TextView marker = metaChip(ctx, String.valueOf(index + 1));
         if (playing) {
             // The one playing says so in the marker it already has, rather than in a second thing beside
-            // it: the accent, with the ink that belongs to the accent. That pair is 4.88:1 — where the
-            // white this label wears over its own scrim would be 4.31:1 on the coral, under the 4.5 small
-            // text asks for. The word survives for a screen reader, which is what colour alone would
-            // otherwise cost.
+            // it: the accent, with the ink that belongs to the accent (colors.xml, brand_accent_on). The
+            // word survives for a screen reader, which is what colour alone would otherwise cost.
             marker.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer,
                     ContextCompat.getColor(ctx, R.color.brand_accent_on)));
             final GradientDrawable accent = new GradientDrawable();
@@ -9618,13 +9619,25 @@ public class PlayerActivity extends Activity {
 
     // Uniform box for every button that lives inside a control pill (header display cluster + bottom pickers),
     // so both pills share one height, one button size and one inter-button gap. 40dp box, 8dp padding keeps
-    // the glyph at the standard 24dp.
+    // the glyph at the standard 24dp. Nothing is drawn at rest — the pill behind is the frame. Focus draws a
+    // contour on the box less 4dp on every side, so the line has air against the pill's edge and against its
+    // neighbour, and keeps the pill's own corner language rather than cutting a circle into it.
     private void styleClusterButton(final ImageButton button) {
         if (button == null) {
             return;
         }
         final int pad = ui.clusterPad();
         button.setPadding(pad, pad, pad, pad);
+        // The glyph keeps saying what the control is — coral when it is on — under the contour as well as
+        // without it: state is ink, focus is the line, and the two never share a property.
+        button.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
+        button.setBackground(null);
+        // The press belongs to the whole button, as it does on the episode discs — the box itself, whose
+        // ends a pill rounds by its own clip where there is one — while the contour stays the smaller
+        // indicator inside it. One shape for every button in either row: the header on a phone carries no
+        // pill, and it still takes the same mark, because a control should not change what pressing it
+        // looks like with the row it happens to sit in.
+        button.setForeground(Utils.chromeForeground(this, ui.contourCorner(), ui.contourInset(), 0f, 0));
         final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ui.clusterBox(), ui.clusterBox());
         params.gravity = Gravity.CENTER_VERTICAL;
@@ -14887,31 +14900,6 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    /**
-     * Foreground for a round control disc: the press ripple, masked to the disc so it stays circular, plus
-     * the D-pad focus state. Focus is a thin white ring orbiting just outside the disc, not a wash over it —
-     * the theme's borderless ripple alone was a ~20% white scrim the brand disc swallowed, and filling the
-     * disc to signal focus throws away the very colour the button exists to carry.
-     *
-     * @param discInset how far the disc itself is inset within the view (0 when the disc fills the view);
-     *                  the ring is placed halfway into that gap so it reads as attached to the disc.
-     */
-    private Drawable discFocusForeground(final int discInset) {
-        // The ring's own stroke carries the state: white on focus, transparent otherwise. A StateListDrawable
-        // cannot express "nothing" — a null entry leaves the previously drawn state on screen.
-        final GradientDrawable ring = new GradientDrawable();
-        ring.setShape(GradientDrawable.OVAL);
-        ring.setStroke(ui.dpS(3), new ColorStateList(
-                new int[][]{{android.R.attr.state_focused}, {}},
-                new int[]{Color.WHITE, Color.TRANSPARENT}));
-        final GradientDrawable mask = new GradientDrawable();
-        mask.setShape(GradientDrawable.OVAL);
-        mask.setColor(Color.WHITE);
-        return new RippleDrawable(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.ripple_chrome)),
-                new InsetDrawable((Drawable) ring, discInset / 2),
-                new InsetDrawable((Drawable) mask, discInset));
-    }
-
     private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding, final int margin) {
         if (button == null) {
             return;
@@ -14927,16 +14915,11 @@ public class PlayerActivity extends Activity {
         button.setPadding(padding, padding, padding, padding);
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
-        // Neutral chrome disc echoing the coral Play/Pause hero: same pill fill (@color/ui_controls_background),
-        // circular to suit the round glyphs. The 12dp icon padding leaves a ring matching the hero's proportion.
-        final GradientDrawable disc = new GradientDrawable();
-        disc.setShape(GradientDrawable.OVAL);
-        disc.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
-        button.setBackground(disc);
-        // Replacing the background drops the D-pad focus / touch-press highlight, so re-add both as a
-        // foreground — critical for TV navigation, harmless on touch. The disc fills the whole view here, so
-        // the focus ring lands on its own edge.
-        button.setForeground(discFocusForeground(0));
+        // The same chrome plate the hero sits on, circular to suit the round glyphs. The 12dp icon padding
+        // leaves a ring matching the hero's proportion.
+        button.setBackground(Utils.plate(this, Utils.CIRCLE));
+        // Replacing the background drops the touch-press highlight, so re-add it with the focus contour.
+        button.setForeground(Utils.chromeForeground(this, 0));
     }
 
     // Grey out and disable the prev/next episode arrows while a video is loading, using the same disabled

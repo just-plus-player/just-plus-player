@@ -12,8 +12,10 @@ import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -813,8 +815,8 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * Rows are corner-clipped to the card they sit in, so a ripple — and the focus highlight a
-         * D-pad leaves on TV — stops at the rounded corner instead of squaring it off.
+         * Rows are corner-clipped to the card they sit in, so a ripple stops at the rounded corner
+         * instead of squaring it off, and each wears the D-pad focus ring on that same outline.
          */
         @Override
         protected RecyclerView.Adapter onCreateAdapter(@NonNull PreferenceScreen preferenceScreen) {
@@ -1409,9 +1411,10 @@ public class SettingsActivity extends AppCompatActivity
      * Groups the list the way a Material settings screen is grouped: every run of rows under one
      * category is one rounded card, inset from the edges, with a hairline between its rows.
      *
-     * Drawn behind the rows instead of being set as their background, so each row keeps the ripple
-     * and the D-pad focus highlight that androidx.preference gives it — replacing the background is
-     * what costs a TV remote its focus indicator.
+     * Drawn behind the rows instead of being set as their background: a card behind a row is one
+     * drawable, a card cut into row backgrounds is one per row that has to know where in the card it
+     * sits. The row's own background is the press ripple; the D-pad focus is a ring on the row's outline,
+     * as it is on every other control in the app, in place of the wash androidx.preference gives it.
      */
     private static final class GroupCards extends RecyclerView.ItemDecoration {
 
@@ -1540,6 +1543,13 @@ public class SettingsActivity extends AppCompatActivity
                 }
             });
             row.setClipToOutline(true);
+            // The slice of the card this row is: rounded where the card is, square where the next row
+            // continues it. The focus ring traces exactly that, so it is never cut by the clip above.
+            final float t = top ? RADIUS : 0;
+            final float b = bottom ? RADIUS : 0;
+            row.setForeground(Utils.focusOutline(row.getContext(), new float[]{t, t, t, t, b, b, b, b}));
+            row.setBackground(new RippleDrawable(Utils.pressOnly(MaterialColors.getColor(row,
+                    R.attr.colorControlHighlight)), null, new ColorDrawable(Color.WHITE)));
         }
 
         private static boolean isCardTop(final RecyclerView parent, final int position) {

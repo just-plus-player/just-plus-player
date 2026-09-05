@@ -6694,6 +6694,23 @@ public class PlayerActivity extends Activity {
         // Whether anything is above the boundary yet, so the panel never opens on a rule.
         final boolean[] anyRow = {false};
 
+        // A list where one row is the chosen one keeps the accent for that job and letters its icons in
+        // the quiet ink — eight corals in a column say nothing, and the coral two rows down would stop
+        // meaning "chosen". A list where nothing is chosen has no such claim on it: its icons take the
+        // accent, the way the settings hub letters its own, which is what these rows are — doorways.
+        boolean anyChosen = false;
+        for (final MenuItem item : items) {
+            if (item.checked) {
+                anyChosen = true;
+                break;
+            }
+        }
+        final int iconInk = anyChosen
+                ? MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                        ContextCompat.getColor(ctx, R.color.ink_secondary))
+                : MaterialColors.getColor(ctx, R.attr.colorPrimary,
+                        ContextCompat.getColor(ctx, R.color.brand));
+
         for (final MenuItem item : items) {
             if (item.chrome) {
                 if (item.title != null) {
@@ -6756,14 +6773,9 @@ public class PlayerActivity extends Activity {
             } else if (item.iconRes != 0) {
                 final ImageView icon = new ImageView(ctx);
                 icon.setImageResource(item.iconRes);
-                // The ink a leading icon is given, not the accent. The accent was the argument once —
-                // "the one thing that says which app this is" — and eight of them in a column is not a
-                // signature, it is a list where every row shouts and the colour has stopped meaning
-                // anything: the same coral says "chosen" two rows below, on the row that is. One accent,
-                // one job. On the chosen row the icon takes the ink that belongs to the fill under it.
-                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? onSelected
-                        : MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                                ContextCompat.getColor(ctx, R.color.ink_secondary))));
+                // One accent, one job: see iconInk above. On the chosen row the icon takes the ink that
+                // belongs to the fill under it.
+                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? onSelected : iconInk));
                 // 24dp, the size Material states for a list item's leading icon — through dpS, because
                 // the row's own height goes through it, and a glyph that stays put in a row that grows
                 // reads as a smaller glyph on every device the chrome scales up for.

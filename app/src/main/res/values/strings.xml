@@ -270,6 +270,12 @@
     <string name="subtitle_secondary_unavailable">This track cannot be shown as secondary subtitles</string>
     <string name="subtitle_secondary_peek_hint">Secondary subtitles appear when you pause</string>
     <string name="pref_subtitle_secondary_header">Secondary subtitles</string>
+    <!-- Section headers inside the subtitle screens. Each names a subject the screen holds
+         besides its own; none repeats the title above it. -->
+    <string name="pref_subtitle_section_display">Display</string>
+    <string name="pref_subtitle_section_text">Text</string>
+    <string name="pref_subtitle_section_backdrop">Background and outline</string>
+    <string name="pref_subtitle_section_translation">Translation</string>
     <string name="pref_subtitle_secondary_mode">When to show</string>
     <string name="pref_subtitle_secondary_mode_off">Never — no secondary subtitles at all</string>
     <string name="pref_subtitle_secondary_mode_always">Always — under the main subtitles</string>
@@ -333,6 +339,8 @@
     <string name="pref_subtitle_header">Subtitle</string>
     <string name="pref_subtitle_appearance">Appearance</string>
     <string name="pref_subtitle_appearance_summary">Size, colour, background, outline</string>
+    <!-- The line drawn in the settings preview: it says what it is, so nothing has to label it. -->
+    <string name="pref_subtitle_preview_sample">This is how subtitles will look</string>
     <string name="pref_subtitle_scale">Text size</string>
     <string name="pref_subtitle_scale_smallest">Very small</string>
     <string name="pref_subtitle_scale_small">Small</string>

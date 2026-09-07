@@ -4,6 +4,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
@@ -14,15 +15,13 @@ import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.text.Layout;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.style.ImageSpan;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +31,7 @@ import android.os.Parcelable;
 import android.text.StaticLayout;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -57,7 +57,9 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.media3.common.MediaLibraryInfo;
+import androidx.media3.common.text.Cue;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
+import androidx.media3.ui.SubtitleView;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
@@ -588,8 +590,7 @@ public class SettingsActivity extends AppCompatActivity
             }
             if (translate != null) {
                 translate.setOnPreferenceChangeListener((preference, value) -> {
-                    enableTranslateBackends(searchMode == null
-                            || !Prefs.SEARCH_OFF.equals(searchMode.getValue()), (Boolean) value);
+                    enableTranslateBackends((Boolean) value);
                     // A translation cached under the previous choice would keep being served for
                     // everything watched recently, so the new choice would look like it did nothing.
                     SubtitleUtils.clearTranslatedCache(requireContext());
@@ -638,7 +639,7 @@ public class SettingsActivity extends AppCompatActivity
             }
 
             // Both subtitle lines, each with its own pair. The second line reuses the same two lists,
-            // so it gets the chips and the clash check for nothing.
+            // so it gets the clash check for nothing.
             bindColorPair("subtitleTextColor", "subtitleBackground");
             bindColorPair("subtitleSecondaryTextColor", "subtitleSecondaryBackground");
 
@@ -902,6 +903,7 @@ public class SettingsActivity extends AppCompatActivity
                     bindThemeMode(holder, getItem(position));
                     bindAccent(holder, getItem(position));
                     bindAbout(holder, getItem(position));
+                    bindSubtitlePreview(holder, getItem(position));
                 }
             };
         }
@@ -1309,7 +1311,9 @@ public class SettingsActivity extends AppCompatActivity
                 }
                 final int target = categoryNeighbour(list, from,
                         keyCode == KeyEvent.KEYCODE_DPAD_RIGHT);
-                if (target == RecyclerView.NO_POSITION) {
+                // Landing where the focus already is is not a jump, and swallowing the key for it
+                // leaves a remote pressing Left at nothing happening.
+                if (target == RecyclerView.NO_POSITION || target == from) {
                     return false;
                 }
                 openAtPosition(target, 3);
@@ -1340,7 +1344,10 @@ public class SettingsActivity extends AppCompatActivity
                     return i + 1;
                 }
             }
-            return RecyclerView.NO_POSITION;
+            // Nothing above and going up: the rows before the first header are a section too - the one
+            // that carries the screen's own subject and is left headerless on purpose. Without this,
+            // Left out of the first titled section reached nothing and the block was jump-proof.
+            return forward ? RecyclerView.NO_POSITION : 0;
         }
 
         /**
@@ -1348,6 +1355,13 @@ public class SettingsActivity extends AppCompatActivity
          * with the row itself focused. scrollToPreference alone scrolls the row barely into view — at
          * the bottom edge, inside a TV's overscan — and leaves a remote's focus on the first row, so
          * the first D-pad press yanks the list straight back to the top.
+         *
+         * <p>Scrolls to the row asked for and focuses the first row at or after it that can actually
+         * take focus, which is not always the same one: a header takes none, and neither does a
+         * picture or a row switched off. The subtitle previews are what made the two differ — each
+         * heads a section, so a section jump aimed straight at one and moved the list without moving
+         * the focus. The search stops at the next header, so a section with nothing live in it scrolls
+         * into view and leaves the focus where it was rather than throwing it into the section below.
          *
          * The holder can be missing on the first pre-draw, hence the few attempts. On a phone the
          * focus request is a no-op: a preference row is not focusable in touch mode.
@@ -1370,9 +1384,13 @@ public class SettingsActivity extends AppCompatActivity
                 return;
             }
             final LinearLayoutManager manager = (LinearLayoutManager) list.getLayoutManager();
+            final int focusAt = focusableFrom(list.getAdapter(), position);
             manager.scrollToPositionWithOffset(Math.max(0, position - 1), 0);
+            if (focusAt == RecyclerView.NO_POSITION) {
+                return;
+            }
             OneShotPreDrawListener.add(list, () -> {
-                final RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(position);
+                final RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(focusAt);
                 if (holder == null) {
                     openAtPosition(position, attemptsLeft - 1);
                     return;
@@ -1386,70 +1404,31 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * Puts a chip of the actual colour in front of every label, in the list and in the summary —
-         * a colour is recognised, a colour name is recalled. Outlined, or white would be a blank gap
-         * on a light row and the transparent entry would show nothing at all.
+         * The first row at or after {@code start} that a remote can land on, within the section
+         * {@code start} falls in. A {@link PreferenceCategory} is a header and takes no focus; a row
+         * that is not selectable (the subtitle previews) or is switched off cannot take it either -
+         * {@code View.requestFocus} refuses a disabled view.
          */
-        private void showColorChips(final ListPreference preference) {
-            final CharSequence[] entries = preference.getEntries();
-            final CharSequence[] values = preference.getEntryValues();
-            final CharSequence[] chipped = new CharSequence[entries.length];
-            for (int i = 0; i < entries.length; i++) {
-                final GradientDrawable chip = new GradientDrawable();
-                chip.setShape(GradientDrawable.OVAL);
-                chip.setColor(Color.parseColor(values[i].toString()));
-                chip.setStroke(Math.max(1, Utils.dpToPx(1)), 0x80808080);
-                // The span replaces its one character with the chip's own width, so the space after it
-                // is the whole gap — no guessing how wide two blanks come out in the current font.
-                final SpannableStringBuilder label =
-                        new SpannableStringBuilder("   ").append(entries[i]);
-                label.setSpan(new ChipSpan(chip), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                chipped[i] = label;
+        private static int focusableFrom(final RecyclerView.Adapter<?> adapter, final int start) {
+            if (!(adapter instanceof PreferenceGroupAdapter)) {
+                return start;
             }
-            preference.setEntries(chipped);
-        }
-
-        /**
-         * Sits the chip on the optical middle of the text. ImageSpan's own alignments are baseline and
-         * line-bottom, both of which hang a round chip visibly low, and ALIGN_CENTER is API 29+.
-         */
-        private static class ChipSpan extends ImageSpan {
-            ChipSpan(final Drawable drawable) {
-                super(drawable);
-            }
-
-            @Override
-            public int getSize(@NonNull Paint paint, CharSequence text, int start, int end,
-                               @Nullable Paint.FontMetricsInt fontMetrics) {
-                resize(paint);
-                return super.getSize(paint, text, start, end, fontMetrics);
-            }
-
-            /**
-             * The chip is sized off the text beside it rather than a fixed dp, so it holds its
-             * proportion on a TV row (larger type than a phone's) and at any system font size.
-             */
-            private void resize(final Paint paint) {
-                final int size = Math.round(paint.getTextSize() * 0.7f);
-                final Drawable chip = getDrawable();
-                if (chip.getBounds().height() != size) {
-                    chip.setBounds(0, 0, size, size);
+            final PreferenceGroupAdapter rows = (PreferenceGroupAdapter) adapter;
+            for (int i = Math.max(0, start); i < rows.getItemCount(); i++) {
+                final Preference item = rows.getItem(i);
+                if (item instanceof PreferenceCategory) {
+                    // The one at start is the header of the section being entered; a later one is the
+                    // next section, and a jump does not carry on into it.
+                    if (i > start) {
+                        return RecyclerView.NO_POSITION;
+                    }
+                    continue;
+                }
+                if (item.isSelectable() && item.isEnabled()) {
+                    return i;
                 }
             }
-
-            @Override
-            public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float x,
-                             int top, int y, int bottom, @NonNull Paint paint) {
-                resize(paint);
-                final Drawable chip = getDrawable();
-                final Paint.FontMetricsInt metrics = paint.getFontMetricsInt();
-                // y is the baseline; ascent is negative, so this lands mid-glyph rather than mid-line.
-                final float middle = y + (metrics.ascent + metrics.descent) / 2f;
-                canvas.save();
-                canvas.translate(x, middle - chip.getBounds().height() / 2f);
-                chip.draw(canvas);
-                canvas.restore();
-            }
+            return RecyclerView.NO_POSITION;
         }
 
         /** Where an edited language list is written back to. */
@@ -1486,15 +1465,158 @@ public class SettingsActivity extends AppCompatActivity
             });
         }
 
-        /** One text/background pair: colour chips on both lists, and neither allowed to match the other. */
+        /** The two preview rows, one on each screen that dresses a subtitle line. */
+        private static final String PREVIEW_KEY = "subtitlePreview";
+        private static final String SECONDARY_PREVIEW_KEY = "subtitleSecondaryPreview";
+        private static final String BOLD_KEY = "subtitleStyleBold";
+
+        /**
+         * The line the rows under it dress, drawn over a scene whose shore is pale where its water is
+         * dark, so the caption lands on both at once. A colour, a plate and an outline are judged against
+         * the picture they will sit on, which is the one thing a swatch beside a name cannot say - and
+         * what the swatches this replaced could not say either, since three of the six text colours are
+         * near-white and the transparent plate showed nothing at all.
+         *
+         * <p>Both lines are drawn the way the player draws them rather than imitated: the first through
+         * Media3 from the same {@link SubtitleUtils#captionStyle} the player builds, the second as a
+         * TextView on a plate, which is what {@link SecondarySubtitles} is. A preview built from its own
+         * copy of the rules is a preview of something else.
+         *
+         * <p>Sized as a screen in miniature: the row's height stands for the player's, so every fraction
+         * Media3 works in lands where it would, and the plate's corner and padding come down by the same
+         * ratio. The screen it stands for is the short side of the display - a film is watched sideways.
+         */
+        private void bindSubtitlePreview(final PreferenceViewHolder holder,
+                                         final Preference preference) {
+            if (preference == null) {
+                return;
+            }
+            final boolean hint = SECONDARY_PREVIEW_KEY.equals(preference.getKey());
+            if (!hint && !PREVIEW_KEY.equals(preference.getKey())) {
+                return;
+            }
+            // A disabled row dims its own title and summary; this one has neither, so the picture is what
+            // has to say the section is off - the look of a hint means nothing with no second line.
+            holder.itemView.setAlpha(preference.isEnabled() ? 1f : 0.38f);
+            final View lineView = holder.findViewById(R.id.subtitle_preview_line);
+            final TextView hintView = (TextView) holder.findViewById(R.id.subtitle_preview_hint);
+            if (!(lineView instanceof SubtitleView) || hintView == null) {
+                return;
+            }
+            final ListPreference scale =
+                    findPreference(hint ? "subtitleSecondaryScale" : "subtitleScale");
+            final ListPreference textColor =
+                    findPreference(hint ? "subtitleSecondaryTextColor" : "subtitleTextColor");
+            final ListPreference background =
+                    findPreference(hint ? "subtitleSecondaryBackground" : "subtitleBackground");
+            if (scale == null || textColor == null || background == null) {
+                return;
+            }
+            final Context context = holder.itemView.getContext();
+            final int height =
+                    context.getResources().getDimensionPixelSize(R.dimen.subtitle_preview_height);
+            final DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            final boolean small = Utils.isTvBox(context) || Utils.isTablet(context);
+            final float textFraction = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+                    * SubtitleUtils.normalizeFontScale(Float.parseFloat(scale.getValue()), small);
+            final float gapFraction = SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION * 2f / 3f;
+            final int ink = Color.parseColor(textColor.getValue());
+            final int plate = Color.parseColor(background.getValue());
+            // Weight belongs to both lines and its row is on the first line's screen only, so from the
+            // second one it is read where it is stored rather than off a row that is not there.
+            final SwitchPreferenceCompat boldRow = findPreference(BOLD_KEY);
+            final boolean bold = boldRow != null ? boldRow.isChecked()
+                    : getPreferenceManager().getSharedPreferences().getBoolean(BOLD_KEY, false);
+            final String sample = getString(R.string.pref_subtitle_preview_sample);
+
+            final SubtitleView line = (SubtitleView) lineView;
+            line.setVisibility(hint ? View.GONE : View.VISIBLE);
+            hintView.setVisibility(hint ? View.VISIBLE : View.GONE);
+            if (!hint) {
+                final ListPreference edge = findPreference("subtitleEdge");
+                if (edge == null) {
+                    return;
+                }
+                line.setStyle(SubtitleUtils.captionStyle(ink, plate,
+                        Integer.parseInt(edge.getValue()), bold));
+                line.setFractionalTextSize(textFraction);
+                line.setBottomPaddingFraction(gapFraction);
+                line.setCues(Collections.singletonList(new Cue.Builder().setText(sample).build()));
+                return;
+            }
+            final float mini = height / (float) Math.min(metrics.widthPixels, metrics.heightPixels);
+            final int padH = Math.round(Utils.dpToPx(8) * mini);
+            final int padV = Math.round(Utils.dpToPx(4) * mini);
+            hintView.setText(sample);
+            hintView.setMaxLines(2);
+            hintView.setTextColor(ink);
+            hintView.setTypeface(Typeface.create(Typeface.DEFAULT,
+                    bold ? Typeface.BOLD : Typeface.NORMAL));
+            hintView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textFraction * height);
+            hintView.setPadding(padH, padV, padH, padV);
+            if (plate == Color.TRANSPARENT) {
+                hintView.setBackground(null);
+            } else {
+                final GradientDrawable drawable = new GradientDrawable();
+                drawable.setCornerRadius(Utils.dpToPx(6) * mini);
+                drawable.setColor(plate);
+                hintView.setBackground(drawable);
+            }
+            final FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) hintView.getLayoutParams();
+            params.bottomMargin = Math.round(gapFraction * height);
+            hintView.setLayoutParams(params);
+        }
+
+        /**
+         * A preview is drawn from what is stored, so anything that writes a subtitle setting redraws it
+         * - and a pick refused as a clash writes nothing, so it asks for nothing. One listener rather
+         * than one per row: seven rows feed the two previews, and two of them already carry a listener
+         * of their own.
+         */
+        private final SharedPreferences.OnSharedPreferenceChangeListener previewWatch =
+                (preferences, key) -> refreshPreviews();
+
+        private void refreshPreviews() {
+            final RecyclerView list = getListView();
+            final RecyclerView.Adapter<?> adapter = list == null ? null : list.getAdapter();
+            if (!(adapter instanceof PreferenceGroupAdapter)) {
+                return;
+            }
+            for (final String key : new String[]{PREVIEW_KEY, SECONDARY_PREVIEW_KEY}) {
+                final int position =
+                        ((PreferenceGroupAdapter) adapter).getPreferenceAdapterPosition(key);
+                if (position != RecyclerView.NO_POSITION) {
+                    adapter.notifyItemChanged(position);
+                }
+            }
+        }
+
+        @Override
+        public void onStart() {
+            super.onStart();
+            final SharedPreferences preferences = getPreferenceManager().getSharedPreferences();
+            if (preferences != null) {
+                preferences.registerOnSharedPreferenceChangeListener(previewWatch);
+            }
+        }
+
+        @Override
+        public void onStop() {
+            final SharedPreferences preferences = getPreferenceManager().getSharedPreferences();
+            if (preferences != null) {
+                preferences.unregisterOnSharedPreferenceChangeListener(previewWatch);
+            }
+            super.onStop();
+        }
+
+        /** One text/background pair: neither of the two allowed to be set to the colour of the other. */
         private void bindColorPair(final String textColorKey, final String backgroundKey) {
             final ListPreference textColor = findPreference(textColorKey);
             final ListPreference background = findPreference(backgroundKey);
             if (textColor == null || background == null) {
                 return;
             }
-            showColorChips(textColor);
-            showColorChips(background);
             // Text in the colour of its own box is invisible subtitles, and the two lists are far
             // enough apart that nobody would connect the cause. Refuse the pick instead.
             textColor.setOnPreferenceChangeListener((preference, value) ->
@@ -1514,10 +1636,14 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /** The chosen languages, in order, or a note that nothing is preferred. */
-        /** Everything the second line's screen holds besides the mode itself. */
+        /**
+         * Everything the second line's screen holds besides the mode itself - the whole look section,
+         * preview included, so the section greys out as one thing rather than as four rows under a
+         * picture that stayed bright.
+         */
         private static final String[] SECONDARY_DEPENDENTS = {
-                "languageSubtitleSecondary", "subtitleSecondaryScale", "subtitleSecondaryTextColor",
-                "subtitleSecondaryBackground",
+                "languageSubtitleSecondary", "subtitleSecondaryPreview", "subtitleSecondaryScale",
+                "subtitleSecondaryTextColor", "subtitleSecondaryBackground",
         };
 
         /**
@@ -1541,30 +1667,22 @@ public class SettingsActivity extends AppCompatActivity
             }
         }
 
-        /** Everything the search screen holds besides the mode itself. */
-        private static final String[] SEARCH_DEPENDENTS = {
-                "subtitleTranslateOn", "subtitleTranslateBackends", "subtitleSearchLanguage",
-                "subtitleSourceRest", "subtitleSourceStremio", "subtitleSourceShegu",
-                "subtitleSourceOpenSubtitles",
-        };
-
         /**
-         * Reflects the chosen mode: the row that leads here reports it, and with no search running the
-         * rows that configure one are greyed out rather than left live and inert. This is by hand
-         * because app:dependency watches a parent's enablement, not its value.
+         * Reflects the chosen mode on the row that leads here, and nothing else.
+         *
+         * <p>It used to grey out every other row on that screen while the mode was "never", on the
+         * reasoning that they configure a search that is not running. They do not: a search asked for
+         * from the player runs whatever the mode says - {@code offline = !subtitleSearch && !manual} in
+         * PlayerActivity - and it reads the sources, the translation and "ask for the language" exactly
+         * as an automatic one would. "Ask for the language" is manual-only, so it was the setting most
+         * plainly in force and most plainly greyed. A row that is dimmed while it still decides
+         * something is worse than no gate at all, so the gate is gone and the mode only reports itself.
          */
         private void applySearchMode(final ListPreference searchMode, final String mode,
                                      final SwitchPreferenceCompat translate) {
-            final boolean searching = !Prefs.SEARCH_OFF.equals(mode);
-            for (final String key : SEARCH_DEPENDENTS) {
-                final Preference dependent = findPreference(key);
-                if (dependent != null) {
-                    dependent.setEnabled(searching);
-                }
-            }
-            // The endpoint list answers to both: no search means no translation either, and the list is
-            // meaningless while translation itself is off.
-            enableTranslateBackends(searching, translate == null || translate.isChecked());
+            // The endpoint list is the one true gate on that screen: nothing to order if nothing is
+            // translated.
+            enableTranslateBackends(translate == null || translate.isChecked());
             // Null while the fragment is rooted at the search screen: the row lives one level up.
             final Preference screen = findPreference("subtitleSearchScreen");
             final int index = searchMode.findIndexOfValue(mode);
@@ -1574,13 +1692,13 @@ public class SettingsActivity extends AppCompatActivity
         }
 
         /**
-         * The endpoint list is live only while a search runs and translation is on. By hand rather than
-         * app:dependency, which answers to one parent and this answers to two.
+         * The endpoint list is live only while translation is on. By hand rather than app:dependency,
+         * which watches a parent's enablement rather than its checked state.
          */
-        private void enableTranslateBackends(final boolean searching, final boolean translating) {
+        private void enableTranslateBackends(final boolean translating) {
             final Preference backends = findPreference("subtitleTranslateBackends");
             if (backends != null) {
-                backends.setEnabled(searching && translating);
+                backends.setEnabled(translating);
             }
         }
 
@@ -1628,7 +1746,9 @@ public class SettingsActivity extends AppCompatActivity
      */
     private static final class GroupCards extends RecyclerView.ItemDecoration {
 
-        private static final int RADIUS = Utils.dpToPx(20);
+        // Corner.Medium, the step Material gives a card - and the step this app gives anything 72dp or
+        // taller. 20dp was a value nothing else here used: the dialog is 28, a value tile 8, a button a pill.
+        private static final int RADIUS = Utils.dpToPx(12);
 
         private final int headerGap = Utils.dpToPx(8);
         private final int hairlineInset = Utils.dpToPx(16);

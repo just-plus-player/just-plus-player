@@ -62,7 +62,6 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
 import androidx.core.text.HtmlCompat;
@@ -301,7 +300,9 @@ class Utils {
         if (PlayerActivity.boostWarned || PlayerActivity.boostLevel <= 0)
             return;
         PlayerActivity.boostWarned = true;
-        Toast.makeText(context, R.string.volume_high_warning, Toast.LENGTH_SHORT).show();
+        if (context instanceof PlayerActivity) {
+            ((PlayerActivity) context).showNotice(context.getString(R.string.volume_high_warning), false);
+        }
     }
 
     /**
@@ -573,10 +574,6 @@ class Utils {
         // And one width, which follows the edge rather than the content — see UiMetrics.panelWidthPx.
         final int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         final int panelWidth = ui.panelWidthPx(cfg);
-        // Material's own margin for a detached sheet is 16dp; 8dp here, because on a phone held sideways
-        // the panel is what the viewer came for and the strip of video beside it is not worth the room.
-        // A television wants its overscan instead — the card has an edge to lose, where the full-bleed
-        // fill before it had none.
         final int hMargin = Math.max(dpToPx(8), ui.overscanH());
         final int vMargin = Math.max(dpToPx(8), ui.overscanV());
         // What actually blocks pixels while a panel is open, and nothing more. applyPickerBars hides the
@@ -605,11 +602,6 @@ class Utils {
             }
         }
 
-        // Docked at the bottom means docked: the two corners against the edge go square, the way
-        // Material draws a bottom sheet, so the card reads as attached rather than as a card that
-        // happens to be low. And it takes the radius Material gives that shape — 28dp, its extra-large
-        // corner — where a sheet at the end edge takes the large one, 16dp. Two shapes, two numbers,
-        // both Material's own.
         final int corner = dpToPx(bottom ? 28 : 16);
         final ShapeAppearanceModel.Builder shape = ShapeAppearanceModel.builder();
         if (bottom) {
@@ -646,16 +638,10 @@ class Utils {
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 panelWidth, ViewGroup.LayoutParams.WRAP_CONTENT,
                 bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
-                        : Gravity.END | Gravity.CENTER_VERTICAL);
+                        : Gravity.END | Gravity.TOP);
         if (bottom) {
-            // No side margins at all, and none at the bottom: a docked sheet is the width it is given
-            // and sits on the edge, above whatever the navigation bar left of it (that inset is the
-            // host's padding). A margin here is what made the shape read as a card glued to the bottom
-            // rather than as a sheet — detached at the sides, square where it met the screen.
             lp.setMargins(0, vMargin, 0, 0);
         } else {
-            // Horizontal gravity is END, where a margin is a bound and the blocked edge can simply be
-            // added.
             lp.setMargins(hMargin, vMargin, hMargin + insetEnd, vMargin);
         }
         host.addView(content, lp);
@@ -688,8 +674,6 @@ class Utils {
         if (window == null) {
             return;
         }
-        // The window carries the card plus its margins, so the card itself keeps the width the panel was
-        // designed at. Capped short of the screen so the window never becomes a fullscreen one.
         window.setLayout(
                 bottom ? screenWidth - dpToPx(8)
                         : Math.min(screenWidth - dpToPx(8), panelWidth + 2 * hMargin + insetEnd),

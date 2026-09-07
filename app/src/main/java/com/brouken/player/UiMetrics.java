@@ -107,8 +107,11 @@ final class UiMetrics {
     }
 
     // ---- TV overscan, synthesized as extra insets (0 on every non-TV class) ----
-    int overscanH() { return tv() ? dp(24) : 0; }
-    int overscanV() { return tv() ? dp(16) : 0; }
+    // The 5% every television keeps clear, as Android TV states it for the 960x540dp canvas: 48dp at the
+    // sides, 27dp top and bottom. At the old 24/16 the first interactive pixel sat 42dp from the side edge
+    // (24 + gridH 18) and 16dp from the bottom - inside the band a real set may not show.
+    int overscanH() { return tv() ? dp(48) : 0; }
+    int overscanV() { return tv() ? dp(27) : 0; }
     int pickerTopPadLand() { return Math.max(dp(16), overscanV()); }
 
     /**
@@ -116,8 +119,11 @@ final class UiMetrics {
      *
      * <p>One number, because a panel that changes size with the press that opened it reads as several
      * different panels. It follows the edge the panel is docked to, and that edge follows the window:
-     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp
-     * Material states for a sheet; a sheet at the end edge leaves a strip of the picture beside it —
+     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp of
+     * {@code material_bottom_sheet_max_width}; a sheet at the end edge leaves a strip of the picture beside
+     * it — the cap is the bottom sheet's number, not the side sheet's own 256dp, and it stays that way
+     * deliberately: the playlist's rail of 190dp cards needs 440dp to show a peeking third card, so
+     * narrowing to Material's side-sheet width would cost the rail the affordance that says it continues —
      * never more than 60% of a window held sideways, and never closer than 56dp to the far edge of one
      * held upright — capped at the same 640dp.
      */

@@ -132,11 +132,16 @@ final class UiMetrics {
         if (windowW < 600) {
             return dp(Math.min(windowW - 8, 640));
         }
-        final int capPortrait = windowW - 56;
-        final int cap = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
-                ? Math.min(Math.round(windowW * 0.60f), capPortrait)
-                : capPortrait;
-        return dp(Math.min(640, cap));
+        // One number, and it is Google's twice over. Material gives a side sheet a 400dp maximum and ships
+        // 256dp in the library; Leanback's own television settings pane — full height, end edge — is
+        // lb_settings_pane_width, 360dp. So 360dp of usable width, plus the safe band on a television,
+        // because there the outermost 48dp is a strip a set may cut rather than somewhere to put a row.
+        // 360dp on a phone or tablet, 408dp on a television.
+        //
+        // What it has to hold is the speed panel's five segments, the widest thing in the family: they
+        // land at 65.6dp sideways and 60.8dp on a television, both over Material's own 48dp minimum touch
+        // target. The 440dp this replaces was a number of ours and nobody else's.
+        return Math.min(dp(360) + overscanH(), dp(windowW - 56));
     }
 
     // ---- typography (sp; keeps user font-scale). Columns: PHONE / sw600 / sw720 / TV ----

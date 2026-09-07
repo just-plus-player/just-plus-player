@@ -54,6 +54,7 @@ import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -76,6 +77,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.animation.AnimationUtils;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
@@ -574,7 +576,8 @@ class Utils {
         // And one width, which follows the edge rather than the content — see UiMetrics.panelWidthPx.
         final int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         final int panelWidth = ui.panelWidthPx(cfg);
-        final int hMargin = Math.max(dpToPx(8), ui.overscanH());
+        // The only margin left anywhere: the top one under the bottom sheet, which keeps a long list from
+        // reaching the very top of the screen. A docked sheet has no others.
         final int vMargin = Math.max(dpToPx(8), ui.overscanV());
         // What actually blocks pixels while a panel is open, and nothing more. applyPickerBars hides the
         // status bar and shows the navigation bar, so reserving room for the status bar costs the card
@@ -602,13 +605,32 @@ class Utils {
             }
         }
 
+        // A panel is a DOCKED SHEET, not a floating card — the same component seen from two sides. Upright
+        // it docks to the bottom, full width, and grows up; sideways and on a television it docks to the
+        // end edge, a fixed width and the full height. Either way the two corners against the screen go
+        // square and only the leading edge is rounded, at the radius Material gives that shape: 28dp for
+        // the bottom sheet, 16dp for the side one.
+        //
+        // Why a fixed height sideways, when a card that wrapped its content seemed thriftier: the card had
+        // no silhouette. A two-row picker floated 172dp tall, a five-file playlist filled the window, and
+        // the playlist's own mode toggle moved the panel by 221dp on a television — one panel, four
+        // pictures, and which one appeared depended on how many files a folder held. A sheet has none of
+        // those variables. The price is an empty column under short content (a two-track list leaves 51 %
+        // of the field), paid deliberately: in a 440dp column that reads as a short list, where the same
+        // gap in the 575dp card it replaced read as a slab.
         final int corner = dpToPx(bottom ? 28 : 16);
+        final boolean rtl = cfg.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
         final ShapeAppearanceModel.Builder shape = ShapeAppearanceModel.builder();
         if (bottom) {
             shape.setTopLeftCornerSize(corner).setTopRightCornerSize(corner)
                     .setBottomLeftCornerSize(0).setBottomRightCornerSize(0);
+        } else if (rtl) {
+            // END is the left edge, so that is the one that meets the screen.
+            shape.setTopLeftCornerSize(0).setBottomLeftCornerSize(0)
+                    .setTopRightCornerSize(corner).setBottomRightCornerSize(corner);
         } else {
-            shape.setAllCornerSizes(corner);
+            shape.setTopRightCornerSize(0).setBottomRightCornerSize(0)
+                    .setTopLeftCornerSize(corner).setBottomLeftCornerSize(corner);
         }
         final MaterialShapeDrawable card = new MaterialShapeDrawable(shape.build());
         // From the content's own theme, not the player's: the panels follow the appearance choice, so
@@ -629,20 +651,34 @@ class Utils {
         // bottom sheet does (paddingBottomSystemWindowInsets): the surface reaches the screen's edge and
         // the rows stop above the navigation bar. Held as a margin it left a strip of video between the
         // sheet and the edge, and a sheet with a gap under it is a card again.
-        host.setPadding(0, bottom ? Math.max(insetTop, dpToPx(56)) : insetTop, 0,
-                bottom ? 0 : insetBottom);
+        host.setPadding(0, bottom ? Math.max(insetTop, dpToPx(56)) : 0, 0, 0);
         if (bottom && insetBottom > 0) {
             content.setPadding(content.getPaddingLeft(), content.getPaddingTop(),
                     content.getPaddingRight(), content.getPaddingBottom() + insetBottom);
         }
+        if (!bottom) {
+            // The surface reaches the screen's edges; its content does not. That is Android TV's own rule
+            // — background art may cross the overscan band, anything interactive may not — and it is what
+            // lets the sheet dock instead of float. The blocked edges and the overscan therefore live as
+            // the sheet's padding rather than as its margin, added to whatever padding the panel already
+            // carries on its leading side.
+            content.setPadding(
+                    content.getPaddingLeft() + (rtl ? Math.max(insetEnd, ui.overscanH()) : 0),
+                    content.getPaddingTop() + Math.max(insetTop, ui.overscanV()),
+                    content.getPaddingRight() + (rtl ? 0 : Math.max(insetEnd, ui.overscanH())),
+                    content.getPaddingBottom() + Math.max(insetBottom, ui.overscanV()));
+        }
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                panelWidth, ViewGroup.LayoutParams.WRAP_CONTENT,
+                panelWidth,
+                bottom ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT,
                 bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
                         : Gravity.END | Gravity.TOP);
         if (bottom) {
+            // No side margins at all, and none at the bottom: a docked sheet is the width it is given
+            // and sits on the edge, above whatever the navigation bar left of it (that inset is the
+            // host's padding). A margin here is what made the shape read as a card glued to the bottom
+            // rather than as a sheet — detached at the sides, square where it met the screen.
             lp.setMargins(0, vMargin, 0, 0);
-        } else {
-            lp.setMargins(hMargin, vMargin, hMargin + insetEnd, vMargin);
         }
         host.addView(content, lp);
 
@@ -674,12 +710,34 @@ class Utils {
         if (window == null) {
             return;
         }
+        // The window IS the sheet: same width, same edge. That is what makes every press beyond it an
+        // outside press, which is how the panel closes without a scrim of its own.
         window.setLayout(
-                bottom ? screenWidth - dpToPx(8)
-                        : Math.min(screenWidth - dpToPx(8), panelWidth + 2 * hMargin + insetEnd),
+                bottom ? screenWidth - dpToPx(8) : Math.min(screenWidth, panelWidth),
                 ViewGroup.LayoutParams.MATCH_PARENT);
         window.setGravity(bottom ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.END);
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        // A sheet slides in from the edge it is docked to. Every panel is a Theme_Translucent_NoTitleBar
+        // dialog, which fades in on the spot, and a shape that materialises in the middle of the screen
+        // reads as a rectangle that appeared rather than as a surface that was pulled in. Done on the view
+        // instead of through windowAnimationStyle so the scrim keeps its own fade underneath, and so the
+        // direction can follow the layout direction — END is the left edge in right-to-left.
+        content.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                content.getViewTreeObserver().removeOnPreDrawListener(this);
+                if (bottom) {
+                    content.setTranslationY(content.getHeight());
+                    content.animate().translationY(0);
+                } else {
+                    content.setTranslationX(rtl ? -content.getWidth() : content.getWidth());
+                    content.animate().translationX(0);
+                }
+                content.animate().setDuration(220)
+                        .setInterpolator(AnimationUtils.LINEAR_OUT_SLOW_IN_INTERPOLATOR).start();
+                return true;
+            }
+        });
         // The picture behind a modal sheet steps back rather than competing with it.
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.4f);

@@ -3398,16 +3398,23 @@ public class PlayerActivity extends Activity {
      * biggest stride that can still be stood on: seeking from the picture is the fine adjustment, the
      * long jump across a film is the bar's job (a minute per press there), so the ladder stops short of
      * the bar's territory instead of climbing to a share of the duration that has no position between
-     * two presses. The share only keeps a rung from outgrowing a short file.
+     * two presses. The share keeps every rung from outgrowing a short file.
      */
     private long keyScrubStep(long duration) {
+        // The share caps every rung, not just the last one. With only the top rung scaled, the eight
+        // fixed rungs (146 s in total) outgrow any short file — a 2:00 clip was crossed in eight steps
+        // at a 30 s stride — and where the file was long enough to reach the scaled rung, that rung came
+        // out smaller than the fixed one before it, so the ladder turned back on itself. The lower bound
+        // keeps the cap from falling under what a single click is worth, which is also why the first
+        // rung needs no capping.
+        final long cap = Math.min(60_000, Math.max(3_000, duration / 10));
         if (keyScrubSteps < 2)
             return 3_000;
         if (keyScrubSteps < 4)
-            return 10_000;
+            return Math.min(10_000, cap);
         if (keyScrubSteps < 8)
-            return 30_000;
-        return Math.min(60_000, duration / 10);
+            return Math.min(30_000, cap);
+        return cap;
     }
 
     private void showKeySeekMessage(long target) {

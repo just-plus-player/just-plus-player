@@ -248,6 +248,10 @@
     <string name="subtitle_secondary_unavailable">Цю дорожку не можна показати як додаткові субтитри</string>
     <string name="subtitle_secondary_peek_hint">Додаткові субтитри з’являються на паузі</string>
     <string name="pref_subtitle_secondary_header">Додаткові субтитри</string>
+    <string name="pref_subtitle_section_display">Показ</string>
+    <string name="pref_subtitle_section_text">Текст</string>
+    <string name="pref_subtitle_section_backdrop">Тло та обведення</string>
+    <string name="pref_subtitle_section_translation">Переклад</string>
     <string name="pref_subtitle_secondary_mode">Коли показувати</string>
     <string name="pref_subtitle_secondary_mode_off">Ніколи — додаткових субтитрів немає взагалі</string>
     <string name="pref_subtitle_secondary_mode_always">Завжди — під основними субтитрами</string>
@@ -311,6 +315,7 @@
     <string name="pref_subtitle_header">Субтитри</string>
     <string name="pref_subtitle_appearance">Вигляд</string>
     <string name="pref_subtitle_appearance_summary">Розмір, колір, тло, обведення</string>
+    <string name="pref_subtitle_preview_sample">Так виглядатимуть субтитри</string>
     <string name="pref_subtitle_scale">Розмір тексту</string>
     <string name="pref_subtitle_scale_smallest">Дуже малий</string>
     <string name="pref_subtitle_scale_small">Малий</string>

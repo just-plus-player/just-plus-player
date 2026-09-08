@@ -9,6 +9,10 @@
          or more moves behind a row of its own (Skip segments, Watch together, subtitle Appearance).
          Paying a tap to reveal three switches is worse than reading them.
 
+         Sections inside a screen, where a screen holds more than one subject: the screen's own subject
+         sits at the top with no header, and every other subject gets one. A header that repeats the
+         screen's title says nothing, and a tap to reach a second subject costs more than a header does.
+
          Only these top rows carry a glyph. It says "this leads somewhere"; inside a screen every row is
          a setting, and a column of icons there would say nothing. The glyphs are the player's own, drawn
          white for video, so SettingsFragment tints them to the surface accent. -->
@@ -220,70 +224,95 @@
             app:summary="@string/pref_subtitle_header_summary"
             app:title="@string/pref_subtitle_header">
 
+            <!-- Four doors, in the order the questions come: which subtitles are wanted, whether a second
+                 line runs under them, where a missing one is fetched from, and what all of it looks like.
+                 Each screen behind them keeps its own subject headerless at the top and gives a header to
+                 anything that is a different subject - see the rule at the top of this file. -->
+
             <!-- Ordered list of languages, edited in LanguagePriorityDialog; the summary lists them.
                  No defaultValue: unset means no preferred subtitle language at all. -->
             <Preference
                 app:key="languageSubtitle"
                 app:title="@string/pref_language_subtitle" />
 
-            <!-- Everything the second line has, behind one row. It was two halves on two screens — the
-                 language here, the look inside Appearance — which is one place too few to find any of it
-                 and one row too many for this category, which the rule at the top of this file caps at
-                 four. The summary names the mode, so "is there a second line at all" reads without a tap. -->
+            <!-- Everything the second line has, behind one row. It was two halves on two screens - the
+                 language here, the look inside the first line's Appearance - which is one place too few to
+                 find any of it. The summary names the mode, so "is there a second line at all" reads
+                 without a tap. -->
             <PreferenceScreen
                 app:key="subtitleSecondaryScreen"
                 app:title="@string/pref_subtitle_secondary_header">
 
-                <!-- Off takes the feature away rather than just the line: no row in the player's subtitle
-                     picker, nothing searched for it, no band under the first line. Always is what the second
-                     line did before it had a mode, and so the default: an absent value means no change for
-                     anyone already watching with two lines. -->
-                <ListPreference
-                    app:key="subtitleSecondaryMode"
-                    app:defaultValue="always"
-                    app:entries="@array/subtitle_secondary_mode_entries"
-                    app:entryValues="@array/subtitle_secondary_mode_values"
-                    app:title="@string/pref_subtitle_secondary_mode"
-                    app:useSimpleSummaryProvider="true" />
+                <!-- Whether the line runs at all, and what it says. Two questions that have nothing to do
+                     with how it is drawn, which is why they are a section of their own. -->
+                <PreferenceCategory app:title="@string/pref_subtitle_section_display">
 
-                <!-- The second line's own list, and the whole of "start with two subtitle lines": with a
-                     language in here the player looks for one and turns it on by itself. Separate from the
-                     first line's list because the two want opposite things — the language being learned on
-                     the first, the one already known on the second. A language in both lists belongs to the
-                     first line: the same words twice, once under the other, is not a hint. -->
-                <Preference
-                    app:key="languageSubtitleSecondary"
-                    app:title="@string/pref_language_subtitle_secondary" />
+                    <!-- Off takes the feature away rather than just the line: no row in the player's
+                         subtitle picker, nothing searched for it, no band under the first line. Always is
+                         what the second line did before it had a mode, and so the default: an absent value
+                         means no change for anyone already watching with two lines. -->
+                    <ListPreference
+                        app:key="subtitleSecondaryMode"
+                        app:defaultValue="always"
+                        app:entries="@array/subtitle_secondary_mode_entries"
+                        app:entryValues="@array/subtitle_secondary_mode_values"
+                        app:title="@string/pref_subtitle_secondary_mode"
+                        app:useSimpleSummaryProvider="true" />
 
-                <!-- Size, colour and plate of its own. Edge and weight stay inherited from the first line —
-                     nobody sets an outline for one line and not the other. The same three lists the main
-                     line uses, so the colour chips and the clash check in SettingsActivity cover these for
-                     free. The defaults are chosen so that nobody has to come here: the same size as the
-                     main subtitles, dimmed text on a translucent plate, which is what tells a hint apart from the
-                     line being read. -->
-                <ListPreference
-                    app:key="subtitleSecondaryScale"
-                    app:defaultValue="1.0"
-                    app:entries="@array/subtitle_scale_entries"
-                    app:entryValues="@array/subtitle_scale_values"
-                    app:title="@string/pref_subtitle_scale"
-                    app:useSimpleSummaryProvider="true" />
+                    <!-- The second line's own list, and the whole of "start with two subtitle lines": with
+                         a language in here the player looks for one and turns it on by itself. Separate
+                         from the first line's list because the two want opposite things - the language
+                         being learned on the first, the one already known on the second. A language in
+                         both lists belongs to the first line: the same words twice, once under the other,
+                         is not a hint. -->
+                    <Preference
+                        app:key="languageSubtitleSecondary"
+                        app:title="@string/pref_language_subtitle_secondary" />
 
-                <ListPreference
-                    app:key="subtitleSecondaryTextColor"
-                    app:defaultValue="#FFCCCCCC"
-                    app:entries="@array/subtitle_text_color_entries"
-                    app:entryValues="@array/subtitle_text_color_values"
-                    app:title="@string/pref_subtitle_text_color"
-                    app:useSimpleSummaryProvider="true" />
+                </PreferenceCategory>
 
-                <ListPreference
-                    app:key="subtitleSecondaryBackground"
-                    app:defaultValue="#80000000"
-                    app:entries="@array/subtitle_background_entries"
-                    app:entryValues="@array/subtitle_background_values"
-                    app:title="@string/pref_subtitle_background"
-                    app:useSimpleSummaryProvider="true" />
+                <!-- Size, colour and plate of its own. Edge and weight are not here and never will be:
+                     they stay inherited from the first line, because nobody sets an outline for one line
+                     and not the other. The same three lists the main line uses, so the clash check in
+                     SettingsActivity covers these for free. The defaults are chosen so that nobody has to
+                     come here at all: the same size as the main subtitles, dimmed text on a translucent
+                     plate, which is what tells a hint apart from the line being read.
+
+                     The whole section, preview included, greys out with the second line switched off. -->
+                <PreferenceCategory app:title="@string/pref_subtitle_appearance">
+
+                    <!-- The hint as the rows below it dress it, drawn by SettingsActivity. -->
+                    <Preference
+                        app:key="subtitleSecondaryPreview"
+                        app:layout="@layout/preference_subtitle_preview"
+                        app:persistent="false"
+                        app:selectable="false" />
+
+                    <ListPreference
+                        app:key="subtitleSecondaryScale"
+                        app:defaultValue="1.0"
+                        app:entries="@array/subtitle_scale_entries"
+                        app:entryValues="@array/subtitle_scale_values"
+                        app:title="@string/pref_subtitle_scale"
+                        app:useSimpleSummaryProvider="true" />
+
+                    <ListPreference
+                        app:key="subtitleSecondaryTextColor"
+                        app:defaultValue="#FFCCCCCC"
+                        app:entries="@array/subtitle_text_color_entries"
+                        app:entryValues="@array/subtitle_text_color_values"
+                        app:title="@string/pref_subtitle_text_color"
+                        app:useSimpleSummaryProvider="true" />
+
+                    <ListPreference
+                        app:key="subtitleSecondaryBackground"
+                        app:defaultValue="#80000000"
+                        app:entries="@array/subtitle_background_entries"
+                        app:entryValues="@array/subtitle_background_values"
+                        app:title="@string/pref_subtitle_background"
+                        app:useSimpleSummaryProvider="true" />
+
+                </PreferenceCategory>
 
             </PreferenceScreen>
 
@@ -295,6 +324,9 @@
                 app:key="subtitleSearchScreen"
                 app:title="@string/pref_subtitle_search_screen">
 
+                <!-- The search itself, which is what this screen is called after, so it carries no header
+                     of its own. What follows it does: a translation and a list of hosts are each their own
+                     subject. -->
                 <ListPreference
                     app:key="subtitleSearchMode"
                     app:defaultValue="off"
@@ -303,34 +335,42 @@
                     app:title="@string/pref_subtitle_search_when"
                     app:useSimpleSummaryProvider="true" />
 
-                <!-- Everything below configures a search. With none running they are live rows that do
-                     nothing, so SettingsActivity greys them out — app:dependency keys off a parent's
-                     enablement rather than off its value, so a ListPreference cannot drive it. -->
-                <!-- The summary names who the text is handed to: a machine translation is somebody else's
-                     service, and that belongs next to the switch that turns it on, not in a changelog. -->
-                <SwitchPreferenceCompat
-                    app:key="subtitleTranslateOn"
-                    app:defaultValue="true"
-                    android:summaryOn="@string/pref_subtitle_translate_on"
-                    android:summaryOff="@string/pref_subtitle_translate_off"
-                    app:title="@string/pref_subtitle_translate" />
-
-                <!-- Enabled endpoints in the order to try them, edited in LanguagePriorityDialog; the
-                     summary lists them. No defaultValue: SubtitleTranslate owns it. -->
-                <Preference
-                    app:key="subtitleTranslateBackends"
-                    app:title="@string/pref_subtitle_translate_backends" />
-
+                <!-- Manual searches only, and it stays live with the mode set to never: a search asked for
+                     from the player runs whatever the mode says (PlayerActivity: offline = !subtitleSearch
+                     && !manual). Everything on this screen was greyed out under that mode until
+                     2026-09-05, which said these settings do nothing while they were all still in force. -->
                 <SwitchPreferenceCompat
                     app:key="subtitleSearchLanguage"
                     app:defaultValue="false"
                     app:summary="@string/pref_subtitle_search_language_summary"
                     app:title="@string/pref_subtitle_search_language" />
 
+                <PreferenceCategory app:title="@string/pref_subtitle_section_translation">
+
+                    <!-- The summary names who the text is handed to: a machine translation is somebody
+                         else's service, and that belongs next to the switch that turns it on, not in a
+                         changelog. -->
+                    <SwitchPreferenceCompat
+                        app:key="subtitleTranslateOn"
+                        app:defaultValue="true"
+                        android:summaryOn="@string/pref_subtitle_translate_on"
+                        android:summaryOff="@string/pref_subtitle_translate_off"
+                        app:title="@string/pref_subtitle_translate" />
+
+                    <!-- Enabled endpoints in the order to try them, edited in LanguagePriorityDialog; the
+                         summary lists them. Greyed out with the switch above off, which is the one gate on
+                         this screen that is true: there is nothing to order if nothing is translated. No
+                         defaultValue: SubtitleTranslate owns it. -->
+                    <Preference
+                        app:key="subtitleTranslateBackends"
+                        app:title="@string/pref_subtitle_translate_backends" />
+
+                </PreferenceCategory>
+
                 <!-- Asked all at once and answered top to bottom, which is why OpenSubtitles.com stands
                      first: it is the only one that knows whether a file is machine-translated, so it is
                      the only one whose answer says anything about quality. Individually switchable so a
-                     single source can be exercised on its own when a result looks wrong — a testing
+                     single source can be exercised on its own when a result looks wrong - a testing
                      affordance, which is why it sits at the bottom of a sub-screen and not on the way to
                      anything. -->
                 <PreferenceCategory
@@ -365,52 +405,73 @@
 
             </PreferenceScreen>
 
-
             <PreferenceScreen
                 app:key="subtitleAppearance"
                 app:summary="@string/pref_subtitle_appearance_summary"
                 app:title="@string/pref_subtitle_appearance">
 
-                <ListPreference
-                    app:key="subtitleScale"
-                    app:defaultValue="1.0"
-                    app:entries="@array/subtitle_scale_entries"
-                    app:entryValues="@array/subtitle_scale_values"
-                    app:title="@string/pref_subtitle_scale"
-                    app:useSimpleSummaryProvider="true" />
+                <!-- What every row under it adds up to, drawn by SettingsActivity over a scene that is
+                     dark under one half of the line and pale under the other: a colour is judged against
+                     the picture it will sit on, not by a swatch beside its name. Above both sections and
+                     inside neither - it is the whole screen's answer, not one section's. -->
+                <Preference
+                    app:key="subtitlePreview"
+                    app:layout="@layout/preference_subtitle_preview"
+                    app:persistent="false"
+                    app:selectable="false" />
 
-                <!-- Entries get a colour chip in SettingsActivity, and the pair is checked there so the
-                     text cannot be set to the colour of its own background. -->
-                <ListPreference
-                    app:key="subtitleTextColor"
-                    app:defaultValue="#FFFFFFFF"
-                    app:entries="@array/subtitle_text_color_entries"
-                    app:entryValues="@array/subtitle_text_color_values"
-                    app:title="@string/pref_subtitle_text_color"
-                    app:useSimpleSummaryProvider="true" />
+                <!-- The glyphs: how big, what colour, how heavy. -->
+                <PreferenceCategory app:title="@string/pref_subtitle_section_text">
 
-                <ListPreference
-                    app:key="subtitleBackground"
-                    app:defaultValue="#00000000"
-                    app:entries="@array/subtitle_background_entries"
-                    app:entryValues="@array/subtitle_background_values"
-                    app:title="@string/pref_subtitle_background"
-                    app:useSimpleSummaryProvider="true" />
+                    <ListPreference
+                        app:key="subtitleScale"
+                        app:defaultValue="1.0"
+                        app:entries="@array/subtitle_scale_entries"
+                        app:entryValues="@array/subtitle_scale_values"
+                        app:title="@string/pref_subtitle_scale"
+                        app:useSimpleSummaryProvider="true" />
 
-                <ListPreference
-                    app:key="subtitleEdge"
-                    app:defaultValue="1"
-                    app:entries="@array/subtitle_edge_entries"
-                    app:entryValues="@array/subtitle_edge_values"
-                    app:title="@string/pref_subtitle_edge"
-                    app:useSimpleSummaryProvider="true" />
+                    <!-- The pair is checked in SettingsActivity so the text cannot be set to the colour of
+                         its own background - the other half of the pair is in the section below, which is
+                         exactly why the check is needed rather than left to the eye. -->
+                    <ListPreference
+                        app:key="subtitleTextColor"
+                        app:defaultValue="#FFFFFFFF"
+                        app:entries="@array/subtitle_text_color_entries"
+                        app:entryValues="@array/subtitle_text_color_values"
+                        app:title="@string/pref_subtitle_text_color"
+                        app:useSimpleSummaryProvider="true" />
 
-                <SwitchPreferenceCompat
-                    app:key="subtitleStyleBold"
-                    app:defaultValue="false"
-                    android:summaryOn="@string/pref_subtitle_style_bold_on"
-                    android:summaryOff="@string/pref_subtitle_style_bold_off"
-                    app:title="@string/pref_subtitle_style_bold" />
+                    <SwitchPreferenceCompat
+                        app:key="subtitleStyleBold"
+                        app:defaultValue="false"
+                        android:summaryOn="@string/pref_subtitle_style_bold_on"
+                        android:summaryOff="@string/pref_subtitle_style_bold_off"
+                        app:title="@string/pref_subtitle_style_bold" />
+
+                </PreferenceCategory>
+
+                <!-- What is behind the glyphs and what is around them. Both answer the same question -
+                     whether the line survives a bright frame - and neither is about the text itself. -->
+                <PreferenceCategory app:title="@string/pref_subtitle_section_backdrop">
+
+                    <ListPreference
+                        app:key="subtitleBackground"
+                        app:defaultValue="#00000000"
+                        app:entries="@array/subtitle_background_entries"
+                        app:entryValues="@array/subtitle_background_values"
+                        app:title="@string/pref_subtitle_background"
+                        app:useSimpleSummaryProvider="true" />
+
+                    <ListPreference
+                        app:key="subtitleEdge"
+                        app:defaultValue="1"
+                        app:entries="@array/subtitle_edge_entries"
+                        app:entryValues="@array/subtitle_edge_values"
+                        app:title="@string/pref_subtitle_edge"
+                        app:useSimpleSummaryProvider="true" />
+
+                </PreferenceCategory>
 
             </PreferenceScreen>
 

@@ -238,6 +238,10 @@
     <string name="subtitle_secondary_unavailable">Эту дорожку нельзя показать как дополнительные субтитры</string>
     <string name="subtitle_secondary_peek_hint">Дополнительные субтитры появляются на паузе</string>
     <string name="pref_subtitle_secondary_header">Дополнительные субтитры</string>
+    <string name="pref_subtitle_section_display">Показ</string>
+    <string name="pref_subtitle_section_text">Текст</string>
+    <string name="pref_subtitle_section_backdrop">Фон и обводка</string>
+    <string name="pref_subtitle_section_translation">Перевод</string>
     <string name="pref_subtitle_secondary_mode">Когда показывать</string>
     <string name="pref_subtitle_secondary_mode_off">Никогда — дополнительных субтитров нет совсем</string>
     <string name="pref_subtitle_secondary_mode_always">Всегда — под основными субтитрами</string>
@@ -311,6 +315,7 @@
     <string name="pref_subtitle_header">Субтитры</string>
     <string name="pref_subtitle_appearance">Вид</string>
     <string name="pref_subtitle_appearance_summary">Размер, цвет, фон, обводка</string>
+    <string name="pref_subtitle_preview_sample">Так будут выглядеть субтитры</string>
     <string name="pref_subtitle_scale">Размер текста</string>
     <string name="pref_subtitle_scale_smallest">Очень мелкий</string>
     <string name="pref_subtitle_scale_small">Мелкий</string>

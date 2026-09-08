@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Row layout for the two subtitle previews: a miniature screen showing the line the settings under
+     it dress. Wired in SettingsActivity, which shows one of the two children - the first line is drawn
+     by Media3 from a CaptionStyleCompat, exactly as the player draws it, and the second line is a
+     TextView on a plate, exactly as SecondarySubtitles draws it. Neither is a picture of the other. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/subtitle_preview_height"
+    android:focusable="false"
+    android:importantForAccessibility="no">
+
+    <!-- A layer of its own rather than the row's background: GroupCards gives every row a ripple as
+         its background, so a ground set on the root is replaced the moment the row is bound. The scene
+         itself is three layers of shape and one small vector - see bg_subtitle_preview.xml. -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_subtitle_preview" />
+
+    <androidx.media3.ui.SubtitleView
+        android:id="@+id/subtitle_preview_line"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/subtitle_preview_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:visibility="gone" />
+
+</FrameLayout>

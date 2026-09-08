@@ -2,6 +2,8 @@ package com.brouken.player;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -18,6 +20,7 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
+import androidx.media3.ui.CaptionStyleCompat;
 
 import com.google.common.collect.ImmutableList;
 
@@ -417,6 +420,22 @@ class SubtitleUtils {
             subtitleConfigurationBuilder.setSelectionFlags(C.SELECTION_FLAG_DEFAULT);
         }
         return subtitleConfigurationBuilder.build();
+    }
+
+    /**
+     * The look of the first subtitle line, from the four settings that decide it. Here rather than in
+     * the player because the settings screen draws the same line as a preview, and a preview that is
+     * built from its own copy of these rules is a preview of something else.
+     *
+     * <p>A window behind the text is a captioning concept nobody asks for, so it stays off. The outline
+     * needs no knob either, it just has to contrast: black around every colour except black text, which
+     * only reads against a light outline.
+     */
+    static CaptionStyleCompat captionStyle(final int textColor, final int backgroundColor,
+                                           final int edgeType, final boolean bold) {
+        return new CaptionStyleCompat(textColor, backgroundColor, Color.TRANSPARENT, edgeType,
+                textColor == Color.BLACK ? Color.WHITE : Color.BLACK,
+                Typeface.create(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL));
     }
 
     public static float normalizeFontScale(float fontScale, boolean small) {

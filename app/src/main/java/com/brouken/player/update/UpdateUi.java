@@ -12,10 +12,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
@@ -303,7 +301,10 @@ public final class UpdateUi {
         if (activity.isFinishing()) {
             return;
         }
-        final ProgressBar bar = new ProgressBar(dialogContext, null, android.R.attr.progressBarStyleHorizontal);
+        // Material's own indicator rather than the platform bar: it takes colorPrimary, so the download
+        // wears the accent theme like everything else. It extends ProgressBar, so the calls below are the same.
+        final com.google.android.material.progressindicator.LinearProgressIndicator bar =
+                new com.google.android.material.progressindicator.LinearProgressIndicator(dialogContext);
         bar.setMax(100);
         bar.setIndeterminate(info.size <= 0);
 
@@ -347,7 +348,10 @@ public final class UpdateUi {
                     if (file != null) {
                         Updater.installApk(activity, file);
                     } else {
-                        Toast.makeText(activity, R.string.update_download_failed, Toast.LENGTH_LONG).show();
+                        com.google.android.material.snackbar.Snackbar.make(
+                                activity.findViewById(android.R.id.content),
+                                R.string.update_download_failed,
+                                com.google.android.material.snackbar.Snackbar.LENGTH_LONG).show();
                     }
                 }));
     }

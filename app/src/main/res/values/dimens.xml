@@ -26,4 +26,9 @@
     <dimen name="level_bar_width">6dp</dimen>
     <dimen name="level_bar_height">160dp</dimen>
     <dimen name="level_bar_margin">28dp</dimen>
+
+    <!-- The subtitle preview in settings: a screen in miniature, so a fraction of it reads as the same
+         fraction of a real one. A band rather than 16:9 - it is the bottom of a picture that matters,
+         and a card is at most 640dp wide while this has to stay a sensible height on a phone. -->
+    <dimen name="subtitle_preview_height">180dp</dimen>
 </resources>

@@ -107,8 +107,11 @@ final class UiMetrics {
     }
 
     // ---- TV overscan, synthesized as extra insets (0 on every non-TV class) ----
-    int overscanH() { return tv() ? dp(24) : 0; }
-    int overscanV() { return tv() ? dp(16) : 0; }
+    // The 5% every television keeps clear, as Android TV states it for the 960x540dp canvas: 48dp at the
+    // sides, 27dp top and bottom. At the old 24/16 the first interactive pixel sat 42dp from the side edge
+    // (24 + gridH 18) and 16dp from the bottom - inside the band a real set may not show.
+    int overscanH() { return tv() ? dp(48) : 0; }
+    int overscanV() { return tv() ? dp(27) : 0; }
     int pickerTopPadLand() { return Math.max(dp(16), overscanV()); }
 
     /**
@@ -116,8 +119,11 @@ final class UiMetrics {
      *
      * <p>One number, because a panel that changes size with the press that opened it reads as several
      * different panels. It follows the edge the panel is docked to, and that edge follows the window:
-     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp
-     * Material states for a sheet; a sheet at the end edge leaves a strip of the picture beside it —
+     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp of
+     * {@code material_bottom_sheet_max_width}; a sheet at the end edge leaves a strip of the picture beside
+     * it — the cap is the bottom sheet's number, not the side sheet's own 256dp, and it stays that way
+     * deliberately: the playlist's rail of 190dp cards needs 440dp to show a peeking third card, so
+     * narrowing to Material's side-sheet width would cost the rail the affordance that says it continues —
      * never more than 60% of a window held sideways, and never closer than 56dp to the far edge of one
      * held upright — capped at the same 640dp.
      */
@@ -126,11 +132,16 @@ final class UiMetrics {
         if (windowW < 600) {
             return dp(Math.min(windowW - 8, 640));
         }
-        final int capPortrait = windowW - 56;
-        final int cap = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
-                ? Math.min(Math.round(windowW * 0.60f), capPortrait)
-                : capPortrait;
-        return dp(Math.min(640, cap));
+        // One number, and it is Google's twice over. Material gives a side sheet a 400dp maximum and ships
+        // 256dp in the library; Leanback's own television settings pane — full height, end edge — is
+        // lb_settings_pane_width, 360dp. So 360dp of usable width, plus the safe band on a television,
+        // because there the outermost 48dp is a strip a set may cut rather than somewhere to put a row.
+        // 360dp on a phone or tablet, 408dp on a television.
+        //
+        // What it has to hold is the speed panel's five segments, the widest thing in the family: they
+        // land at 65.6dp sideways and 60.8dp on a television, both over Material's own 48dp minimum touch
+        // target. The 440dp this replaces was a number of ours and nobody else's.
+        return Math.min(dp(360) + overscanH(), dp(windowW - 56));
     }
 
     // ---- typography (sp; keeps user font-scale). Columns: PHONE / sw600 / sw720 / TV ----

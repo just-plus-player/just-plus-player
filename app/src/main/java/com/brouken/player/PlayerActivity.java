@@ -85,7 +85,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.annotation.NonNull;
@@ -157,7 +156,6 @@ import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.session.MediaSession;
 import androidx.media3.ui.AspectRatioFrameLayout;
-import androidx.media3.ui.CaptionStyleCompat;
 import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerControlView;
 import androidx.media3.ui.PlayerView;
@@ -726,13 +724,11 @@ public class PlayerActivity extends Activity {
     private TextView transferView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
-    private ImageButton buttonOpen;
     private ImageButton buttonPlaylist;
     private ImageButton buttonQuality;
     private ImageButton buttonAudio;
     private ImageButton buttonMore;
     private ImageButton buttonUpdate;
-    private ImageButton buttonSkipOffset;
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
@@ -1523,22 +1519,6 @@ public class PlayerActivity extends Activity {
             }
         });
 
-        buttonOpen = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonOpen.setImageResource(R.drawable.ic_folder_open_24dp);
-        buttonOpen.setId(View.generateViewId());
-        buttonOpen.setContentDescription(getString(R.string.button_open));
-
-        buttonOpen.setOnClickListener(view -> openFile(mPrefs.mediaUri));
-
-        buttonOpen.setOnLongClickListener(view -> {
-            if (!isTvBox && mPrefs.askScope) {
-                askForScope(true, false);
-            } else {
-                loadSubtitleFile(mPrefs.mediaUri);
-            }
-            return true;
-        });
-
         buttonPlaylist = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonPlaylist.setImageResource(R.drawable.ic_playlist_24dp);
         buttonPlaylist.setId(View.generateViewId());
@@ -1595,13 +1575,6 @@ public class PlayerActivity extends Activity {
                         player != null && player.isPlaying());
             }
         });
-
-        buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonSkipOffset.setImageResource(R.drawable.ic_skip_offset_24dp);
-        buttonSkipOffset.setId(View.generateViewId());
-        buttonSkipOffset.setContentDescription(getString(R.string.skip_session_title));
-        buttonSkipOffset.setVisibility(View.GONE);
-        buttonSkipOffset.setOnClickListener(view -> showSkipOffsetDialog());
 
         if (Utils.isPiPSupported(this)) {
             // TODO: Android 12 improvements:
@@ -3706,7 +3679,6 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null && skipOffsetDialog.isShowing()) {
             skipOffsetDialog.dismiss();
         }
-        updateSkipOffsetButton();
         // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
         applySubtitleOffset(0);
         clearSubtitleTimeline();
@@ -3781,7 +3753,6 @@ public class PlayerActivity extends Activity {
         if (skipManager.hasSegments()) {
             skipSeenThisSession = true;
         }
-        updateSkipOffsetButton();
     }
 
     /**
@@ -3792,14 +3763,6 @@ public class PlayerActivity extends Activity {
     private boolean skipOffsetReachable() {
         return mPrefs != null && mPrefs.skipEnabled && skipManager != null
                 && (skipManager.hasSegments() || skipSeenThisSession);
-    }
-
-    /** The offset button is shown once any skip segment exists — now or earlier this session. */
-    private void updateSkipOffsetButton() {
-        if (buttonSkipOffset == null) {
-            return;
-        }
-        buttonSkipOffset.setVisibility(skipOffsetReachable() ? View.VISIBLE : View.GONE);
     }
 
     /** Apply a new session skip offset and re-derive the segments (moves timeline highlights live). */
@@ -6390,12 +6353,12 @@ public class PlayerActivity extends Activity {
     // panel docked to the end edge, with the current choice ticked and reachable by remote.
     private void showQualityDialog() {
         if (player == null) {
-            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
+            showNotice(getString(R.string.quality_unavailable), false);
             return;
         }
         final ArrayList<VideoQualityChoice> choices = buildQualityChoices();
         if (choices.size() < 2) {
-            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
+            showNotice(getString(R.string.quality_unavailable), false);
             return;
         }
         final int selected = selectedQualityIndex(choices);
@@ -6876,11 +6839,33 @@ public class PlayerActivity extends Activity {
         // below the last row.
         scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
 
+        final FrameLayout panel = new FrameLayout(ctx);
+        panel.addView(scrollView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // A list taller than its card is cut by the card's edge, and a row bisected with nothing to say so
+        // reads as a rendering fault rather than as "there is more". The platform's own fading edge cannot
+        // do it here — pickerWindow gives this card a background and clips it to its outline, and a fade is
+        // composited before that, so it never appears (measured: the last row's glyph arrives at full
+        // strength either way). A band of the card's own colour, over the list rather than inside it, does.
+        // 28dp, the length the grid's rail already fades by, and only while there is something below.
+        final View listFade = new View(ctx);
+        listFade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Color.TRANSPARENT, MaterialColors.getColor(ctx, R.attr.colorSurface,
+                        ContextCompat.getColor(ctx, R.color.sheet_surface))}));
+        listFade.setVisibility(View.GONE);
+        panel.addView(listFade, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ui.dpS(28), Gravity.BOTTOM));
+        final Runnable syncListFade = () -> listFade.setVisibility(
+                scrollView.canScrollVertically(1) ? View.VISIBLE : View.GONE);
+        scrollView.getViewTreeObserver().addOnScrollChangedListener(syncListFade::run);
+        scrollView.post(syncListFade);
+
         if (menuDialog != null) {
             menuDialog.dismiss();
         }
         menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Utils.pickerWindow(this, ui, menuDialog, scrollView);
+        Utils.pickerWindow(this, ui, menuDialog, panel);
         if (back != null) {
             Utils.panelBack(menuDialog, back);
         }
@@ -7734,7 +7719,7 @@ public class PlayerActivity extends Activity {
                     final String message = getString(R.string.subtitle_translate_failed,
                             displayLanguage(translateTo));
                     runOnUiThread(() ->
-                            Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
+                            showNotice(message, false));
                 }
             }
             final Uri attach = show;
@@ -7776,8 +7761,8 @@ public class PlayerActivity extends Activity {
         // track it already had or by its own pass, the second by its own.
         if (secondary) {
             chooseSecondarySubtitle(file);
-            Toast.makeText(this, getString(R.string.subtitle_search_found_secondary,
-                    displayLanguage(language)), Toast.LENGTH_SHORT).show();
+            showNotice(getString(R.string.subtitle_search_found_secondary,
+                    displayLanguage(language)), false);
             return;
         }
         mPrefs.updateSubtitle(file);
@@ -7791,7 +7776,7 @@ public class PlayerActivity extends Activity {
             if (isMachineTranslated(file)) {
                 message = getString(R.string.subtitle_machine_translated, message);
             }
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+            showNotice(message, false);
         }
     }
 
@@ -9508,7 +9493,7 @@ public class PlayerActivity extends Activity {
         // format in that same group, read as switched off. A DASH text AdaptationSet with two
         // Representations is the shape that does this.
         if (mediaGroup.length > 1) {
-            Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
+            showNotice(getString(R.string.subtitle_secondary_unavailable), true);
             return;
         }
         secondaryChoiceMedia = mPrefs.mediaUri;
@@ -9588,7 +9573,7 @@ public class PlayerActivity extends Activity {
             return;
         }
         setSecondaryTrack(null);
-        Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
+        showNotice(getString(R.string.subtitle_secondary_unavailable), true);
     }
 
     private void applySubtitle(TrackGroup group, int index) {
@@ -10073,7 +10058,8 @@ public class PlayerActivity extends Activity {
         final EditText password = Utils.textField(fields, getString(R.string.together_password));
         password.setText(mPrefs.togetherPassword);
 
-        final CheckBox listed = new CheckBox(dialogContext);
+        final com.google.android.material.checkbox.MaterialCheckBox listed =
+                new com.google.android.material.checkbox.MaterialCheckBox(dialogContext);
         listed.setText(R.string.together_public);
         listed.setChecked(mPrefs.togetherPublic);
 
@@ -10082,8 +10068,9 @@ public class PlayerActivity extends Activity {
         // coral, and a red field on top of it reads as alarm rather than as the one thing left to fill in.
         final TextView note = new TextView(dialogContext);
         note.setText(R.string.together_public_needs_password);
-        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        note.setTextColor(ContextCompat.getColor(this, R.color.error_ink_muted));
+        note.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
+        note.setTextColor(MaterialColors.getColor(dialogContext, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(this, R.color.error_ink_muted)));
         note.setPadding(0, 0, 0, Utils.dpToPx(4));
         note.setVisibility(View.GONE);
 
@@ -13240,13 +13227,12 @@ public class PlayerActivity extends Activity {
         playerView.post(() -> {
             // Announced next to the switch it describes rather than before it, so a player torn down in
             // between (the user leaving) says nothing instead of promising a quality that never loads.
-            // A Toast rather than showSnack: on a TV box showSnack is a modal dialog, and an automatic
+            // showNotice rather than showSnack: on a TV box showSnack is a modal dialog, and an automatic
             // recovery must not stop to be acknowledged (same as recoverByDisablingTunneling).
             if (player == null) {
                 return;
             }
-            Toast.makeText(this, getString(R.string.notice_quality_lowered, label),
-                    Toast.LENGTH_LONG).show();
+            showNotice(getString(R.string.notice_quality_lowered, label), true);
             applyVideoQuality(VideoQualityChoice.source(label, url));
         });
         return true;
@@ -13338,7 +13324,7 @@ public class PlayerActivity extends Activity {
         }
         Utils.log("rebuild: tunneling off");
         mPrefs.disableTunneling();
-        Toast.makeText(this, R.string.notice_tunneling_disabled, Toast.LENGTH_LONG).show();
+        showNotice(getString(R.string.notice_tunneling_disabled), true);
         restorePlayState = true;
         // Keeps the Dolby Vision workaround across this rebuild: without it a device that needs both fixes
         // would lose the first one here, and the DV rung would be free to fire again.
@@ -13712,7 +13698,7 @@ public class PlayerActivity extends Activity {
     }
 
     private void loadSubtitleFile(Uri pickerInitialUri) {
-        Toast.makeText(PlayerActivity.this, R.string.open_subtitles, Toast.LENGTH_SHORT).show();
+        PlayerActivity.this.showNotice(getString(R.string.open_subtitles), false);
         final int targetSdkVersion = getApplicationContext().getApplicationInfo().targetSdkVersion;
         if ((isTvBox && Build.VERSION.SDK_INT >= 30 && targetSdkVersion >= 30 && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("mediastore")) {
             Intent intent = new Intent(this, MediaStoreChooserActivity.class);
@@ -14568,6 +14554,25 @@ public class PlayerActivity extends Activity {
         });
     }
 
+    /**
+     * A passing notice — the snackbar this app already owns, never the platform's toast.
+     *
+     * <p>Actionless on purpose, which is what lets one helper serve both device classes: {@link #showSnack}
+     * substitutes a dialog on a television only because <em>its</em> Details button cannot be reached with a
+     * D-pad. A notice has nothing to reach, so the plate is right on a phone and on a set alike — and it is
+     * the same plate ({@code colorSurfaceInverse} = {@code chrome_surface}) the player draws over video, so
+     * a notice looks like this app rather than like the system.
+     */
+    void showNotice(final CharSequence text, final boolean longer) {
+        if (coordinatorLayout == null) {
+            return;
+        }
+        final Snackbar bar = Snackbar.make(coordinatorLayout, text,
+                longer ? Snackbar.LENGTH_LONG : Snackbar.LENGTH_SHORT);
+        bar.setAnchorView(R.id.exo_bottom_bar);
+        bar.show();
+    }
+
     void showSnack(final String textPrimary, final String textSecondary) {
         final Context dialogContext = Utils.dialogContext(this);
         // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
@@ -14639,18 +14644,10 @@ public class PlayerActivity extends Activity {
         secondarySubtitlesScale =
                 SubtitleUtils.normalizeFontScale(mPrefs.subtitleSecondaryScale, isTvBox || isTablet);
         if (subtitleView != null) {
-            // A window behind the text is a captioning concept nobody asks for, so it stays off. The
-            // outline needs no knob either, it just has to contrast: black around every colour except
-            // black text, which only reads against a light outline.
-            final CaptionStyleCompat captionStyle = new CaptionStyleCompat(
-                    mPrefs.subtitleTextColor,
-                    mPrefs.subtitleBackgroundColor,
-                    Color.TRANSPARENT,
-                    mPrefs.subtitleEdgeType,
-                    mPrefs.subtitleTextColor == Color.BLACK ? Color.WHITE : Color.BLACK,
-                    Typeface.create(Typeface.DEFAULT,
-                            mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL));
-            subtitleView.setStyle(captionStyle);
+            // Built where the settings preview builds it, so the two cannot drift apart.
+            subtitleView.setStyle(SubtitleUtils.captionStyle(mPrefs.subtitleTextColor,
+                    mPrefs.subtitleBackgroundColor, mPrefs.subtitleEdgeType,
+                    mPrefs.subtitleStyleBold));
         }
         // Sets the sizes, the band the second line sits in, and the padding and margins with them.
         updateSubtitleLayout();

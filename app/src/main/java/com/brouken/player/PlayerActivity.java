@@ -881,6 +881,8 @@ public class PlayerActivity extends Activity {
     // than a step can be aimed at. One step per floor makes a hold the same speed on any box and any
     // remote; clicks arrive further apart than this and are untouched.
     private static final long KEY_HOLD_STEP_FLOOR_MS = 200;
+    // A source that stops delivering frames must not freeze a held key: past this, step anyway.
+    private static final long KEY_HOLD_STEP_CEILING_MS = 600;
     private final Runnable keyScrubCommit = this::commitKeyScrub;
     // A passthrough AudioTrack that has been paused and resumed comes back silent on a fair number of TVs
     // and receivers: the bitstream still leaves the box but nothing downstream re-locks onto it. Video keeps
@@ -3323,7 +3325,15 @@ public class PlayerActivity extends Activity {
     private boolean seekWithKey(boolean forward, boolean held) {
         if (player == null)
             return false;
-        if (held && SystemClock.uptimeMillis() - keyScrubLastMs < KEY_HOLD_STEP_FLOOR_MS)
+        final long now = SystemClock.uptimeMillis();
+        // Not faster than the floor, and — until the last step is on screen — not faster than the
+        // ceiling. The step used to run on a timer alone while the seek behind it was dropped whenever
+        // no frame had come back, so on heavy material off a network source the readout kept a 210 ms
+        // stride while the picture managed 270-330 ms, and by the end of a hold the number promised a
+        // position nothing had drawn yet. Aiming is done by watching the picture, so the hold has to
+        // keep the slower of the two rates.
+        if (held && now - keyScrubLastMs
+                < (frameRendered ? KEY_HOLD_STEP_FLOOR_MS : KEY_HOLD_STEP_CEILING_MS))
             return true;
         playerView.removeCallbacks(playerView.textClearRunnable);
         // The bar the touch gestures raise is what lets their readout carry only the delta; the one path
@@ -3341,10 +3351,12 @@ public class PlayerActivity extends Activity {
             final long seekTo = Math.max(0, pos + (forward ? 3_000 : -3_000));
             player.setSeekParameters(forward ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
             player.seekTo(seekTo);
+            // Without this the two limits above never bite here — the last-step stamp would stay at
+            // whatever some earlier media left it, and a held key would seek once per key repeat.
+            keyScrubLastMs = now;
             showKeySeekMessage(seekTo);
             return true;
         }
-        final long now = SystemClock.uptimeMillis();
         // A reversal is the correction after an overshoot, so the ladder starts over: the step that
         // carried past the mark must not carry back past it just as fast.
         keyScrubSteps = forward == keyScrubForward && (held || now - keyScrubLastMs < 450) ? keyScrubSteps + 1 : 0;
@@ -3354,8 +3366,9 @@ public class PlayerActivity extends Activity {
         final long step = keyScrubStep(duration);
         keyScrubTarget = Math.max(0, Math.min(duration, from + (forward ? step : -step)));
         showKeySeekMessage(keyScrubTarget);
-        // Seek now if the previous seek has landed, so the picture and the bar follow the presses. A held
-        // key outruns the gate, so the commit below still lands on the target once the presses stop.
+        // Seek now if the previous seek has landed, so the picture and the bar follow the presses. A step
+        // taken on the ceiling finds the gate still shut, so the commit below lands on the target once
+        // the presses stop.
         setKeySeekDirection(keyScrubTarget);
         if (seekIfLanded(keyScrubTarget)) {
             keyScrubSeeked = keyScrubTarget;
@@ -3385,16 +3398,23 @@ public class PlayerActivity extends Activity {
      * biggest stride that can still be stood on: seeking from the picture is the fine adjustment, the
      * long jump across a film is the bar's job (a minute per press there), so the ladder stops short of
      * the bar's territory instead of climbing to a share of the duration that has no position between
-     * two presses. The share only keeps a rung from outgrowing a short file.
+     * two presses. The share keeps every rung from outgrowing a short file.
      */
     private long keyScrubStep(long duration) {
+        // The share caps every rung, not just the last one. With only the top rung scaled, the eight
+        // fixed rungs (146 s in total) outgrow any short file — a 2:00 clip was crossed in eight steps
+        // at a 30 s stride — and where the file was long enough to reach the scaled rung, that rung came
+        // out smaller than the fixed one before it, so the ladder turned back on itself. The lower bound
+        // keeps the cap from falling under what a single click is worth, which is also why the first
+        // rung needs no capping.
+        final long cap = Math.min(60_000, Math.max(3_000, duration / 10));
         if (keyScrubSteps < 2)
             return 3_000;
         if (keyScrubSteps < 4)
-            return 10_000;
+            return Math.min(10_000, cap);
         if (keyScrubSteps < 8)
-            return 30_000;
-        return Math.min(60_000, duration / 10);
+            return Math.min(30_000, cap);
+        return cap;
     }
 
     private void showKeySeekMessage(long target) {

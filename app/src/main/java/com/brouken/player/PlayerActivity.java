@@ -10021,9 +10021,8 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        showFieldDialog(new MaterialAlertDialogBuilder(dialogContext)
+        showFieldDialog(Utils.fieldDialog(dialogContext, fields)
                 .setTitle(code)
-                .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> joinRoom(code, input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)
@@ -10077,9 +10076,8 @@ public class PlayerActivity extends Activity {
         fields.addView(listed);
         fields.addView(note);
 
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
+        final AlertDialog dialog = Utils.fieldDialog(dialogContext, fields)
                 .setTitle(getString(R.string.together_create_title, code))
-                .setView(fields)
                 .setPositiveButton(android.R.string.ok, (d, which) -> {
                     mPrefs.updateTogetherPublic(listed.isChecked());
                     openRoom(code,
@@ -10142,9 +10140,8 @@ public class PlayerActivity extends Activity {
         // truthfully and quite uselessly, that no such room exists.
         final EditText password = Utils.textField(fields, getString(R.string.together_password));
 
-        showFieldDialog(new MaterialAlertDialogBuilder(dialogContext)
+        showFieldDialog(Utils.fieldDialog(dialogContext, fields)
                 .setTitle(R.string.together_join)
-                .setView(fields)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                     final String entered = code.getText().toString().trim().toUpperCase(Locale.US);
                     if (Room.isCode(entered)) {

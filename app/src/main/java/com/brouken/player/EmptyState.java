@@ -229,9 +229,8 @@ class EmptyState {
             input.setText(pasted.toString());
             input.setSelection(input.getText().length());
         }
-        Utils.keyboardResizes(new MaterialAlertDialogBuilder(dialogContext)
+        Utils.keyboardResizes(Utils.fieldDialog(dialogContext, fields)
                 .setTitle(R.string.empty_state_link)
-                .setView(fields)
                 .setPositiveButton(android.R.string.ok,
                         (dialog, which) -> openLink(input.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null)

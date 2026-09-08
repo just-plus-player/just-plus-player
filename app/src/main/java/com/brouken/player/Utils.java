@@ -63,6 +63,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 
 import androidx.annotation.RequiresApi;
 import androidx.core.text.HtmlCompat;
@@ -79,6 +80,7 @@ import androidx.core.content.ContextCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.animation.AnimationUtils;
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
 
@@ -1421,6 +1423,32 @@ class Utils {
         final int pad = dpToPx(24);
         fields.setPadding(pad, 0, pad, 0);
         return fields;
+    }
+
+    /**
+     * A dialog that carries a strip of {@link #textField} rows, sized for a window a keyboard has taken
+     * most of. Two things had to give on a 360x800dp phone whose keyboard leaves 385dp:
+     *
+     * <p>The strip goes in a scroller. An alert dialog gives its custom panel whatever room is left once
+     * the title and the buttons have taken theirs and measures it at exactly that, and a bare strip
+     * answers that by squeezing its last field to a 20dp sliver — a scroller answers it by scrolling,
+     * and carries the focused field into view with it.
+     *
+     * <p>And the card is allowed to use the window: Material keeps 80dp clear above and below an alert,
+     * which is 160dp of a short window spent on air. 24dp is what Material itself leaves around a picker
+     * dialog, and it is the difference between both fields standing there and one of them below the fold.
+     * The insets only cap the card, so nothing moves on a screen where it already fits.
+     */
+    static MaterialAlertDialogBuilder fieldDialog(final Context context, final View fields) {
+        final ScrollView scroll = new ScrollView(context);
+        // The same hairline the dialog draws over its own message when that scrolls, for the same
+        // reason: a field cut off at the edge of the panel has to look cut off rather than broken.
+        scroll.setScrollIndicators(View.SCROLL_INDICATOR_TOP | View.SCROLL_INDICATOR_BOTTOM);
+        scroll.addView(fields);
+        return new MaterialAlertDialogBuilder(context)
+                .setView(scroll)
+                .setBackgroundInsetTop(dpToPx(24))
+                .setBackgroundInsetBottom(dpToPx(24));
     }
 
     /**

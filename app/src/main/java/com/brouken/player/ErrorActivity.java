@@ -8,7 +8,6 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -16,25 +15,24 @@ import android.os.Process;
 import android.os.StatFs;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
-import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Display;
 import android.view.View;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.progressindicator.LinearProgressIndicator;
+import com.google.android.material.snackbar.Snackbar;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.HttpURLConnection;
 import java.net.Socket;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -59,8 +57,8 @@ public class ErrorActivity extends AppCompatActivity {
     private String report;
     private String uploadedUrl;
 
-    private View btnUpload;
-    private ProgressBar uploadProgress;
+    private MaterialButton btnUpload;
+    private LinearProgressIndicator uploadProgress;
     private View uploadResult;
     private TextView uploadUrl;
     private ImageView qrImage;
@@ -101,9 +99,10 @@ public class ErrorActivity extends AppCompatActivity {
         uploadUrl = findViewById(R.id.uploadUrl);
         qrImage = findViewById(R.id.qrImage);
 
-        // The four actions wear the contour every chrome control wears on a remote, not the theme's wash.
+        // Every action is a Material button now, so each one takes the contour the rest of the app's
+        // buttons take on a remote: the filled one's edge appears, the outlined ones' widens 1dp -> 2dp.
         for (final int id : new int[]{R.id.btnCopy, R.id.btnShare, R.id.btnUpload, R.id.btnClose}) {
-            findViewById(id).setForeground(Utils.chromeForeground(this, 0));
+            Utils.focusRing(findViewById(id));
         }
         findViewById(R.id.btnCopy).setOnClickListener(v -> copy(report));
         // Nothing on a TV box can empty the clipboard — no keyboard, no text app — so Copy is a dead end
@@ -113,12 +112,30 @@ public class ErrorActivity extends AppCompatActivity {
         }
         findViewById(R.id.btnShare).setOnClickListener(v -> share(report));
         btnUpload.setOnClickListener(v -> upload());
-        uploadUrl.setOnClickListener(v -> copy(uploadUrl.getText().toString()));
         findViewById(R.id.btnClose).setOnClickListener(v -> finish());
 
+        // A set is read from three metres: the TV column of the type scale (DESIGN.md 4) rather than the
+        // phone's, which is what the fixed sizes in the layout are.
+        if (Utils.isTvBox(this)) {
+            textSize(R.id.errorTitle, 26f);
+            textSize(R.id.errorMessage, 17f);
+            textSize(R.id.errorDetails, 15f);
+        }
+
+        // Close, not the filled button: sending the report publishes it, and the first press of a remote
+        // on a screen the viewer did not ask for should not be the one that does that.
         findViewById(R.id.btnClose).requestFocus();
 
         animateIn();
+    }
+
+    private void textSize(final int id, final float sp) {
+        ((TextView) findViewById(id)).setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+    }
+
+    /** What a toast used to say here. A snackbar is the one notice surface the app has (DESIGN.md 8). */
+    private void notice(final int textRes) {
+        Snackbar.make(findViewById(android.R.id.content), textRes, Snackbar.LENGTH_SHORT).show();
     }
 
     /**
@@ -286,9 +303,7 @@ public class ErrorActivity extends AppCompatActivity {
 
     private void animateIn() {
         // A subtle rise+fade so the screen doesn't slam in; skipped when the user disables animations.
-        final float scale = Settings.Global.getFloat(getContentResolver(),
-                Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
-        if (scale == 0f) {
+        if (Utils.isReducedMotion(this)) {
             return;
         }
         final View root = findViewById(android.R.id.content);
@@ -301,7 +316,7 @@ public class ErrorActivity extends AppCompatActivity {
         final ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("Just+ Player error", text));
-            Toast.makeText(this, R.string.error_copied, Toast.LENGTH_SHORT).show();
+            notice(R.string.error_copied);
         }
     }
 
@@ -313,26 +328,35 @@ public class ErrorActivity extends AppCompatActivity {
         startActivity(Intent.createChooser(intent, getString(R.string.error_share)));
     }
 
+    /**
+     * The screen's one forward action, in its three states: send, sending, sent. Once the report is up
+     * the button's job changes to handing over the link it earned — which is also how a television
+     * reaches that link at all, the URL itself being unfocusable text.
+     */
     private void upload() {
         if (uploadedUrl != null) {
-            showUploaded(uploadedUrl);
+            copy(uploadedUrl);
             return;
         }
         btnUpload.setEnabled(false);
-        uploadProgress.setVisibility(View.VISIBLE);
+        btnUpload.setText(R.string.error_uploading);
+        uploadProgress.show();
         new Thread(() -> {
             final String url = uploadToTermbin(report);
             runOnUiThread(() -> {
                 if (isFinishing()) {
                     return;
                 }
-                uploadProgress.setVisibility(View.GONE);
+                uploadProgress.hide();
                 btnUpload.setEnabled(true);
                 if (url != null) {
                     uploadedUrl = url;
+                    btnUpload.setText(R.string.error_copy_link);
+                    btnUpload.setIconResource(R.drawable.ic_link_24dp);
                     showUploaded(url);
                 } else {
-                    Toast.makeText(this, R.string.error_upload_failed, Toast.LENGTH_SHORT).show();
+                    btnUpload.setText(R.string.error_upload);
+                    notice(R.string.error_upload_failed);
                 }
             });
         }).start();
@@ -343,18 +367,14 @@ public class ErrorActivity extends AppCompatActivity {
         findViewById(R.id.errorDetails).setVisibility(View.GONE);
         uploadUrl.setText(url);
         uploadResult.setVisibility(View.VISIBLE);
-        loadQr(url);
-    }
-
-    private void loadQr(final String url) {
-        new Thread(() -> {
-            final Bitmap bitmap = fetchQr(url);
-            runOnUiThread(() -> {
-                if (!isFinishing() && bitmap != null) {
-                    qrImage.setImageBitmap(bitmap);
-                }
-            });
-        }).start();
+        // Drawn here rather than fetched from api.qrserver.com, which is what this screen used to do: the
+        // app already encodes its invite codes with zxing (Utils.qrBitmap), and a report's URL is not
+        // something to hand to a third service on the way to showing it.
+        // Encoded at the view's own pixel size, so nothing is scaled: an upscaled code is a blurred one.
+        final Bitmap qr = Utils.qrBitmap(url, qrImage.getLayoutParams().width);
+        if (qr != null) {
+            qrImage.setImageBitmap(qr);
+        }
     }
 
     // Raw-socket paste to termbin.com:9999 — it echoes back the public URL of the pasted text.
@@ -378,23 +398,4 @@ public class ErrorActivity extends AppCompatActivity {
         }
     }
 
-    private static Bitmap fetchQr(final String url) {
-        HttpURLConnection connection = null;
-        try {
-            final String api = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-                    + URLEncoder.encode(url, "UTF-8");
-            connection = (HttpURLConnection) new URL(api).openConnection();
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(10000);
-            try (InputStream in = connection.getInputStream()) {
-                return BitmapFactory.decodeStream(in);
-            }
-        } catch (Exception e) {
-            return null;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
 }

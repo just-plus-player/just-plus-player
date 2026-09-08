@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Landscape (TV, tablets/phones in landscape): explanation + actions left, code panel right.
-     The right panel matches the left block's height for symmetry, and is replaced by the QR on upload. -->
+<!-- Landscape (TV, tablets/phones in landscape): what happened and what to do about it on the left, the
+     report on the right. The right panel matches the left block's height, and its content is swapped for
+     the link and its QR once the report is sent. Same components and the same type roles as the portrait
+     layout — only the two columns differ. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -48,9 +50,8 @@
                 android:layout_marginTop="16dp"
                 android:gravity="center"
                 android:text="@string/error_screen_title"
-                android:textColor="@color/white"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+                android:textColor="@color/white" />
 
             <TextView
                 android:id="@+id/errorMessage"
@@ -61,35 +62,27 @@
                 android:lineSpacingMultiplier="1.2"
                 android:maxWidth="460dp"
                 android:text="@string/error_screen_message"
-                android:textColor="@color/error_ink_muted"
-                android:textSize="14sp" />
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="@color/error_ink_muted" />
 
             <include layout="@layout/error_actions" />
-
-            <ProgressBar
-                android:id="@+id/uploadProgress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="200dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:indeterminate="true"
-                android:indeterminateTint="?attr/colorPrimary"
-                android:visibility="gone"
-                tools:visibility="visible" />
         </LinearLayout>
 
-        <!-- Right: code panel, stretched to the left block's height; swapped for the QR on upload. -->
+        <!-- Right: the report, stretched to the left block's height. -->
         <FrameLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@drawable/bg_error_panel">
 
+            <!-- See the portrait layout: not focusable, not selectable, capped in lines. -->
             <TextView
                 android:id="@+id/errorDetails"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
+                android:ellipsize="end"
                 android:fontFamily="monospace"
+                android:maxLines="10"
                 android:padding="16dp"
                 android:textColor="@color/error_ink_muted"
                 android:textSize="13sp"
@@ -109,19 +102,27 @@
                     android:id="@+id/qrImage"
                     android:layout_width="180dp"
                     android:layout_height="180dp"
-                    android:background="@color/white"
                     android:contentDescription="@string/error_qr_description"
-                    android:padding="10dp" />
+                    android:scaleType="fitCenter" />
 
                 <TextView
                     android:id="@+id/uploadUrl"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
+                    android:focusable="false"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                     android:textColor="?attr/colorPrimary"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
                     tools:text="https://termbin.com/abcd" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:text="@string/error_upload_hint"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                    android:textColor="@color/error_ink_muted" />
             </LinearLayout>
         </FrameLayout>
 

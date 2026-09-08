@@ -36,6 +36,7 @@
     <string name="error_uploading">Uploading…</string>
     <string name="error_upload_failed">Upload failed — tap to retry</string>
     <string name="error_upload_hint">Scan the code or open the link to share this report.</string>
+    <string name="error_copy_link">Copy link</string>
     <string name="error_qr_description">QR code linking to the uploaded report</string>
     <string name="error_close">Close</string>
     <string name="request_scope">To automatically load external subtitles or enable skipping to next file in a directory, grant %s access to the topmost folder containing your videos (e.g. Movies).</string>

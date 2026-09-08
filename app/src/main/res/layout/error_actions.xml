@@ -1,44 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Shared player-style icon action row (Copy / Share / Upload log / Close). -->
+<!--
+    The action block of the error screen, shared by both orientations: the report on its own line, then
+    the three that do not send it.
+
+    Sending the report is what this screen exists for once the video has already failed, so it is the one
+    filled button on the surface (§7: at most one) and the only one carrying a glyph; the other three are
+    outlined and lettered in the surface's quieter ink, so the brand is not spent on Close. All four are
+    real buttons with an edge and the 2dp focus contour Utils.focusRing widens on a remote — the row this
+    replaces was four unframed glyphs (background="@null") with no focus mark at all, which is R4 and R5
+    and the one correctness item DESIGN.md §10 had open against this screen.
+
+    Gaps trail rather than lead, so hiding Copy on a television — where a clipboard has no way out —
+    leaves the remaining two centred rather than 8dp off.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_marginTop="20dp"
-    android:gravity="center"
-    android:orientation="horizontal">
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
 
-    <ImageButton
-        android:id="@+id/btnCopy"
-        style="@style/ErrorActionButton"
-        android:layout_marginEnd="6dp"
-        android:contentDescription="@string/error_copy"
-        android:nextFocusRight="@+id/btnShare"
-        android:src="@drawable/ic_content_copy_24dp" />
-
-    <ImageButton
-        android:id="@+id/btnShare"
-        style="@style/ErrorActionButton"
-        android:layout_marginEnd="6dp"
-        android:contentDescription="@string/error_share"
-        android:nextFocusLeft="@id/btnCopy"
-        android:nextFocusRight="@+id/btnUpload"
-        android:src="@drawable/ic_share_24dp" />
-
-    <ImageButton
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnUpload"
-        style="@style/ErrorActionButton"
-        android:layout_marginEnd="6dp"
-        android:contentDescription="@string/error_upload"
-        android:nextFocusLeft="@id/btnShare"
-        android:nextFocusRight="@+id/btnClose"
-        android:src="@drawable/ic_cloud_upload_24dp" />
+        style="@style/Widget.JustPlus.Button.Filled"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:nextFocusDown="@+id/btnClose"
+        android:text="@string/error_upload"
+        app:icon="@drawable/ic_cloud_upload_24dp" />
 
-    <ImageButton
-        android:id="@+id/btnClose"
-        style="@style/ErrorActionButton"
-        android:contentDescription="@string/error_close"
-        android:nextFocusLeft="@id/btnUpload"
-        android:src="@drawable/ic_close_24dp"
-        android:tint="?attr/colorPrimary" />
+    <!-- Indeterminate because termbin answers with the URL and nothing before it: there is no progress
+         to report, only work in hand. Material's own indicator, in place of the platform ProgressBar
+         the screen used to draw. -->
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/uploadProgress"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:indeterminate="true"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCopy"
+            style="@style/Widget.JustPlus.Button.Dialog.Outlined.Flush"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:nextFocusUp="@id/btnUpload"
+            android:nextFocusRight="@+id/btnShare"
+            android:text="@string/error_copy" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShare"
+            style="@style/Widget.JustPlus.Button.Dialog.Outlined.Flush"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:nextFocusUp="@id/btnUpload"
+            android:nextFocusLeft="@id/btnCopy"
+            android:nextFocusRight="@+id/btnClose"
+            android:text="@string/error_share" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClose"
+            style="@style/Widget.JustPlus.Button.Dialog.Outlined.Flush"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:nextFocusUp="@id/btnUpload"
+            android:nextFocusLeft="@id/btnShare"
+            android:text="@string/error_close" />
+
+    </LinearLayout>
 
 </LinearLayout>

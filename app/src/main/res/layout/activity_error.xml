@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Portrait / stacked (phones, tablets in portrait). Compact, vertically centered. -->
+<!-- Portrait / stacked (phones, tablets in portrait). One screen, no page scroll: halo, what happened,
+     the report actions, then the report itself. Type comes from the Material 3 roles rather than literal
+     sizes — Headline Small for the title, Body Medium for the copy — and the code panel keeps its own
+     monospace, which is outside the type scale on purpose. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -32,9 +35,8 @@
         android:layout_marginTop="18dp"
         android:gravity="center"
         android:text="@string/error_screen_title"
-        android:textColor="@color/white"
-        android:textSize="22sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+        android:textColor="@color/white" />
 
     <TextView
         android:id="@+id/errorMessage"
@@ -45,35 +47,29 @@
         android:lineSpacingMultiplier="1.2"
         android:maxWidth="460dp"
         android:text="@string/error_screen_message"
-        android:textColor="@color/error_ink_muted"
-        android:textSize="14sp" />
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        android:textColor="@color/error_ink_muted" />
 
     <include layout="@layout/error_actions" />
 
-    <ProgressBar
-        android:id="@+id/uploadProgress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:indeterminate="true"
-        android:indeterminateTint="?attr/colorPrimary"
-        android:visibility="gone"
-        tools:visibility="visible" />
-
-    <!-- Code panel; its content is swapped for the QR on upload. -->
+    <!-- The report; its content is swapped for the link and its QR once the report is sent. -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:background="@drawable/bg_error_panel">
 
+        <!-- Neither focusable nor selectable: on a television that pulled the D-pad into the text with
+             an invisible highlight and trapped it there. Copying is the Copy button's job. Capped in
+             lines rather than height so a long cause ends in an ellipsis — something is missing is worth
+             seeing, and the whole of it leaves by Copy, Share or the report itself. -->
         <TextView
             android:id="@+id/errorDetails"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:fontFamily="monospace"
-            android:maxHeight="200dp"
+            android:maxLines="8"
             android:padding="16dp"
             android:textColor="@color/error_ink_muted"
             android:textSize="13sp"
@@ -90,23 +86,33 @@
             android:visibility="gone"
             tools:visibility="visible">
 
+            <!-- Drawn by Utils.qrBitmap, opaque black on white with its own two-module quiet zone, so
+                 the view adds no plate of its own. -->
             <ImageView
                 android:id="@+id/qrImage"
                 android:layout_width="160dp"
                 android:layout_height="160dp"
-                android:background="@color/white"
                 android:contentDescription="@string/error_qr_description"
-                android:padding="8dp" />
+                android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/uploadUrl"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
+                android:focusable="false"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                 android:textColor="?attr/colorPrimary"
-                android:textSize="15sp"
-                android:textStyle="bold"
                 tools:text="https://termbin.com/abcd" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:text="@string/error_upload_hint"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="@color/error_ink_muted" />
         </LinearLayout>
     </FrameLayout>
 

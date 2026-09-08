@@ -35,6 +35,7 @@
     <string name="error_uploading">Надсилання…</string>
     <string name="error_upload_failed">Не вдалося надіслати — торкніться, щоб повторити</string>
     <string name="error_upload_hint">Відскануйте код або відкрийте посилання, щоб поділитися цим звітом.</string>
+    <string name="error_copy_link">Копіювати посилання</string>
     <string name="error_qr_description">QR-код із посиланням на надісланий звіт</string>
     <string name="error_close">Закрити</string>
     <string name="request_scope">Щоб автоматично завантажити субтитри, або увімкнути перехід до наступного файлу в теці, надайте %s доступ до головної теки з вашими відеофайлами (наприклад \"Відео\").</string>

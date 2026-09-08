@@ -61,16 +61,6 @@
     </style>
 
     <!-- Player-style icon action button: transparent, borderless ripple, tinted glyph. -->
-    <style name="ErrorActionButton">
-        <item name="android:layout_width">54dp</item>
-        <item name="android:layout_height">54dp</item>
-        <item name="android:padding">14dp</item>
-        <item name="android:scaleType">fitCenter</item>
-        <item name="android:background">@null</item>
-        <item name="android:tint">@color/white</item>
-        <item name="android:focusable">true</item>
-    </style>
-
     <style name="BaseTheme.Error" parent="Theme.Material3.Dark.NoActionBar">
         <!-- The accent as roles (attrs.xml). These are the coral overlay's dark values, so every
              ?attr/accent* below resolves even where no overlay was applied; the overlay itself is put

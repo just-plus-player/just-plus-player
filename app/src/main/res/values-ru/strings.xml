@@ -23,6 +23,7 @@
     <string name="error_uploading">Отправка…</string>
     <string name="error_upload_failed">Не удалось отправить — нажмите, чтобы повторить</string>
     <string name="error_upload_hint">Отсканируйте код или откройте ссылку, чтобы поделиться этим отчётом.</string>
+    <string name="error_copy_link">Копировать ссылку</string>
     <string name="error_qr_description">QR-код со ссылкой на отправленный отчёт</string>
     <string name="error_close">Закрыть</string>
     <string name="open_subtitles">Загрузить субтитры</string>

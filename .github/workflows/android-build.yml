@@ -7,6 +7,10 @@ on:
 
 jobs:
   build:
+    # This file lives in both repositories - it is on the list the bridge publishes - but only the
+    # public one builds releases: the private repository holds the tags of every release ever made,
+    # and re-running them there would burn its minutes on builds nobody asked for.
+    if: github.repository == 'just-plus-player/just-plus-player'
     runs-on: ubuntu-latest
     permissions:
       contents: write

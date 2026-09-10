@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/just-plus-player/just-plus-player?logo=github&logoColor=white&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/just-plus-player/just-plus-player/total?logo=github&logoColor=white&label=downloads&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases)
-[![Media3](https://img.shields.io/badge/Media3-1.11.0--beta01-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.0-beta01)
+[![Media3](https://img.shields.io/badge/Media3-1.11.0-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.0)
 
 Video player for Android phones, tablets and Android TV, built on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)). Android 6.0 or later, one APK for all form factors.
 
@@ -140,7 +140,7 @@ JDK 17 and the Gradle wrapper:
 
 Two flavour dimensions: `targetSdk` (`latest` = targetSdk 36, `legacy` = targetSdk 29 for legacy storage access) × `distribution` (`universal` with the in-app updater, `amazon`, `accrescent`). `latestUniversal` is the one that gets released.
 
-`app/libs/lib-*.aar` are **prebuilt binaries** — a locally built ExoPlayer core plus the ffmpeg, AV1, IAMF and MPEG-H decoder extensions. They are what makes AC3/DTS/TrueHD work, and their version has to stay in step with `media3_version` in `app/build.gradle`. See [`app/libs/README.md`](app/libs/README.md).
+`app/libs/lib-*.aar` are **prebuilt binaries** — an ExoPlayer core plus the ffmpeg, AV1, IAMF and MPEG-H decoder extensions, taken as upstream publishes them. They are what makes AC3/DTS/TrueHD work, and their version has to stay in step with `media3_version` in `app/build.gradle`. See [`app/libs/README.md`](app/libs/README.md).
 
 ## Integration
 

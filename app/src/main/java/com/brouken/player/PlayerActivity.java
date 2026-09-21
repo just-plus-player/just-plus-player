@@ -1,6 +1,8 @@
 package com.brouken.player;
 
 import static android.content.pm.PackageManager.FEATURE_EXPANDED_PICTURE_IN_PICTURE;
+import static androidx.core.content.IntentCompat.getParcelableExtra;
+import static androidx.core.os.BundleCompat.getParcelable;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -13,8 +15,6 @@ import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.app.RemoteAction;
 import android.content.BroadcastReceiver;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -22,20 +22,19 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
-import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.content.res.ColorStateList;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Icon;
 import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
-import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.media.audiofx.AudioEffect;
@@ -69,12 +68,12 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.WindowManager;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -98,26 +97,25 @@ import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
-import androidx.media3.common.util.Util;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
-import androidx.media3.common.VideoSize;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
-import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
+import androidx.media3.common.VideoSize;
 import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.util.StuckPlayerException;
+import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DefaultDataSource;
-import androidx.media3.datasource.okhttp.OkHttpDataSource;
-import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
 import androidx.media3.exoplayer.DecoderCounters;
 import androidx.media3.exoplayer.DecoderReuseEvaluation;
@@ -127,7 +125,6 @@ import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.ExoTimeoutException;
 import androidx.media3.exoplayer.Renderer;
-import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.SeekParameters;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.audio.AudioRendererEventListener;
@@ -140,11 +137,11 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.LoadEventInfo;
 import androidx.media3.exoplayer.source.MediaLoadData;
-import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.source.TrackGroupArray;
-import androidx.media3.exoplayer.video.MediaCodecVideoDecoderException;
+import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
+import androidx.media3.exoplayer.video.MediaCodecVideoDecoderException;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
 import androidx.media3.extractor.text.SubtitleParser;
@@ -153,7 +150,6 @@ import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.session.MediaSession;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.CaptionStyleCompat;
-import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerControlView;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.ui.SubtitleView;
@@ -161,6 +157,10 @@ import androidx.media3.ui.TimeBar;
 
 import com.brouken.player.dtpv.DoubleTapPlayerView;
 import com.brouken.player.dtpv.youtube.YouTubeOverlay;
+import com.brouken.player.media.PlaybackSessionCollector;
+import com.brouken.player.media.TrackInfo;
+import com.brouken.player.media.TracksInfo;
+import com.brouken.player.media.TracksResolver;
 import com.brouken.player.skip.IntentSegmentsSource;
 import com.brouken.player.skip.NetworkSegmentsSource;
 import com.brouken.player.skip.SegmentFinder;
@@ -179,6 +179,7 @@ import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.common.collect.ImmutableList;
 
 import org.json.JSONObject;
 
@@ -189,24 +190,37 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
+import java.util.Formatter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Date;
-import java.util.Formatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.TimeUnit;
 
 public class PlayerActivity extends Activity {
+
+
+    private PendingIntent mSessionResult;
+    private PlaybackSessionCollector mSessionCollector;
+    private boolean mSessionResultSent;
+
+
+    private final TracksResolver mTracksResolver = new TracksResolver();
+    private TracksInfo mTracksInfo = TracksInfo.EMPTY;
+    private int mAudioOverrideIndex = C.INDEX_UNSET;
+    private int mSubtitlesOverrideIndex = C.INDEX_UNSET;
+    private boolean mIsInitialOverridesApplied = false;
+
 
     private PlayerListener playerListener;
     private BroadcastReceiver mReceiver;
@@ -971,6 +985,8 @@ public class PlayerActivity extends Activity {
 
     static final String API_POSITION = "position";
     static final String API_DURATION = "duration";
+    static final String API_AUDIO = "audio_override_index";
+    static final String API_SUBTITLES = "subtitles_override_index";
     static final String API_RETURN_RESULT = "return_result";
     static final String API_SUBS = "subs";
     static final String API_SUBS_ENABLE = "subs.enable";
@@ -1000,6 +1016,10 @@ public class PlayerActivity extends Activity {
     static final String API_QUALITY_URLS = "quality_urls";
     static final String API_VIDEO_LIST_QUALITY_LEVELS = "video_list.quality_levels";
     static final String API_VIDEO_LIST_QUALITY_URLS = "video_list.quality_urls";
+
+    private static final String API_PLAYBACK_SESSION_STATE = "playback_session_state";
+    private static final String API_PLAYBACK_SESSION_RESULT = "extra_playback_callback";
+
     // Everything an api session keeps in RAM (Prefs is non-persistent under apiAccess), handed to the
     // system as one nested Bundle so a kill while backgrounded does not come back to the launch intent's
     // stale `position`. See onSaveInstanceState()/restoreApiSession().
@@ -2732,6 +2752,7 @@ public class PlayerActivity extends Activity {
     @Override
     public void onStop() {
         super.onStop();
+        sendSessionResultIfNeeded();
         alive = false;
         Utils.log("onStop" + (isFinishing() ? ", finishing" : ""));
         // Stop the empty-state pulse while backgrounded: no point ticking the Choreographer with no media
@@ -2853,6 +2874,12 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
+        if(mSessionResult != null) {
+            outState.putParcelable(API_PLAYBACK_SESSION_RESULT, mSessionResult);
+        }
+        if(mSessionCollector != null) {
+            outState.putParcelable(API_PLAYBACK_SESSION_STATE, mSessionCollector.saveState());
+        }
         saveApiSession(outState);
     }
 
@@ -2895,6 +2922,43 @@ public class PlayerActivity extends Activity {
         outState.putBundle(STATE_API_SESSION, state);
     }
 
+    private void ensureSessionCollectorAttached() {
+        if (mSessionResult == null) {
+            return;
+        }
+        if (mSessionCollector == null) {
+            mSessionCollector = new PlaybackSessionCollector(mTracksResolver,
+                    ()-> mTracksInfo);
+        }
+        if (player != null) {
+            player.addListener(mSessionCollector);
+        }
+    }
+
+    private void sendSessionResultIfNeeded() {
+        if (mSessionResultSent || mSessionResult == null || mSessionCollector == null) {
+            return;
+        }
+        mSessionResultSent = true;
+        final Intent result = new Intent();
+        result.putExtra("playback_session", mSessionCollector.buildHistory());
+        try {
+            mSessionResult.send(this, Activity.RESULT_OK, result);
+        } catch (PendingIntent.CanceledException e) {
+            Utils.log("session result: pending intent canceled: " + e);
+        }
+    }
+
+    private void resetSessionCollector() {
+        // A previous session that was never closed out (e.g. the launcher fired a fresh Play
+        // intent over a still-running one, skipping Home/Back entirely) must still get its report
+        // before we throw its state away.
+        sendSessionResultIfNeeded();
+        mSessionResult = null;
+        mSessionResultSent = false;
+        mSessionCollector = null;
+    }
+
     /**
      * Puts a saved api session back over what the launch intent just seeded (see onCreate) — the intent
      * is the same one that started the session, so its `position` and base urls are stale by definition.
@@ -2902,7 +2966,27 @@ public class PlayerActivity extends Activity {
      * updateMedia() drops the position restored here along with the rest of the meta.
      */
     private void restoreApiSession(final Bundle savedInstanceState) {
-        if (savedInstanceState == null || !apiAccess) {
+        if (savedInstanceState == null) {
+            return;
+        }
+
+        PendingIntent pi = getParcelable(savedInstanceState, API_PLAYBACK_SESSION_RESULT, PendingIntent.class);
+        if(pi != null) {
+            mSessionResult = pi;
+        }
+
+        if(mSessionResult != null) {
+            Bundle state = savedInstanceState.getBundle(API_PLAYBACK_SESSION_STATE);
+            if(state != null) {
+                if(mSessionCollector == null) {
+                    mSessionCollector = new PlaybackSessionCollector(mTracksResolver, ()-> mTracksInfo);
+                }
+                mSessionCollector.restoreState(state);
+            }
+        }
+
+
+        if(!apiAccess) {
             return;
         }
         final Bundle state = savedInstanceState.getBundle(STATE_API_SESSION);
@@ -2995,6 +3079,7 @@ public class PlayerActivity extends Activity {
             }
         }
         restorePlayStateAllowed = false;
+        sendSessionResultIfNeeded();
         super.onBackPressed();
     }
 
@@ -3067,6 +3152,10 @@ public class PlayerActivity extends Activity {
     // activity, and its extras have to replace the previous ones instead of being ignored.
     void handleViewIntent(Intent intent) {
         resetApiAccess();
+        PendingIntent pi = getParcelableExtra(intent, API_PLAYBACK_SESSION_RESULT, PendingIntent.class);
+        if(pi != null) {
+            mSessionResult = pi;
+        }
         final Uri uri = intent.getData();
         final String type = intent.getType();
         if (SubtitleUtils.isSubtitle(uri, type)) {
@@ -3135,6 +3224,11 @@ public class PlayerActivity extends Activity {
 
                 if (bundle.containsKey(API_POSITION)) {
                     mPrefs.updatePosition((long) bundle.getInt(API_POSITION));
+                }
+                mAudioOverrideIndex = bundle.getInt(API_AUDIO, C.INDEX_UNSET);
+                mSubtitlesOverrideIndex = bundle.getInt(API_SUBTITLES, C.INDEX_UNSET);
+                if(mAudioOverrideIndex != C.INDEX_UNSET || mSubtitlesOverrideIndex != C.INDEX_UNSET){
+                    mIsInitialOverridesApplied = false;
                 }
             }
         }
@@ -3635,6 +3729,7 @@ public class PlayerActivity extends Activity {
     }
 
     void resetApiAccess() {
+        resetSessionCollector();
         apiAccess = false;
         apiAccessPartial = false;
         intentReturnResult = false;
@@ -6791,6 +6886,9 @@ public class PlayerActivity extends Activity {
                 .setOverrideForType(new TrackSelectionOverride(
                         choice.group, Collections.singletonList(choice.trackIndex)))
                 .build());
+        mAudioOverrideIndex = mTracksResolver.resolveOverriddenIndex(mTracksInfo,
+                C.TRACK_TYPE_AUDIO,
+                player.getTrackSelectionParameters());
     }
 
     private void showAudioDialog() {
@@ -8584,18 +8682,55 @@ public class PlayerActivity extends Activity {
         // chosen, holds its band open, and never draws a word. The type flag is still cleared here,
         // since a build before this one may have left it set.
         final int primary = trackSelector == null ? -1 : textRendererIndex(1);
+        final DefaultTrackSelector.Parameters.Builder builder = trackSelector != null
+                ? trackSelector.buildUponParameters()
+                : DefaultTrackSelector.Parameters.getDefaults(this).buildUpon();
+        builder.clearOverridesOfType(C.TRACK_TYPE_TEXT);
         if (primary < 0) {
-            player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                    .build());
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true);
+        } else {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false);
+            builder.setRendererDisabled(primary, true);
+        }
+        player.setTrackSelectionParameters(builder.build());
+    }
+
+    private void selectTracksOverride() {
+        if(mIsInitialOverridesApplied) {
             return;
         }
-        final DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
-        builder.clearOverridesOfType(C.TRACK_TYPE_TEXT);
-        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false);
-        builder.setRendererDisabled(primary, true);
-        trackSelector.setParameters(builder);
+        mIsInitialOverridesApplied = true;
+        final int curAudio = mTracksInfo.indexOfSelected(C.TRACK_TYPE_AUDIO);
+        if (mAudioOverrideIndex != C.INDEX_UNSET && mAudioOverrideIndex != curAudio) {
+            overrideTrack(mTracksInfo.audio, mAudioOverrideIndex, C.TRACK_TYPE_AUDIO);
+        }
+
+        final int curSubtitles = mTracksInfo.indexOfSelected(C.TRACK_TYPE_TEXT);
+        if (mSubtitlesOverrideIndex != C.INDEX_UNSET && mSubtitlesOverrideIndex != curSubtitles) {
+            overrideTrack(mTracksInfo.subtitles, mSubtitlesOverrideIndex, C.TRACK_TYPE_TEXT);
+        }
+    }
+
+    private void overrideTrack(ImmutableList<TrackInfo> tracks, int index, int trackType) {
+        final boolean inRange = index >= 0 && tracks != null && index < tracks.size();
+        if (trackType == C.TRACK_TYPE_TEXT && (!inRange || tracks.get(index).isDisableOption)) {
+            disableSubtitles();
+            return;
+        }
+
+        if (!inRange || player == null) {
+            return;
+        }
+        final TrackInfo info = tracks.get(index);
+        final TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon();
+        builder.clearOverridesOfType(trackType);
+        if (trackType == C.TRACK_TYPE_TEXT) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false);
+        }
+        builder.addOverride(new TrackSelectionOverride(
+                info.group, info.trackIndex
+        ));
+        player.setTrackSelectionParameters(builder.build());
     }
 
     /**
@@ -9055,6 +9190,9 @@ public class PlayerActivity extends Activity {
         mainTrackGroup = group;
         mainTrackIndex = index;
         applyMainLineTrackSelection();
+        mSubtitlesOverrideIndex = mTracksResolver.resolveOverriddenIndex(mTracksInfo,
+                C.TRACK_TYPE_TEXT,
+                player.getTrackSelectionParameters());
     }
 
     private static final float[] SPEED_PRESETS =
@@ -11045,6 +11183,7 @@ public class PlayerActivity extends Activity {
             emptyState.show();
         }
 
+        ensureSessionCollectorAttached();
         player.addListener(playerListener);
         player.addAnalyticsListener(playbackInfoListener);
         // The renderers factory has just loaded the extension libraries it needs, so this is free here.
@@ -11459,6 +11598,9 @@ public class PlayerActivity extends Activity {
             if (player.isPlaying() && restorePlayStateAllowed) {
                 restorePlayState = true;
             }
+            if(mSessionCollector != null) {
+                player.removeListener(mSessionCollector);
+            }
             player.removeListener(playerListener);
             // Renderer decoder-init events reach the collector via a post from the playback thread, so one
             // enqueued during teardown would write the old player's decoder name onto the next session.
@@ -11642,6 +11784,9 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+            if(mediaItem != null) {
+                mIsInitialOverridesApplied = false;
+            }
             Utils.log("item transition reason=" + reason
                     + (player != null ? " index=" + player.getCurrentMediaItemIndex() : ""));
             // Keep the playlist start index (and mediaUri) tracking the item that is actually
@@ -11723,6 +11868,10 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onTracksChanged(Tracks tracks) {
+            if(!tracks.isEmpty()) {
+                mTracksInfo = mTracksResolver.resolve(tracks);
+                selectTracksOverride();
+            }
             // Second half of restartPassthroughAudio(): the disable has provably reached the playback thread,
             // so put the audio track type back — rebuilt from the current parameters, not from a snapshot, so
             // a track choice made in between is not clobbered. Returns early: this intermediate selection has
@@ -11934,6 +12083,7 @@ public class PlayerActivity extends Activity {
             setEndControlsVisible(haveMedia && (state == Player.STATE_ENDED || isNearEnd));
 
             if (state == Player.STATE_READY) {
+                selectTracksOverride();
                 frameRendered = true;
                 cancelLoadWatchdog();
                 // Loaded successfully — clear any pending resolver-handshake flag from a prior attempt.
@@ -14477,6 +14627,10 @@ public class PlayerActivity extends Activity {
             enterPiP();
         else
             super.onUserLeaveHint();
+
+        if (!inPip) {
+            sendSessionResultIfNeeded();
+        }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.O)

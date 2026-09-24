@@ -4,10 +4,10 @@ import static android.content.pm.PackageManager.FEATURE_EXPANDED_PICTURE_IN_PICT
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
@@ -17,7 +17,6 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
-import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -25,17 +24,11 @@ import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.PixelFormat;
-import android.graphics.RectF;
 import android.graphics.Outline;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.content.res.ColorStateList;
-import android.content.res.Resources;
-import android.database.Cursor;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -45,7 +38,6 @@ import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
-import android.media.MediaCodecList;
 import android.media.audiofx.AudioEffect;
 import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
@@ -55,7 +47,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
 import android.os.SystemClock;
-import android.provider.MediaStore;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.text.Editable;
@@ -65,11 +56,11 @@ import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.format.DateFormat;
+import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Rational;
-import android.view.animation.LinearInterpolator;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -94,18 +85,15 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
-import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
-
-import com.google.android.material.color.MaterialColors;
-import com.google.android.material.shape.ShapeAppearanceModel;
-import com.google.android.material.shape.MaterialShapeDrawable;
 import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
@@ -117,9 +105,7 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
-import androidx.media3.common.ParserException;
 import androidx.media3.common.PlaybackException;
-import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
@@ -132,7 +118,6 @@ import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
-import androidx.media3.decoder.av1.Libdav1dVideoRenderer;
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary;
 import androidx.media3.exoplayer.DecoderCounters;
 import androidx.media3.exoplayer.DecoderReuseEvaluation;
@@ -141,43 +126,33 @@ import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.ExoTimeoutException;
-import android.text.style.ForegroundColorSpan;
 import androidx.media3.exoplayer.Renderer;
-import androidx.media3.exoplayer.RendererCapabilities;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.SeekParameters;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
-import androidx.media3.exoplayer.audio.AudioCapabilities;
 import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.audio.ForwardingAudioSink;
-import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer;
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
-import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
-import androidx.media3.exoplayer.upstream.Loader;
-import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo;
 import androidx.media3.exoplayer.source.LoadEventInfo;
 import androidx.media3.exoplayer.source.MediaLoadData;
 import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.video.MediaCodecVideoDecoderException;
-import androidx.media3.exoplayer.video.MediaCodecVideoRenderer;
-import androidx.media3.exoplayer.video.VideoRendererEventListener;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
-import androidx.media3.extractor.ExtractorsFactory;
-import androidx.media3.extractor.SeekMap;
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory;
 import androidx.media3.extractor.text.SubtitleParser;
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.session.MediaSession;
 import androidx.media3.ui.AspectRatioFrameLayout;
+import androidx.media3.ui.CaptionStyleCompat;
 import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerControlView;
 import androidx.media3.ui.PlayerView;
@@ -199,13 +174,10 @@ import com.brouken.player.update.UpdateInfo;
 import com.brouken.player.update.UpdateUi;
 import com.brouken.player.update.Updater;
 import com.bumptech.glide.Glide;
-import com.google.android.material.button.MaterialButton;
-import com.bumptech.glide.RequestBuilder;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
 import org.json.JSONObject;
@@ -220,7 +192,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Date;
 import java.util.Formatter;
@@ -268,13 +239,6 @@ public class PlayerActivity extends Activity {
     // that is already built.
     private DefaultMediaSourceFactory mediaSourceFactory;
     private androidx.media3.datasource.DataSource.Factory uncachedUpstream;
-
-    /**
-     * The same stack the player reads the video through, kept so {@link MovieHash} can read the two
-     * ends of the file over whatever scheme this one happens to be — with the share's credentials and
-     * the dav/dlna rewrites already applied, rather than a second set of them here.
-     */
-    private androidx.media3.datasource.DataSource.Factory subtitleHashSource;
     // Byte length of each media item as its data source reported it, keyed the same way. Feeds the
     // stats panel's average bitrate for the containers that state no bitrate at all.
     private final java.util.Map<String, Long> contentLengths = new java.util.concurrent.ConcurrentHashMap<>();
@@ -344,22 +308,12 @@ public class PlayerActivity extends Activity {
     public BrightnessControl mBrightnessControl;
     public static boolean haveMedia;
     private boolean videoLoading;
-    // What the viewer last asked the playback speed to be, and whether they have been told that the
-    // route refused it. Both belong here rather than to any one control: the picker, the hold gesture
-    // and a room all ask for a speed, and all of them get the same answer from the sink.
-    private float speedRequested = 1f;
-    private boolean speedRefusalSaid;
-    // A playlist item that started mid-session still owes the display a mode of its own; spent as
-    // soon as the item's own frame rate can be read. See matchDisplayModeForNewItem.
-    private boolean modeMatchPending;
     // Watchdog for a silent load failure: if the player never reaches STATE_READY within this window
     // (stuck buffering, a broken next-episode URL, etc.) a friendly LOAD_TIMEOUT message is shown.
     // Such stalls often produce no PlaybackException, so onPlayerError alone would never catch them.
     private static final long VIDEO_LOAD_TIMEOUT_MS = 30_000L;
     /** How long to wait for a requested display mode to report back before starting playback anyway. */
     private static final long FRAME_RATE_SWITCH_TIMEOUT_MS = 3_000L;
-    // A resolution change is an HDMI renegotiation, not a rate nudge; the reference player allows 5.8 s.
-    private static final long RESOLUTION_SWITCH_TIMEOUT_MS = 6_000L;
     // Bytes seen when the watchdog was last armed, so its verdict is "nothing is arriving" rather than
     // "this is taking a while". Filling the first buffer of a large torrent-backed file routinely needs
     // several of these windows — the backend fetches pieces from peers at whatever rate it can, and the
@@ -427,9 +381,7 @@ public class PlayerActivity extends Activity {
     // recoverByRestartingTheScreen). Static because the instance is exactly what that throws away: the
     // budget and the pending resume have to reach the activity that comes next.
     private static boolean screenRestartUsed;
-    // Whether the viewer had it paused when the screen had to be started over: the new activity plays by
-    // itself, as any freshly opened film does, and this is what holds it back.
-    private static boolean pauseAfterScreenRestart;
+    private static boolean resumeAfterScreenRestart;
     // Names of the decoders that actually opened, for the error report. The mime does not tell them apart
     // — c2.android.* (software) and OMX.<vendor>.* (hardware) decode the same hevc very differently — and
     // "the device decoder wedged" is unreadable without knowing which one it was. Written on the app
@@ -443,24 +395,7 @@ public class PlayerActivity extends Activity {
     // run has already proven cannot bitstream must not be offered passthrough again by the activity
     // that comes next - which is how a dead audio route and the decoder death behind it would repeat.
     private static final Set<String> sessionRevokedAudioMimes = new HashSet<>();
-    // Audio formats whose platform decoder failed while decoding (see recoverByDecodingAudioWithFfmpeg):
-    // refused by the platform renderer so the track goes to the ffmpeg one instead. Keyed by mime AND
-    // codec string, never by mime alone: the field case is AAC Main (audio/mp4a-latm mp4a.40.1), and a
-    // mime-wide refusal would send every other AAC file on the device to a software decoder for the rest
-    // of the process - and leave a profile ffmpeg does not implement (xHE-AAC) with no decoder at all,
-    // which plays as silence rather than as an error. Static for the same reasons as the set above - the
-    // recovery rebuilds the player, and a screen restart must not hand the track back to the decoder that
-    // has already been proven unable to carry it.
-    private static final Set<String> sessionFfmpegAudioFormats = new HashSet<>();
-
-    // Video formats a decoder refused with ERROR_INSUFFICIENT_RESOURCE even though the device's own
-    // capability table said it could take them. The table is a promise about geometry and rate; the
-    // refusal comes from the driver counting work, and the two do not always agree. Written down here so
-    // the next attempt configures the codec plainly, and kept for the session because a decoder that
-    // could not make the reservation once will not make it a minute later either.
-    private static final Set<String> sessionPlainCodecFormats = new HashSet<>();
-
-   // One-shot guard for recoverByLoweringQuality(). Deliberately not reset by initializePlayer: the
+    // One-shot guard for recoverByLoweringQuality(). Deliberately not reset by initializePlayer: the
     // downgrade itself rebuilds the player, and a variant that is still beyond the device has to fail
     // once rather than walk the whole list.
     private boolean softwareVideoDowngraded;
@@ -480,7 +415,7 @@ public class PlayerActivity extends Activity {
      * viewer needs; what goes away is the retry storm behind it. The same figures the reference player
      * uses (dddplayer, PlayerManager.kt).
      */
-    static final okhttp3.OkHttpClient MEDIA_HTTP_CLIENT = new okhttp3.OkHttpClient.Builder()
+    private static final okhttp3.OkHttpClient MEDIA_HTTP_CLIENT = new okhttp3.OkHttpClient.Builder()
             .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
@@ -562,7 +497,6 @@ public class PlayerActivity extends Activity {
         @Override
         public void onVideoCodecError(AnalyticsListener.EventTime eventTime, Exception error) {
             Utils.log("video codec error: " + error + " " + codecDetails(error));
-            rememberResourceRefusal(error);
         }
 
         @Override
@@ -735,14 +669,8 @@ public class PlayerActivity extends Activity {
     // of their fade — with the states in between keeping whatever the last edge decided.
     private boolean controllerChromeVisible;
     public static Snackbar snackbar;
-
-    /** What {@link #hardwareVerdict} answered, per format; the device cannot change its mind. */
-    private final Map<String, Integer> hardwareVerdicts = new HashMap<>();
     private ExoPlaybackException errorToShow;
-    // Boost above 100%, in steps of ten percent - so 1 is 110% and the ceiling of 10 is 200%. A step
-    // is what the hardware keys move by; the drag sets it to wherever the finger is, fractions and all,
-    // because a level a finger is dragging has no business advancing in tenths.
-    public static float boostLevel = 0f;
+    public static int boostLevel = 0;
     // Whether the hearing warning has already been shown this session, see Utils.warnAboutBoost
     public static boolean boostWarned = false;
     // Off = volume gestures and keys drive the player alone and never touch the device's stream. Mirrors
@@ -757,22 +685,11 @@ public class PlayerActivity extends Activity {
     // Preference state as it was when the settings screen opened, see openSettings()
     private Map<String, ?> settingsBefore;
 
+    private static final int REQUEST_CHOOSER_VIDEO = 1;
+    private static final int REQUEST_CHOOSER_SUBTITLE = 2;
     private static final int REQUEST_CHOOSER_SCOPE_DIR = 10;
-
-    /**
-     * Open the watch-party join menu as soon as the player is up, with nothing playing. The shell
-     * sends it: joining needs no media of its own, since the room says what it is playing, and every
-     * piece of the watch party lives here rather than there.
-     */
-    static final String EXTRA_JOIN_ROOM = "join_room";
-
-    /**
-     * A room already chosen, so this screen has nothing to ask. The browser asks — in place, on the
-     * page the viewer is standing on — and sends the answer here; the alternative was sending them to
-     * an empty player to be asked there, which is what "join opens a black screen" was.
-     */
-    static final String EXTRA_JOIN_CODE = "join_code";
-    static final String EXTRA_JOIN_PASSWORD = "join_password";
+    private static final int REQUEST_CHOOSER_VIDEO_MEDIASTORE = 20;
+    private static final int REQUEST_CHOOSER_SUBTITLE_MEDIASTORE = 21;
     private static final int REQUEST_SETTINGS = 100;
     public static final int CONTROLLER_TIMEOUT = 3500;
     // Media3's own DURATION_FOR_HIDING_ANIMATION_MS — see fadeChrome, which has to match it.
@@ -795,40 +712,30 @@ public class PlayerActivity extends Activity {
     private TextView videoInfoView;
     private TextView audioInfoView;
     private TextView endsAtView;
-    /**
-     * When the broadcast now playing was joined, for the "watching for" reading in the bottom bar.
-     * Wall clock and not accumulated playing time: the controller's progress tick only runs while the
-     * controls are on screen, which is almost never, so there is nothing to accumulate with. A pause
-     * on a live channel therefore counts as watching, which is the one thing this reads generously.
-     */
-    private long liveWatchStartMs;
     // Longest window still read as a live broadcast rather than a recording — see isLiveStream().
     private static final long LIVE_WINDOW_MAX_MS = 10 * 60_000L;
+    // The end time is a qualifier beside the clock, so it is written a step down from white. The live
+    // label takes the brand colour instead: it is a state, not a reading, and the only one this row ever
+    // reports — see updateEndsAt.
+    private static final int ENDS_AT_COLOR = 0xB3FFFFFF;
     private TextView roomPill;
     private TextView statsView;
     private TextView transferView;
     private OutlineTextClock overlayClock;
     private OutlineTextClock headerClock;
+    private ImageButton buttonOpen;
     private ImageButton buttonPlaylist;
     private ImageButton buttonQuality;
     private ImageButton buttonAudio;
     private ImageButton buttonMore;
     private ImageButton buttonUpdate;
+    private ImageButton buttonSkipOffset;
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
     private android.app.Dialog subtitleOffsetDialog;
     private android.app.Dialog sleepTimerDialog;
-    private android.app.Dialog speedDialog;
-    /**
-     * Waiting for a room to say what to play. Survives the player being released and rebuilt, which
-     * is exactly what happens when the viewer leaves the app to fetch the code they were asked for.
-     */
-    private boolean awaitingRoom;
-
-    /** A room the browser already chose, held until the player is up enough to join it. */
-    private String pendingRoomCode;
-    private String pendingRoomPassword;
+    private android.app.Dialog menuDialog;
     // While a picker panel is open the app must stay out of immersive/fullscreen, otherwise OxygenOS/ColorOS
     // applies its fullscreen back-gesture guard ("swipe again to go back") and the panel needs two swipes.
     private boolean pickerDialogOpen;
@@ -852,13 +759,11 @@ public class PlayerActivity extends Activity {
     // Swipe-to-unlock bar shown over the video while the screen is locked; the only affordance for leaving
     // the locked state (drag on touch, hold a D-pad key on TV).
     private SwipeToUnlockView swipeToUnlock;
-    // Back-button guard while locked: a Back arms this, a second Back within the window exits.
-    private long lockBackPressedAt = Utils.BACK_NOT_PRESSED;
-    // The same guard on TV, so a stray press on a remote cannot drop out of the player. Armed by any
-    // Back that did something — cancelled a pending seek, closed the controls — so that the press
-    // which finds nothing left to close is the one that leaves, and the way out is always two presses
-    // rather than one per thing open plus a confirmation on top.
-    private long backPressedAt = Utils.BACK_NOT_PRESSED;
+    // Back-button guard while locked: the first Back arms this, a second Back within the window exits.
+    private boolean lockBackPressedOnce;
+    // Same guard on TV, once Back has nothing left to close: a stray press on a remote must not drop
+    // out of the player.
+    private boolean backPressedOnce;
     // Holding the screen through a pause is what keeps the box's screensaver away, and the screensaver
     // is what takes the audio output — and, with the memory pressure behind it, sometimes the process —
     // down with it. What it costs is a still picture and a control bar that never hides (a pause sets
@@ -918,6 +823,8 @@ public class PlayerActivity extends Activity {
     private final Runnable keepAwakeGiveUpRunnable = () -> holdScreen(false);
     // Set while a Down press is opening the controls, so focus lands on the time bar instead of play/pause.
     private boolean focusTimeBarOnShow;
+    // The page shown when there is nothing to play; owns its own views, reveal and pulse.
+    private final EmptyState emptyState = new EmptyState(this);
     private ImageButton exoSettings;
     private ImageButton exoSubtitle;
     private ImageButton exoPlayPause;
@@ -967,7 +874,6 @@ public class PlayerActivity extends Activity {
     // the steps the gate skipped are made good by one commit once the presses stop.
     private long keyScrubTarget = -1;   // -1 = no scrub in progress
     private long keyScrubSeeked = -1;   // the last target a press actually seeked to
-    private long keyScrubStart;         // where the picture was when the burst began; what Back undoes to
     private int keyScrubSteps;          // presses in a row, one way (drives the step size)
     private boolean keyScrubForward;    // direction of the last press; a reversal restarts the ladder
     private long keyScrubLastMs;
@@ -1056,14 +962,6 @@ public class PlayerActivity extends Activity {
     private Thread nextUriThread;
     private Thread segmentFinderThread;
     public Thread frameRateSwitchThread;
-    // What the back buffer was actually built with, which is the setting for a stream and zero for a
-    // local file. Kept because the load control cannot be asked afterwards, and because ExoPlayer reads
-    // the value once when it is constructed: changing the setting takes effect on the next player.
-    private int backBufferAppliedMs;
-    // Whether the mode just asked for changes the frame and not only its rate. Set by
-    // Utils.handleFrameRate, read once by the caller that arms the give-up timer: the two waits differ by
-    // an HDMI renegotiation. Written from that probe's background thread as well as the UI one.
-    volatile boolean resolutionSwitchRequested;
 
     public static boolean restoreControllerTimeout = false;
     public static boolean shortControllerTimeout = false;
@@ -1136,11 +1034,6 @@ public class PlayerActivity extends Activity {
     // scoped and deliberately the title only, never the episode: the next item of the same playlist is
     // the same series, and its episode number still comes from its own name.
     private String manualTmdbId;
-    /** The picked title's imdb id, once anything has resolved it — see {@link #playingId()}. */
-    private String manualImdbId;
-    /** The last tmdb id an imdb lookup was made for, and its answer. */
-    private String resolvedImdbOf;
-    private String resolvedImdb;
     // Whether that title is a film. MediaId reads movie-vs-series off the season number alone, so the
     // type TMDB reported has to arrive as a season — otherwise a series nobody could parse an episode
     // out of is asked about as a film, which is the one case this whole dialog exists for.
@@ -1231,8 +1124,6 @@ public class PlayerActivity extends Activity {
     // modal run — dialog, season, episode — and threading a flag through all of it would have three
     // methods carrying an argument they only pass on.
     private boolean subtitleSearchForSecondary;
-    /** What was last typed into the search panel, so stepping back into it lands on the same list. */
-    private String subtitleSearchQuery;
     /** Where both subtitle offsets read the media position from; the player is asked for it lazily. */
     private final SubtitleOffset.Position subtitlePosition = new SubtitleOffset.Position() {
         @Override
@@ -1300,15 +1191,17 @@ public class PlayerActivity extends Activity {
     // pref_skip_mode_brief option names these seconds out loud ("Skip button for 3 seconds"), so changing
     // this means changing that string in every locale too.
     static final long SKIP_NOTICE_MS = 5000;
-    /**
-     * The pill's own edge at rest: white at 28%, which composites to 2.37:1 against a black frame where
-     * the plate itself measures 1.00:1 - a plate can only separate from a picture by darkening it, so over
-     * a letterbox or a night interior the shape exists only as this line. Deliberately short of the 3:1
-     * a component boundary is asked for: the focus contour is 2dp of pure white at 21:1, and the owner's
-     * call is that a resting edge any brighter starts to read as focus on a television.
-     */
-    private static final int SKIP_PILL_EDGE = 0x47FFFFFF;
-    // Segment highlights live in colors.xml as @color/skip_* and @color/ad_*; see the note there.
+    // Faint groove the pill's countdown underline drains along; transparent when there is no underline.
+    static final int SKIP_PILL_GROOVE_COLOR = 0x33FFFFFF;
+    // Segment highlights (see CustomDefaultTimeBar): a *_FILL band across the segment plus a crisp boundary
+    // hairline in the lighter *_HIGHLIGHT colour. Three-colour timeline system — coral = playback (hue 354,
+    // @color/timebar_played), blue = skip, amber = ad (hue 38). The blue (hue 192) sits opposite the warm
+    // coral, so it never merges over the played track and stays legible over the dark unplayed track. The
+    // skip band is opaque, so it reads as the same blue over both.
+    static final int SKIP_HIGHLIGHT_COLOR = 0xFFEAF6FF;
+    static final int SKIP_FILL_COLOR = 0xFF0696BB;
+    static final int AD_HIGHLIGHT_COLOR = 0xFFFFD27A;
+    static final int AD_FILL_COLOR = 0xC7FFA000;
     // Watch together: one room per screen, alive across the player rebuilds a session accumulates.
     TogetherManager together;
     /** True only while the room's own media change is being applied — see checkRoomMedia. */
@@ -1321,6 +1214,7 @@ public class PlayerActivity extends Activity {
     SkipManager skipManager;
     boolean skipBuilt;
     Button buttonSkip;
+    ClipDrawable skipButtonProgress;
 
     /**
      * What the floating skip pill is currently offering — which is also what a tap (or OK on a remote)
@@ -1328,142 +1222,17 @@ public class PlayerActivity extends Activity {
      * {@link #SKIP} offers to jump, {@link #CANCEL} offers to refuse an automatic jump that is about to
      * happen, {@link #UNDO} offers to take one back.
      */
-    /**
-     * The pill's shape: the plate and the edge that carries it, in one drawable so the two cannot drift
-     * apart. A plate separates from the picture only by darkening it, so over a black letterbox it is the
-     * edge that exists - white at 28% at rest, pure white and the same width when a remote is on it (R5).
-     */
-    private static final class SkipPillBackground extends Drawable {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final float radius;
-
-        SkipPillBackground(final int plate, final int edgeColor, final float stroke, final float radius) {
-            this.radius = radius;
-            fill.setStyle(Paint.Style.FILL);
-            fill.setColor(plate);
-            edge.setStyle(Paint.Style.STROKE);
-            edge.setStrokeWidth(stroke);
-            edge.setColor(edgeColor);
-        }
-
-        void setEdgeColor(final int color) {
-            if (edge.getColor() != color) {
-                edge.setColor(color);
-                invalidateSelf();
-            }
-        }
-
-        @Override
-        public void draw(@NonNull final Canvas canvas) {
-            final Rect b = getBounds();
-            if (b.isEmpty()) {
-                return;
-            }
-            final float half = edge.getStrokeWidth() / 2f;
-            final RectF r = new RectF(b.left + half, b.top + half, b.right - half, b.bottom - half);
-            canvas.drawRoundRect(r, radius, radius, fill);
-            canvas.drawRoundRect(r, radius, radius, edge);
-        }
-
-        @Override public void setAlpha(final int alpha) { }
-        @Override public void setColorFilter(@Nullable final android.graphics.ColorFilter filter) { }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
-    }
-
-    /**
-     * The countdown as a ring around the pill's glyph: a faint track with the skip's own colour draining
-     * round it, and the state's arrow inside. One of the three answers the setting offers, and the only
-     * one that keeps the time in the icon rather than in the label or under it.
-     */
-    private static final class CountdownRing extends Drawable {
-        private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint sweep = new Paint(Paint.ANTI_ALIAS_FLAG);
-        @Nullable
-        private final Drawable glyph;
-        private final int glyphInset;
-        private float remaining = 1f;
-
-        CountdownRing(@Nullable final Drawable glyph, final int color, final float stroke,
-                      final int glyphInset) {
-            this.glyph = glyph;
-            this.glyphInset = glyphInset;
-            track.setStyle(Paint.Style.STROKE);
-            track.setStrokeWidth(stroke);
-            track.setColor(0x33FFFFFF);
-            sweep.setStyle(Paint.Style.STROKE);
-            sweep.setStrokeWidth(stroke);
-            sweep.setStrokeCap(Paint.Cap.ROUND);
-            sweep.setColor(color);
-        }
-
-        void setRemaining(final float value) {
-            final float clamped = Math.max(0f, Math.min(1f, value));
-            if (clamped != remaining) {
-                remaining = clamped;
-                invalidateSelf();
-            }
-        }
-
-        @Override
-        public void draw(@NonNull final Canvas canvas) {
-            final Rect b = getBounds();
-            if (b.isEmpty()) {
-                return;
-            }
-            final float half = sweep.getStrokeWidth() / 2f;
-            final RectF oval = new RectF(b.left + half, b.top + half, b.right - half, b.bottom - half);
-            canvas.drawOval(oval, track);
-            if (remaining > 0.02f) {
-                // From the top, anticlockwise, so what is left is what is still drawn. Below a
-                // fiftieth only the round cap would be left of it - a stray dot, not a countdown.
-                canvas.drawArc(oval, -90f, -360f * remaining, false, sweep);
-            }
-            if (glyph != null) {
-                glyph.setBounds(b.left + glyphInset, b.top + glyphInset,
-                        b.right - glyphInset, b.bottom - glyphInset);
-                glyph.draw(canvas);
-            }
-        }
-
-        @Override public void setAlpha(final int alpha) { }
-        @Override public void setColorFilter(@Nullable final android.graphics.ColorFilter filter) { }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
-    }
-
     private enum SkipPill { NONE, SKIP, CANCEL, UNDO }
 
     private SkipPill skipPill = SkipPill.NONE;
     private Drawable skipIconForward;
     private Drawable skipIconKeep;
     private Drawable skipIconBack;
-    /** The ring the current pill is wearing, when the setting asks for one. */
-    @Nullable
-    private CountdownRing skipRing;
-    /** Which state the live ring was built for, so a repaint does not start it over. */
-    @Nullable
-    private SkipPill skipRingFor;
-    /** The value the indicator is showing, and what carries it from one poll to the next. */
-    private float pillRemaining = 1f;
-    @Nullable
-    private ValueAnimator pillCountdownAnimator;
-    private int skipIconSize;
-    /** The pill's shape, its edge, and the countdown that edge can carry. */
-    private SkipPillBackground skipPillBackground;
+    private GradientDrawable skipPillGroove;
     // Top-center pill shown while hold-to-speed is active. Non-clickable so it never intercepts the hold.
     TextView speedBoostIndicator;
     private Drawable speedBoostIconForward;
     private Drawable speedBoostIconRewind;
-    /** What the pill on screen was asked to be: a notice takes no press, an offer does. */
-    private boolean pillActionable;
-    /** Gives the pill its press back after a verb swap, whatever became of the animation. */
-    private final Runnable pillArmRunnable = () -> {
-        if (buttonSkip != null && skipPill != SkipPill.NONE && pillActionable) {
-            buttonSkip.setClickable(true);
-            buttonSkip.setFocusable(true);
-        }
-    };
-
     final Runnable skipPillHider = new Runnable() {
         @Override
         public void run() {
@@ -1497,7 +1266,7 @@ public class PlayerActivity extends Activity {
     private long skipHeadsUpEndMs = C.TIME_UNSET;
     // Seconds currently written on the pill, so a countdown is only repainted when it ticks and not on
     // every 250 ms poll.
-    /** How long the pill's current timed offer runs, so the fill knows what fraction is gone. */
+    private int skipPillSecs;
     // When the post-skip notice is due to disappear, so its underline can drain like the other states'.
     private long skipNoticeHideAtMs;
     // Brief mode: when the timed Skip offer is due to go. Ownership of the pill is derived from it rather
@@ -1557,16 +1326,17 @@ public class PlayerActivity extends Activity {
         systemVolume = mPrefs.systemVolume;
         playerVolume = mPrefs.volume;
         // Boost is session state kept in statics, so a launch must not inherit it from the last one
-        boostLevel = 0f;
+        boostLevel = 0;
         boostWarned = false;
-        // Only when something is actually going to play: the orientation preference is about the video,
-        // and without one this activity is on its way back to the shell. Doing it here rather than
-        // leaving it to initializePlayer avoids launching landscape and flipping back.
+        // Only when something is actually going to play: a launcher start opens on the empty state, and the
+        // orientation preference is about the video, so there is nothing to rotate for there. Doing it here
+        // rather than leaving it to showEmptyState below avoids launching landscape and flipping back.
         if (getIntent().getData() != null || Intent.ACTION_SEND.equals(getIntent().getAction())) {
             Utils.setOrientation(this, mPrefs.orientation);
         } else {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         }
+
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT == 28 && Build.MANUFACTURER.equalsIgnoreCase("xiaomi") &&
                 (Build.DEVICE.equalsIgnoreCase("oneday") || Build.DEVICE.equalsIgnoreCase("once"))) {
@@ -1599,11 +1369,17 @@ public class PlayerActivity extends Activity {
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
         }
 
+        if (isTvBox) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+        }
+
         final Intent launchIntent = getIntent();
         final String action = launchIntent.getAction();
         final String type = launchIntent.getType();
 
-        if (handleRoomIntent(launchIntent)) {
+        if ("com.brouken.player.action.SHORTCUT_VIDEOS".equals(action)) {
+            openFile(Utils.getMoviesFolderUri());
+        } else if (handleRoomIntent(launchIntent)) {
             // An invite link carries only a room code; what to play arrives over its channel.
         } else if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(type)) {
             String text = launchIntent.getStringExtra(Intent.EXTRA_TEXT);
@@ -1622,10 +1398,9 @@ public class PlayerActivity extends Activity {
             // that session on here instead of opening the empty state over a video that is still running.
             setIntent(inheritedIntent);
             handleViewIntent(inheritedIntent);
-        } else if (isLauncherStart(launchIntent)) {
+        } else {
             // Nothing came in — a launcher start opens on the empty state instead of resuming
-            // whatever was last watched. Only a launcher start: every other way an activity is handed a
-            // data-less intent is a return to a session, not a request to forget it.
+            // whatever was last watched.
             mPrefs.suppressResume = true;
         }
         // After the intent, so a session being restored wins over the launch extras it was started with.
@@ -1654,28 +1429,25 @@ public class PlayerActivity extends Activity {
             });
         }
         exoPlayPause = findViewById(R.id.exo_play_pause);
-        // Brand hero: the central Play/Pause sits on the same chrome plate every control over the picture
-        // wears, and carries the brand in its glyph — the biggest plate on screen with the only coral on it.
-        // Coral is ink here, never a fill: a fill's own edge against a bright frame is 1.31:1, while the
-        // plate is the glyph's keyline and holds it at 4.6:1 on the brightest frame.
-        exoPlayPause.setBackground(new InsetDrawable((Drawable) Utils.plate(this, Utils.CIRCLE),
-                ui.heroInset()));
+        // Brand hero: the central Play/Pause sits on a disc (inset from the large tap target) carrying the
+        // icon's ramp, with a white glyph. Doubles as a contrast anchor on bright frames, where a bare
+        // white glyph washes out. TR_BL is the direction the ramp runs in the mark itself.
+        final GradientDrawable playDisc = new GradientDrawable(GradientDrawable.Orientation.TR_BL,
+                new int[]{ContextCompat.getColor(this, R.color.brand_ramp_start),
+                        ContextCompat.getColor(this, R.color.brand_ramp_end)});
+        playDisc.setShape(GradientDrawable.OVAL);
+        exoPlayPause.setBackground(new InsetDrawable((Drawable) playDisc, ui.heroInset()));
         // Hero size scales per device class (phone = 90dp, unchanged; larger on tablet/TV). Overrides the
         // Media3 style's exo_icon_size so the transport isn't tiny on a 10-foot screen.
         final ViewGroup.LayoutParams heroLp = exoPlayPause.getLayoutParams();
         heroLp.width = ui.heroBox();
         heroLp.height = ui.heroBox();
         exoPlayPause.setLayoutParams(heroLp);
-        exoPlayPause.setImageTintList(ColorStateList.valueOf(brandColor()));
-        // With the colour gone from the disc, presence has to come from the glyph. Media3 hands the button a
-        // drawable whose canvas is exo_icon_size with the ink about a third of it; fitting that canvas to the
-        // whole box instead of leaving it at its intrinsic size takes the ink to roughly half the disc, the
-        // proportion the reference gives its own transport hero.
-        exoPlayPause.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        exoPlayPause.setPadding(0, 0, 0, 0);
-        // Replacing the button background drops the touch-press highlight, so re-add it as a foreground,
-        // together with the focus contour. Both carry their own oval mask, so no outline clip is needed.
-        exoPlayPause.setForeground(Utils.chromeForeground(this, ui.heroInset()));
+        exoPlayPause.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        // Replacing the button background drops the D-pad focus / touch-press highlight, so re-add both as a
+        // foreground — critical for TV navigation, harmless on touch. The ripple carries its own oval mask, so
+        // no outline clip is needed (which would also cut off the focus ring sitting outside the disc).
+        exoPlayPause.setForeground(discFocusForeground(ui.heroInset()));
         loadingProgressBar = findViewById(R.id.loading);
         // Keep the loading ring proportional to the hero it overlays.
         final ViewGroup.LayoutParams spinnerLp = loadingProgressBar.getLayoutParams();
@@ -1737,18 +1509,8 @@ public class PlayerActivity extends Activity {
 
             @Override
             public void onScrubStop(TimeBar timeBar, long position, boolean canceled) {
-                playerView.readout(null, 0);
+                playerView.setCustomErrorMessage(null);
                 isScrubbing = false;
-                // Media3's own scrub listener has already seeked here, under the CLOSEST_SYNC left in
-                // force by onScrubStart — so it landed on a keyframe, which is up to half a keyframe
-                // interval either side of where the finger let go. Land on the number instead. Ours is
-                // the later listener on the bar, so this supersedes that seek before a frame of it is
-                // shown; it is also correct if the order were ever the other way round, because it sets
-                // the parameters as well as seeking. Before the resume below, so the correction happens
-                // while the picture is still held.
-                if (!canceled) {
-                    seekExact(position);
-                }
                 if (restorePlayState) {
                     restorePlayState = false;
                     playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
@@ -1757,6 +1519,22 @@ public class PlayerActivity extends Activity {
                     }
                 }
             }
+        });
+
+        buttonOpen = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonOpen.setImageResource(R.drawable.ic_folder_open_24dp);
+        buttonOpen.setId(View.generateViewId());
+        buttonOpen.setContentDescription(getString(R.string.button_open));
+
+        buttonOpen.setOnClickListener(view -> openFile(mPrefs.mediaUri));
+
+        buttonOpen.setOnLongClickListener(view -> {
+            if (!isTvBox && mPrefs.askScope) {
+                askForScope(true, false);
+            } else {
+                loadSubtitleFile(mPrefs.mediaUri);
+            }
+            return true;
         });
 
         buttonPlaylist = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
@@ -1782,12 +1560,7 @@ public class PlayerActivity extends Activity {
         buttonAudio.setOnClickListener(view -> showAudioDialog());
 
         buttonMore = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        // The overflow glyph, not a gear. A gear here meant three things at once: press it for this
-        // panel, hold it for the settings screen, and find a row called Settings inside the panel it
-        // opens — all behind the one symbol every other Android app spends on settings alone. The gear
-        // is now only that row, and the long press is what it always was: a shortcut nobody reads off a
-        // glyph anyway.
-        buttonMore.setImageResource(R.drawable.ic_more_vert_24dp);
+        buttonMore.setImageResource(R.drawable.ic_settings_24dp);
         buttonMore.setId(View.generateViewId());
         buttonMore.setContentDescription(getString(R.string.button_more));
         buttonMore.setOnClickListener(view -> showMoreMenu());
@@ -1804,17 +1577,22 @@ public class PlayerActivity extends Activity {
         buttonUpdate.setId(View.generateViewId());
         buttonUpdate.setContentDescription(getString(R.string.button_update));
         buttonUpdate.setVisibility(View.GONE);
-        // Tint the glyph, never the background: a background on these buttons swallows it. An offered update
-        // is a control that is on, and wears the same coral every on state wears.
-        buttonUpdate.setSelected(true);
-        buttonUpdate.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
+        // Tint the glyph, never the background: a background on these buttons swallows it.
+        buttonUpdate.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.brand)));
         buttonUpdate.setOnClickListener(view -> {
             final UpdateInfo info = mPrefs.updatePending;
             if (info != null) {
-                UpdateUi.showAvailableDialog(this, Dialogs.dialogContext(this), info, skipUpdate(info),
+                UpdateUi.showAvailableDialog(this, info, skipUpdate(info),
                         player != null && player.isPlaying());
             }
         });
+
+        buttonSkipOffset = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
+        buttonSkipOffset.setImageResource(R.drawable.ic_skip_offset_24dp);
+        buttonSkipOffset.setId(View.generateViewId());
+        buttonSkipOffset.setContentDescription(getString(R.string.skip_session_title));
+        buttonSkipOffset.setVisibility(View.GONE);
+        buttonSkipOffset.setOnClickListener(view -> showSkipOffsetDialog());
 
         if (Utils.isPiPSupported(this)) {
             // TODO: Android 12 improvements:
@@ -1884,7 +1662,7 @@ public class PlayerActivity extends Activity {
         slotParams.setMarginEnd(ui.dpS(16));
         slotParams.gravity = Gravity.TOP;
         posterSlot.setLayoutParams(slotParams);
-        posterSlot.setBackgroundColor(ContextCompat.getColor(this, R.color.placeholder_card));
+        posterSlot.setBackgroundColor(0xFF333333); // bg_placeholder_card
         final int posterCornerRadius = Utils.dpToPx(4);
         posterSlot.setClipToOutline(true);
         posterSlot.setOutlineProvider(new ViewOutlineProvider() {
@@ -1907,7 +1685,7 @@ public class PlayerActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         posterPlaceholderView.setMinWidth(Utils.dpToPx(54));
         posterPlaceholderView.setGravity(Gravity.CENTER);
-        posterPlaceholderView.setTextColor(ContextCompat.getColor(this, R.color.ink_tertiary));
+        posterPlaceholderView.setTextColor(0x80FFFFFF); // text_tertiary
         posterPlaceholderView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textPlaceholder());
         posterPlaceholderView.setTypeface(Typeface.DEFAULT_BOLD);
         posterPlaceholderView.setVisibility(View.GONE);
@@ -1973,7 +1751,7 @@ public class PlayerActivity extends Activity {
         timeRow.setLayoutParams(timeRowLp);
 
         endsAtView = new TextView(this);
-        endsAtView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
+        endsAtView.setTextColor(ENDS_AT_COLOR);
         // A step below the clock: the clock is the anchor, the end time is the qualifier next to it.
         endsAtView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textEndsAt());
         endsAtView.setVisibility(View.GONE);
@@ -1984,7 +1762,7 @@ public class PlayerActivity extends Activity {
         headerClock.setFormat24Hour("HH:mm");
         // A step above the "until …" text but short of pure white, which read as too harsh; the black outline
         // and bold weight carry the rest of the legibility. The overlay clock must use the same value.
-        headerClock.setTextColor(ContextCompat.getColor(this, R.color.ink_clock));
+        headerClock.setTextColor(0xC2FFFFFF);
         headerClock.setTypeface(Typeface.DEFAULT_BOLD);
         headerClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
         final LinearLayout.LayoutParams headerClockLp = new LinearLayout.LayoutParams(
@@ -2046,59 +1824,69 @@ public class PlayerActivity extends Activity {
         centerView.addView(topInfoPanel);
 
         // Skip button — a solid dark pill floating over the video (bottom-end), independent of the
-        // controller. TV focus is the white contour every chrome control wears (no wash, no scale), with the
-        // remaining-time countdown drawn as an underline integrated into the pill rather than a detached bar
-        // below it. Label and glyph stay white; only
+        // controller. Modern TV focus: a coral ring + slight scale-up on focus (replacing the dated flat
+        // grey selectableItemBackground wash), with the remaining-time countdown drawn as an underline
+        // integrated into the pill rather than a detached bar below it. Label and glyph stay white; only
         // what counts time down — the underline and the seconds inside the label — is on the brand accent,
         // so the timing reads at a glance without costing the wording its contrast over a bright frame.
-        // Same token as the cluster pills (UiMetrics.pillCorner) rather than a raw 8dp, so the skip and
-        // speed pills round like everything else on a tablet or a TV instead of staying at phone size.
-        // 12dp, the corner the app's text fields carry, by the owner's call: what floats over the picture
-        // reads as one family with the fields rather than as a stadium badge. The height is the 48dp touch
-        // target every other action in the app gets - this pill used to set none at all and stood 30dp.
-        final int skipPillHeight = ui.rowMinHeight();
-        final int skipCornerRadius = Utils.dpToPx(12);
+        final int skipCornerRadius = Utils.dpToPx(8);
         buttonSkip = new Button(this);
         buttonSkip.setText(R.string.button_skip);
         buttonSkip.setAllCaps(false);
         buttonSkip.setTextColor(Color.WHITE);
-        buttonSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
+        buttonSkip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSkip());
         buttonSkip.setTypeface(Typeface.DEFAULT_BOLD);
-        buttonSkip.setMinHeight(skipPillHeight);
-        buttonSkip.setMinimumHeight(skipPillHeight);
-        // 24dp, the app's own icon size. Which of the three a pill wears - and whether it wears one at
-        // all - is pillIcon's business, because that depends on the state and on the countdown setting.
-        skipIconSize = Utils.dpToPx(24);
-        skipIconForward = tintedPillIcon(R.drawable.ic_skip_next);
-        skipIconKeep = tintedPillIcon(R.drawable.ic_play_arrow_24dp);
-        skipIconBack = tintedPillIcon(R.drawable.ic_skip_previous);
-        buttonSkip.setCompoundDrawablesRelative(null, null, null, null);
-        buttonSkip.setCompoundDrawablePadding(Utils.dpToPx(8));
+        buttonSkip.setMinHeight(0);
+        buttonSkip.setMinimumHeight(0);
+        // Extra bottom padding leaves room for the integrated countdown underline below the label.
+        buttonSkip.setPadding(Utils.dpToPx(14), Utils.dpToPx(7), Utils.dpToPx(16), Utils.dpToPx(10));
+
+        // Two glyphs, chosen by what the pill offers: forward for a jump, back for refusing or undoing one.
+        final int skipIconSize = Utils.dpToPx(18);
+        // One glyph per state, all three from the app's own 24dp set so they match in weight: forward to
+        // jump, play to keep watching instead, back to return. Note exo_styled_controls_next is a
+        // layer-list (controller gradient + inset glyph), not a glyph — as a compound drawable it drags
+        // the gradient in and the white tint paints it, hence the bare ic_skip_next here.
+        skipIconForward = ContextCompat.getDrawable(this, R.drawable.ic_skip_next);
+        skipIconKeep = ContextCompat.getDrawable(this, R.drawable.ic_play_arrow_24dp);
+        skipIconBack = ContextCompat.getDrawable(this, R.drawable.ic_skip_previous);
+        for (Drawable glyph : new Drawable[]{skipIconForward, skipIconKeep, skipIconBack}) {
+            if (glyph != null) {
+                glyph.setBounds(0, 0, skipIconSize, skipIconSize);
+            }
+        }
+        buttonSkip.setCompoundDrawablesRelative(skipIconForward, null, null, null);
+        buttonSkip.setCompoundDrawablePadding(Utils.dpToPx(6));
         buttonSkip.setCompoundDrawableTintList(ColorStateList.valueOf(Color.WHITE));
 
-        // The plate, and the countdown drawn as the pill filling up behind its own label. It used to be
-        // a 3dp underline pinned to the bottom edge with a groove under it, while the flash and the undo
-        // states counted down in digits instead - two countdowns in two languages, three colours in one
-        // corner. One element says it now: the offer runs out as the pill fills.
-        final int skipRingWidth = getResources().getDimensionPixelSize(R.dimen.focus_ring_width);
-        // One drawable for the plate, its edge and the countdown the edge carries: they share a shape and
-        // a stroke width, so they cannot drift apart. 80% is the plate the app gives anything drawn on the
-        // picture; the edge is white at 28% at rest, widening to pure white on focus (R5).
-        skipPillBackground = new SkipPillBackground(
-                ContextCompat.getColor(this, R.color.ui_controls_background),
-                SKIP_PILL_EDGE, skipRingWidth, skipCornerRadius);
-        // The plate is the 40dp container; the remaining 8dp are the inset that makes the row a 48dp
-        // target without drawing it.
-        buttonSkip.setBackground(new InsetDrawable(skipPillBackground,
-                0, Utils.dpToPx(4), 0, Utils.dpToPx(4)));
-        // After the background, never before it: setBackground asks the drawable for its padding and
-        // applies it, so a background with any of its own (an InsetDrawable has insets, a LayerDrawable
-        // reports its layers') silently replaces whatever was set here. That is what clipped this pill on
-        // a television - the gutter went to zero, the view hugged its own text, and the label ran under
-        // the contour: invisible in English, an obviously cut word in Ukrainian.
-        // 20dp on a 40dp container: DESIGN's button rule is a 40dp container inside a 48dp touch target,
-        // and this pill drew its plate across all 48 until now.
-        buttonSkip.setPadding(Utils.dpToPx(20), 0, Utils.dpToPx(20), 0);
+        // Solid dark pill with the neutral white countdown underline baked into its background as inset layers.
+        // (A separate MATCH_PARENT underline View resolves to the full screen width inside a wrap-content
+        // FrameLayout, which stretched the whole floating unit across the screen — hence layers instead.)
+        final int skipRingWidth = Utils.dpToPx(2);
+        final int skipBarHeight = Utils.dpToPx(3);
+        final int skipBarCorner = Utils.dpToPx(2);
+        final GradientDrawable skipPillFill = new GradientDrawable();
+        skipPillFill.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        skipPillFill.setCornerRadius(skipCornerRadius);
+        skipPillGroove = new GradientDrawable();
+        skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
+        skipPillGroove.setCornerRadius(skipBarCorner);
+        final GradientDrawable skipBarFill = new GradientDrawable();
+        skipBarFill.setColor(brandColor()); // accent: this is a countdown, not decoration
+        skipBarFill.setCornerRadius(skipBarCorner);
+        skipButtonProgress = new ClipDrawable(skipBarFill, Gravity.START, ClipDrawable.HORIZONTAL);
+        skipButtonProgress.setLevel(0);
+        final LayerDrawable skipPillBackground = new LayerDrawable(
+                new Drawable[]{skipPillFill, skipPillGroove, skipButtonProgress});
+        // Pin the underline (track + draining fill) to the pill's bottom edge, inset from the corners.
+        for (int layer = 1; layer <= 2; layer++) {
+            skipPillBackground.setLayerGravity(layer, Gravity.BOTTOM);
+            skipPillBackground.setLayerHeight(layer, skipBarHeight);
+            skipPillBackground.setLayerInsetBottom(layer, Utils.dpToPx(5));
+            skipPillBackground.setLayerInsetLeft(layer, skipCornerRadius);
+            skipPillBackground.setLayerInsetRight(layer, skipCornerRadius);
+        }
+        buttonSkip.setBackground(skipPillBackground);
         buttonSkip.setOnClickListener(v -> {
             // While the screen is locked the pill must never act, whether tapped or activated via a TV
             // remote's confirm key (which routes through performClick()).
@@ -2123,8 +1911,8 @@ public class PlayerActivity extends Activity {
         // Add the pill straight to the coordinator, floating bottom-end. No wrapper view: the countdown
         // underline is baked into the button's own background, so the previous wrapping FrameLayout — which
         // stretched to full width inside the CoordinatorLayout and pinned the pill to the left edge — is gone.
-        // Focus is the pill's own edge, in white: coral measured 2.74:1 against the brand and spent the
-        // accent on a state that is not "chosen", and a scale on every remote step read as lag.
+        // Modern TV focus: a coral ring on the pill (state-driven stroke) plus a slight scale-up, replacing
+        // the dated flat grey selectableItemBackground wash.
         buttonSkip.setOnLongClickListener(v -> {
             // The panel from the one place where the question comes up by itself: the segment is on
             // screen, this is the button that would be pressed for it, and holding it says "do this
@@ -2137,13 +1925,11 @@ public class PlayerActivity extends Activity {
             showSkipOffsetDialog();
             return true;
         });
-        // The edge carries the shape, because the plate cannot: a plate separates from the picture only by
-        // darkening it, so over the black letterbox a phone puts a scope film in, it composites to the
-        // frame itself - 1.00:1, measured. Same width as the focus contour by the owner's call, so the
-        // two states differ in strength rather than in weight: 28% white at rest against pure white
-        // focused, which is 8.7x the luminance on the same line.
-        buttonSkip.setOnFocusChangeListener((v, hasFocus) ->
-                skipPillBackground.setEdgeColor(hasFocus ? Color.WHITE : SKIP_PILL_EDGE));
+        buttonSkip.setOnFocusChangeListener((v, hasFocus) -> {
+            skipPillFill.setStroke(hasFocus ? skipRingWidth : 0, brandColor());
+            final float scale = hasFocus ? 1.06f : 1f;
+            buttonSkip.animate().scaleX(scale).scaleY(scale).setDuration(150).start();
+        });
         final CoordinatorLayout.LayoutParams skipButtonParams = new CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         skipButtonParams.gravity = Gravity.BOTTOM | Gravity.END;
@@ -2177,10 +1963,8 @@ public class PlayerActivity extends Activity {
         speedBoostIndicator.setCompoundDrawableTintList(ColorStateList.valueOf(brandColor()));
 
         final GradientDrawable speedBoostBackground = new GradientDrawable();
-        // Same plate as the skip pill, for the same reason - it is drawn on the picture too. Its 8dp
-        // corner stays: this one is not an action but a reading, and 8dp is what the scale gives a value.
-        speedBoostBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
-        speedBoostBackground.setCornerRadius(ui.pillCorner());
+        speedBoostBackground.setColor(Color.argb(0xF0, 0x16, 0x16, 0x16));
+        speedBoostBackground.setCornerRadius(skipCornerRadius);
         speedBoostIndicator.setBackground(speedBoostBackground);
 
         final CoordinatorLayout.LayoutParams speedBoostParams = new CoordinatorLayout.LayoutParams(
@@ -2199,7 +1983,7 @@ public class PlayerActivity extends Activity {
         overlayClock.setFormat12Hour("h:mm a");
         overlayClock.setFormat24Hour("HH:mm");
         // Same white as the header clock — the black outline keeps it readable over bright frames.
-        overlayClock.setTextColor(ContextCompat.getColor(this, R.color.ink_clock));
+        overlayClock.setTextColor(0xC2FFFFFF);
         overlayClock.setTypeface(Typeface.DEFAULT_BOLD);
         // Must match the header clock size (see below) so the two line up exactly when controls toggle.
         overlayClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textClock());
@@ -2214,12 +1998,12 @@ public class PlayerActivity extends Activity {
         // endsAtRunnable, hidden by stopEndsAtUpdates), so it is never left sitting over the video, and it
         // carries no touch handling of its own — the left half of the screen is the brightness swipe zone.
         statsView = new TextView(this);
-        statsView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
+        statsView.setTextColor(0xB3FFFFFF);
         statsView.setTypeface(Typeface.MONOSPACE);
         statsView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         // Same corner as the lock button, the time pill and the poster — a floating box in this UI is rounded.
         final GradientDrawable statsBackground = new GradientDrawable();
-        statsBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        statsBackground.setColor(0x99000000);
         statsBackground.setCornerRadius(ui.pillCorner());
         statsView.setBackground(statsBackground);
         final int statsPadding = Utils.dpToPx(8);
@@ -2239,10 +2023,10 @@ public class PlayerActivity extends Activity {
         // the Skip pill's corner and the only band that stays free while the controls are up: the header is
         // above, the transport below, the stats panel is centred on the left edge.
         roomPill = new TextView(this);
-        roomPill.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
+        roomPill.setTextColor(0xE6FFFFFF);
         roomPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomPillBackground = new GradientDrawable();
-        roomPillBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        roomPillBackground.setColor(0x99000000);
         roomPillBackground.setCornerRadius(ui.pillCorner());
         roomPill.setBackground(roomPillBackground);
         roomPill.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -2296,10 +2080,10 @@ public class PlayerActivity extends Activity {
         // controls are down. It goes under the centre disc, on the loading rate's geometry, because that is
         // where the eye already is when the picture stops.
         roomBadge = new TextView(this);
-        roomBadge.setTextColor(ContextCompat.getColor(this, R.color.ink_high));
+        roomBadge.setTextColor(0xE6FFFFFF);
         roomBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         final GradientDrawable roomBackground = new GradientDrawable();
-        roomBackground.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        roomBackground.setColor(0x99000000);
         roomBackground.setCornerRadius(ui.pillCorner());
         roomBadge.setBackground(roomBackground);
         roomBadge.setPadding(Utils.dpToPx(10), Utils.dpToPx(5), Utils.dpToPx(10), Utils.dpToPx(5));
@@ -2357,19 +2141,10 @@ public class PlayerActivity extends Activity {
         // The right-hand slot of the bottom bar shows the total duration, or counts down what is left when
         // the setting says so. PlayerControlView writes that TextView itself, so rewrite it after every
         // progress tick — updateTimeline() ends with updateProgress(), so its own value never lingers.
-        final TextView positionView = playerView.findViewById(R.id.exo_position);
         final TextView durationView = playerView.findViewById(R.id.exo_duration);
         final StringBuilder timeBuilder = new StringBuilder();
         final Formatter timeFormatter = new Formatter(timeBuilder, Locale.getDefault());
         controlView.setProgressUpdateListener((position, bufferedPosition) -> {
-            // Over a broadcast the slot says how long this has been watched. What the control view
-            // wrote there is the offset into the sliding window, which sits at the live edge and stays
-            // there: the same few seconds however long anybody has been in front of it.
-            if (isLiveStream()) {
-                positionView.setText(Util.getStringForTime(timeBuilder, timeFormatter,
-                        Math.max(0, SystemClock.elapsedRealtime() - liveWatchStartMs)));
-                return;
-            }
             final long duration = player == null ? C.TIME_UNSET : player.getContentDuration();
             if (duration == C.TIME_UNSET)
                 return;
@@ -2461,14 +2236,11 @@ public class PlayerActivity extends Activity {
                 // insetBottom + progress margin + progress layout height above the screen bottom).
                 if (buttonSkip != null) {
                     final CoordinatorLayout.LayoutParams skipLp = (CoordinatorLayout.LayoutParams) buttonSkip.getLayoutParams();
-                    // Clear of the seek bar's touch band, not just of its line: the band is the progress
-                    // view's own height and the pill was measured 9.2dp inside it, where the rule asks for
-                    // 8dp between targets. Its height plus that gap is the offset.
+                    // Float a small, deliberate gap above the bottom control bar (progress + time/pills) — not
+                    // flush against it, and not the huge gap the full progress touch-target height produced.
                     skipLp.bottomMargin = windowInsets.getSystemWindowInsetBottom() + overscanV
                             + getResources().getDimensionPixelSize(R.dimen.exo_styled_progress_margin_bottom)
-                            + getResources().getDimensionPixelSize(
-                                    androidx.media3.ui.R.dimen.exo_styled_progress_layout_height)
-                            + ui.dpS(8);
+                            + ui.dpS(24);
                     // Align the floating Skip button's right edge to the shared content grid (same as the pills
                     // and the progress bar), instead of a fixed 24dp + insetRight that overshoots in landscape.
                     skipLp.rightMargin = insetH + ui.gridH();
@@ -2526,9 +2298,8 @@ public class PlayerActivity extends Activity {
         timeBar.setAdMarkerColor(Color.argb(0x00, 0xFF, 0xFF, 0xFF));
         timeBar.setPlayedAdMarkerColor(Color.argb(0x98, 0xFF, 0xFF, 0xFF));
         // Brand the timeline: the played portion and the scrubber (the surfaces the user actually touches)
-        // share the accent ink of the Play glyph above, over a solid dark rail instead of Media3's wash
-        // of the frame behind.
-        final int timeBarPlayed = brandColor();
+        // share one colour, over a solid dark rail instead of Media3's wash of the frame behind.
+        final int timeBarPlayed = ContextCompat.getColor(this, R.color.timebar_played);
         timeBar.setPlayedColor(timeBarPlayed);
         timeBar.setScrubberColor(timeBarPlayed);
         timeBar.setUnplayedColor(ContextCompat.getColor(this, R.color.timebar_track));
@@ -2547,7 +2318,7 @@ public class PlayerActivity extends Activity {
 
         findViewById(R.id.next).setOnClickListener(view -> {
             if (!isTvBox && mPrefs.askScope) {
-                askForScope(true);
+                askForScope(false, true);
             } else {
                 skipToNext();
             }
@@ -2563,9 +2334,9 @@ public class PlayerActivity extends Activity {
 
         mBrightnessControl = new BrightnessControl(this);
         // Only the level is restored here. Putting it on the window as well tied the brightness to the
-        // activity instead of the video: every trip to the settings screen — a window of its own —
-        // flipped back to the device brightness and back again. initializePlayer puts it on the window
-        // once there is something to dim for.
+        // activity instead of the video: the empty state kept the last clip's dimming, and every trip to
+        // the settings screen — a window of its own — flipped back to the device brightness and back again.
+        // show/hideEmptyState own the window now.
         mBrightnessControl.percent = mPrefs.brightness;
         playerView.setBrightnessControl(mBrightnessControl);
 
@@ -2587,7 +2358,7 @@ public class PlayerActivity extends Activity {
         exoSubtitle.setOnClickListener(v -> showSubtitleDialog());
 
         exoSubtitle.setOnLongClickListener(v -> {
-            openSettings("subtitlesScreen");
+            openSettings("languageSubtitle");
             return true;
         });
 
@@ -2752,7 +2523,7 @@ public class PlayerActivity extends Activity {
                 } else {
                     Utils.toggleSystemUi(PlayerActivity.this, playerView, visibility == View.VISIBLE);
                 }
-                if (visibility == View.VISIBLE) {
+                if (visibility == View.VISIBLE && !emptyState.isVisible()) {
                     // Because when using dpad controls, focus resets to first item in bottom controls bar
                     if (focusTimeBarOnShow) {
                         // Set by Down, which opens the controls straight on the time bar. Deciding it here
@@ -2804,15 +2575,13 @@ public class PlayerActivity extends Activity {
             }
         });
 
-        // A television indexes lazily and the browser's counts come out of MediaStore, so a box that
-        // has just had a stick pushed into it would otherwise show folders it says are empty. It used
-        // to hang off the "file access" setting, which was really a chooser switch - and every chooser
-        // it switched between is gone, so the scan states its own condition now.
-        if (isTvBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Utils.scanMediaStorage(this);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (useMediaStore()) {
+                Utils.scanMediaStorage(this);
+            }
         }
 
-        maybeCheckForUpdate();
+        maybeCheckForUpdate(launchIntent);
         // Built and holding the statics now, so this is the screen a later launch has to take them from.
         live = this;
     }
@@ -2821,17 +2590,23 @@ public class PlayerActivity extends Activity {
     // (BuildConfig.ENABLE_UPDATE), since everywhere else a store does it.
     //
     // Checking and telling are deliberately separate. The check is one background request, it disturbs
-    // nobody, and it runs on every launch (throttled to an hour, the throttle shared with the browser) -
-    // gating it on an idle launch meant it never ran for anyone who reaches the player through another
-    // app's intent, which is how most people arrive. The dialog belongs to the idle launch, and that is
-    // the browser's now (BrowserActivity.maybeCheckForUpdate); here a find only lights the brand-coloured
-    // button beside the gear, which is visible only once the user asks for the controls.
-    private void maybeCheckForUpdate() {
+    // nobody, and it now runs on every launch (throttled to an hour) — gating it on an idle launch meant
+    // it never ran at all for anyone who reaches the player through another app's intent, which is how
+    // most people arrive, so a hotfix could sit unseen for weeks. What stays gated is the *dialog*: it is
+    // only ever raised on an idle launch with nothing playing. Every other find surfaces as the
+    // brand-coloured button beside the gear, which is visible only once the user asks for the controls.
+    private static final long UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000L;
+
+    private void maybeCheckForUpdate(final Intent launchIntent) {
         if (!BuildConfig.ENABLE_UPDATE || !mPrefs.autoUpdate) {
             return;
         }
+        final String action = launchIntent.getAction();
+        final boolean launchedIdle = launchIntent.getData() == null
+                && !Intent.ACTION_SEND.equals(action)
+                && !"com.brouken.player.action.SHORTCUT_VIDEOS".equals(action);
         final long now = System.currentTimeMillis();
-        if (now - mPrefs.updateLastCheck < Updater.CHECK_INTERVAL_MS) {
+        if (now - mPrefs.updateLastCheck < UPDATE_CHECK_INTERVAL_MS) {
             return;
         }
         mPrefs.setUpdateLastCheck(now);
@@ -2844,6 +2619,13 @@ public class PlayerActivity extends Activity {
             final boolean offer = info != null && info.versionCode != mPrefs.updateSkippedVersionCode;
             mPrefs.setUpdatePending(offer ? info : null);
             refreshUpdateButton();
+            if (!offer || !launchedIdle) {
+                return;
+            }
+            if (haveMedia && player != null && player.isPlaying()) {
+                return;
+            }
+            UpdateUi.showAvailableDialog(PlayerActivity.this, info, skipUpdate(info), false);
         }));
     }
 
@@ -2862,14 +2644,6 @@ public class PlayerActivity extends Activity {
             mPrefs.setUpdatePending(null);
             refreshUpdateButton();
         };
-    }
-
-    @Override
-    protected void onApplyThemeResource(final Resources.Theme theme, final int resid, final boolean first) {
-        super.onApplyThemeResource(theme, resid, first);
-        // Here rather than in onCreate: the theme is rebuilt whenever it is (re)set, and an overlay
-        // put on in onCreate does not survive that.
-        theme.applyStyle(Prefs.accentOverlay(this, false), true);
     }
 
     @Override
@@ -2960,10 +2734,13 @@ public class PlayerActivity extends Activity {
         super.onStop();
         alive = false;
         Utils.log("onStop" + (isFinishing() ? ", finishing" : ""));
+        // Stop the empty-state pulse while backgrounded: no point ticking the Choreographer with no media
+        // loaded and the activity stopped. It does not come back on return — the page is already revealed.
+        emptyState.stopPulse();
         if (Build.VERSION.SDK_INT >= 31) {
             playerView.removeCallbacks(barsHider);
         }
-        playerView.readout(null, 0);
+        playerView.setCustomErrorMessage(null);
         // Stop sampling before the pause below: that pause is the trip to the background, not the
         // viewer reaching for the button, and the room must not be told to stop with us.
         if (together != null) {
@@ -3111,7 +2888,6 @@ public class PlayerActivity extends Activity {
         state.putInt("stickyQuality", stickyQualityLines);
         state.putString("audioTrack", mPrefs.audioTrackId);
         state.putString("subtitleTrack", mPrefs.subtitleTrackId);
-        state.putInt("aspectClass", mPrefs.aspectClass);
         state.putInt("resizeMode", mPrefs.resizeMode);
         state.putFloat("scale", mPrefs.scale);
         state.putFloat("aspectRatio", mPrefs.aspectRatio);
@@ -3156,10 +2932,6 @@ public class PlayerActivity extends Activity {
         stickyQualityLines = state.getInt("stickyQuality");
         // Both are memory-only writes here; initializePlayer re-asserts the track ids on the fresh player
         // and takes the position as the start position of its media item.
-        // The shape first: updateMeta records the frame mode against it, and the next video size to
-        // arrive compares against it — without it the restored frame mode is written nowhere and
-        // overwritten by whatever the shape happens to hold on disk.
-        mPrefs.aspectClass = state.getInt("aspectClass", -1);
         mPrefs.updateMeta(state.getString("audioTrack"), state.getString("subtitleTrack"),
                 state.getInt("resizeMode"), state.getFloat("scale"), state.getFloat("aspectRatio"),
                 state.getFloat("speed"));
@@ -3184,12 +2956,13 @@ public class PlayerActivity extends Activity {
     public void onBackPressed() {
         // While locked, swallow the first Back (re-showing the unlock bar with a hint) and only exit if Back
         // is pressed again within the window — so a stray Back can't drop out of a locked video.
-        final long now = SystemClock.elapsedRealtime();
-        if (locked && now - lockBackPressedAt > Utils.BACK_CONFIRM_WINDOW_MS) {
-            lockBackPressedAt = now;
+        if (locked && !lockBackPressedOnce) {
+            lockBackPressedOnce = true;
             showSwipeToUnlock();
-            Dialogs.showText(playerView, getString(R.string.press_back_again),
-                    R.drawable.ic_arrow_back_24dp, Utils.BACK_CONFIRM_WINDOW_MS);
+            Utils.showText(playerView, getString(R.string.press_back_again), 2000);
+            if (playerView != null) {
+                playerView.postDelayed(() -> lockBackPressedOnce = false, 2000);
+            }
             return;
         }
         // On TV the remote's Back is pressed mid-interaction all the time, so it has to consume what is
@@ -3199,52 +2972,29 @@ public class PlayerActivity extends Activity {
         // because enableOnBackInvokedCallback routes Back straight to onBackPressed on Android 13+, where
         // it never arrives as a key event at all.
         if (isTvBox && haveMedia && !locked) {
-            // A press within the window of the last one leaves, whatever is on screen by then. That is
-            // what makes the way out two presses and not a number the viewer has to work out: the
-            // controls report themselves visible through their whole fade and for the seek bar's own
-            // couple of seconds after it, so asking again here would keep answering the same press.
-            if (now - backPressedAt > Utils.BACK_CONFIRM_WINDOW_MS) {
-                boolean closedSomething = false;
-                if (keyScrubTarget >= 0) {
-                    // Back undoes the burst, it does not merely drop what is left of it: the steps seek
-                    // as they are pressed, so stopping here would strand the viewer wherever the last
-                    // one landed, which is not a place they chose. Only if one of them got through the
-                    // gate — nothing moved otherwise. Exact, because what is being restored is where the
-                    // picture was, not the sync sample before it.
-                    final boolean moved = keyScrubSeeked >= 0;
-                    cancelKeyScrub();
-                    if (moved && player != null) {
-                        player.setSeekParameters(SeekParameters.EXACT);
-                        player.seekTo(keyScrubStart);
-                    }
-                    playerView.removeCallbacks(playerView.textClearRunnable);
-                    playerView.textClearRunnable.run();
-                    closedSomething = true;
-                } else if (controllerVisible) {
-                    // A timebar D-pad scrub needs no case of its own: it can only happen with the
-                    // controls up, and DefaultTimeBar stops scrubbing on its own timeout, which resumes
-                    // playback.
-                    playerView.hideController();
-                    closedSomething = true;
-                }
-                if (closedSomething || !mPrefs.tvSingleBack) {
-                    backPressedAt = now;
-                    // Said even when the press closed something, because otherwise the press after it
-                    // would leave the player with nothing ever having been asked — and coming back
-                    // from the background always raises the controls, so that is the ordinary way out
-                    // of a film, not a corner. Not said to a viewer who has turned the asking off: for
-                    // them the next press leaves because that is what they chose.
-                    if (!mPrefs.tvSingleBack) {
-                        Dialogs.showText(playerView, getString(R.string.press_back_again),
-                                R.drawable.ic_arrow_back_24dp, Utils.BACK_CONFIRM_WINDOW_MS);
-                    }
-                    return;
-                }
+            if (keyScrubTarget >= 0) {
+                playerView.removeCallbacks(keyScrubCommit);
+                keyScrubTarget = -1;
+                keyScrubSeeked = -1;
+                keyScrubSteps = 0;
+                playerView.removeCallbacks(playerView.textClearRunnable);
+                playerView.textClearRunnable.run();
+                return;
+            }
+            if (controllerVisible) {
+                // A timebar D-pad scrub needs no case of its own: it can only happen with the controls
+                // up, and DefaultTimeBar stops scrubbing on its own timeout, which resumes playback.
+                playerView.hideController();
+                return;
+            }
+            if (!mPrefs.tvSingleBack && !backPressedOnce) {
+                backPressedOnce = true;
+                Utils.showText(playerView, getString(R.string.press_back_again), 2000);
+                playerView.postDelayed(() -> backPressedOnce = false, 2000);
+                return;
             }
         }
         restorePlayStateAllowed = false;
-        // Nothing to arrange for Back any more: the shell started this activity and is still under it,
-        // so finishing lands on the folder the file came from by itself.
         super.onBackPressed();
     }
 
@@ -3430,17 +3180,6 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    /**
-     * A start from the home screen icon, and nothing else. An intent with no data can also arrive from an
-     * Up navigation synthesised out of a manifest parent, or from a system relaunch of the task, and those
-     * are returns to what is already playing: treating them as "the icon was tapped" both opened the empty
-     * state over a running session and wrote suppressResume, which then outlived the mistake.
-     */
-    private static boolean isLauncherStart(final Intent intent) {
-        return intent != null && Intent.ACTION_MAIN.equals(intent.getAction())
-                && intent.hasCategory(Intent.CATEGORY_LAUNCHER);
-    }
-
     @SuppressLint("GestureBackNavigation")
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
@@ -3609,12 +3348,9 @@ public class PlayerActivity extends Activity {
             // Live, unseekable, or a duration not known yet (C.TIME_UNSET): nothing to clamp the target
             // against — clamping to a zero duration would throw every press to the start of the file, so
             // keep the plain single-press step, without the ladder.
-            // A duration that only arrives mid-burst would otherwise leave a commit armed on a target
-            // built before it was known — and that commit now seeks unconditionally.
-            cancelKeyScrub();
             final long seekTo = Math.max(0, pos + (forward ? 3_000 : -3_000));
-            player.setSeekParameters(SeekParameters.EXACT);
-            seekBackwards(seekTo);
+            player.setSeekParameters(forward ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
+            player.seekTo(seekTo);
             // Without this the two limits above never bite here — the last-step stamp would stay at
             // whatever some earlier media left it, and a held key would seek once per key repeat.
             keyScrubLastMs = now;
@@ -3626,45 +3362,14 @@ public class PlayerActivity extends Activity {
         keyScrubSteps = forward == keyScrubForward && (held || now - keyScrubLastMs < 450) ? keyScrubSteps + 1 : 0;
         keyScrubForward = forward;
         keyScrubLastMs = now;
-        final long from;
-        if (keyScrubTarget >= 0) {
-            from = keyScrubTarget;
-        } else {
-            // The burst begins here, so this is the place Back undoes to. Kept in the scrub's own state
-            // rather than read from playerView.keySeekStart when Back arrives: that one belongs to the
-            // readout's clear timer, which outlives the commit by some 480 ms and which the swipe-seek
-            // never resets — so a second burst, or a burst after a swipe, would inherit a start from
-            // before the previous one and Back would undo more than it was asked to.
-            from = pos;
-            keyScrubStart = pos;
-        }
+        final long from = keyScrubTarget >= 0 ? keyScrubTarget : pos;
         final long step = keyScrubStep(duration);
         keyScrubTarget = Math.max(0, Math.min(duration, from + (forward ? step : -step)));
-        // Aimed at a keyframe where the file says where they are, so the landing is what the readout
-        // is about to show and costs no decode. Where it does not - a container with no sync table, a
-        // stream, a grid too coarse for this step - the target stands as asked and is paid for
-        // exactly. See snapToKeyframe.
-        final long snapped = snapToKeyframe(keyScrubTarget, pos, step);
-        if (snapped != C.TIME_UNSET) {
-            keyScrubTarget = snapped;
-        }
         showKeySeekMessage(keyScrubTarget);
         // Seek now if the previous seek has landed, so the picture and the bar follow the presses. A step
         // taken on the ceiling finds the gate still shut, so the commit below lands on the target once
         // the presses stop.
-        //
-        // Exact, in both directions. The step used to round to a sync sample - forward onto the NEXT
-        // one, so that the following target in the same direction could not read as "behind us" - and
-        // the commit then had to undo that rounding, which it could only do backwards. Measured on a
-        // viewer's television over a file with a keyframe every 4 s: a press forward landed 0.1-3.7 s
-        // past its target, playback ran on for the 700 ms until the commit, and the commit then took
-        // the picture BACK by 1.0-4.1 s and stood still for 0.74-0.86 s doing it, because a backward
-        // seek lands outside everything the session has buffered. Every press, all twenty-two of them.
-        // Rounding the other way is not the answer either: PREVIOUS_SYNC on a forward press would have
-        // landed that first step at 12080 from a position of 12238 - backwards, on a press meant to go
-        // forward three seconds. So the step lands where it was asked to, and pays a decode from the
-        // preceding keyframe for it.
-        player.setSeekParameters(SeekParameters.EXACT);
+        setKeySeekDirection(keyScrubTarget);
         if (seekIfLanded(keyScrubTarget)) {
             keyScrubSeeked = keyScrubTarget;
         }
@@ -3673,167 +3378,18 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
-
-    // ---- Where the keyframes are -----------------------------------------------------------------
-
-    /**
-     * The sync-point table of each progressive file opened this session, kept by uri.
-     *
-     * <p>Written from the loading thread as each extractor hands its map over (see {@link Dv10AsAv1}),
-     * read from the main one when a press has to be aimed. Four entries because a playlist opens the
-     * next item while the current one still plays, so more than one map is alive at a time and the
-     * uri is what tells them apart. Nothing else in the app has a use for these, and a map is a handful
-     * of longs, so they are dropped with the player rather than managed.
-     */
-    private static final java.util.Map<String, SeekMap> SEEK_MAPS =
-            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, SeekMap>(8, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(final java.util.Map.Entry<String, SeekMap> eldest) {
-                    return size() > 4;
-                }
-            });
-
-    static void rememberSeekMap(@Nullable final Uri uri, final SeekMap seekMap) {
-        if (uri != null && seekMap != null) {
-            SEEK_MAPS.put(uri.toString(), seekMap);
-        }
-    }
-
-    /**
-     * The keyframe a press should aim at, or {@link C#TIME_UNSET} when aiming is not on offer.
-     *
-     * <p>A seek that lands between two keyframes is not free: the decoder has to run from the one
-     * before it and throw away everything up to the target. Measured on the reporter's television,
-     * that is <b>68 ms plus 0.224 ms for every millisecond of video in between</b> - up to 945 ms of
-     * frozen picture and silence on a file with a keyframe every four seconds, and the decoder is
-     * already at its declared ceiling, so the rate is a floor rather than something to tune. A seek
-     * that lands <em>on</em> a keyframe costs 52-96 ms on the same box.
-     *
-     * <p>So the press is aimed at a keyframe from the start. Not rounded afterwards by
-     * {@code SeekParameters}, which is what the three earlier attempts did and what put the readout
-     * and the picture in different places: the number shown here IS the landing, decided before
-     * anything moves. Nothing to correct afterwards means nothing that can jump back.
-     *
-     * <p>Two rules bound it. Only a point on the far side of where the picture is, so a press forward
-     * can never move backwards - the trap that {@code PREVIOUS_SYNC} falls into, and
-     * {@code CLOSEST_SYNC} with it whenever the step is shorter than half a keyframe interval. And
-     * only when the nearest keyframe is within one step of the target, so that a file whose keyframes
-     * stand ten seconds apart does not answer a three-second press with a ten-second jump; there the
-     * answer is {@link C#TIME_UNSET} and the caller pays the decode instead, which is the right price
-     * for the only accuracy on offer.
-     */
-    private long snapToKeyframe(final long targetMs, final long positionMs, final long stepMs) {
-        if (player == null) {
-            return C.TIME_UNSET;
-        }
-        final Uri uri = currentMediaUri();
-        final SeekMap map = uri == null ? null : SEEK_MAPS.get(uri.toString());
-        if (map == null || !map.isSeekable()) {
-            return C.TIME_UNSET;
-        }
-        final SeekMap.SeekPoints points = map.getSeekPoints(Math.max(0, targetMs) * 1000L);
-        final long before = points.first.timeUs / 1000L;
-        final long after = points.second.timeUs / 1000L;
-        final boolean forward = targetMs > positionMs;
-        // The keyframe past the target in the direction of travel is preferred, so a press delivers
-        // what it promised or a little more. A press that delivers LESS is the worse miss: somebody
-        // pressing back three seconds to catch a line they missed lands short of it and presses again.
-        long far = forward ? after : before;
-        if (Math.abs(far - targetMs) > stepMs) {
-            // Unless that one overshoots by more than the press was worth - on a coarse grid it would
-            // answer "three seconds" with ten. Then the keyframe on the near side, which is at most a
-            // step short and still moves the picture the way the press asked.
-            far = forward ? before : after;
-        }
-        // A point the wrong side of the picture is no answer at all: that is the whole failure this
-        // replaces. Nor is one further from the target than the press itself was worth - there the
-        // caller pays for an exact landing, which is the only accuracy left.
-        if ((forward ? far <= positionMs : far >= positionMs)
-                || Math.abs(far - targetMs) > stepMs) {
-            return C.TIME_UNSET;
-        }
-        return far;
-    }
-
     /** One seek in flight at a time, the gate every scrub shares; see onRenderedFirstFrame. */
     boolean seekIfLanded(long position) {
         if (!frameRendered || player == null)
             return false;
         frameRendered = false;
-        seekBackwards(position);
+        player.seekTo(position);
         return true;
     }
 
-    /**
-     * Seeks, with a "previous sync point" tolerance bounded to this seek's own target.
-     *
-     * <p>{@code SeekParameters.PREVIOUS_SYNC} is {@code new SeekParameters(Long.MAX_VALUE, 0)} - it
-     * will accept a sync sample arbitrarily far before the target. When no sync sample lies in that
-     * range at all, which happens exactly when the target is before the <em>first</em> one in the
-     * file, Media3 answers with the bottom of the range instead of with a position:
-     *
-     * <pre>
-     *     long minPositionUs = Util.subtractWithOverflowDefault(positionUs, toleranceBeforeUs, Long.MIN_VALUE);
-     *     ...
-     *     } else {
-     *         return minPositionUs;   // positionUs - Long.MAX_VALUE
-     *     }
-     * </pre>
-     *
-     * For a target of p microseconds that is {@code Long.MIN_VALUE + 1 + p}, and the whole player
-     * lands on it: the clock reads -2562047788 hours, {@code getTotalBufferedDuration} overflows
-     * subtracting it and clamps to zero, so the load control never starts playback and never stops
-     * loading. The picture never appears, the readout says the buffer is empty while the bar draws it
-     * filling, and the only way out is the file finishing its download - seven minutes for an episode
-     * on a slow line. Reproduced on ddd_test; see fix/seek-before-first-keyframe/FINDINGS.md.
-     *
-     * <p>A tolerance equal to the target says the same thing about a file that starts at zero - any
-     * sync sample from the beginning up to here - and, where there is none, resolves to the beginning
-     * rather than to a number no clock can hold. Only a backwards tolerance is rebound, so a forward
-     * gesture's NEXT_SYNC and the bar's CLOSEST_SYNC are left as they are.
-     */
-    static void seekBackwards(long positionMs) {
-        final SeekParameters seek = player.getSeekParameters();
-        if (seek.toleranceAfterUs == 0 && seek.toleranceBeforeUs > 0) {
-            player.setSeekParameters(new SeekParameters(Math.max(0, positionMs) * 1000L, 0));
-        }
-        player.seekTo(positionMs);
-    }
-
-    /**
-     * The seek a gesture stops on, which is the only one that has to be true to the number the viewer
-     * was shown.
-     *
-     * <p>Every scrub rounds to a sync sample while it is running, and it has to: a seek that decodes
-     * from the previous keyframe up to its target cannot be issued once per 8dp of finger. The price is
-     * that the last one lands up to a whole keyframe interval away from the readout — measured on a clip
-     * with a keyframe every 10 s, asking for 97 s under {@code CLOSEST_SYNC} arrives at 100 s and under
-     * {@code PREVIOUS_SYNC} at 90 s. In the player's own log that is two discontinuities in a row, the
-     * seek and then {@code DISCONTINUITY_REASON_SEEK_ADJUSTMENT} undoing part of it, which is what a
-     * viewer describes as the picture going back a few seconds after they let go.
-     *
-     * <p>So the last one is exact, and only the last one. It costs a decode from the preceding keyframe,
-     * once, after the gesture ends — no extra bytes, since that keyframe is before the target either
-     * way. Where the sync sample already is the target the seek is a no-op and costs nothing at all.
-     *
-     * <p>The decode is not free everywhere, and the two backward gestures pay most. A drag along the
-     * time bar lands inside the run the drag itself filled, so the correction is measured at no second
-     * buffering; a backward swipe or a held rewind walks out of that run, and there {@code PREVIOUS_SYNC}
-     * used to hand back a keyframe with nothing to decode at all. On a long-GOP 4K file on a weak box
-     * that is a pause at release where there was none. It is the same trade {@link #commitKeyScrub} has
-     * made for the D-pad since it was written, and it buys the same thing: the picture stops where the
-     * viewer put it.
-     *
-     * <p>{@link #commitKeyScrub} has done this for the D-pad since it was written and
-     * {@code YouTubeOverlay} for the double tap; this is that same commit for the time bar and the
-     * swipe.
-     */
-    static void seekExact(long positionMs) {
-        if (player == null) {
-            return;
-        }
-        player.setSeekParameters(SeekParameters.EXACT);
-        player.seekTo(Math.max(0, positionMs));
+    private void setKeySeekDirection(long target) {
+        player.setSeekParameters(target >= player.getCurrentPosition()
+                ? SeekParameters.NEXT_SYNC : SeekParameters.PREVIOUS_SYNC);
     }
 
     /**
@@ -3871,17 +3427,8 @@ public class PlayerActivity extends Activity {
         if (duration > 0) {
             position.append(" · ").append(Math.round(target * 100f / duration)).append('%');
         }
-        final long keyDelta = target - playerView.keySeekStart;
-        playerView.readout(Utils.formatMilisSign(keyDelta) + "\n" + position,
-                keyDelta < 0 ? R.drawable.ic_rewind_24dp : R.drawable.ic_fast_forward_24dp);
-    }
-
-    /** Forget a burst in progress: its target, the step it was on, and the commit it has armed. */
-    private void cancelKeyScrub() {
-        playerView.removeCallbacks(keyScrubCommit);
-        keyScrubTarget = -1;
-        keyScrubSeeked = -1;
-        keyScrubSteps = 0;
+        playerView.setCustomErrorMessage(Utils.formatMilisSign(target - playerView.keySeekStart)
+                + "\n" + position);
     }
 
     private void commitKeyScrub() {
@@ -3890,18 +3437,12 @@ public class PlayerActivity extends Activity {
         keyScrubTarget = -1;
         keyScrubSeeked = -1;
         keyScrubSteps = 0;
-        if (target < 0 || player == null) {
+        // Nothing to make good if the last press got through the gate: seeking there again would only
+        // flush the decoder a second time.
+        if (target < 0 || target == seeked || player == null)
             return;
-        }
-        // Only when the target was never reached — which is exactly when the one-in-flight gate dropped
-        // the last step. Seeking again to a target the last step already landed on used to be a second
-        // jump for nothing: the picture had played on since, so an exact seek to the same number took it
-        // backwards by however long the commit had waited. The commit is the safety net for a dropped
-        // step, not a re-run of one that arrived.
-        if (seeked != target) {
-            // The one seek the viewer stops on is the one that has to be true to the readout — seekExact.
-            seekExact(target);
-        }
+        setKeySeekDirection(target);
+        player.seekTo(target);
     }
 
     @Override
@@ -4114,7 +3655,6 @@ public class PlayerActivity extends Activity {
         apiImdbId = null;
         apiTmdbId = null;
         manualTmdbId = null;
-        manualImdbId = null;
         manualMovie = false;
         manualSeason = -1;
         manualEpisode = -1;
@@ -4153,6 +3693,7 @@ public class PlayerActivity extends Activity {
         if (skipOffsetDialog != null && skipOffsetDialog.isShowing()) {
             skipOffsetDialog.dismiss();
         }
+        updateSkipOffsetButton();
         // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
         applySubtitleOffset(0);
         clearSubtitleTimeline();
@@ -4227,6 +3768,7 @@ public class PlayerActivity extends Activity {
         if (skipManager.hasSegments()) {
             skipSeenThisSession = true;
         }
+        updateSkipOffsetButton();
     }
 
     /**
@@ -4237,6 +3779,14 @@ public class PlayerActivity extends Activity {
     private boolean skipOffsetReachable() {
         return mPrefs != null && mPrefs.skipEnabled && skipManager != null
                 && (skipManager.hasSegments() || skipSeenThisSession);
+    }
+
+    /** The offset button is shown once any skip segment exists — now or earlier this session. */
+    private void updateSkipOffsetButton() {
+        if (buttonSkipOffset == null) {
+            return;
+        }
+        buttonSkipOffset.setVisibility(skipOffsetReachable() ? View.VISIBLE : View.GONE);
     }
 
     /** Apply a new session skip offset and re-derive the segments (moves timeline highlights live). */
@@ -4310,7 +3860,8 @@ public class PlayerActivity extends Activity {
         }
         final OffsetPanel.Choice[] choices = hasSkipSegment()
                 ? new OffsetPanel.Choice[]{ skipModeChoice() } : new OffsetPanel.Choice[0];
-        skipOffsetDialog = OffsetPanel.create(this, ui,
+        skipOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout,
+                brandColor(),   // coral, matches the skip timeline highlight
                 getString(R.string.skip_session_title), OFFSET_MAX_SEC, OFFSET_STEP_SEC, choices,
                 // Captioned only while it shares the panel with the row above it; alone it is the panel.
                 new OffsetPanel.Line(choices.length == 0 ? null : getString(R.string.skip_offset_title),
@@ -4367,7 +3918,7 @@ public class PlayerActivity extends Activity {
         if (lines.isEmpty()) {
             return;
         }
-        subtitleOffsetDialog = OffsetPanel.create(this, ui,
+        subtitleOffsetDialog = OffsetPanel.create(this, ui, coordinatorLayout, brandColor(),
                 getString(R.string.subtitle_offset_title), SUBTITLE_OFFSET_MAX_SEC, OFFSET_STEP_SEC,
                 lines.toArray(new OffsetPanel.Line[0]));
         showPickerDialog(subtitleOffsetDialog);
@@ -4602,21 +4153,24 @@ public class PlayerActivity extends Activity {
         return value != null ? value : fallback;
     }
 
-    /**
-     * The accent ink of this window's theme — the ThemeOverlay.JustPlus.Accent.* applied in onCreate
-     * decides which; pass an alpha (0x00..0xFF) for a translucent variant.
-     */
+    /** Brand accent color from {@code @color/brand}; pass an alpha (0x00..0xFF) for a translucent variant. */
     private int brandColor() {
-        return MaterialColors.getColor(this, R.attr.colorPrimary, Color.WHITE);
-    }
-
-    /** The colour this app gives to skipping, per theme - the same one the band on the time bar carries. */
-    private int skipAccent() {
-        return MaterialColors.getColor(this, R.attr.accentSkip, brandColor());
+        return ContextCompat.getColor(this, R.color.brand);
     }
 
     private int brandColor(int alpha) {
         return (alpha << 24) | (brandColor() & 0x00FFFFFF);
+    }
+
+    /** Brand accent at reduced brightness (same hue/saturation) for large selected-row fills, where full
+     *  brand is too intense on the eyes. Scaling RGB proportionally lowers only the value, unlike alpha
+     *  blending which desaturates the color against the dark panel. */
+    private int brandColorDim() {
+        final int c = brandColor();
+        final float f = 0.72f; // tweakable: lower = darker
+        return Color.rgb(Math.round(Color.red(c) * f),
+                Math.round(Color.green(c) * f),
+                Math.round(Color.blue(c) * f));
     }
 
     // Show a picker panel (audio/subtitle/playlist/quality/skip). OxygenOS/ColorOS applies a fullscreen
@@ -4624,7 +4178,6 @@ public class PlayerActivity extends Activity {
     // system bars hidden. Our pickers call hideController(), which hides the bars, so keep the bars visible
     // while a panel is open and restore immersive on dismiss — this lets the back gesture close the panel in
     // one swipe (the reference lampaua build never goes immersive for its pickers).
-
     private void showPickerDialog(final android.app.Dialog dialog) {
         // Hide the controls for a clean panel. Keep the navigation/gesture bar visible (so OxygenOS doesn't
         // apply its fullscreen back-gesture guard) but hide the status bar (clean top, no strip over the
@@ -4639,6 +4192,40 @@ public class PlayerActivity extends Activity {
         dialog.show();
     }
 
+    // A long label does not fit the width of a picker panel, and the two device classes want opposite
+    // answers. On TV the row that has D-pad focus scrolls its text: focus makes the movement mean
+    // something ("this row"), it is the 10-foot idiom, and only one row is ever moving. In touch mode
+    // nothing is ever focused, so scrolling could only mean scrolling — six rows crawling in a list the
+    // user is trying to scan is motion without a message, so there the label wraps to a second line and
+    // ellipsizes instead, which shows more of it than a marquee does at any one moment. Scrolling also
+    // needs the view focused or selected, and the focusable view is the row, not its texts, hence the
+    // relay below; only the TextViews move, the poster/number box of a playlist row is a sibling.
+    private void fitLongText(final View row, final TextView... texts) {
+        final boolean scroll = ui.deviceClass == UiMetrics.DeviceClass.TV && !Utils.isReducedMotion(this);
+        for (final TextView text : texts) {
+            if (text == null) {
+                continue;
+            }
+            if (scroll) {
+                text.setSingleLine(true);
+                text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+                text.setMarqueeRepeatLimit(-1);
+                text.setHorizontalFadingEdgeEnabled(true);
+            } else {
+                text.setMaxLines(2);
+                text.setEllipsize(TextUtils.TruncateAt.END);
+            }
+        }
+        if (scroll) {
+            row.setOnFocusChangeListener((v, hasFocus) -> {
+                for (final TextView text : texts) {
+                    if (text != null) {
+                        text.setSelected(hasFocus);
+                    }
+                }
+            });
+        }
+    }
 
     // Bar state while a picker panel is open: navigation/gesture bar shown (avoids OxygenOS's fullscreen
     // back-gesture guard, which keys on hidden nav gestures), status bar hidden (clean top edge).
@@ -4663,9 +4250,8 @@ public class PlayerActivity extends Activity {
         pill.setCornerRadius(ui.pillCorner());
         cluster.setBackground(pill);
         cluster.setClipToOutline(true);
-        // No padding of its own: the button boxes tile the pill exactly, and the air around a focused
-        // button's contour — 4dp on every side, the pill's edge included — is the inset it is drawn with.
-        cluster.setPadding(0, 0, 0, 0);
+        final int padH = ui.pillPadH();
+        cluster.setPadding(padH, cluster.getPaddingTop(), padH, cluster.getPaddingBottom());
     }
 
     private void updateSkipHighlights() {
@@ -4683,23 +4269,13 @@ public class PlayerActivity extends Activity {
         final long[] ends = new long[count];
         final int[] colors = new int[count];
         final int[] fillColors = new int[count];
-        final int skipFill = MaterialColors.getColor(this, R.attr.accentSkip,
-                ContextCompat.getColor(this, R.color.skip_fill));
-        // The hairline is the band's own colour lifted, not a colour of its own. It used to be a fixed
-        // @color/skip_edge — the coral world's pale blue — while the fill moved to ?attr/accentSkip and
-        // became a different hue in all 32 accent themes, so under Everforest a violet band was outlined
-        // in blue. 0.915 is the lift the hand-tuned coral pair already encoded: #0696BB lifted that far
-        // is #EAF6F9, against the #EAF6FF that was written down, a six-level difference in one channel.
-        final int skipEdge = ColorUtils.blendARGB(skipFill, Color.WHITE, 0.915f);
-        final int adEdge = ContextCompat.getColor(this, R.color.ad_edge);
-        final int adFill = ContextCompat.getColor(this, R.color.ad_fill);
         for (int i = 0; i < count; i++) {
             final SkipSegment segment = segments.get(i);
             final boolean ad = segment.type == SkipSegment.Type.AD;
             starts[i] = segment.startMs();
             ends[i] = segment.endMs();
-            colors[i] = ad ? adEdge : skipEdge;
-            fillColors[i] = ad ? adFill : skipFill;
+            colors[i] = ad ? AD_HIGHLIGHT_COLOR : SKIP_HIGHLIGHT_COLOR;
+            fillColors[i] = ad ? AD_FILL_COLOR : SKIP_FILL_COLOR;
         }
         timeBar.setSkipHighlights(starts, ends, colors, fillColors, durationMs);
     }
@@ -4711,12 +4287,9 @@ public class PlayerActivity extends Activity {
         }
         final double posSec = player.getCurrentPosition() / 1000.0;
         if (skipPill == SkipPill.UNDO) {
-            updatePillCountdown(skipNoticeHideAtMs, SKIP_NOTICE_MS);
+            updatePillCountdown(skipNoticeHideAtMs, R.string.notification_skipped_undo);
         } else if (skipFlashActive()) {
-            updatePillCountdown(skipFlashEndMs, SKIP_NOTICE_MS);
-        }
-        if (skipPill == SkipPill.UNDO) {
-        } else if (skipFlashActive()) {
+            updatePillCountdown(skipFlashEndMs, R.string.button_skip_countdown);
         }
         final SkipSegment segment = skipManager.activeSegment(posSec);
         if (segment == null) {
@@ -4739,8 +4312,8 @@ public class PlayerActivity extends Activity {
                 }
             } else {
                 hideSkipHeadsUp();
-                showSkipButton(upcoming);
                 updateSkipButtonProgress(upcoming);
+                showSkipButton(upcoming);
             }
             return;
         }
@@ -4758,8 +4331,8 @@ public class PlayerActivity extends Activity {
         } else if (isBriefSkip(segment)) {
             briefSkipTick(segment);
         } else {
-            showSkipButton(segment);
             updateSkipButtonProgress(segment);
+            showSkipButton(segment);
         }
     }
 
@@ -4827,46 +4400,25 @@ public class PlayerActivity extends Activity {
         return true;
     }
 
-    /** A glyph at the app's own size, white, ready to sit in a pill or inside a countdown ring. */
-    @Nullable
-    private Drawable tintedPillIcon(final int res) {
-        final Drawable glyph = ContextCompat.getDrawable(this, res);
-        if (glyph != null) {
-            glyph.mutate();
-            glyph.setTint(Color.WHITE);
+    private Drawable pillIcon(SkipPill mode) {
+        switch (mode) {
+            case CANCEL:
+                return skipIconKeep;
+            case UNDO:
+                return skipIconBack;
+            default:
+                return skipIconForward;
         }
-        return glyph;
     }
 
-    /**
-     * What the pill wears on its leading edge. With no countdown, or with the bar, only "Go back" gets a
-     * glyph: beside "Skip" the arrow repeats the word and pushes it 11.5dp off the button's centre,
-     * measured. With the ring the glyph is the countdown's own frame, so every state carries one.
-     */
-    @Nullable
-    private Drawable pillIcon(final SkipPill mode) {
-        final Drawable glyph = mode == SkipPill.CANCEL ? skipIconKeep
-                : mode == SkipPill.UNDO ? skipIconBack : skipIconForward;
-        if (!Prefs.SKIP_COUNTDOWN_RING.equals(mPrefs.skipCountdown)) {
-            skipRing = null;
-            skipRingFor = null;
-            if (mode != SkipPill.UNDO || glyph == null) {
-                return mode == SkipPill.UNDO ? glyph : null;
-            }
-            glyph.setBounds(0, 0, skipIconSize, skipIconSize);
-            return glyph;
+    /** Sizes the underline to the fraction of the segment still remaining (1 at start, 0 at the end). */
+    private void updateSkipButtonProgress(SkipSegment segment) {
+        if (player == null || segment == null) {
+            return;
         }
-        // The ring is a 28dp box with the 16dp glyph inside it, so the arrow keeps its weight and the
-        // track still has room to read as a circle rather than as a thick outline. Built once per state,
-        // never per repaint: showSkipPill runs on every poll while a segment is being ridden, and a fresh
-        // ring each time is a ring that is always full - which is exactly how it looked.
-        if (skipRing == null || skipRingFor != mode) {
-            final int box = Utils.dpToPx(28);
-            skipRing = new CountdownRing(glyph, skipAccent(), Utils.dpToPx(2), Utils.dpToPx(6));
-            skipRing.setBounds(0, 0, box, box);
-            skipRingFor = mode;
-        }
-        return skipRing;
+        final long totalMs = segment.endMs() - segment.startMs();
+        setSkipPillUnderline(totalMs > 0
+                ? (segment.endMs() - player.getCurrentPosition()) / (double) totalMs : 0);
     }
 
     private void skipSeekTo(SkipSegment segment) {
@@ -4902,16 +4454,20 @@ public class PlayerActivity extends Activity {
         if (locked && mPrefs.skipHideWhenLocked) {
             return;
         }
+        // Whole seconds still to go, rounded up: the countdown reads 3, 2, 1 and never a bare 0.
+        final int secsLeft = (int) Math.max(1,
+                Math.ceil((segment.startMs() - player.getCurrentPosition()) / 1000.0));
         final boolean fresh = skipHeadsUpEndMs != segment.endMs();
         if (fresh) {
             skipHeadsUpEndMs = segment.endMs();
             // No auto-hide: the announcement stands until the jump happens, is refused, or becomes moot.
             playerView.removeCallbacks(skipPillHider);
-            pillRemaining = 1f;
-            showSkipPill(SkipPill.CANCEL, getString(R.string.notification_skipping_stay), true, true);
+            hideSkipPillUnderline(); // the number is the countdown here; no bar to say it twice
         }
-        // The lead is this pill's window: the run is gone at the moment the jump happens.
-        setPillRemaining((segment.startMs() - player.getCurrentPosition()) / (SKIP_LEAD_SEC * 1000.0));
+        if (fresh || secsLeft != skipPillSecs) {
+            skipPillSecs = secsLeft;
+            showSkipPill(SkipPill.CANCEL, countdownLabel(R.string.notification_skipping_cancel, secsLeft), true, true);
+        }
     }
 
     private void hideSkipHeadsUp() {
@@ -4952,38 +4508,17 @@ public class PlayerActivity extends Activity {
         // repainting itself every second cannot keep yanking the focus back.
         final boolean stateChanged = skipPill != mode;
         skipPill = mode;
+        buttonSkip.setText(label);
+        buttonSkip.setCompoundDrawablesRelative(
+                pillIcon(mode), null, null, null);
+        buttonSkip.setClickable(actionable);
+        buttonSkip.setFocusable(actionable);
         final boolean appearing = buttonSkip.getVisibility() != View.VISIBLE;
-        buttonSkip.animate().cancel();
-        if (stateChanged && !appearing) {
-            // The same target changes its verb in place - "Don't skip" (refuse the jump) becomes "Go back"
-            // (undo the jump just made) at the same corner - and the pill is wrap-content, so the string
-            // moves its left edge with it. A thumb already on its way to the old label would land on the
-            // new one, so the new verb is not pressable for the 200ms the swap takes.
-            //
-            // The content lands at once and the press is given back by a posted message, neither of them
-            // riding on the animation's end: every show cancels the animation before it, a cancelled
-            // animation never runs its end action, and the button would have stayed dead for good.
-            applyPillContent(mode, label, actionable);
-            buttonSkip.setClickable(false);
-            buttonSkip.setAlpha(1f);
-            buttonSkip.animate().alpha(0.4f).setDuration(100)
-                    .withEndAction(() -> buttonSkip.animate().alpha(1f).setDuration(100).start()).start();
-            if (playerView != null) {
-                playerView.removeCallbacks(pillArmRunnable);
-                playerView.postDelayed(pillArmRunnable, 200);
-            }
-        } else {
-            applyPillContent(mode, label, actionable);
-            if (appearing) {
-                buttonSkip.setAlpha(0f);
-                buttonSkip.setVisibility(View.VISIBLE);
-                buttonSkip.animate().alpha(1f).setDuration(200).start();
-                // After the layout, not before it: what the transfer line has to give up is the pill's
-                // width, and a pill that has never been shown has none to read yet.
-                buttonSkip.post(this::updateTransfer);
-            } else {
-                buttonSkip.setAlpha(1f);
-            }
+        if (appearing) {
+            // After the layout, not before it: what the transfer line has to give up is the pill's
+            // width, and a pill that has never been shown has none to read yet.
+            buttonSkip.setVisibility(View.VISIBLE);
+            buttonSkip.post(this::updateTransfer);
         }
         if (isTvBox && actionable && claimFocus && (appearing || stateChanged)) {
             buttonSkip.requestFocus();
@@ -4991,81 +4526,67 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * How much of the offer is left, 1 to 0, handed to whichever indicator the setting asks for: the bar
-     * under the label, the ring around the glyph, or nothing at all, which is the default - the pill's
-     * own disappearance is the deadline, and the segment is marked on the time bar either way.
-     *
-     * <p>The number arrives four times a second, which is the skip poll, and on a five-second offer that
-     * is a twentieth of the circle per step - a staircase rather than a countdown. So each new value is
-     * walked to over the poll's own interval: by the time it lands the next one is due, and the indicator
-     * never stands still. A value that jumps up is a new offer rather than a countdown, and lands at once.
+     * A pill label with its seconds picked out in the accent colour, so the number reads as a countdown
+     * against the white wording. Falls back to the plain string if the format left no number to find.
      */
-    private void setPillRemaining(final double remaining) {
-        final float target = (float) Math.max(0, Math.min(1, remaining));
-        if (pillCountdownAnimator != null) {
-            pillCountdownAnimator.cancel();
-            pillCountdownAnimator = null;
+    private CharSequence countdownLabel(int labelRes, int secs) {
+        final String seconds = String.valueOf(secs);
+        final String label = getString(labelRes, secs);
+        final int at = label.lastIndexOf(seconds);
+        if (at < 0) {
+            return label;
         }
-        if (target >= pillRemaining) {
-            applyPillRemaining(target);
-            return;
-        }
-        pillCountdownAnimator = ValueAnimator.ofFloat(pillRemaining, target);
-        pillCountdownAnimator.setDuration(SKIP_POLL_INTERVAL_MS);
-        pillCountdownAnimator.setInterpolator(new LinearInterpolator());
-        pillCountdownAnimator.addUpdateListener(
-                animation -> applyPillRemaining((float) animation.getAnimatedValue()));
-        pillCountdownAnimator.start();
-    }
-
-    /** Puts one value on the indicator the setting chose. */
-    private void applyPillRemaining(final float remaining) {
-        pillRemaining = remaining;
-        if (skipRing != null) {
-            skipRing.setRemaining(remaining);
-        }
+        final SpannableString out = new SpannableString(label);
+        // Lightened accent, not the flat brand colour: at full strength the coral carries about half the
+        // luminance of the white wording, and a single narrow glyph that much darker than its neighbours
+        // reads as sitting off the line rather than as coloured. Same geometry, matched optical weight.
+        final int digitColor = ColorUtils.blendARGB(brandColor(), Color.WHITE, 0.25f);
+        out.setSpan(new ForegroundColorSpan(digitColor), at, at + seconds.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return out;
     }
 
     /**
-     * The indicator measures the segment it sits over: full at its start, gone at its end. Only while the
-     * pill is the Skip offer itself - after an automatic jump the position stands at the segment's end,
-     * and this would drive the "Go back" offer's own countdown to zero in the same tick that set it.
+     * Sizes the pill's underline to a 0..1 fraction. Only the Skip offer uses it, where it measures the
+     * segment it sits over. The two cancel states count down in their label instead — a bar and a number
+     * saying the same thing is one of them too many.
      */
-    private void updateSkipButtonProgress(final SkipSegment segment) {
-        if (player == null || segment == null || skipPill != SkipPill.SKIP) {
-            return;
+    private void setSkipPillUnderline(double fraction) {
+        if (skipPillGroove != null) {
+            skipPillGroove.setColor(SKIP_PILL_GROOVE_COLOR);
         }
-        final long totalMs = segment.endMs() - segment.startMs();
-        setPillRemaining(totalMs > 0
-                ? (segment.endMs() - player.getCurrentPosition()) / (double) totalMs : 0);
+        if (skipButtonProgress != null) {
+            skipButtonProgress.setLevel((int) Math.round(Math.max(0, Math.min(1, fraction)) * 10000));
+        }
     }
 
-    /** Runs whichever timed pill is up - the undo offer, or brief mode's Skip offer - down its window. */
-    private void updatePillCountdown(final long deadlineMs, final long windowMs) {
-        if (buttonSkip == null || !buttonSkip.isClickable() || windowMs <= 0) {
+    private void hideSkipPillUnderline() {
+        if (skipPillGroove != null) {
+            skipPillGroove.setColor(Color.TRANSPARENT);
+        }
+        if (skipButtonProgress != null) {
+            skipButtonProgress.setLevel(0);
+        }
+    }
+
+    /** Ticks the seconds left on whichever timed pill is up — the undo offer or brief mode's Skip offer. */
+    private void updatePillCountdown(long deadlineMs, int labelRes) {
+        if (buttonSkip == null || !buttonSkip.isClickable()) {
             return; // a plain "skipped" notice has nothing to count down to
         }
-        setPillRemaining((deadlineMs - SystemClock.uptimeMillis()) / (double) windowMs);
-    }
-
-    /** What the pill says and whether it can be pressed - set on its own so a crossfade can defer it. */
-    private void applyPillContent(final SkipPill mode, final CharSequence label, final boolean actionable) {
-        pillActionable = actionable;
-        buttonSkip.setText(label);
-        buttonSkip.setCompoundDrawablesRelative(pillIcon(mode), null, null, null);
-        buttonSkip.setClickable(actionable);
-        buttonSkip.setFocusable(actionable);
+        final int secsLeft = (int) Math.max(1,
+                Math.ceil((deadlineMs - SystemClock.uptimeMillis()) / 1000.0));
+        if (secsLeft != skipPillSecs) {
+            skipPillSecs = secsLeft;
+            buttonSkip.setText(countdownLabel(labelRes, secsLeft));
+        }
     }
 
     /** Takes the pill away whatever it is showing, cancelling its timer. */
     private void hideSkipPill() {
-        if (pillCountdownAnimator != null) {
-            pillCountdownAnimator.cancel();
-            pillCountdownAnimator = null;
-        }
-        pillRemaining = 1f;
         skipPill = SkipPill.NONE;
         skipHeadsUpEndMs = C.TIME_UNSET;
+        skipPillSecs = 0;
         pendingSkip = null;
         if (playerView != null) {
             playerView.removeCallbacks(skipPillHider);
@@ -5074,9 +4595,7 @@ public class PlayerActivity extends Activity {
             if (isTvBox && buttonSkip.hasFocus() && playerView != null) {
                 playerView.requestFocus();
             }
-            buttonSkip.animate().cancel();
-            buttonSkip.animate().alpha(0f).setDuration(200)
-                    .withEndAction(() -> buttonSkip.setVisibility(View.GONE)).start();
+            buttonSkip.setVisibility(View.GONE);
             updateTransfer(); // the whole row is the line's again
         }
     }
@@ -5101,6 +4620,7 @@ public class PlayerActivity extends Activity {
         skipUndoToMs = C.TIME_UNSET;
         skipUndoneUntilMs = C.TIME_UNSET;
         skipHeadsUpEndMs = C.TIME_UNSET;
+        skipPillSecs = 0;
         // Called on every media item change, which is exactly when brief mode's "already offered" mark has
         // to go: two episodes of the same length can carry intros that end on the very same millisecond, and
         // the mark is keyed on that position, so keeping it would swallow the next episode's offer.
@@ -5160,7 +4680,7 @@ public class PlayerActivity extends Activity {
                     ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
                     : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         }
-        lockBackPressedAt = Utils.BACK_NOT_PRESSED;
+        lockBackPressedOnce = false;
         showSwipeToUnlock();
     }
 
@@ -5168,7 +4688,7 @@ public class PlayerActivity extends Activity {
     // the lock does not persist, so undo its UI (bar + orientation pin) here too.
     private void clearLockUi() {
         hideSwipeToUnlock();
-        lockBackPressedAt = Utils.BACK_NOT_PRESSED;
+        lockBackPressedOnce = false;
         if (mPrefs != null) {
             Utils.setOrientation(this, mPrefs.orientation);
         }
@@ -5240,8 +4760,9 @@ public class PlayerActivity extends Activity {
         }
         skipBriefFlashedUntilMs = segment.endMs();
         skipFlashEndMs = SystemClock.uptimeMillis() + SKIP_NOTICE_MS;
-        pillRemaining = 1f;
-        showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true, true);
+        skipPillSecs = (int) (SKIP_NOTICE_MS / 1000);
+        hideSkipPillUnderline(); // the number is the countdown here; no bar to say it twice
+        showSkipPill(SkipPill.SKIP, countdownLabel(R.string.button_skip_countdown, skipPillSecs), true, true);
         playerView.postDelayed(skipPillHider, SKIP_NOTICE_MS);
     }
 
@@ -5256,6 +4777,7 @@ public class PlayerActivity extends Activity {
             return;
         }
         if (controllerVisible) {
+            hideSkipPillUnderline();
             showSkipPill(SkipPill.SKIP, getString(R.string.button_skip), true, false);
         } else if (skipPill == SkipPill.SKIP) {
             hideSkipButton();
@@ -5316,18 +4838,13 @@ public class PlayerActivity extends Activity {
         // skip. It only promises undo where the promise can be kept: an episode advance has no position to
         // return to, and then it is a plain notice that takes no focus.
         final boolean undoable = skipUndoFromMs != C.TIME_UNSET && skipUndoOffered(automatic);
-        if (!undoable) {
-            // Nothing to offer: a jump that advanced the episode has no position to come back to. It used
-            // to say so in the pill, which then stood there looking exactly like a button and doing
-            // nothing when it was pressed. A notice with no action is a snackbar in this app, so it says
-            // it the way every other actionless notice does, and the corner stays free of a dead button.
-            hideSkipPill();
-            showNotice(getString(R.string.notification_skipped), false, R.drawable.ic_skip_next);
-            return;
-        }
         skipNoticeHideAtMs = SystemClock.uptimeMillis() + SKIP_NOTICE_MS;
-        pillRemaining = 1f;
-        showSkipPill(SkipPill.UNDO, getString(R.string.notification_skipped_back), true, true);
+        skipPillSecs = (int) (SKIP_NOTICE_MS / 1000);
+        hideSkipPillUnderline();
+        showSkipPill(SkipPill.UNDO, undoable
+                        ? countdownLabel(R.string.notification_skipped_undo, skipPillSecs)
+                        : getString(R.string.notification_skipped),
+                undoable, true);
         playerView.postDelayed(skipPillHider, SKIP_NOTICE_MS);
     }
 
@@ -5584,12 +5101,8 @@ public class PlayerActivity extends Activity {
         }
         titleView.setText(title);
 
-        Uri artworkUri = metadata != null ? metadata.artworkUri : null;
-        if (artworkUri == null) {
-            artworkUri = playingArtwork;
-        }
-        updatePoster(artworkUri, currentPlayingUri(), player.getCurrentMediaItemIndex(),
-                player.getMediaItemCount());
+        final Uri artworkUri = metadata != null ? metadata.artworkUri : null;
+        updatePoster(artworkUri, player.getCurrentMediaItemIndex(), player.getMediaItemCount());
 
         final boolean hasPlaylist = player.getMediaItemCount() > 1;
         if (buttonPlaylist != null) {
@@ -5608,7 +5121,7 @@ public class PlayerActivity extends Activity {
 
     private TextView createInfoLine(int topMargin) {
         final TextView view = new TextView(this);
-        view.setTextColor(ContextCompat.getColor(this, R.color.ink_secondary));
+        view.setTextColor(0x99FFFFFF); // text_secondary
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textInfo());
         view.setMaxLines(1);
         view.setEllipsize(TextUtils.TruncateAt.END);
@@ -5673,38 +5186,6 @@ public class PlayerActivity extends Activity {
         return shortSide + "p";
     }
 
-    /**
-     * A track row in two lines: what the track is called, and what it is.
-     *
-     * <p>One line held both, in the shape the header meta line uses — {@code name [AAC 2.0 298k] (lang)}
-     * — and a file whose tracks declare neither a name nor a language turned that into four rows reading
-     * {@code [AAC 2.0 298k]}, three of them identical to the eye and none of them nameable. Brackets in a
-     * list also read as something printed rather than something chosen.
-     *
-     * <p>So the name goes on the first line — the container's own label, else the language, else the
-     * track's number, which is the one thing that always distinguishes one from the next — and the
-     * codec, the channels and the bitrate go on the second in the ink a supporting line is given. It is
-     * the shape the quality panel beside it already uses.
-     *
-     * @return the headline, and the supporting line or null when there is nothing to support it with
-     */
-    private String[] trackRowText(final Format format, final int number) {
-        final String name = trackName(format);
-        final String language = languageDisplayName(format.language);
-        final String headline = name != null && !name.isEmpty() ? name
-                : language != null && !language.isEmpty() ? language
-                : getString(R.string.audio_track_number, number);
-        final StringBuilder detail = new StringBuilder(CustomDefaultTrackNameProvider.techInfo(format));
-        // The language belongs on the second line only when the first one is taken by a name.
-        if (name != null && !name.isEmpty() && language != null && !language.isEmpty()) {
-            if (detail.length() > 0) {
-                detail.append(" \u00b7 ");
-            }
-            detail.append(language);
-        }
-        return new String[]{headline, detail.length() == 0 ? null : detail.toString()};
-    }
-
     private String buildAudioInfo(Format audio) {
         if (audio == null) {
             return null;
@@ -5731,66 +5212,11 @@ public class PlayerActivity extends Activity {
         return b.toString();
     }
 
-    /** The media the display was already asked about, so it is asked once and not once per parse. */
-    private String earlyModeRequestedUri;
-    /**
-     * Whether that early request actually set a mode in motion. Read once, by the search at the end of
-     * loading: it finds the new mode already in place and would otherwise let playback go while the
-     * panel is still changing to it.
-     */
-    volatile boolean earlyModeSwitchRequested;
-
-    /**
-     * Asks the display for this video's mode as soon as the container says what it carries — which is
-     * before the decoder is configured and long before the first frame, where the settled path asks.
-     * The reference player switches at the same point, between opening the file and building its player,
-     * and what the boxes it was written for care about is the decoder meeting a display that has already
-     * finished moving.
-     *
-     * <p>Nothing waits on this. If the mode does change, the search at the end of loading finds it
-     * already the best one and starts playback without a second wait; if the container says nothing
-     * about its rate — an MP4, an adaptive stream, a format this parser does not read — nothing
-     * happens here and the old path is still the one that switches.
-     */
-    private void requestDisplayModeEarly() {
-        // Rate only, and only when the frame is not also being matched. What the container states is the
-        // coded picture, and the mode search wants the one on screen: a rotated track would send the
-        // display to the wrong frame, and a container that states a rate but no width at all — an AVI
-        // does — would have the frame chosen twice, once here from nothing and again later from the
-        // format, the second time as a full resolution change. Neither is worth the seconds this saves,
-        // so where the frame is in play the old path keeps the whole decision.
-        if (!mPrefs.frameRateMatching || mPrefs.displayResolutionMatching) {
-            return;
-        }
-        final Uri uri = currentMediaUri();
-        final String key = uri != null ? uri.toString() : null;
-        if (key == null || key.equals(earlyModeRequestedUri)) {
-            return;
-        }
-        float rate = 0f;
-        int width = 0;
-        for (TrackMetadata track : currentContainerTracks()) {
-            // Both from the same track, and the first video one that states a rate: two video tracks
-            // would otherwise contribute a rate each and a width each.
-            if (track.type == TrackMetadata.Type.VIDEO && track.frameRate > 0) {
-                rate = track.frameRate;
-                width = track.width;
-                break;
-            }
-        }
-        if (rate <= 0) {
-            return;
-        }
-        earlyModeRequestedUri = key;
-        Utils.requestFrameRateEarly(this, rate, width);
-    }
-
     /** Called on the UI thread once the container parser has recovered track names. */
     private void onContainerMetadata(String uri, java.util.List<TrackMetadata> tracks) {
         containerTracks.clear();
         containerTracks.addAll(tracks);
         containerTracksUri = uri;
-        requestDisplayModeEarly();
         resolveTrackNames();
         updateMediaInfo();
         // Matroska names reach us here rather than through Format.label, and this can land after
@@ -5802,65 +5228,6 @@ public class PlayerActivity extends Activity {
             maybeSearchSubtitlesOnline(player.getCurrentTracks());
         }
     }
-
-    /**
-     * The container's name for a video track the extractor threw away, or null when nothing was
-     * thrown away.
-     *
-     * <p>Media3's Matroska extractor answers an unknown {@code CodecID} by skipping the track without
-     * a word: no format, no error, no log line. What the viewer gets is a film with sound and a black
-     * screen, which reads as a broken player rather than as a codec this device does not have - the
-     * measured case is a 4K ProRes master in an MKV, which VLC plays because it carries its own
-     * decoder and Android has none at all. The container parse the track names come from is already
-     * running on every open (see ContainerMetadataReader), so the only thing missing was to keep the
-     * CodecID and say it.
-     */
-    @Nullable
-    private String droppedVideoCodec() {
-        // Something has to be playing. A track list that is empty altogether is not a file with no
-        // video, it is a file that never opened - a Matroska whose parse threw ends here too, and
-        // answering that with "no decoder for this codec" blames the codec for a broken read. The
-        // measured case: a torrent stream failed on a varint and the report said the H.264 track had
-        // been dropped, which is a codec Media3 has handled since ExoPlayer 1.
-        if (player == null || player.getCurrentTracks().isEmpty()
-                || player.getCurrentTracks().containsType(C.TRACK_TYPE_VIDEO)) {
-            return null;
-        }
-        for (final TrackMetadata track : currentContainerTracks()) {
-            if (track.type == TrackMetadata.Type.VIDEO && track.codec != null) {
-                // "V_PRORES" is the container's spelling; the prefix says only that it is a video
-                // track, which the sentence around it already said.
-                return track.codec.startsWith("V_") ? track.codec.substring(2) : track.codec;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Says so, once per item, when the file's only video track never reached the player. Late enough
-     * that the track list is final and the container parse has landed - both are done by the time
-     * tracks change.
-     */
-    private void sayIfTheVideoTrackWasDropped(final Tracks tracks) {
-        if (tracks.isEmpty() || tracks.containsType(C.TRACK_TYPE_VIDEO)) {
-            return;
-        }
-        final String codec = droppedVideoCodec();
-        // Keyed by the item, not by the codec: a playlist of these deserves the line on each of them,
-        // and a track change within one item does not.
-        final String said = codec == null ? null : currentMediaUri() + " " + codec;
-        if (said == null || said.equals(droppedVideoCodecSaid)) {
-            return;
-        }
-        droppedVideoCodecSaid = said;
-        Utils.log("video track dropped by the extractor: " + codec);
-        showNotice(getString(R.string.notice_video_codec_unsupported, codec), true,
-                R.drawable.ic_memory_24dp);
-    }
-
-    /** The item {@link #sayIfTheVideoTrackWasDropped} has already spoken about, so it speaks once. */
-    @Nullable
-    private String droppedVideoCodecSaid;
 
     /** {@link #containerTracks}, but only when they belong to the item playing now. */
     private java.util.List<TrackMetadata> currentContainerTracks() {
@@ -6014,26 +5381,19 @@ public class PlayerActivity extends Activity {
         if (player == null || endsAtView == null) {
             return;
         }
-        final boolean live = isLiveStream();
-        // The bottom bar's "00:07 / 00:24" over a broadcast is the sliding window, not the programme:
-        // a few seconds long, and standing still at the live edge. The total goes; the slot in front of
-        // it stays and says how long this has been watched instead (see the progress listener).
-        setDurationVisible(!live);
         if (!controllerVisible) {
             endsAtView.setVisibility(View.GONE);
             return;
         }
         // A broadcast has no end to name. The clock time computed below would be the end of whatever
         // window the stream is offering right now — a minute from now, and about nothing.
-        if (live) {
+        if (isLiveStream()) {
             endsAtView.setText(R.string.time_live);
-            // Red, and not the accent: on air is a meaning of its own, and the thirty other accent
-            // themes would each have said it in their own hue. See @color/live_red.
-            endsAtView.setTextColor(ContextCompat.getColor(this, R.color.live_red));
+            endsAtView.setTextColor(brandColor());
             endsAtView.setVisibility(View.VISIBLE);
             return;
         }
-        endsAtView.setTextColor(ContextCompat.getColor(this, R.color.ink_medium));
+        endsAtView.setTextColor(ENDS_AT_COLOR);
         final long duration = player.getDuration();
         if (duration == C.TIME_UNSET || duration <= 0) {
             endsAtView.setVisibility(View.GONE);
@@ -6048,17 +5408,6 @@ public class PlayerActivity extends Activity {
         final String time = DateFormat.getTimeFormat(this).format(new Date(endMs));
         endsAtView.setText(getString(R.string.time_ends_at_inline, time));
         endsAtView.setVisibility(View.VISIBLE);
-    }
-
-    /** The bottom bar's total and the dot in front of it; the elapsed slot beside them always shows. */
-    private void setDurationVisible(boolean visible) {
-        final int visibility = visible ? View.VISIBLE : View.GONE;
-        for (int id : new int[]{R.id.exo_time_separator, R.id.exo_duration}) {
-            final View view = playerView.findViewById(id);
-            if (view != null) {
-                view.setVisibility(visibility);
-            }
-        }
     }
 
     // With "show clock" on, a single floating clock stays lit at all times, positioned over the header's
@@ -6336,18 +5685,7 @@ public class PlayerActivity extends Activity {
         // Outranks the rest: if the recovery fired there was no conversion by definition, and the whole
         // session past it is the base layer whatever the converter had decided before.
         if (forceHevcForDolbyVision) {
-            // The same route for two different reasons, and the panel exists to tell reasons apart. The
-            // refusal is a standing setting rather than a one-shot recovery, so unlike the recovery it
-            // has to be checked against the track: otherwise every SDR file in the library would be
-            // labelled as a Dolby Vision one that got redirected.
-            if (!mPrefs.refuseDolbyVision) {
-                return "DV → HDR10 · decoder failed";
-            }
-            final Format current = player != null ? player.getVideoFormat() : null;
-            return current != null && MimeTypes.VIDEO_DOLBY_VISION.equals(current.sampleMimeType)
-                    // Not "→ HDR10": what the display ends up in is its own business, and on a file
-                    // carrying HDR10+ under the Dolby Vision layer the plain decoder may well give that.
-                    ? "Dolby Vision refused · plain decoder" : null;
+            return "DV → HDR10 · decoder failed";
         }
         if (dv7Converter != null) {
             return dv7Converter.shortStatus();
@@ -6364,42 +5702,6 @@ public class PlayerActivity extends Activity {
      * that declares FRAME-RATE — and from the container header otherwise. 0 when neither states one,
      * which is Matroska and AVI until the header parse lands, and MPEG-TS always.
      */
-    /**
-     * The width to ask the display for, in the orientation the picture is actually shown at: the widest
-     * rung of the selected video track rather than the one playing. An adaptive stream starts on a low
-     * rung and climbs, while the display is set once and never asked again — so setting it for the
-     * opening rung would either leave a 4K stream at 1080p or, worse, drag a 4K television down to it.
-     */
-    private int videoDisplayWidth() {
-        int width = 0;
-        if (player != null) {
-            for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
-                if (group.getType() != C.TRACK_TYPE_VIDEO) {
-                    continue;
-                }
-                for (int i = 0; i < group.length; i++) {
-                    if (!group.isTrackSelected(i)) {
-                        continue;
-                    }
-                    final Format format = group.getTrackFormat(i);
-                    final int trackWidth = Utils.isRotated(format) ? format.height : format.width;
-                    if (trackWidth > width) {
-                        width = trackWidth;
-                    }
-                }
-            }
-            if (width <= 0) {
-                // No selection to read yet, or a track that states no size: the format the renderer
-                // settled on is the last word available.
-                final Format format = player.getVideoFormat();
-                if (format != null) {
-                    width = Utils.isRotated(format) ? format.height : format.width;
-                }
-            }
-        }
-        return Math.max(width, 0);
-    }
-
     private float videoFrameRate() {
         final Format video = player != null ? player.getVideoFormat() : null;
         return video != null && video.frameRate != Format.NO_VALUE
@@ -6457,6 +5759,7 @@ public class PlayerActivity extends Activity {
         }
         final Format video = player == null ? null : player.getVideoFormat();
         ErrorActivity.showReport(this, getString(R.string.stats_report_title),
+                getString(R.string.stats_report_message),
                 video == null ? null : Format.toLogString(video), state);
     }
 
@@ -6467,143 +5770,6 @@ public class PlayerActivity extends Activity {
         return state.toString().trim();
     }
 
-    /**
-     * The frame beside a playlist name, or above it on a card: the artwork the sender sent and, over it,
-     * the file's number — in the accent when that file is the one playing, which is the whole of how the
-     * panel says so. With no artwork the frame says that with a glyph, and the number stays where it
-     * sits on every frame that does have one.
-     */
-    private FrameLayout playlistFrame(final Context ctx, final int index, final Uri artwork,
-                                      final Uri media, final boolean playing) {
-        // The row's own radius, so a frame inside a row reads as one object with it rather than as a
-        // rounded thing sitting on another rounded thing at a different rate.
-        final FrameLayout box = Utils.previewBox(ctx, artwork, media, Utils.dpToPx(8),
-                ui.dpS(24), R.drawable.ic_movie_24dp);
-        final TextView marker = metaChip(ctx, String.valueOf(index + 1));
-        if (playing) {
-            // The one playing says so in the marker it already has, rather than in a second thing beside
-            // it: the accent, with the ink that belongs to the accent (colors.xml, brand_accent_on). The
-            // word survives for a screen reader, which is what colour alone would otherwise cost.
-            marker.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer,
-                    ContextCompat.getColor(ctx, R.color.brand_accent_on)));
-            final GradientDrawable accent = new GradientDrawable();
-            accent.setCornerRadius(Utils.dpToPx(6));
-            accent.setColor(MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
-                    ContextCompat.getColor(ctx, R.color.brand_accent)));
-            marker.setBackground(accent);
-            marker.setContentDescription(getString(R.string.playlist_playing));
-        }
-        final FrameLayout.LayoutParams markerLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ui.dpS(20));
-        markerLp.gravity = Gravity.TOP | Gravity.START;
-        markerLp.setMargins(Utils.dpToPx(6), Utils.dpToPx(6), 0, 0);
-        box.addView(marker, markerLp);
-        return box;
-    }
-
-    /** One playlist row: the frame, the name, and the word for the one playing at the end of it. */
-    private View playlistRow(final Context ctx, final int index, final CharSequence title,
-                             final Uri artwork, final Uri media, final boolean isCurrent) {
-        final LinearLayout row = new LinearLayout(ctx);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
-        row.setMinimumHeight(ui.rowMinHeight());
-
-        // 16:9, the shape of what is inside it, and the shape the episode lists already use.
-        final LinearLayout.LayoutParams frameLp = new LinearLayout.LayoutParams(ui.dpS(88), ui.dpS(50));
-        frameLp.setMarginEnd(Utils.dpToPx(12));
-        frameLp.gravity = Gravity.CENTER_VERTICAL;
-        row.addView(playlistFrame(ctx, index, artwork, media, isCurrent), frameLp);
-
-        final LinearLayout textBlock = new LinearLayout(ctx);
-        textBlock.setOrientation(LinearLayout.VERTICAL);
-        final TextView titleText = new TextView(ctx);
-        titleText.setText(title);
-        titleText.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
-        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
-        if (isCurrent) {
-            titleText.setTypeface(Typeface.DEFAULT_BOLD);
-        }
-        textBlock.addView(titleText);
-        final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        blockLp.gravity = Gravity.CENTER_VERTICAL;
-        row.addView(textBlock, blockLp);
-        Dialogs.fitLongText(this, ui, row, titleText);
-        return row;
-    }
-
-    /**
-     * One playlist card: the frame at a size worth looking at, the number over it, and the name under.
-     * This is what the frames are for — a folder of camera files tells its items apart by what is in
-     * them, where the names are one word and a number.
-     */
-    private View playlistCard(final Context ctx, final int index, final CharSequence title,
-                              final Uri artwork, final Uri media, final boolean isCurrent,
-                              final int cellWidthPx) {
-        final LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(6);
-        card.setPadding(pad, pad, pad, Utils.dpToPx(8));
-
-        card.addView(playlistFrame(ctx, index, artwork, media, isCurrent),
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                        (cellWidthPx - 2 * pad) * 9 / 16));
-
-        final TextView titleText = new TextView(ctx);
-        titleText.setText(title);
-        titleText.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
-        titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
-        if (isCurrent) {
-            titleText.setTypeface(Typeface.DEFAULT_BOLD);
-        }
-        final LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.topMargin = Utils.dpToPx(8);
-        card.addView(titleText, titleLp);
-
-        // One line, and an ellipsis where it runs out. Two lines kept every card the same height even
-        // when the names were short, but it paid for that with a blank line under most of them; a single
-        // line is the same height for every card without reserving room nothing is going to use. Not
-        // fitLongText's marquee either — in a rail it would leave every card that is not focused cut off
-        // mid-word, where an ellipsis says the name goes on.
-        titleText.setLines(1);
-        titleText.setEllipsize(TextUtils.TruncateAt.END);
-        return card;
-    }
-
-    /**
-     * A label over a frame, Material's way of putting one on an image: the full shape at label size in
-     * the label weight, on a scrim of its own rather than on the theme's surface — what is behind it is
-     * a picture, and a frame with no picture in it yet is the very colour a surface pill would be.
-     */
-    private TextView metaChip(final Context ctx, final CharSequence text) {
-        final TextView chip = new TextView(ctx);
-        chip.setText(text);
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBadge());
-        chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        chip.setTextColor(Color.WHITE);
-        final GradientDrawable fill = new GradientDrawable();
-        // 6dp, not the pill the height would give: the frame it sits on is 8dp, and a label rounded to
-        // half of itself beside a corner that gentle reads as a different family. Under the frame's own
-        // radius, because it is the smaller box and sits 6dp inside it.
-        fill.setCornerRadius(Utils.dpToPx(6));
-        fill.setColor(ContextCompat.getColor(ctx, R.color.badge_scrim));
-        chip.setBackground(fill);
-        // A stated height with the radius at half of it: a pill, and every pill in the panel the same
-        // height whatever is in it. Font padding off, so the text sits on the pill's centre line rather
-        // than on the centre of the room the font asks for.
-        chip.setGravity(Gravity.CENTER);
-        chip.setIncludeFontPadding(false);
-        chip.setPadding(Utils.dpToPx(8), 0, Utils.dpToPx(8), 0);
-        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ui.dpS(20));
-        lp.setMarginEnd(Utils.dpToPx(4));
-        chip.setLayoutParams(lp);
-        return chip;
-    }
-
     // Small episode-number chip, inset from the poster's top-start corner so its rounded corners don't
     // clash with the poster's rounded clip. Reused by the header poster and the playlist rows.
     private TextView createPosterNumberBadge() {
@@ -6611,13 +5777,11 @@ public class PlayerActivity extends Activity {
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        lp.setMargins(Utils.dpToPx(6), Utils.dpToPx(6), 0, 0);
+        lp.setMargins(Utils.dpToPx(3), Utils.dpToPx(3), 0, 0);
         badge.setLayoutParams(lp);
         final GradientDrawable bg = new GradientDrawable();
-        bg.setColor(ContextCompat.getColor(this, R.color.badge_scrim));
-        // The same radius as the panel's labels, and inset clear of the frame's own corner rather than
-        // sitting on the curve of it.
-        bg.setCornerRadius(Utils.dpToPx(6));
+        bg.setColor(0xCC000000);
+        bg.setCornerRadius(Utils.dpToPx(3));
         badge.setBackground(bg);
         badge.setGravity(Gravity.CENTER);
         badge.setMinWidth(Utils.dpToPx(18));
@@ -6629,38 +5793,28 @@ public class PlayerActivity extends Activity {
         return badge;
     }
 
-    /**
-     * @param artwork a picture sent for this item, which wins when there is one
-     * @param media   the item itself, asked for a frame of itself when no artwork was sent - which is
-     *                every file on the device, none of which arrives with a poster
-     */
-    private void updatePoster(final Uri artwork, final Uri media, final int index, final int count) {
+    private void updatePoster(final Uri uri, final int index, final int count) {
         final boolean isPlaylist = count > 1;
         final String number = String.valueOf(index + 1);
         posterBadgeView.setText(number);
         posterPlaceholderView.setText(number);
 
-        final Uri source = artwork != null ? artwork : Utils.frameSource(media);
-        if (source != null) {
+        if (uri != null) {
             posterSlot.setVisibility(View.VISIBLE);
             posterView.setVisibility(View.VISIBLE);
             posterPlaceholderView.setVisibility(View.GONE);
             posterBadgeView.setVisibility(isPlaylist ? View.VISIBLE : View.GONE);
-            RequestBuilder<Bitmap> request = Glide.with(this).asBitmap().load(source);
-            if (artwork == null) {
-                // A second in, not at zero: a great many files open on black or on a fade, and the
-                // first frame of those is a preview of nothing.
-                request = request.frame(1_000_000L);
-            }
-            request.listener(new RequestListener<Bitmap>() {
+            Glide.with(this)
+                    .load(uri)
+                    .listener(new RequestListener<Drawable>() {
                         @Override
-                        public boolean onLoadFailed(GlideException e, Object model, Target<Bitmap> target, boolean isFirstResource) {
+                        public boolean onLoadFailed(GlideException e, Object model, Target<Drawable> target, boolean isFirstResource) {
                             showPosterFallback(isPlaylist);
                             return false;
                         }
 
                         @Override
-                        public boolean onResourceReady(Bitmap resource, Object model, Target<Bitmap> target, DataSource dataSource, boolean isFirstResource) {
+                        public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
                             return false;
                         }
                     })
@@ -6698,128 +5852,29 @@ public class PlayerActivity extends Activity {
         }
         final int count = mediaItems.size();
         final int current = fromPlayer ? player.getCurrentMediaItemIndex() : apiPlaylistStartIndex;
+        final int radius = Utils.dpToPx(4);
         final View[] currentRow = new View[1];
 
-        // The panels follow the appearance choice, like the dialogs do — see
-        // Utils.dialogContext. Every view below is built against it, so a light app gets a
-        // light panel and AMOLED gets a black one.
-        final Context ctx = Dialogs.dialogContext(this);
-        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
-        final LinearLayout listLayout = new LinearLayout(ctx);
+        final LinearLayout listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        // Frames are a landscape idea: a rail of them needs width to run along and gives up the height
-        // a list would have used. Held upright there is no width and nothing to scroll sideways, so the
-        // panel is a list and does not offer a choice it cannot honour. The choice itself is remembered
-        // for when the phone is turned back.
-        final boolean landscape = getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        // Where there is width, the playlist opens as a rail of frames along the foot of the screen —
-        // see the window it is given at the end of this method. The choice stays, because which one
-        // reads better is about the files and not about the window — a folder of camera clips is told
-        // apart by what is in the frames, a season of episodes by their names.
-        final boolean onTheBar = landscape || ui.deviceClass == UiMetrics.DeviceClass.TV;
-        final boolean grid = onTheBar && (mPrefs == null || mPrefs.playlistGrid);
-
-        // The panel's name, how much is in it, and the one control it has.
-        final LinearLayout headerRow = new LinearLayout(ctx);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        // The name carries the weight and the count follows it in the quieter ink, because one of them
-        // is what the panel is and the other is how much of it there is. Both on one baseline, and the
-        // pair starts on the line the frames below it start on, not on the panel's own padding.
-        final TextView header = new TextView(ctx);
+        final TextView header = new TextView(this);
         header.setText(getString(R.string.playlist));
-        header.setTextColor(onSurface);
+        header.setTextColor(Color.WHITE);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(Utils.dpToPx(8), Utils.dpToPx(10), 0, Utils.dpToPx(10));
-        // The name is the one that gives way. It used to be the rigid half and the count the flexible
-        // one, which is backwards: a weight shares out what is LEFT, and the name had already taken the
-        // row - so with two glyphs beside them the count was handed nothing and a TextView with no
-        // width does the only thing it can, which is one letter to a line. Sideways, in Ukrainian,
-        // "2 файли" came down the panel like a column of stamps.
-        header.setMaxLines(1);
-        header.setEllipsize(TextUtils.TruncateAt.END);
-        headerRow.addView(header, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+        listLayout.addView(header);
 
-        final TextView headerCount = new TextView(ctx);
-        headerCount.setText(getResources().getQuantityString(R.plurals.playlist_items, count, count));
-        headerCount.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                ContextCompat.getColor(ctx, R.color.ink_secondary)));
-        headerCount.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
-        // Short, and never worth breaking: whatever it needs it takes, and it is the name above that
-        // shortens if the row runs out.
-        headerCount.setSingleLine(true);
-        final LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        countLp.setMarginStart(Utils.dpToPx(8));
-        headerRow.addView(headerCount, countLp);
-
-        // Rows or frames, remembered rather than asked again: a viewer who wants pictures wants them for
-        // every playlist, not for this one. The icon shows what the press will give, not where you are.
-        if (onTheBar) {
-            // The glyph box every other header in the app uses, rather than one assembled here. Built
-            // by hand it kept the icon button style's own 10dp start padding and let minWidth stretch
-            // the box to 48, and MaterialButton does not move an icon when the view is stretched: the
-            // glyph sat 5.5dp left of the middle, which the focus ring around it made plain. Measured
-            // on tv_720p, where the box is 62dp: 7.5px of an 83px ring. Dialogs.iconButton makes the
-            // box out of symmetric padding instead, so the glyph is centred by construction.
-            final MaterialButton modeButton = Dialogs.iconButton(ctx, ui,
-                    grid ? R.drawable.ic_view_list_24dp : R.drawable.ic_view_grid_24dp,
-                    getString(grid ? R.string.playlist_view_list : R.string.playlist_view_grid),
-                    false);
-            // The panel is built from scratch every time it opens, so switching is opening it again — and
-            // showPlaylistDialog dismisses the one on screen itself before it builds the next.
-            modeButton.setOnClickListener(v -> {
-                mPrefs.updatePlaylistGrid(!grid);
-                showPlaylistDialog();
-            });
-            // Where the count ends and the controls begin. A glyph box carries its own air inside it,
-            // so the two buttons sit flush and still read as spaced - 40dp between their glyphs. A
-            // line of text carries none: its ink runs to the edge of its box, so flush against the
-            // first button put the focus ring on the "s" of "3 files", nought between them where the
-            // floor for two touch targets is 8dp. 16dp is the next step of the scale above that
-            // floor, and it is the one gap in this row that separates a label from a control rather
-            // than one control from another.
-            final LinearLayout.LayoutParams modeLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            modeLp.setMarginStart(ui.dpS(16));
-            headerRow.addView(modeButton, modeLp);
-        }
-        headerRow.addView(Dialogs.pickerClose(ctx, ui));
-        listLayout.addView(headerRow);
-
-        // A card keeps a stated width and lets the next one show past the panel's edge, which is what
-        // says there is more of it; 190dp is about the narrowest a 16:9 frame can be and still be a
-        // picture rather than a stamp, and it grows with the device class like every other box here.
-        // Narrower on the rail than in the panel. 190dp is sized for a surface that owns a third of the
-        // screen and can spend height on it; a rail lies along the foot of the picture and every dp of
-        // frame is a dp of film it covers — at 190 the strip came out half the screen tall, which is a
-        // panel again, only lying down. 120dp is still a picture rather than a stamp, and a 16:9 frame
-        // at that width is 68dp, so the whole rail is about a fifth of a landscape phone.
-        final int cellWidth = ui.dpS(onTheBar ? 120 : 190);
-        LinearLayout gridRow = null;
-        HorizontalScrollView railScroller = null;
-        if (grid) {
-            railScroller = new HorizontalScrollView(ctx);
-            railScroller.setHorizontalScrollBarEnabled(false);
-            // The rail is cut by the panel's edge wherever it happens to be scrolled to, so the cut is
-            // faded rather than sliced — that fade is also the only thing saying there is more to the
-            // right. The padding is not clipped, so the first and last cards keep the panel's margin
-            // while the ones between it scroll under it.
-            railScroller.setHorizontalFadingEdgeEnabled(true);
-            railScroller.setFadingEdgeLength(ui.dpS(28));
-            railScroller.setClipToPadding(false);
-            gridRow = new LinearLayout(ctx);
-            gridRow.setOrientation(LinearLayout.HORIZONTAL);
-            railScroller.addView(gridRow);
-            listLayout.addView(railScroller);
-        }
+        final View divider = new View(this);
+        final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        dividerLp.bottomMargin = Utils.dpToPx(4);
+        divider.setLayoutParams(dividerLp);
+        divider.setBackgroundColor(0x1AFFFFFF);
+        listLayout.addView(divider);
 
         for (int i = 0; i < count; i++) {
             final int index = i;
@@ -6829,34 +5884,85 @@ public class PlayerActivity extends Activity {
             if (title == null || title.length() == 0) {
                 title = "Video " + (i + 1);
             }
-            Uri artwork = md != null ? md.artworkUri : null;
-            if (artwork == null && index == current) {
-                artwork = playingArtwork;
-            }
-            // Nothing sends artwork for a file on the device, so the file is asked for a frame of
-            // itself. Passed alongside the artwork rather than instead of it: an episode from a
-            // launcher has a poster, and a poster chosen for the episode beats a still from it.
-            final Uri media = item.localConfiguration != null ? item.localConfiguration.uri : null;
+            final Uri artwork = md != null ? md.artworkUri : null;
             final boolean isCurrent = i == current;
 
-            final View row = grid
-                    ? playlistCard(ctx, i, title, artwork, media, isCurrent, cellWidth)
-                    : playlistRow(ctx, i, title, artwork, media, isCurrent);
+            final LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Utils.dpToPx(8), Utils.dpToPx(7), Utils.dpToPx(10), Utils.dpToPx(7));
             row.setClickable(true);
             row.setFocusable(true);
-            // Nothing is painted under the one playing. Two attempts said otherwise and both measured
-            // badly: the coral of the other pickers turned the row brown, and the neutral step that
-            // replaced it came out at 1.29:1 in the dark appearance, 1.16:1 in the light one, and at
-            // exactly nothing under AMOLED, where the two container tones are the same colour. What says
-            // it now is the glyph in the picture and the weight of the name — one mark the eye finds and
-            // one that survives a monochrome screenshot — leaving the fill to the focus ring, whose job
-            // "this cell" already was.
-            row.setBackground(Dialogs.pickerRow(ctx, Color.TRANSPARENT));
-            // What a screen reader needs to hear, and free: the row is the selected one in its list.
-            row.setSelected(isCurrent);
+            row.setMinimumHeight(ui.rowMinHeight());
+            // Rounded row: subtle fill for the current item, plus a rounded ripple for touch/D-pad focus.
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
+
+            final FrameLayout box = new FrameLayout(this);
+            final LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, Utils.dpToPx(56));
+            boxLp.setMarginEnd(Utils.dpToPx(12));
+            boxLp.gravity = Gravity.CENTER_VERTICAL;
+            box.setLayoutParams(boxLp);
+            box.setMinimumWidth(Utils.dpToPx(40));
+            box.setBackgroundColor(0xFF2A2A2A);
+            box.setClipToOutline(true);
+            box.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                }
+            });
+
+            final ImageView poster = new ImageView(this);
+            poster.setLayoutParams(new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            poster.setAdjustViewBounds(true);
+            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            box.addView(poster);
+
+            if (artwork != null) {
+                Glide.with(this).load(artwork).into(poster);
+                final TextView numberChip = createPosterNumberBadge();
+                numberChip.setText(String.valueOf(i + 1));
+                numberChip.setVisibility(View.VISIBLE);
+                box.addView(numberChip);
+            } else {
+                poster.setVisibility(View.GONE);
+                final TextView number = new TextView(this);
+                number.setText(String.valueOf(i + 1));
+                number.setTypeface(Typeface.DEFAULT_BOLD);
+                number.setLayoutParams(new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                number.setGravity(Gravity.CENTER);
+                number.setMinWidth(Utils.dpToPx(40));
+                number.setTextColor(0x99FFFFFF);
+                number.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textListNumber());
+                box.addView(number);
+            }
+            row.addView(box);
+
+            final TextView titleText = new TextView(this);
+            titleText.setText(title);
+            titleText.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            titleText.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textList());
+            if (isCurrent) {
+                titleText.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            final LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            titleLp.gravity = Gravity.CENTER_VERTICAL;
+            titleText.setLayoutParams(titleLp);
+            row.addView(titleText);
+            fitLongText(row, titleText);
 
             row.setOnClickListener(v -> {
                 if (player != null) {
@@ -6871,7 +5977,7 @@ public class PlayerActivity extends Activity {
                     final long saved = apiPlaylistPositions != null && index < apiPlaylistPositions.length
                             ? apiPlaylistPositions[index] : C.TIME_UNSET;
                     mPrefs.updatePosition(saved == C.TIME_UNSET ? 0 : saved);
-                    playerView.readout(null, 0);
+                    playerView.setCustomErrorMessage(null);
                     initializePlayer();
                 }
                 if (playlistDialog != null) {
@@ -6879,61 +5985,35 @@ public class PlayerActivity extends Activity {
                 }
             });
 
-            if (grid) {
-                gridRow.addView(row, new LinearLayout.LayoutParams(
-                        cellWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
-            } else {
-                final LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                // Each row carries its own rounded fill, so they are separated rather than stacked into
-                // one column of touching rectangles — between them, which is not after the last one.
-                rowLp.bottomMargin = i == count - 1 ? 0 : Utils.dpToPx(4);
-                listLayout.addView(row, rowLp);
-            }
+            listLayout.addView(row);
         }
 
-        final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
         // The dialog spans the full height behind the status/navigation bars, so pad the content clear of
         // them. Use a FIXED inset captured now (the status bar is visible while the controls — and thus this
         // dialog — are shown): a dynamic inset listener would drop to 0 when hideController() flips the
         // activity to immersive flags, making the list visibly "jump" up under the still-visible status bar.
-        // The rows carry their own side padding; the card only keeps them off its rounded ends.
-        // Nothing at the bottom: the list inside carries its own padding and the panel adds the
-        // navigation bar's inset under that, so a third one here only opened a band of empty sheet
-        // below the last row.
-        scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
 
         if (playlistDialog != null) {
             playlistDialog.dismiss();
         }
         playlistDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        // The window follows what is in it, not what the screen is. A rail of frames is one frame tall
-        // and as long as the screen, so it lies along the bottom the way a sheet does on a phone held
-        // upright — only the whole width of it. A list of names is a column, so it goes where every
-        // column goes sideways: the end edge, beside the film, like the sleep timer and the tracks.
-        Dialogs.pickerWindow(this, ui, playlistDialog, scrollView, grid);
+        playlistDialog.setContentView(scrollView);
+        playlistDialog.setCanceledOnTouchOutside(true);
+        final Window window = playlistDialog.getWindow();
+        if (window != null) {
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
         // Hide the player's overlay (header + bottom controls) so only the playlist panel is shown.
         showPickerDialog(playlistDialog);
-        final View currentCell = currentRow[0];
-        final HorizontalScrollView rail = railScroller;
-        if (currentCell != null) {
-            currentCell.post(() -> {
-                // A remote is brought to the item playing by taking the focus. A finger is not: nothing
-                // is focusable in touch mode, so the focus request is refused and neither scroller moves
-                // — which is why a playlist of two hundred files used to open at the first one however
-                // far in the viewer had got. Scroll it as well, on whichever axis this arrangement runs.
-                currentCell.requestFocus();
-                if (rail != null) {
-                    rail.scrollTo(currentCell.getLeft() - Utils.dpToPx(8), 0);
-                } else if (currentCell.getBottom() > scrollView.getHeight()) {
-                    // Only when it is not on screen already. getTop() is measured past the header, so
-                    // scrolling to the first file scrolled the panel's own name, count and mode button
-                    // out of the top of it - and a playlist that opens on its first file is the common
-                    // case, not the deep one this scroll exists for.
-                    scrollView.scrollTo(0, currentCell.getTop() - Utils.dpToPx(8));
-                }
-            });
+        if (currentRow[0] != null) {
+            currentRow[0].post(() -> currentRow[0].requestFocus());
         }
     }
 
@@ -7051,74 +6131,70 @@ public class PlayerActivity extends Activity {
     // panel docked to the end edge, with the current choice ticked and reachable by remote.
     private void showQualityDialog() {
         if (player == null) {
-            showNotice(getString(R.string.quality_unavailable), false, R.drawable.ic_high_quality_24dp);
+            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
         final ArrayList<VideoQualityChoice> choices = buildQualityChoices();
         if (choices.size() < 2) {
-            showNotice(getString(R.string.quality_unavailable), false, R.drawable.ic_high_quality_24dp);
+            Toast.makeText(this, R.string.quality_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
         final int selected = selectedQualityIndex(choices);
         final View[] currentRow = new View[1];
 
-        // The panels follow the appearance choice, like the dialogs do — see
-        // Utils.dialogContext. Every view below is built against it, so a light app gets a
-        // light panel and AMOLED gets a black one.
-        final Context ctx = Dialogs.dialogContext(this);
-        final int onSurface = MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE);
-        // What "chosen" looks like, shared with the toggle groups and the settings switch.
-        final int selectedFill = MaterialColors.getColor(ctx, R.attr.colorSecondaryContainer,
-                ContextCompat.getColor(ctx, R.color.brand_container));
-        final int onSelected = MaterialColors.getColor(ctx, R.attr.colorOnSecondaryContainer, Color.WHITE);
-        final LinearLayout listLayout = new LinearLayout(ctx);
+        final LinearLayout listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
         final int listPad = Utils.dpToPx(10);
         listLayout.setPadding(listPad, listPad, listPad, listPad);
 
-        final TextView header = new TextView(ctx);
+        final TextView header = new TextView(this);
         header.setText(getString(R.string.quality_title));
-        header.setTextColor(onSurface);
+        header.setTextColor(Color.WHITE);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
-        listLayout.addView(Dialogs.pickerHeader(ctx, ui, header));
+        listLayout.addView(header);
 
-        final View divider = new View(ctx);
+        final View divider = new View(this);
         final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
         dividerLp.bottomMargin = Utils.dpToPx(4);
         divider.setLayoutParams(dividerLp);
-        divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
-                ContextCompat.getColor(ctx, R.color.divider)));
+        divider.setBackgroundColor(0x1AFFFFFF);
         listLayout.addView(divider);
 
         for (int i = 0; i < choices.size(); i++) {
             final VideoQualityChoice choice = choices.get(i);
             final boolean isCurrent = i == selected;
 
-            final LinearLayout row = new LinearLayout(ctx);
+            final LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
             row.setClickable(true);
             row.setFocusable(true);
             row.setMinimumHeight(ui.rowMinHeight());
-            row.setBackground(Dialogs.pickerRow(ctx, isCurrent ? selectedFill : Color.TRANSPARENT));
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
             if (isCurrent) {
                 currentRow[0] = row;
             }
 
-            final LinearLayout textBlock = new LinearLayout(ctx);
+            final LinearLayout textBlock = new LinearLayout(this);
             textBlock.setOrientation(LinearLayout.VERTICAL);
             final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             blockLp.gravity = Gravity.CENTER_VERTICAL;
             textBlock.setLayoutParams(blockLp);
 
-            final TextView title = new TextView(ctx);
+            final TextView title = new TextView(this);
             title.setText(qualityChoiceTitle(choice));
-            title.setTextColor(isCurrent ? onSelected : onSurface);
+            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
             if (isCurrent) {
                 title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -7128,21 +6204,19 @@ public class PlayerActivity extends Activity {
             final String subtitle = qualityChoiceSubtitle(choice);
             TextView details = null;
             if (subtitle != null && !subtitle.isEmpty()) {
-                details = new TextView(ctx);
+                details = new TextView(this);
                 details.setText(subtitle);
-                details.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
+                details.setTextColor(0x99FFFFFF);
                 details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 textBlock.addView(details);
             }
             row.addView(textBlock);
-            Dialogs.fitLongText(this, ui, row, title, details);
+            fitLongText(row, title, details);
 
             if (choice.bitrateText != null && !choice.bitrateText.isEmpty()) {
-                final TextView bitrate = new TextView(ctx);
+                final TextView bitrate = new TextView(this);
                 bitrate.setText(choice.bitrateText);
-                bitrate.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
+                bitrate.setTextColor(0x99FFFFFF);
                 bitrate.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
                 bitrate.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
                 bitrate.setSingleLine(true);
@@ -7163,19 +6237,24 @@ public class PlayerActivity extends Activity {
             listLayout.addView(row);
         }
 
-        final android.widget.ScrollView scrollView = new android.widget.ScrollView(ctx);
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
         scrollView.addView(listLayout);
-        // The rows carry their own side padding; the card only keeps them off its rounded ends.
-        // Nothing at the bottom: the list inside carries its own padding and the panel adds the
-        // navigation bar's inset under that, so a third one here only opened a band of empty sheet
-        // below the last row.
-        scrollView.setPadding(0, Utils.dpToPx(8), 0, 0);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
 
         if (qualityDialog != null) {
             qualityDialog.dismiss();
         }
         qualityDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Dialogs.pickerWindow(this, ui, qualityDialog, scrollView);
+        qualityDialog.setContentView(scrollView);
+        qualityDialog.setCanceledOnTouchOutside(true);
+        final Window window = qualityDialog.getWindow();
+        if (window != null) {
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
         showPickerDialog(qualityDialog);
         if (currentRow[0] != null) {
             currentRow[0].post(() -> currentRow[0].requestFocus());
@@ -7217,33 +6296,276 @@ public class PlayerActivity extends Activity {
         player.setTrackSelectionParameters(builder.build());
     }
 
+    // A row in the native side-panel menus (audio / speed / more).
+    private static class MenuItem {
+        final int iconRes;
+        /** Artwork to lead the row with instead of the glyph — a room's poster. Null for everything else. */
+        final String imageUrl;
+        final CharSequence title;
+        final CharSequence subtitle;
+        final boolean checked;
+        final Runnable action;
+        /**
+         * Chrome rather than a choice: a caption naming the group below it, or — with no title — a bare
+         * rule. A list where a doorway into another list, a set of choices and an action all look alike
+         * reads as unstructured, and the icon some of them carry reads as decoration rather than as the
+         * thing that tells them apart. Not clickable and never focusable: a remote must not stop here.
+         */
+        final boolean chrome;
 
+        static MenuItem caption(CharSequence title) {
+            return new MenuItem(title, true);
+        }
 
+        static MenuItem rule() {
+            return new MenuItem(null, true);
+        }
 
+        private MenuItem(CharSequence title, boolean chrome) {
+            this.iconRes = 0;
+            this.imageUrl = null;
+            this.title = title;
+            this.subtitle = null;
+            this.checked = false;
+            this.action = null;
+            this.chrome = chrome;
+        }
 
+        MenuItem(CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this(0, title, subtitle, checked, action);
+        }
 
+        MenuItem(int iconRes, CharSequence title, CharSequence subtitle, boolean checked, Runnable action) {
+            this(iconRes, null, title, subtitle, checked, action);
+        }
+
+        MenuItem(int iconRes, String imageUrl, CharSequence title, CharSequence subtitle,
+                 boolean checked, Runnable action) {
+            this.iconRes = iconRes;
+            this.imageUrl = imageUrl;
+            this.title = title;
+            this.subtitle = subtitle;
+            this.checked = checked;
+            this.action = action;
+            this.chrome = false;
+        }
+    }
+
+    /** The rule the panel already draws under its title, reused wherever one group of rows ends. */
+    private View menuRule(int topPx, int bottomPx) {
+        final View rule = new View(this);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
+        lp.topMargin = topPx;
+        lp.bottomMargin = bottomPx;
+        rule.setLayoutParams(lp);
+        rule.setBackgroundColor(0x1AFFFFFF);
+        return rule;
+    }
+
+    /**
+     * A caption naming the group under it, in the register the panel already uses for a row's details —
+     * same size, same dimmed white. Indented to where the titles of that group start, not to the icon
+     * column, and given more air above than below so it belongs to what follows it.
+     */
+    private View menuCaption(CharSequence text) {
+        final TextView caption = new TextView(this);
+        caption.setText(text);
+        caption.setTextColor(0x99FFFFFF);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        caption.setPadding(Utils.dpToPx(12), Utils.dpToPx(8), Utils.dpToPx(12), Utils.dpToPx(2));
+        return caption;
+    }
+
+    // Full-height translucent panel docked to the end edge, matching the quality/playlist menus.
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items) {
+        showSideMenu(menuTitle, items, 34, 48);
+    }
+
+    /**
+     * @param posterWDp poster size for rows that carry artwork. The default is a thumbnail beside a
+     *                  name that already says everything; a list where the poster is what tells the
+     *                  rows apart — search results for a name typed from across the room — asks for
+     *                  bigger, and nothing else about the panel changes.
+     */
+    private void showSideMenu(CharSequence menuTitle, List<MenuItem> items, int posterWDp, int posterHDp) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        final View[] currentRow = new View[1];
+        // Where the D-pad starts when no row is checked — a panel of actions has nothing ticked, and
+        // without this a remote opens onto whatever focus the dialog happened to pick.
+        final View[] firstRow = new View[1];
+
+        final LinearLayout listLayout = new LinearLayout(this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+        final int listPad = Utils.dpToPx(10);
+        listLayout.setPadding(listPad, listPad, listPad, listPad);
+
+        final TextView header = new TextView(this);
+        header.setText(menuTitle);
+        header.setTextColor(Color.WHITE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
+        listLayout.addView(header);
+
+        listLayout.addView(menuRule(0, Utils.dpToPx(4)));
+
+        for (final MenuItem item : items) {
+            if (item.chrome) {
+                // Air on both sides of a group boundary: it belongs to neither of the two groups.
+                listLayout.addView(item.title == null
+                        ? menuRule(Utils.dpToPx(6), Utils.dpToPx(6)) : menuCaption(item.title));
+                continue;
+            }
+            final boolean isCurrent = item.checked;
+
+            final LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
+            row.setClickable(true);
+            row.setFocusable(true);
+            row.setMinimumHeight(ui.rowMinHeight());
+            final GradientDrawable rowContent = new GradientDrawable();
+            rowContent.setCornerRadius(Utils.dpToPx(8));
+            rowContent.setColor(isCurrent ? brandColorDim() : Color.TRANSPARENT);
+            final GradientDrawable rowMask = new GradientDrawable();
+            rowMask.setCornerRadius(Utils.dpToPx(8));
+            rowMask.setColor(Color.WHITE);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), rowContent, rowMask));
+            if (isCurrent) {
+                currentRow[0] = row;
+            }
+            if (firstRow[0] == null) {
+                firstRow[0] = row;
+            }
+
+            // A room with artwork leads with it rather than with a glyph: in a list of rooms the poster is
+            // what tells them apart, and the same corner radius the header's poster uses keeps the two
+            // readings of "this film" looking like one thing. Cropped, not fitted — a row of posters with
+            // ragged widths reads as broken, and losing a sliver of a 2:3 image costs nothing.
+            if (item.imageUrl != null && !item.imageUrl.isEmpty()) {
+                final ImageView art = new ImageView(this);
+                art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                // Same placeholder as the header's poster slot, so a slow load is a quiet grey card
+                // rather than a hole that shifts the text when it fills.
+                art.setBackgroundColor(0xFF333333);
+                final int artCorner = Utils.dpToPx(4);
+                art.setClipToOutline(true);
+                art.setOutlineProvider(new ViewOutlineProvider() {
+                    @Override
+                    public void getOutline(View view, Outline outline) {
+                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), artCorner);
+                    }
+                });
+                final LinearLayout.LayoutParams artLp =
+                        new LinearLayout.LayoutParams(ui.dpS(posterWDp), ui.dpS(posterHDp));
+                artLp.setMarginEnd(Utils.dpToPx(16));
+                art.setLayoutParams(artLp);
+                row.addView(art);
+                Glide.with(this).load(item.imageUrl).into(art);
+            } else if (item.iconRes != 0) {
+                final ImageView icon = new ImageView(this);
+                icon.setImageResource(item.iconRes);
+                icon.setImageTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                final int iconSize = Utils.dpToPx(22);
+                final LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+                iconLp.setMarginEnd(Utils.dpToPx(16));
+                icon.setLayoutParams(iconLp);
+                row.addView(icon);
+            }
+
+            final LinearLayout textBlock = new LinearLayout(this);
+            textBlock.setOrientation(LinearLayout.VERTICAL);
+            final LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            blockLp.gravity = Gravity.CENTER_VERTICAL;
+            textBlock.setLayoutParams(blockLp);
+
+            final TextView title = new TextView(this);
+            title.setText(item.title);
+            title.setTextColor(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+            if (isCurrent) {
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+            }
+            // The poster took the glyph's place, so whatever the glyph was saying moves in beside the
+            // name — for a room that is the padlock, and losing it would leave the password to be
+            // discovered by tapping.
+            if (item.imageUrl != null && !item.imageUrl.isEmpty() && item.iconRes != 0) {
+                final Drawable mark = ContextCompat.getDrawable(this, item.iconRes);
+                if (mark != null) {
+                    final int markBox = Math.round(title.getTextSize());
+                    mark.setBounds(0, 0, markBox, markBox);
+                    mark.setTintList(ColorStateList.valueOf(isCurrent ? 0xFFFFFFFF : 0xFFDDDDDD));
+                    title.setCompoundDrawablesRelative(mark, null, null, null);
+                    title.setCompoundDrawablePadding(Utils.dpToPx(6));
+                }
+            }
+            textBlock.addView(title);
+
+            TextView details = null;
+            if (item.subtitle != null && item.subtitle.length() > 0) {
+                details = new TextView(this);
+                details.setText(item.subtitle);
+                details.setTextColor(0x99FFFFFF);
+                details.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+                textBlock.addView(details);
+            }
+            row.addView(textBlock);
+            fitLongText(row, title, details);
+
+            row.setOnClickListener(v -> {
+                if (menuDialog != null) {
+                    menuDialog.dismiss();
+                }
+                if (item.action != null) {
+                    item.action.run();
+                }
+            });
+            listLayout.addView(row);
+        }
+
+        final android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.addView(listLayout);
+        Utils.padForPickerInsets(this, ui, coordinatorLayout, scrollView, ui.overscanH(), 0, 0);
+
+        if (menuDialog != null) {
+            menuDialog.dismiss();
+        }
+        menuDialog = new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        menuDialog.setContentView(scrollView);
+        menuDialog.setCanceledOnTouchOutside(true);
+        final Window window = menuDialog.getWindow();
+        if (window != null) {
+            // Deliberately NOT fullscreen/edge-to-edge: a fullscreen dialog window makes OxygenOS treat the
+            // panel as immersive and apply its two-swipe back-gesture guard. A plain window closes on one back.
+            window.setLayout(ui.pickerWidthPx(getResources().getConfiguration()), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xF0141414));
+        }
+        showPickerDialog(menuDialog);
+        final View focus = currentRow[0] != null ? currentRow[0] : firstRow[0];
+        if (focus != null) {
+            focus.post(focus::requestFocus);
+        }
+    }
 
     private static class AudioChoice {
         final String label;
-        final String detail; // the codec, channels and bitrate; null when the track declares none
         final TrackGroup group;
         final int trackIndex;
         final boolean selected;
         final String language; // ISO-639-2/T, null when the track declares none
-        // Whether any renderer will take it. A false one is listed but cannot be picked: the menu used
-        // to drop it, and a release with three dubs on a box with no decoder for them then looked like
-        // a file with one - a missing dub reads as the app's fault rather than the device's.
-        final boolean supported;
 
-        AudioChoice(String label, String detail, TrackGroup group, int trackIndex, boolean selected,
-                    String language, boolean supported) {
+        AudioChoice(String label, TrackGroup group, int trackIndex, boolean selected, String language) {
             this.label = label;
-            this.detail = detail;
             this.group = group;
             this.trackIndex = trackIndex;
             this.selected = selected;
             this.language = language;
-            this.supported = supported;
         }
     }
 
@@ -7259,17 +6581,18 @@ public class PlayerActivity extends Activity {
             }
             final TrackGroup trackGroup = group.getMediaTrackGroup();
             for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) {
+                    continue;
+                }
                 final Format format = trackGroup.getFormat(i);
-                // Numbered along with the rest, so the fallback "Track N" heading counts tracks the way
-                // the container orders them - and the way resolveNamesForType already counts them.
                 number++;
-                final String[] text = trackRowText(format, number);
-                // Lenient on purpose. A track the decoder merely exceeds is one the selector will still
-                // take, because exceedRendererCapabilitiesIfNecessary is on by default - calling that one
-                // undecodable would deny a track the viewer can hear, and strip its tick while it plays.
-                choices.add(new AudioChoice(text[0], text[1], trackGroup, i, group.isTrackSelected(i),
-                        Utils.toIso3Language(format.language),
-                        group.isTrackSupported(i, /* allowExceedsCapabilities= */ true)));
+                // Same descriptor as the header meta line, so the picker matches what is shown up top.
+                String label = buildAudioInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
+                choices.add(new AudioChoice(label, trackGroup, i, group.isTrackSelected(i),
+                        Utils.toIso3Language(format.language)));
             }
         }
         return choices;
@@ -7475,21 +6798,10 @@ public class PlayerActivity extends Activity {
         if (choices.size() < 2) {
             return;
         }
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
+        final List<MenuItem> items = new ArrayList<>();
         String selectedLanguage = null;
         for (final AudioChoice choice : choices) {
-            if (!choice.supported) {
-                // Shown, never picked. Forcing an override onto a track no renderer takes ends the
-                // playback that is still running on the track beside it. The codec stays in the line:
-                // "DTS 5.1" is what tells the viewer which decoder this device is missing.
-                final String detail = choice.detail == null ? getString(R.string.notice_track_unsupported)
-                        : choice.detail + " · " + getString(R.string.notice_track_unsupported);
-                items.add(new Dialogs.MenuItem(choice.label, detail, false,
-                        () -> showNotice(getString(R.string.notice_track_unsupported_hint), true,
-                                R.drawable.ic_memory_24dp)));
-                continue;
-            }
-            items.add(new Dialogs.MenuItem(choice.label, choice.detail, choice.selected,
+            items.add(new MenuItem(choice.label, null, choice.selected,
                     () -> applyAudio(choice)));
             if (choice.selected) {
                 selectedLanguage = choice.language;
@@ -7503,11 +6815,11 @@ public class PlayerActivity extends Activity {
         if (selectedLanguage != null && hasOverrideType(C.TRACK_TYPE_AUDIO)
                 && (preferred.isEmpty() || !preferred.get(0).equals(selectedLanguage))) {
             final String language = selectedLanguage;
-            items.add(new Dialogs.MenuItem(R.drawable.ic_star_24dp,
+            items.add(new MenuItem(R.drawable.ic_star_24dp,
                     getString(R.string.audio_prefer_language, languageDisplayName(language)),
                     null, false, () -> preferAudioLanguage(language)));
         }
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.audio_title), items);
+        showSideMenu(getString(R.string.audio_title), items);
     }
 
     /**
@@ -7521,8 +6833,8 @@ public class PlayerActivity extends Activity {
         languages.add(0, language);
         mPrefs.setLanguageAudio(TextUtils.join(",", languages));
         applyPreferredAudioLanguages();
-        Dialogs.showText(playerView, getString(R.string.audio_prefer_language_done,
-                languageDisplayName(language)), R.drawable.ic_audiotrack_24dp);
+        Utils.showText(playerView, getString(R.string.audio_prefer_language_done,
+                languageDisplayName(language)));
     }
 
     /**
@@ -7712,8 +7024,7 @@ public class PlayerActivity extends Activity {
             playerView.textClearRunnable.run();
             return;
         }
-        Dialogs.showText(playerView, getString(text), R.drawable.ic_subtitles_24dp,
-                SUBTITLE_NOTICE_MS);
+        Utils.showText(playerView, getString(text), SUBTITLE_NOTICE_MS);
     }
 
     /**
@@ -7913,11 +7224,6 @@ public class PlayerActivity extends Activity {
         // SubtitleFetcher.fitsMedia. C.TIME_UNSET while a stream is still opening, which accepts
         // whatever comes down, as it did before there was a check at all.
         final long durationMs = player.getDuration();
-        // Read on this thread for the same reason as the duration: the worker has no business asking
-        // the player anything. The reading itself happens on the worker — it is two round trips, and
-        // over a share one of them is a seek to the far end of a file being streamed from the front.
-        final androidx.media3.datasource.DataSource.Factory hashSource =
-                mPrefs.subtitleSourceOpenSubtitles ? subtitleHashSource : null;
 
         if (manual) {
             subtitleSearchNotice(R.string.subtitle_search_searching);
@@ -7927,13 +7233,9 @@ public class PlayerActivity extends Activity {
             final AtomicBoolean answered = new AtomicBoolean();
             SubtitleSearch.Result found = null;
             try {
-                // Only api.opensubtitles.com is keyed by it, so it is not worth a byte when that source
-                // is off. Null for anything that cannot be hashed — a live stream, a server that will
-                // not say how long the file is — and the search then runs by id exactly as before.
-                final MovieHash.Hash hash = MovieHash.of(hashSource, media, durationMs);
                 if (!mainTargets.isEmpty()) {
                     found = subtitleSearchPass(id, mainTargets, cacheName, generation, index, media,
-                            durationMs, hash, answered, false, manual);
+                            durationMs, answered, false, manual);
                 }
                 // The second line's own sweep, in the same worker so there is still one search to
                 // cancel and one generation to check. After the first, because the main line is the one
@@ -7941,8 +7243,7 @@ public class PlayerActivity extends Activity {
                 if (!secondaryTargets.isEmpty() && generation == subtitleSearchGeneration
                         && !Thread.currentThread().isInterrupted()) {
                     final SubtitleSearch.Result second = subtitleSearchPass(id, secondaryTargets,
-                            cacheName, generation, index, media, durationMs, hash, answered, true,
-                            manual);
+                            cacheName, generation, index, media, durationMs, answered, true, manual);
                     if (found == null) {
                         found = second;
                     }
@@ -8040,7 +7341,6 @@ public class PlayerActivity extends Activity {
     private SubtitleSearch.Result subtitleSearchPass(MediaId id, List<String> targets,
                                                      String cacheName, int generation, int index,
                                                      Uri media, long durationMs,
-                                                     MovieHash.Hash hash,
                                                      AtomicBoolean answered,
                                                      boolean secondary, boolean manual) {
         final String target = targets.get(0);
@@ -8054,7 +7354,7 @@ public class PlayerActivity extends Activity {
                 wanted.add(source);
             }
         }
-        return SubtitleSearch.find(id, wanted, mPrefs, durationMs, hash, result -> {
+        return SubtitleSearch.find(id, wanted, mPrefs, durationMs, result -> {
             if (generation != subtitleSearchGeneration) {
                 return false;
             }
@@ -8097,7 +7397,7 @@ public class PlayerActivity extends Activity {
                     final String message = getString(R.string.subtitle_translate_failed,
                             displayLanguage(translateTo));
                     runOnUiThread(() ->
-                            showNotice(message, false, R.drawable.ic_language_24dp));
+                            Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
                 }
             }
             final Uri attach = show;
@@ -8139,8 +7439,8 @@ public class PlayerActivity extends Activity {
         // track it already had or by its own pass, the second by its own.
         if (secondary) {
             chooseSecondarySubtitle(file);
-            showNotice(getString(R.string.subtitle_search_found_secondary,
-                    displayLanguage(language)), false, R.drawable.ic_subtitle_secondary_24dp);
+            Toast.makeText(this, getString(R.string.subtitle_search_found_secondary,
+                    displayLanguage(language)), Toast.LENGTH_SHORT).show();
             return;
         }
         mPrefs.updateSubtitle(file);
@@ -8154,7 +7454,7 @@ public class PlayerActivity extends Activity {
             if (isMachineTranslated(file)) {
                 message = getString(R.string.subtitle_machine_translated, message);
             }
-            showNotice(message, false, R.drawable.ic_subtitles_24dp);
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -8302,7 +7602,7 @@ public class PlayerActivity extends Activity {
         // it could never be switched off, and "off" would read as the choice while it is on screen.
         final Uri fileOnly = subtitleWithoutTrack();
         final boolean painting = paintedSubtitleUri != null;
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
+        final List<MenuItem> items = new ArrayList<>();
         // Three kinds of row live in this one panel — a doorway into another list, the choices for this
         // line, and an action — so each gets a register of its own rather than an icon to be told apart
         // by. The doorway leads: its summary names what the second line is showing, so that state reads
@@ -8311,20 +7611,20 @@ public class PlayerActivity extends Activity {
         // above them costs nothing on a D-pad.
         final boolean second = secondaryEnabled();
         if (second) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_subtitle_secondary_24dp,
+            items.add(new MenuItem(R.drawable.ic_subtitle_secondary_24dp,
                     getString(R.string.subtitle_secondary_title), secondarySubtitleSummary(),
                     false, this::showSecondarySubtitleDialog));
-            items.add(Dialogs.MenuItem.rule());
+            items.add(MenuItem.rule());
             // Named only while there is a second line to tell it apart from: on its own it is the only
             // group in the panel, and naming the obvious is noise.
-            items.add(Dialogs.MenuItem.caption(getString(R.string.subtitle_main_title)));
+            items.add(MenuItem.caption(getString(R.string.subtitle_main_title)));
         }
-        items.add(new Dialogs.MenuItem(getString(R.string.subtitle_off), null, !textEnabled && !painting,
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !textEnabled && !painting,
                 this::disableSubtitles));
         if (fileOnly != null) {
             // addSubtitleTrack rather than paintSubtitle: it carries the already-on-screen guard, so
             // tapping the ticked row costs nothing and tapping it after "off" puts the subtitle back.
-            items.add(new Dialogs.MenuItem(subtitleFileLabel(fileOnly), null, painting,
+            items.add(new MenuItem(subtitleFileLabel(fileOnly), null, painting,
                     () -> addSubtitleTrack(fileOnly)));
         }
         int number = 0;
@@ -8348,22 +7648,24 @@ public class PlayerActivity extends Activity {
                 if (format.equals(secondaryTextTrack.get())) {
                     continue;
                 }
-                final String[] text = trackRowText(format, number);
+                String label = buildSubtitleInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
                 final int index = i;
                 // !painting: an embedded track can stay selected while the file is painted over it
                 // (SubtitleOffset drops the renderer's cues), and two ticked rows is a lie.
-                items.add(new Dialogs.MenuItem(text[0], text[1],
-                        textEnabled && !painting && group.isTrackSelected(i),
+                items.add(new MenuItem(label, null, textEnabled && !painting && group.isTrackSelected(i),
                         () -> applySubtitle(trackGroup, index)));
             }
         }
         // Last, and with no tick: it is an action rather than a track, so it sits under a rule of its
         // own. Offered whatever the automatic search's switch says — pressing it is the consent that
         // switch stands in for.
-        items.add(Dialogs.MenuItem.rule());
-        items.add(new Dialogs.MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
+        items.add(MenuItem.rule());
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
                 null, false, () -> showSubtitleSearchDialog(false)));
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.subtitle_title), items);
+        showSideMenu(getString(R.string.subtitle_title), items);
     }
 
     /** The second line's language, or that there is none — the row says it without being opened. */
@@ -8458,8 +7760,8 @@ public class PlayerActivity extends Activity {
         }
         final Uri current = secondarySubtitleUri;
         final Format currentTrack = secondaryTextTrack.get();
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
-        items.add(new Dialogs.MenuItem(getString(R.string.subtitle_off), null, !secondaryActive(),
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.subtitle_off), null, !secondaryActive(),
                 () -> chooseSecondarySubtitle(null)));
         // Tracks of the media itself — an HLS rendition, a track muxed into the file, one handed over
         // by the app that launched us. Never the one the first line is showing: the same words twice,
@@ -8480,10 +7782,13 @@ public class PlayerActivity extends Activity {
                 if (shownByMainLine(format)) {
                     continue;
                 }
-                final String[] text = trackRowText(format, number);
+                String label = buildSubtitleInfo(format);
+                if (label == null || label.isEmpty()) {
+                    label = getString(R.string.audio_track_number, number);
+                }
                 final TrackGroup mediaGroup = group.getMediaTrackGroup();
                 final int trackIndex = i;
-                items.add(new Dialogs.MenuItem(text[0], text[1], format.equals(currentTrack),
+                items.add(new MenuItem(label, null, format.equals(currentTrack),
                         () -> chooseSecondarySubtitleTrack(mediaGroup, trackIndex, format)));
             }
         }
@@ -8502,22 +7807,22 @@ public class PlayerActivity extends Activity {
         }
         for (final Uri uri : externalSubtitleUris()) {
             if (uri.equals(current)) {
-                items.add(new Dialogs.MenuItem(subtitleFileLabel(uri), null, true,
+                items.add(new MenuItem(subtitleFileLabel(uri), null, true,
                         () -> chooseSecondarySubtitle(uri)));
                 continue;
             }
             if (shownByMainLine(uri) || asTracks.contains(uri)) {
                 continue;
             }
-            items.add(new Dialogs.MenuItem(subtitleFileLabel(uri), null, false,
+            items.add(new MenuItem(subtitleFileLabel(uri), null, false,
                     () -> chooseSecondarySubtitle(uri)));
         }
         // An action, not a candidate — the same boundary the first line's list draws, so the two panels
         // read alike.
-        items.add(Dialogs.MenuItem.rule());
-        items.add(new Dialogs.MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
+        items.add(MenuItem.rule());
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.subtitle_search_manual),
                 null, false, () -> showSubtitleSearchDialog(true)));
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.subtitle_secondary_title), items);
+        showSideMenu(getString(R.string.subtitle_secondary_title), items);
     }
 
     /**
@@ -8650,121 +7955,44 @@ public class PlayerActivity extends Activity {
      * finds has to go back where it was asked from.
      */
     private void showSubtitleSearchDialog(final boolean forSecondary) {
-        // Opened afresh, so nothing is remembered from the last time — what is prefilled below is this
-        // file's own id. Stepping back into it from a season or an episode goes through
-        // openSubtitleSearch instead, which keeps what was typed.
-        subtitleSearchQuery = null;
-        openSubtitleSearch(forSecondary);
-    }
-
-    private void openSubtitleSearch(final boolean forSecondary) {
-        final Context ctx = Dialogs.dialogContext(this);
         subtitleSearchForSecondary = forSecondary;
-        // Reached by the back arrow of a panel that is still on screen.
-        Dialogs.dismissMenu();
-
-        // A panel, not a dialog: it is opened from a panel, it lists rows like a panel, and every panel
-        // in the player is one shape at one place decided by the window — see Utils.pickerWindow. As a
-        // centred Material dialog it was the one window in the player that arrived from somewhere else.
-        final LinearLayout root = new LinearLayout(ctx);
-        root.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(10);
-        root.setPadding(pad, pad, pad, pad);
-
-        // A panel names itself on its first line and closes from the end of it. Sideways, where the
-        // keyboard leaves a phone about 130dp, that line costs 53dp — most of a result — and the field's
-        // own label says the same word. So there the close button joins the field's line and the title
-        // goes, rather than the list this panel exists to show.
-        final boolean titled = getResources().getConfiguration().screenHeightDp >= 480;
-        if (titled) {
-            final TextView header = new TextView(ctx);
-            header.setText(getString(R.string.subtitle_search_manual));
-            header.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
-            header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
-            header.setTypeface(Typeface.DEFAULT_BOLD);
-            header.setPadding(Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10), Utils.dpToPx(10));
-            root.addView(Dialogs.pickerHeader(ctx, ui, header));
-
-            final View divider = new View(ctx);
-            final LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, Utils.dpToPx(1));
-            dividerLp.bottomMargin = Utils.dpToPx(4);
-            divider.setLayoutParams(dividerLp);
-            divider.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorOutlineVariant,
-                    ContextCompat.getColor(ctx, R.color.divider)));
-            root.addView(divider);
-        }
-
-        final LinearLayout fieldRow = new LinearLayout(ctx);
-        fieldRow.setOrientation(LinearLayout.HORIZONTAL);
-        fieldRow.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(fieldRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        final EditText query = Dialogs.textField(fieldRow, getString(R.string.subtitle_search_label),
-                getString(R.string.subtitle_search_hint));
-        ((View) query.getParent().getParent()).setLayoutParams(
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        if (!titled) {
-            fieldRow.addView(Dialogs.pickerClose(ctx, ui));
-        }
-        // What the launcher already said this is, imdb first: it names one title exactly, where a name
-        // names several and a tmdb id names one per kind. Deliberately not the file name — reaching this
-        // panel means the name is what failed — but an id is the opposite of a name, and typing one off
-        // a screen is the slowest way in there is.
-        final String prefill = subtitleSearchQuery != null ? subtitleSearchQuery : playingId();
+        final EditText query = new EditText(this);
         query.setInputType(InputType.TYPE_CLASS_TEXT);
-        // Without NO_EXTRACT_UI the keyboard takes the whole screen in landscape — its extract mode — and
-        // covers the panel it belongs to, list and all. The list is the point of this panel: it fills in
-        // while the name is still being typed, and a player is always in landscape. The action key
-        // searches: pressing it runs the pending request now rather than closing the keyboard.
-        query.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        ((com.google.android.material.textfield.TextInputLayout) query.getParent().getParent())
-                .setEndIconMode(com.google.android.material.textfield.TextInputLayout.END_ICON_CLEAR_TEXT);
+        query.setSingleLine(true);
+        query.setHint(R.string.subtitle_search_hint);
+        // Without this the keyboard takes the whole screen in landscape — its extract mode — and covers
+        // the dialog it belongs to, list and all. The list is the point of this dialog: it fills in while
+        // the name is still being typed, and a player is always in landscape.
+        query.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        // Deliberately not prefilled from the file name: reaching this dialog means the name is already
+        // what failed, and clearing a line of release noise with a remote costs more than typing.
 
-        // A request is out. Invisible rather than gone, so the list below does not step down when it
-        // shows and back up when it goes.
-        final com.google.android.material.progressindicator.LinearProgressIndicator progress =
-                new com.google.android.material.progressindicator.LinearProgressIndicator(ctx);
-        progress.setIndeterminate(true);
-        progress.setVisibility(View.INVISIBLE);
-        final LinearLayout.LayoutParams progressLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        progressLp.topMargin = Utils.dpToPx(4);
-        root.addView(progress, progressLp);
-
-        final LinearLayout results = new LinearLayout(ctx);
+        final LinearLayout results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
-        // Whole rows only. The list is as tall as its results, up to what the panel can give it — the
-        // keyboard decides that, not a number here — and rounds down to the row: a list cut through a
-        // title reads as broken, one cut at a boundary reads as a list. The indicator line then says
-        // that there is more.
-        final int rowPx = ui.dpS(72);
-        final android.widget.ScrollView scroll = new android.widget.ScrollView(ctx) {
-            @Override
-            protected void onMeasure(int widthSpec, int heightSpec) {
-                final int rows = Math.max(1, MeasureSpec.getSize(heightSpec) / rowPx);
-                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(rows * rowPx, MeasureSpec.AT_MOST));
-            }
-        };
-        scroll.setScrollIndicators(View.SCROLL_INDICATOR_BOTTOM);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(results);
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        final android.app.Dialog dialog =
-                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        Dialogs.pickerWindow(this, ui, dialog, root);
-        Utils.keyboardPanel(dialog, root);
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(query);
+        // Capped rather than free: the list has to leave the field and the keyboard on screen, because
+        // the next thing typed is what narrows it down. Half the window is the ceiling because the
+        // player is landscape — a fixed height that fits a phone upright pushes the field off it.
+        final int listHeight = Math.min(ui.dpS(260),
+                getResources().getDisplayMetrics().heightPixels / 2);
+        fields.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_manual)
+                .setView(fields)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
 
         final Handler handler = new Handler(Looper.getMainLooper());
         final Runnable[] pending = new Runnable[1];
-        // What was last asked for, so the list is not thrown away and rebuilt for a change that changed
-        // nothing. A soft keyboard editing Cyrillic keeps the word composing, and touching anything
-        // outside the field makes it finish — which fires afterTextChanged with the same text, and used
-        // to schedule a fresh search that replaced every row a second later. Rebuilding a list under a
-        // finger that is already on it is how a press ends up on the row that took its place.
-        final String[] asked = {""};
         query.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -8774,64 +8002,36 @@ public class PlayerActivity extends Activity {
 
             @Override
             public void afterTextChanged(Editable s) {
-                final String typed = s.toString().trim();
-                if (typed.equals(asked[0])) {
-                    return;
-                }
-                asked[0] = typed;
-                subtitleSearchQuery = typed.isEmpty() ? null : typed;
                 if (pending[0] != null) {
                     handler.removeCallbacks(pending[0]);
                 }
-                final String text = typed;
+                final String text = s.toString().trim();
                 // Every keystroke invalidates the answer to the last one, whether or not a new request
                 // goes out — otherwise a slow reply for "Sil" lands on top of the results for "Silo".
                 titleSearchGeneration++;
                 if (text.length() < TITLE_QUERY_MIN) {
                     results.removeAllViews();
-                    progress.setVisibility(View.INVISIBLE);
                     return;
                 }
                 final int generation = titleSearchGeneration;
-                pending[0] = () -> searchTitles(ctx, text, generation, results, progress, dialog);
+                pending[0] = () -> searchTitles(text, generation, results, dialog);
                 handler.postDelayed(pending[0], TITLE_QUERY_DEBOUNCE_MS);
             }
         });
-        query.setOnEditorActionListener((v, actionId, event) -> {
-            if (pending[0] != null) {
-                handler.removeCallbacks(pending[0]);
-                pending[0].run();
-            }
-            return true;
-        });
-        // After the watcher, so a prefilled id searches itself and the panel opens on its one answer.
-        if (prefill != null) {
-            query.setText(prefill);
-            query.setSelection(query.getText().length());
-        }
-        // The field is what this panel is for, so it opens with the caret in it.
-        query.requestFocus();
-        showPickerDialog(dialog);
+        dialog.show();
     }
 
     /** Asks TMDB what the typed name could be, then fills the list in place. */
-    private void searchTitles(final Context ctx, String query, int generation,
-                              LinearLayout results, View progress, android.app.Dialog dialog) {
-        progress.setVisibility(View.VISIBLE);
+    private void searchTitles(String query, int generation, LinearLayout results, AlertDialog dialog) {
         final Thread worker = new Thread(() -> {
             final List<TitleSearch.Title> titles = TitleSearch.search(query);
             runOnUiThread(() -> {
                 if (isFinishing() || generation != titleSearchGeneration) {
                     return;
                 }
-                progress.setVisibility(View.INVISIBLE);
                 results.removeAllViews();
-                if (titles == null) {
-                    results.addView(searchNote(ctx, getString(R.string.subtitle_search_failed)));
-                    return;
-                }
                 if (titles.isEmpty()) {
-                    results.addView(searchNote(ctx, getString(R.string.subtitle_search_none)));
+                    results.addView(searchNote(getString(R.string.subtitle_search_none)));
                     return;
                 }
                 for (final TitleSearch.Title title : titles) {
@@ -8840,13 +8040,13 @@ public class PlayerActivity extends Activity {
                     // nothing else.
                     final String kind = getString(title.movie
                             ? R.string.subtitle_search_movie : R.string.subtitle_search_series);
-                    results.addView(searchRow(ctx, title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
+                    results.addView(searchRow(title.posterUrl, ui.dpS(40), ui.dpS(60), title.name,
                             title.year == null ? kind : title.year + " · " + kind, () -> {
                         dialog.dismiss();
                         if (title.movie) {
                             applyManualTitle(title, -1, -1, null);
                         } else {
-                            chooseSeason(title, () -> openSubtitleSearch(subtitleSearchForSecondary));
+                            chooseSeason(title);
                         }
                     }));
                 }
@@ -8864,7 +8064,7 @@ public class PlayerActivity extends Activity {
      * <p>The whole series arrives in one request, so picking a season costs nothing after this and the
      * numbering cannot drift between the two steps.
      */
-    private void chooseSeason(TitleSearch.Title title, Runnable back) {
+    private void chooseSeason(TitleSearch.Title title) {
         final Thread worker = new Thread(() -> {
             // Cinemeta is keyed by imdb and the search gave a tmdb id, so one hop first. The resolver
             // is the one the automatic search already uses for the same reason.
@@ -8874,10 +8074,6 @@ public class PlayerActivity extends Activity {
             } catch (Exception e) {
                 Utils.log("titles: imdb lookup " + e);
             }
-            // Kept for whatever this pick turns into: the panel prefills an id next time, and the one
-            // this title is known by everywhere is the imdb one.
-            resolvedImdbOf = title.tmdb;
-            resolvedImdb = imdb;
             final List<TitleSearch.Episode> episodes = TitleSearch.episodes(imdb, title.tmdb);
             runOnUiThread(() -> {
                 if (isFinishing()) {
@@ -8886,7 +8082,7 @@ public class PlayerActivity extends Activity {
                 // Nothing came back. Rather than quietly guess the first season, hand over the numbers:
                 // a title no catalogue lists is exactly when somebody knows them and we do not.
                 if (episodes.isEmpty()) {
-                    askSeasonEpisode(title, episodes, back);
+                    askSeasonEpisode(title, episodes);
                     return;
                 }
                 final List<Integer> seasons = new ArrayList<>();
@@ -8896,44 +8092,33 @@ public class PlayerActivity extends Activity {
                     }
                 }
                 if (seasons.size() == 1) {
-                    chooseEpisode(title, episodes, seasons.get(0), back);
+                    chooseEpisode(title, episodes, seasons.get(0));
                     return;
                 }
-                showSeasons(title, episodes, seasons, back);
+                final List<MenuItem> items = new ArrayList<>(seasons.size() + 1);
+                items.add(typeNumbersRow(title, episodes));
+                for (final int season : seasons) {
+                    items.add(new MenuItem(getString(season == 0
+                                    ? R.string.subtitle_search_specials
+                                    : R.string.subtitle_search_season, season),
+                            null, false, () -> chooseEpisode(title, episodes, season)));
+                }
+                showSideMenu(title.name, items);
             });
         }, "TitleEpisodes");
         worker.setDaemon(true);
         worker.start();
     }
 
-    /**
-     * The season list, and the step an episode goes back to. Separate from the request above so that
-     * going back is the list again rather than the catalogue asked a second time.
-     */
-    private void showSeasons(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
-                             List<Integer> seasons, Runnable back) {
-        final List<Dialogs.MenuItem> items = new ArrayList<>(seasons.size() + 1);
-        items.add(typeNumbersRow(title, episodes, () -> showSeasons(title, episodes, seasons, back)));
-        for (final int season : seasons) {
-            items.add(new Dialogs.MenuItem(getString(season == 0
-                            ? R.string.subtitle_search_specials
-                            : R.string.subtitle_search_season, season),
-                    null, false, () -> chooseEpisode(title, episodes, season,
-                            () -> showSeasons(title, episodes, seasons, back))));
-        }
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), title.name, items, 34, 48, back);
-    }
-
     /** No request of its own — the season's episodes are already in hand. */
-    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season,
-                               Runnable back) {
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
+    private void chooseEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes, int season) {
+        final List<MenuItem> items = new ArrayList<>();
         for (final TitleSearch.Episode episode : episodes) {
             if (episode.season != season) {
                 continue;
             }
             final String number = getString(R.string.subtitle_search_episode, episode.number);
-            items.add(new Dialogs.MenuItem(0, episode.stillUrl,
+            items.add(new MenuItem(0, episode.stillUrl,
                     episode.name != null ? episode.name : number,
                     episode.name != null ? number : null, false,
                     () -> applyManualTitle(title, season, episode.number, episodes)));
@@ -8944,24 +8129,15 @@ public class PlayerActivity extends Activity {
         }
         // Here as well as on the season list: a series with one season skips that step entirely, and
         // typing the numbers must not end up being something only multi-season shows offer.
-        items.add(0, typeNumbersRow(title, episodes,
-                () -> chooseEpisode(title, episodes, season, back)));
-        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster — and an
-        // episode name beside one is what the wider card exists for.
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), title.name, items, 72, 41, back);
+        items.add(0, typeNumbersRow(title, episodes));
+        // Stills are 16:9, so the row leads with a wide frame rather than a tall poster.
+        showSideMenu(title.name, items, 72, 41);
     }
 
-    /**
-     * The way past the catalogues, first in the list because it is what somebody who knows reaches for.
-     *
-     * <p>With a glyph, because without one it was a line of text at the head of a list of episodes that
-     * lead with their stills — and a row that looks like none of its neighbours and like no control
-     * either reads as a heading. The keyboard says what pressing it opens.
-     */
-    private Dialogs.MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
-                                    Runnable back) {
-        return new Dialogs.MenuItem(R.drawable.ic_keyboard_24dp, getString(R.string.subtitle_search_type),
-                null, false, () -> askSeasonEpisode(title, episodes, back));
+    /** The way past the catalogues, first in the list because it is what somebody who knows reaches for. */
+    private MenuItem typeNumbersRow(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
+        return new MenuItem(getString(R.string.subtitle_search_type), null, false,
+                () -> askSeasonEpisode(title, episodes));
     }
 
     /**
@@ -8973,120 +8149,52 @@ public class PlayerActivity extends Activity {
      * A blank season means the first, and a blank episode means the whole season — which every source
      * reads as an answerable question.
      */
-    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes,
-                                  Runnable back) {
-        final Context ctx = Dialogs.dialogContext(this);
+    private void askSeasonEpisode(TitleSearch.Title title, List<TitleSearch.Episode> episodes) {
         final MediaId current = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
 
-        // The same card as the season list it is reached from, because it answers the same question by
-        // other means. It used to be a centred Material dialog, which made typing the numbers look like
-        // a different errand from picking them.
-        final LinearLayout root = new LinearLayout(ctx);
-        root.setOrientation(LinearLayout.VERTICAL);
-        final int pad = Utils.dpToPx(10);
-        root.setPadding(pad, pad, pad, pad);
-
-        // Made before the header, because stepping back has to close this panel as well as raise the
-        // one before it. Every other panel with a back arrow is the shared menuDialog, which showSideMenu
-        // dismisses on the way in; this one is held by nobody, so without the dismiss it stayed standing
-        // under the season list and then under the search panel — two cards at once.
-        final android.app.Dialog dialog =
-                new android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
-        final Runnable step = () -> {
-            dialog.dismiss();
-            back.run();
-        };
-
-        final TextView header = new TextView(ctx);
-        header.setText(getString(R.string.subtitle_search_type));
-        header.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface, Color.WHITE));
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textTitle());
-        header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(Utils.dpToPx(6), Utils.dpToPx(10), Utils.dpToPx(6), Utils.dpToPx(10));
-        root.addView(Dialogs.pickerHeader(ctx, ui, header, step));
-
-        // Labelled, not hinted: prefilling is the normal case here — the whole point is to correct one
-        // digit of what is already believed — and a hint leaves the moment a field is filled, so both
-        // would read as a bare "1" and "2" with nothing to say which is which. The Material label rides
-        // the outline and stays. One control to a row, the width of the panel, like every other row it
-        // sits under.
-        final EditText season = Dialogs.textField(root, getString(R.string.subtitle_search_season_label));
+        final EditText season = new EditText(this);
         season.setInputType(InputType.TYPE_CLASS_NUMBER);
+        season.setSingleLine(true);
         if (current != null && current.season >= 0) {
             season.setText(String.valueOf(current.season));
         }
 
-        final EditText episode = Dialogs.textField(root, getString(R.string.subtitle_search_episode_label));
+        final EditText episode = new EditText(this);
         episode.setInputType(InputType.TYPE_CLASS_NUMBER);
-        episode.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        episode.setSingleLine(true);
         if (current != null && current.episode >= 1) {
             episode.setText(String.valueOf(current.episode));
         }
 
-        final Runnable apply = () -> {
-            dialog.dismiss();
-            applyManualTitle(title, number(season.getText().toString(), 1),
-                    number(episode.getText().toString(), -1), episodes);
-        };
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        // Labelled above the fields, not only as hints: prefilling is the normal case here — the whole
+        // point is to correct one digit of what is already believed — and a filled field shows no hint,
+        // so both rows read as a bare "1" and "2" with nothing to say which is which.
+        fields.addView(fieldLabel(R.string.subtitle_search_season_label));
+        fields.addView(season);
+        fields.addView(fieldLabel(R.string.subtitle_search_episode_label));
+        fields.addView(episode);
 
-        // One action, at the end of its own line: the way back is the arrow in the header, and a panel
-        // that answers with numbers still needs something to press when they are right.
-        // Filled: it is the only action this panel has and the whole reason to open it, and a panel is
-        // allowed exactly one such control.
-        final com.google.android.material.button.MaterialButton ok =
-                new com.google.android.material.button.MaterialButton(ctx, null,
-                        com.google.android.material.R.attr.materialButtonStyle);
-        ok.setText(android.R.string.ok);
-        ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textAction());
-        ok.setInsetTop(0);
-        ok.setInsetBottom(0);
-        ok.setMinHeight(ui.dpS(48));
-        Utils.focusRing(ok);
-        ok.setOnClickListener(v -> apply.run());
-        episode.setOnEditorActionListener((v, actionId, event) -> {
-            apply.run();
-            return true;
-        });
-        final LinearLayout actions = new LinearLayout(ctx);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.END);
-        final LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        actionsLp.topMargin = Utils.dpToPx(12);
-        actions.addView(ok);
-        root.addView(actions, actionsLp);
-
-        // Sideways the keyboard can leave less than this panel is tall, and a card that cannot be
-        // reached to the end is worse than one that scrolls.
-        final android.widget.ScrollView scroll = new android.widget.ScrollView(ctx);
-        scroll.addView(root, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        Dialogs.pickerWindow(this, ui, dialog, scroll);
-        Utils.keyboardPanel(dialog, scroll);
-        Utils.panelBack(dialog, step);
-        season.requestFocus();
-        showPickerDialog(dialog);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_search_type)
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> applyManualTitle(title,
+                        number(season.getText().toString(), 1),
+                        number(episode.getText().toString(), -1), episodes))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
-    /**
-     * The id to open the search panel on: imdb where it is known, tmdb otherwise.
-     *
-     * <p>A hand-picked title is the id in force from then on, and {@link #mediaIdAt(int)} drops the
-     * launcher's imdb with it — it names the title that was wrong. What it does not drop is the picked
-     * title's own imdb, which the season list resolves anyway, so the panel keeps opening on the same
-     * kind of id before and after a pick rather than turning into a bare number.
-     */
-    private String playingId() {
-        if (manualTmdbId != null) {
-            return manualImdbId != null ? manualImdbId : manualTmdbId;
-        }
-        final MediaId playing = player != null ? mediaIdAt(player.getCurrentMediaItemIndex()) : null;
-        if (playing == null || playing.isEmpty()) {
-            return null;
-        }
-        return playing.imdb != null ? "tt" + playing.imdbNumeric() : playing.tmdb;
+    /** A caption over a text field, in the register the dialog's own hints use. */
+    private TextView fieldLabel(final int textRes) {
+        final TextView label = new TextView(this);
+        label.setText(textRes);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
+        label.setPadding(0, Utils.dpToPx(8), 0, 0);
+        return label;
     }
 
     /** A typed number, or {@code fallback} for anything that is not one. */
@@ -9105,31 +8213,6 @@ public class PlayerActivity extends Activity {
     private void applyManualTitle(TitleSearch.Title title, int season, int episode,
                                   List<TitleSearch.Episode> episodes) {
         manualTmdbId = title.tmdb;
-        manualImdbId = title.tmdb != null && title.tmdb.equals(resolvedImdbOf) ? resolvedImdb : null;
-        if (manualImdbId == null && title.tmdb != null) {
-            // A film never goes through the season list, so nothing has looked its imdb id up yet. One
-            // request, off the main thread, and only for the title still in force when it lands.
-            final String tmdb = title.tmdb;
-            final boolean movie = title.movie;
-            final Thread worker = new Thread(() -> {
-                String imdb = null;
-                try {
-                    imdb = SegmentFinder.tmdbExternalImdb(Long.parseLong(tmdb), movie);
-                } catch (Exception e) {
-                    Utils.log("titles: imdb lookup " + e);
-                }
-                final String resolved = imdb;
-                runOnUiThread(() -> {
-                    resolvedImdbOf = tmdb;
-                    resolvedImdb = resolved;
-                    if (tmdb.equals(manualTmdbId)) {
-                        manualImdbId = resolved;
-                    }
-                });
-            }, "TitleImdb");
-            worker.setDaemon(true);
-            worker.start();
-        }
         manualMovie = title.movie;
         manualSeason = season;
         manualEpisode = episode;
@@ -9167,8 +8250,7 @@ public class PlayerActivity extends Activity {
         // Seeded from the priority list every time and never written back: the list is the standing
         // answer, and this is one search that wants a different one. Confirming it costs a press. Which
         // list it is seeded from follows the line the search was opened for.
-        LanguagePriorityDialog.show(this,
-                getString(R.string.subtitle_search_language_title),
+        LanguagePriorityDialog.show(this, getString(R.string.subtitle_search_language_title),
                 R.string.pref_language_subtitle_none, R.string.pref_language_audio_add,
                 Utils.splitLanguages(forSecondary
                         ? mPrefs.languageSubtitleSecondary : mPrefs.languageSubtitle),
@@ -9195,16 +8277,12 @@ public class PlayerActivity extends Activity {
     }
 
     /** A line of plain text where a row would go, for "nothing found". */
-    private TextView searchNote(final Context ctx, CharSequence text) {
-        final TextView note = new TextView(ctx);
+    private TextView searchNote(CharSequence text) {
+        final TextView note = new TextView(this);
         note.setText(text);
-        note.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                ContextCompat.getColor(ctx, R.color.ink_secondary)));
+        note.setTextColor(0x99FFFFFF);
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
-        // A one-line list item where the rows would be: same left edge, same height.
-        note.setMinHeight(ui.dpS(56));
-        note.setGravity(Gravity.CENTER_VERTICAL);
-        note.setPadding(Utils.dpToPx(12), 0, Utils.dpToPx(12), 0);
+        note.setPadding(Utils.dpToPx(12), Utils.dpToPx(10), Utils.dpToPx(12), Utils.dpToPx(10));
         return note;
     }
 
@@ -9213,28 +8291,28 @@ public class PlayerActivity extends Activity {
      * {@link #showSideMenu}, but this list is rebuilt on every keystroke inside a dialog that has to
      * keep both the keyboard and the field it belongs to, so it builds its own.
      */
-    private View searchRow(final Context ctx, String imageUrl, int imageW, int imageH,
-                           CharSequence name, CharSequence detail, Runnable action) {
-        final LinearLayout row = new LinearLayout(ctx);
+    private View searchRow(String imageUrl, int imageW, int imageH, CharSequence name,
+                           CharSequence detail, Runnable action) {
+        final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Utils.dpToPx(6), 0, Utils.dpToPx(6));
         row.setClickable(true);
         row.setFocusable(true);
-        // A Material two-line list item: 72dp, rows flush against each other. The poster is 60dp and the
-        // 6dp above and below it belong to the row. Sideways it is the same 12dp inset every other panel
-        // row carries, so a poster starts on the line a track name starts on.
-        row.setMinimumHeight(ui.dpS(72));
-        row.setPadding(Utils.dpToPx(12), ui.dpS(6), Utils.dpToPx(12), ui.dpS(6));
-        row.setBackground(Dialogs.pickerRow(ctx, Color.TRANSPARENT));
+        row.setMinimumHeight(ui.rowMinHeight());
+        final GradientDrawable content = new GradientDrawable();
+        content.setCornerRadius(Utils.dpToPx(8));
+        content.setColor(Color.TRANSPARENT);
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(Utils.dpToPx(8));
+        mask.setColor(Color.WHITE);
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), content, mask));
 
-        final ImageView art = new ImageView(ctx);
+        final ImageView art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         // Grey only while something is on its way. A title the catalogue has no poster for led with a
         // grey card standing in for an image that was never coming — the row should lead with nothing.
-        art.setBackgroundColor(imageUrl != null
-                ? MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
-                        ContextCompat.getColor(ctx, R.color.placeholder_card))
-                : Color.TRANSPARENT);
+        art.setBackgroundColor(imageUrl != null ? 0xFF333333 : Color.TRANSPARENT);
         final int corner = Utils.dpToPx(4);
         art.setClipToOutline(true);
         art.setOutlineProvider(new ViewOutlineProvider() {
@@ -9244,34 +8322,32 @@ public class PlayerActivity extends Activity {
             }
         });
         final LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(imageW, imageH);
-        artLp.setMarginEnd(Utils.dpToPx(16));
+        artLp.setMarginEnd(Utils.dpToPx(12));
         art.setLayoutParams(artLp);
         row.addView(art);
         if (imageUrl != null) {
             Glide.with(this).load(imageUrl).into(art);
         }
 
-        final LinearLayout textBlock = new LinearLayout(ctx);
+        final LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final TextView titleView = new TextView(ctx);
+        final TextView titleView = new TextView(this);
         titleView.setText(name);
-        titleView.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurface,
-                ContextCompat.getColor(ctx, R.color.ink_row_inactive)));
+        titleView.setTextColor(0xFFDDDDDD);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
         textBlock.addView(titleView);
         TextView detailView = null;
         if (detail != null && detail.length() > 0) {
-            detailView = new TextView(ctx);
+            detailView = new TextView(this);
             detailView.setText(detail);
-            detailView.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(ctx, R.color.ink_secondary)));
-            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSupporting());
+            detailView.setTextColor(0x99FFFFFF);
+            detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textCaption());
             textBlock.addView(detailView);
         }
         row.addView(textBlock);
-        Dialogs.fitLongText(this, ui, row, titleView, detailView);
+        fitLongText(row, titleView, detailView);
         row.setOnClickListener(v -> action.run());
         return row;
     }
@@ -9673,8 +8749,8 @@ public class PlayerActivity extends Activity {
         if (!secondaryOnDemand() || playerView == null) {
             return;
         }
-        Dialogs.showText(playerView, getString(R.string.subtitle_secondary_peek_hint),
-                R.drawable.ic_subtitle_secondary_24dp, SECONDARY_HINT_MS);
+        Utils.showText(playerView, getString(R.string.subtitle_secondary_peek_hint),
+                SECONDARY_HINT_MS);
     }
 
     /**
@@ -9869,8 +8945,7 @@ public class PlayerActivity extends Activity {
         // format in that same group, read as switched off. A DASH text AdaptationSet with two
         // Representations is the shape that does this.
         if (mediaGroup.length > 1) {
-            showNotice(getString(R.string.subtitle_secondary_unavailable), true,
-                    R.drawable.ic_subtitle_secondary_24dp);
+            Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
             return;
         }
         secondaryChoiceMedia = mPrefs.mediaUri;
@@ -9950,8 +9025,7 @@ public class PlayerActivity extends Activity {
             return;
         }
         setSecondaryTrack(null);
-        showNotice(getString(R.string.subtitle_secondary_unavailable), true,
-                    R.drawable.ic_subtitle_secondary_24dp);
+        Toast.makeText(this, R.string.subtitle_secondary_unavailable, Toast.LENGTH_LONG).show();
     }
 
     private void applySubtitle(TrackGroup group, int index) {
@@ -9983,80 +9057,58 @@ public class PlayerActivity extends Activity {
         applyMainLineTrackSelection();
     }
 
-    /**
-     * The rate and the ways to change it on one panel, in place of the menu of eight rows it was —
-     * {@link SpeedPanel} carries the reasoning. Applies as it is pressed and stays open: a speed is
-     * judged by ear, and the panel that set it is where the correction is made.
-     */
+    private static final float[] SPEED_PRESETS =
+            {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
+
+    private String formatSpeed(float speed) {
+        if (Math.abs(speed - 1f) < 0.001f) {
+            return getString(R.string.speed_normal);
+        }
+        final String number = speed == Math.rint(speed)
+                ? String.valueOf((int) speed)
+                : String.valueOf(speed);
+        return number + "×";
+    }
+
     private void showSpeedDialog() {
         if (player == null) {
             return;
         }
-        if (speedDialog != null) {
-            speedDialog.dismiss();
+        final float current = userSpeed();
+        final List<MenuItem> items = new ArrayList<>();
+        for (final float speed : SPEED_PRESETS) {
+            items.add(new MenuItem(formatSpeed(speed), null,
+                    Math.abs(current - speed) < 0.001f, () -> applySpeed(speed)));
         }
-        speedDialog = SpeedPanel.create(this, ui, getString(R.string.speed_title), userSpeed(),
-                this::applySpeed);
-        showPickerDialog(speedDialog);
+        showSideMenu(getString(R.string.speed_title), items);
     }
 
     private void applySpeed(float speed) {
         if (player == null) {
             return;
         }
-        requestSpeed(speed);
+        player.setPlaybackSpeed(speed);
         mPrefs.speed = speed;
         updateEndsAt();
-    }
-
-    /**
-     * Ask for a playback speed, and remember what was asked. Every speed goes through here — the picker,
-     * the hold gesture, a room — because the sink has the last word on it and the answer comes back
-     * asynchronously, to {@code onPlaybackParametersChanged}, where the asking has to be remembered to
-     * be recognised.
-     *
-     * <p>What is deliberately not done here is re-arming the refusal notice. A room trims the speed to
-     * close drift four times a second, through this same door, so an answer per request would be a
-     * message every 250 ms; once a session is enough, and the viewer has been told.
-     */
-    void requestSpeed(float speed) {
-        if (player == null) {
-            return;
-        }
-        speedRequested = speed;
-        player.setPlaybackSpeed(speed);
     }
 
     private void cycleOrientation() {
         mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
         Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
         updateButtonRotation();
-        Dialogs.showText(playerView, getString(mPrefs.orientation.description),
-                R.drawable.ic_screen_rotation_24dp, 2500);
+        Utils.showText(playerView, getString(mPrefs.orientation.description), 2500);
         resetHideCallbacks();
     }
 
     // Uniform box for every button that lives inside a control pill (header display cluster + bottom pickers),
     // so both pills share one height, one button size and one inter-button gap. 40dp box, 8dp padding keeps
-    // the glyph at the standard 24dp. Nothing is drawn at rest — the pill behind is the frame. Focus draws a
-    // contour on the box less 4dp on every side, so the line has air against the pill's edge and against its
-    // neighbour, and keeps the pill's own corner language rather than cutting a circle into it.
+    // the glyph at the standard 24dp.
     private void styleClusterButton(final ImageButton button) {
         if (button == null) {
             return;
         }
         final int pad = ui.clusterPad();
         button.setPadding(pad, pad, pad, pad);
-        // The glyph keeps saying what the control is — coral when it is on — under the contour as well as
-        // without it: state is ink, focus is the line, and the two never share a property.
-        button.setImageTintList(ContextCompat.getColorStateList(this, R.color.control_icon_tint));
-        button.setBackground(null);
-        // The press belongs to the whole button, as it does on the episode discs — the box itself, whose
-        // ends a pill rounds by its own clip where there is one — while the contour stays the smaller
-        // indicator inside it. One shape for every button in either row: the header on a phone carries no
-        // pill, and it still takes the same mark, because a control should not change what pressing it
-        // looks like with the row it happens to sit in.
-        button.setForeground(Utils.chromeForeground(this, ui.contourCorner(), ui.contourInset(), 0f, 0));
         final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ui.clusterBox(), ui.clusterBox());
         params.gravity = Gravity.CENTER_VERTICAL;
@@ -10074,6 +9126,7 @@ public class PlayerActivity extends Activity {
     // result intent that finish() builds, so pausing and then being killed overnight would lose the very
     // position the timer exists to protect. Closing also frees the decoder and the receiver's audio lock.
 
+    private static final int[] SLEEP_PRESETS_MIN = {15, 30, 45, 60, 90};
     private static final long SLEEP_WARN_MS = 30_000;   // fade + notice window ahead of the close
     private static final long SLEEP_TICK_MS = 1000;
     private static final long SLEEP_FADE_TICK_MS = 250; // fine enough a ramp to read as a fade, not a step
@@ -10094,8 +9147,8 @@ public class PlayerActivity extends Activity {
             if (remaining <= SLEEP_WARN_MS) {
                 if (!sleepWarned) {
                     sleepWarned = true;
-                    Dialogs.showText(playerView, getString(R.string.sleep_timer_warning,
-                            Math.round(remaining / 1000f)), R.drawable.ic_sleep_24dp);
+                    Utils.showText(playerView, getString(R.string.sleep_timer_warning,
+                            Math.round(remaining / 1000f)));
                 }
                 // Ease the sound out rather than cut it — the one warning that still lands with the screen
                 // already dark. A no-op on a passthrough output, where the player has no gain of its own to
@@ -10114,8 +9167,7 @@ public class PlayerActivity extends Activity {
     private void armSleepTimer(final int minutes) {
         cancelSleepTimer();
         if (minutes <= 0) {
-            Dialogs.showText(playerView, getString(R.string.sleep_timer_cancelled),
-                    R.drawable.ic_sleep_24dp);
+            Utils.showText(playerView, getString(R.string.sleep_timer_cancelled));
             return;
         }
         sleepSetMinutes = minutes;
@@ -10123,16 +9175,15 @@ public class PlayerActivity extends Activity {
         // constraint here: a sleep timer runs with the video playing and the screen awake.
         sleepDeadlineMs = SystemClock.uptimeMillis() + minutes * 60_000L;
         playerView.postDelayed(sleepTickRunnable, SLEEP_TICK_MS);
-        Dialogs.showText(playerView, getString(R.string.sleep_timer_set, formatSleepDuration(minutes)),
-                R.drawable.ic_sleep_24dp);
+        Utils.showText(playerView, getString(R.string.sleep_timer_set, formatSleepDuration(minutes)));
     }
 
     private void armSleepAtEndOfItem() {
         cancelSleepTimer();
         sleepAtEndOfItem = true;
         applySleepAtEndOfItem();
-        Dialogs.showText(playerView, getString(R.string.sleep_timer_set,
-                getString(R.string.sleep_timer_end_of_item)), R.drawable.ic_sleep_24dp);
+        Utils.showText(playerView, getString(R.string.sleep_timer_set,
+                getString(R.string.sleep_timer_end_of_item)));
     }
 
     /** Clears whatever was armed and undoes the fade — the way back from every off/cancel path. */
@@ -10196,26 +9247,29 @@ public class PlayerActivity extends Activity {
         return remaining > 0 ? Utils.formatMilis(remaining) : null;
     }
 
-    /**
-     * One panel for the whole timer — durations, end of file and a typed length — rather than a list
-     * whose last row opened a second panel to type in. {@link DurationPanel} carries the reasoning.
-     */
-    private void showSleepTimerPanel() {
+    private void showSleepTimerMenu() {
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.sleep_timer_off), null,
+                !sleepAtEndOfItem && sleepRemainingMs() == 0, () -> armSleepTimer(0)));
+        for (final int minutes : SLEEP_PRESETS_MIN) {
+            final boolean current = !sleepAtEndOfItem && sleepSetMinutes == minutes;
+            items.add(new MenuItem(formatSleepDuration(minutes),
+                    current ? Utils.formatMilis(sleepRemainingMs()) : null,
+                    current, () -> armSleepTimer(minutes)));
+        }
+        items.add(new MenuItem(getString(R.string.sleep_timer_end_of_item), null, sleepAtEndOfItem,
+                this::armSleepAtEndOfItem));
+        items.add(new MenuItem(getString(R.string.sleep_timer_custom), null, false,
+                this::showSleepTimerCustomDialog));
+        showSideMenu(getString(R.string.sleep_timer_title), items);
+    }
+
+    private void showSleepTimerCustomDialog() {
         if (sleepTimerDialog != null) {
             sleepTimerDialog.dismiss();
         }
-        sleepTimerDialog = DurationPanel.create(this, ui, getString(R.string.sleep_timer_title),
-                sleepSetMinutes, sleepAtEndOfItem, sleepRemainingMs(), new DurationPanel.Listener() {
-                    @Override
-                    public void onDurationPicked(final int minutes) {
-                        armSleepTimer(minutes);
-                    }
-
-                    @Override
-                    public void onEndOfItemPicked() {
-                        armSleepAtEndOfItem();
-                    }
-                });
+        sleepTimerDialog = DurationPanel.create(this, ui, coordinatorLayout, brandColor(),
+                getString(R.string.sleep_timer_title), this::armSleepTimer);
         showPickerDialog(sleepTimerDialog);
     }
 
@@ -10233,77 +9287,65 @@ public class PlayerActivity extends Activity {
      * three names between them.
      */
     private void showMoreMenu() {
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
-        // The bands are divided by the rules below rather than by captions: a caption over the first of
-        // them said what the rows under it say for themselves.
+        final List<MenuItem> items = new ArrayList<>();
+        // "Playback" rather than "this film": of these four only the skip offset is per file. The speed
+        // outlives the app, the subtitle timing outlives the episode, and a sleep timer was never about
+        // one file at all. The caption also carries the qualifier for the band, which is why the row
+        // below is "Speed" and only its own panel says "Playback speed".
+        items.add(MenuItem.caption(getString(R.string.menu_playback)));
         if (player != null) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
+            items.add(new MenuItem(R.drawable.ic_speed_24dp, getString(R.string.speed_row),
                     // Quiet at 1x, like every other row here: a summary reports what has been changed,
                     // and "Normal" is the absence of a change.
-                    userSpeed() == 1f ? null : SpeedPanel.format(userSpeed()),
+                    userSpeed() == 1f ? null : formatSpeed(userSpeed()),
                     false, this::showSpeedDialog));
         }
         // Only with subtitles on: there is nothing to shift otherwise. One row for both lines — the
         // panel behind it carries a slider each, and which is which is answered there.
         if (subtitleOffsetShiftable() || secondaryOffsetShiftable()) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_subtitle_offset_24dp,
+            items.add(new MenuItem(R.drawable.ic_subtitle_offset_24dp,
                     getString(R.string.subtitle_offset_title), subtitleOffsetSummary(),
                     false, this::showSubtitleOffsetDialog));
         }
         if (skipOffsetReachable()) {
             // Named after the panel it opens, which is no longer only the offset: the row that said
             // "Skip offset" now leads to how each kind of segment is offered as well.
-            items.add(new Dialogs.MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.skip_session_title),
+            items.add(new MenuItem(R.drawable.ic_skip_offset_24dp, getString(R.string.skip_session_title),
                     skipOffsetSec == 0 ? null : OffsetPanel.format(this, skipOffsetSec),
                     false, this::showSkipOffsetDialog));
         }
         if (player != null) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
-                    sleepTimerSummary(), false, this::showSleepTimerPanel));
+            items.add(new MenuItem(R.drawable.ic_sleep_24dp, getString(R.string.sleep_timer_title),
+                    sleepTimerSummary(), false, this::showSleepTimerMenu));
         }
-        items.add(Dialogs.MenuItem.rule());
+        items.add(MenuItem.rule());
         // Here as well as in the subtitle panel: the panel is where somebody who has looked for
         // subtitles ends up, and this menu is where they look when the panel had nothing to offer.
         if (player != null) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_search_24dp,
+            items.add(new MenuItem(R.drawable.ic_search_24dp,
                     getString(R.string.subtitle_search_manual), null, false,
                     () -> showSubtitleSearchDialog(false)));
         }
         // Only for network media: a room syncs one shared URL, and there is nothing to share about a
         // file that lives on this device alone.
         if (togetherAvailable()) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_title),
+            items.add(new MenuItem(R.drawable.ic_together_24dp, getString(R.string.together_title),
                     togetherSummary(), false, this::showTogetherMenu));
         }
         // Rides the stats panel: the details it reports are the ones on screen, and the row would be
         // noise for everyone who has not asked for them. From the menu rather than a long-press on the
         // panel, so it is reachable with a D-pad and the panel stays free of touch handling.
         if (player != null && mPrefs.showStats) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_content_copy_24dp,
+            items.add(new MenuItem(R.drawable.ic_content_copy_24dp,
                     getString(R.string.stats_report_title), null, false, this::showPlayerState));
         }
-        items.add(Dialogs.MenuItem.rule());
-        // The two ways to something else from inside a film: the shell, which is where every file in
-        // the app is found, and an address typed in. Neither needs the player emptied first.
-        items.add(new Dialogs.MenuItem(R.drawable.ic_movie_24dp, getString(R.string.empty_state_browse), null, false,
-                () -> BrowserActivity.reopenFrom(this)));
-        items.add(new Dialogs.MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false,
-                () -> OpenLink.ask(this, uri -> {
-                    // The same VIEW path a shared link takes through onNewIntent, so API state reset,
-                    // subtitle discovery and focus behave identically - and getIntent() keeps pointing
-                    // at what is actually playing.
-                    final Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-                    setIntent(intent);
-                    handleViewIntent(intent);
-                    initializePlayer();
-                })));
-        items.add(new Dialogs.MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
-        // Titled after the button that opens it. The title was dropped once, when every panel drew a
-        // header line only if it had something to put on it and "More" would have bought a line to
-        // repeat a word. Every panel carries a close button now, so the line is drawn either way — and
-        // an empty one reads as a mistake rather than as restraint. Not "Settings", which the panel's
-        // own last row already means: one word, two destinations, is what the title said before that.
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.button_more), items);
+        items.add(MenuItem.rule());
+        // Same two entry points the empty state offers (hence its strings), so opening something else is
+        // not a matter of first getting back to an empty player.
+        items.add(new MenuItem(R.drawable.ic_folder_open_24dp, getString(R.string.empty_state_open), null, false, () -> openFile(mPrefs.mediaUri)));
+        items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.empty_state_link), null, false, emptyState::askForLink));
+        items.add(new MenuItem(R.drawable.ic_settings_24dp, getString(R.string.pref_title), null, false, this::openSettings));
+        showSideMenu(getString(R.string.button_more), items);
     }
 
     // --- Watch together -------------------------------------------------------------------------
@@ -10345,31 +9387,31 @@ public class PlayerActivity extends Activity {
     }
 
     private void showTogetherMenu() {
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
+        final List<MenuItem> items = new ArrayList<>();
         if (together != null && together.isActive()) {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_share_24dp, getString(R.string.together_share),
+            items.add(new MenuItem(R.drawable.ic_share_24dp, getString(R.string.together_share),
                     together.code(), false, this::shareInvite));
-            items.add(new Dialogs.MenuItem(R.drawable.ic_close_24dp, getString(R.string.together_leave),
+            items.add(new MenuItem(R.drawable.ic_close_24dp, getString(R.string.together_leave),
                     null, false, this::leaveRoom));
         } else {
-            items.add(new Dialogs.MenuItem(R.drawable.ic_add_24dp, getString(R.string.together_create),
+            items.add(new MenuItem(R.drawable.ic_add_24dp, getString(R.string.together_create),
                     null, false, this::createRoom));
-            items.add(new Dialogs.MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
+            items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
                     null, false, this::findRooms));
-            items.add(new Dialogs.MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
+            items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
                     null, false, this::askRoomCode));
         }
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.together_title), items);
+        showSideMenu(getString(R.string.together_title), items);
     }
 
     /** The way in when nothing is playing yet — from the empty page, where creating is impossible. */
     void showJoinMenu() {
-        final List<Dialogs.MenuItem> items = new ArrayList<>();
-        items.add(new Dialogs.MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
+        final List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(R.drawable.ic_search_24dp, getString(R.string.together_find),
                 null, false, this::findRooms));
-        items.add(new Dialogs.MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
+        items.add(new MenuItem(R.drawable.ic_link_24dp, getString(R.string.together_enter_code),
                 null, false, this::askRoomCode));
-        Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.together_join), items);
+        showSideMenu(getString(R.string.together_join), items);
     }
 
     /**
@@ -10388,7 +9430,7 @@ public class PlayerActivity extends Activity {
                 showSnack(getString(R.string.together_none_found), null);
                 return;
             }
-            final List<Dialogs.MenuItem> items = new ArrayList<>();
+            final List<MenuItem> items = new ArrayList<>();
             for (final JSONObject ad : rooms) {
                 final String id = ad.optString("id");
                 final boolean locked = ad.optInt("pwd") == 1;
@@ -10397,7 +9439,7 @@ public class PlayerActivity extends Activity {
                 final String poster = ad.optString("poster", "");
                 // The padlock is worth carrying whatever else the row has; the group glyph is only there
                 // so a row is not blank, so it steps aside for a poster rather than doubling up with it.
-                items.add(new Dialogs.MenuItem(
+                items.add(new MenuItem(
                         locked ? R.drawable.ic_lock_24dp
                                 : poster.isEmpty() ? R.drawable.ic_together_24dp : 0,
                         poster,
@@ -10413,15 +9455,16 @@ public class PlayerActivity extends Activity {
                             }
                         }));
             }
-            Dialogs.menu(this, ui, () -> showPickerDialog(Dialogs.openMenu()), getString(R.string.together_find), items);
+            showSideMenu(getString(R.string.together_find), items);
         });
     }
 
     /** A room from the list said it has a password; the code we already know. */
     private void askRoomPassword(final String code) {
-        final Context dialogContext = Dialogs.dialogContext(this);
-        final LinearLayout fields = Dialogs.dialogFields(dialogContext);
-        final EditText input = Dialogs.textField(fields, getString(R.string.together_password));
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setSingleLine(true);
+        input.setHint(getString(R.string.together_password_hint));
         // The room has said it is locked, so the default is worth offering here exactly as it is offered
         // when creating one: people watching together tend to reuse one password, and this is the only
         // dialog that knows for certain a password is wanted. Not offered when joining by code, where
@@ -10430,8 +9473,13 @@ public class PlayerActivity extends Activity {
         // not exist.
         input.setText(mPrefs.togetherPassword);
         input.setSelection(input.getText().length());
-        Dialogs.fields(this, code, fields, getString(android.R.string.ok),
-                () -> joinRoom(code, input.getText().toString()));
+        new AlertDialog.Builder(this)
+                .setTitle(code)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok,
+                        (dialog, which) -> joinRoom(code, input.getText().toString()))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /**
@@ -10442,7 +9490,6 @@ public class PlayerActivity extends Activity {
      * room being made, not a standing preference worth hunting for in settings.
      */
     private void createRoom() {
-        final Context dialogContext = Dialogs.dialogContext(this);
         final JSONObject session = sessionDescription();
         if (session == null) {
             return;
@@ -10453,35 +9500,44 @@ public class PlayerActivity extends Activity {
                 ? getString(R.string.together_room_default_name, code)
                 : card.optString("title");
 
-        final LinearLayout fields = Dialogs.dialogFields(dialogContext);
-
-        final EditText name = Dialogs.textField(fields, getString(R.string.together_room_name));
+        final EditText name = new EditText(this);
+        name.setInputType(InputType.TYPE_CLASS_TEXT);
+        name.setSingleLine(true);
         name.setText(suggested);
         name.setSelection(name.getText().length());
 
-        final EditText password = Dialogs.textField(fields, getString(R.string.together_password));
+        final EditText password = new EditText(this);
+        password.setInputType(InputType.TYPE_CLASS_TEXT);
+        password.setSingleLine(true);
+        password.setHint(getString(R.string.together_password_hint));
         password.setText(mPrefs.togetherPassword);
 
-        final com.google.android.material.checkbox.MaterialCheckBox listed =
-                new com.google.android.material.checkbox.MaterialCheckBox(dialogContext);
+        final CheckBox listed = new CheckBox(this);
         listed.setText(R.string.together_public);
         listed.setChecked(mPrefs.togetherPublic);
 
         // A listed room without a password is open to whoever reads the list. Said as a quiet line under
         // the tick that put it there, not as an error after the fact: the accent here is already the brand
         // coral, and a red field on top of it reads as alarm rather than as the one thing left to fill in.
-        final TextView note = new TextView(dialogContext);
+        final TextView note = new TextView(this);
         note.setText(R.string.together_public_needs_password);
-        note.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
-        note.setTextColor(MaterialColors.getColor(dialogContext, R.attr.colorOnSurfaceVariant, Color.GRAY));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        note.setTextColor(ContextCompat.getColor(this, R.color.error_ink_muted));
         note.setPadding(0, 0, 0, Utils.dpToPx(4));
         note.setVisibility(View.GONE);
 
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(name);
+        fields.addView(password);
         fields.addView(listed);
         fields.addView(note);
 
-        final AlertDialog dialog = Dialogs.fieldDialog(dialogContext, fields)
+        final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.together_create_title, code))
+                .setView(fields)
                 .setPositiveButton(android.R.string.ok, (d, which) -> {
                     mPrefs.updateTogetherPublic(listed.isChecked());
                     openRoom(code,
@@ -10532,27 +9588,41 @@ public class PlayerActivity extends Activity {
     /** Ask for the six digits. Also the empty state's way in, which is the only one a TV has when
      *  nothing is playing yet — the gear menu lives in the player's controls. */
     void askRoomCode() {
-        final Context dialogContext = Dialogs.dialogContext(this);
-        final LinearLayout fields = Dialogs.dialogFields(dialogContext);
+        final EditText code = new EditText(this);
         // Text, not digits: a room made in Lampa has a letter code, and the same six characters
         // have to be typeable here.
-        final EditText code = Dialogs.textField(fields, getString(R.string.together_code), "ABC234");
         code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        code.setSingleLine(true);
+        code.setHint("ABC234");
 
         // Rooms made in Lampa carry a password whenever that setting is on there, and it goes into
         // the room's address — so without it we would land somewhere else entirely and report, quite
         // truthfully and quite uselessly, that no such room exists.
-        final EditText password = Dialogs.textField(fields, getString(R.string.together_password));
+        final EditText password = new EditText(this);
+        password.setInputType(InputType.TYPE_CLASS_TEXT);
+        password.setSingleLine(true);
+        password.setHint(getString(R.string.together_password_hint));
 
-        Dialogs.fields(this, getString(R.string.together_join), fields,
-                getString(android.R.string.ok), () -> {
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        final int pad = Utils.dpToPx(16);
+        fields.setPadding(pad, 0, pad, 0);
+        fields.addView(code);
+        fields.addView(password);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.together_join)
+                .setView(fields)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                     final String entered = code.getText().toString().trim().toUpperCase(Locale.US);
                     if (Room.isCode(entered)) {
                         joinRoom(entered, password.getText().toString());
                     } else {
                         showSnack(getString(R.string.together_code_invalid), null);
                     }
-                });
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /** Enter a room by code; the room says what it is playing as soon as we are in. */
@@ -10651,9 +9721,6 @@ public class PlayerActivity extends Activity {
         if (!Utils.isSupportedNetworkUri(uri)) {
             return;
         }
-        // The room has answered, so this screen is no longer waiting for one: from here it has media of
-        // its own again, and a rebuild must resume that rather than reopen the join menu over it.
-        awaitingRoom = false;
         final Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(uri, session.optString("type", null));
         final JSONObject extras = session.optJSONObject("extras");
@@ -10783,7 +9850,6 @@ public class PlayerActivity extends Activity {
     /** The invite as something to point a camera at, for a screen that cannot pass it on itself. The
      *  clipboard gets it too — a box with a keyboard, or a remote-control browser, can still use it. */
     private void showInviteQr(final String invite) {
-        final Context dialogContext = Dialogs.dialogContext(this);
         copyToClipboard(invite);
         final DisplayMetrics metrics = getResources().getDisplayMetrics();
         final Bitmap qr = Utils.qrBitmap(invite,
@@ -10792,12 +9858,12 @@ public class PlayerActivity extends Activity {
             showSnack(getString(R.string.together_created, together.code()), null);
             return;
         }
-        final ImageView image = new ImageView(dialogContext);
+        final ImageView image = new ImageView(this);
         image.setImageBitmap(qr);
         image.setAdjustViewBounds(true);
         final int padding = Math.round(16 * metrics.density);
         image.setPadding(padding, padding, padding, padding);
-        new MaterialAlertDialogBuilder(dialogContext)
+        new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.together_qr_title, together.code()))
                 .setMessage(getString(R.string.together_qr_hint))
                 .setView(image)
@@ -10845,8 +9911,8 @@ public class PlayerActivity extends Activity {
                 // Losing the relay does not stop the picture, so it is stated rather than alarmed about —
                 // but on the brand colour, because the room has stopped being in step and nothing else says so.
                 final int tint = together.connected()
-                        ? ContextCompat.getColor(this, R.color.ink_high)
-                        : brandColor();
+                        ? 0xE6FFFFFF
+                        : ContextCompat.getColor(this, R.color.brand);
                 roomPill.setTextColor(tint);
                 roomPill.setCompoundDrawableTintList(ColorStateList.valueOf(tint));
             }
@@ -10901,8 +9967,8 @@ public class PlayerActivity extends Activity {
         if (playerView == null || inPip || locked) {
             return;
         }
-        Dialogs.showText((CustomPlayerView) playerView, roomNotice(getString(R.string.together_go)),
-                R.drawable.ic_together_24dp, CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+        Utils.showText((CustomPlayerView) playerView, roomNotice(getString(R.string.together_go)),
+                CustomPlayerView.MESSAGE_TIMEOUT_LONG);
     }
 
     /** Say who just took the controls. Playback has already followed them by the time this runs — the
@@ -10925,8 +9991,8 @@ public class PlayerActivity extends Activity {
                 ? getString(R.string.together_act_somebody)
                 : nick;
         // MESSAGE_TIMEOUT_LONG, not the touch timeout: this is a name to read, not a number to glance at.
-        Dialogs.showText((CustomPlayerView) playerView, roomNotice(getString(verb, who)),
-                R.drawable.ic_together_24dp, CustomPlayerView.MESSAGE_TIMEOUT_LONG);
+        Utils.showText((CustomPlayerView) playerView, roomNotice(getString(verb, who)),
+                CustomPlayerView.MESSAGE_TIMEOUT_LONG);
     }
 
     private TogetherManager.Host togetherHost() {
@@ -11014,7 +10080,9 @@ public class PlayerActivity extends Activity {
 
             @Override
             public void applySpeed(final float speed) {
-                requestSpeed(speed);
+                if (player != null) {
+                    player.setPlaybackSpeed(speed);
+                }
             }
 
             @Override
@@ -11239,7 +10307,63 @@ public class PlayerActivity extends Activity {
             releasePlayer();
         }
 
-        if (requestCode == REQUEST_CHOOSER_SCOPE_DIR) {
+        if (requestCode == REQUEST_CHOOSER_VIDEO || requestCode == REQUEST_CHOOSER_VIDEO_MEDIASTORE) {
+            if (resultCode == RESULT_OK) {
+                resetApiAccess();
+                restorePlayState = false;
+
+                final Uri uri = data.getData();
+
+                if (requestCode == REQUEST_CHOOSER_VIDEO) {
+                    boolean uriAlreadyTaken = false;
+
+                    // https://commonsware.com/blog/2020/06/13/count-your-saf-uri-permission-grants.html
+                    final ContentResolver contentResolver = getContentResolver();
+                    for (UriPermission persistedUri : contentResolver.getPersistedUriPermissions()) {
+                        if (persistedUri.getUri().equals(mPrefs.scopeUri)) {
+                            continue;
+                        } else if (persistedUri.getUri().equals(uri)) {
+                            uriAlreadyTaken = true;
+                        } else {
+                            try {
+                                contentResolver.releasePersistableUriPermission(persistedUri.getUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            } catch (SecurityException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+
+                    if (!uriAlreadyTaken && uri != null) {
+                        try {
+                            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        } catch (SecurityException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+
+                mPrefs.setPersistent(true);
+                mPrefs.updateMedia(this, uri, data.getType());
+
+                if (requestCode == REQUEST_CHOOSER_VIDEO) {
+                    searchSubtitles();
+                }
+            }
+        } else if (requestCode == REQUEST_CHOOSER_SUBTITLE || requestCode == REQUEST_CHOOSER_SUBTITLE_MEDIASTORE) {
+            if (resultCode == RESULT_OK) {
+                Uri uri = data.getData();
+
+                if (requestCode == REQUEST_CHOOSER_SUBTITLE) {
+                    try {
+                        getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    } catch (SecurityException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                handleSubtitles(uri);
+            }
+        } else if (requestCode == REQUEST_CHOOSER_SCOPE_DIR) {
             if (resultCode == RESULT_OK) {
                 final Uri uri = data.getData();
                 try {
@@ -11266,15 +10390,7 @@ public class PlayerActivity extends Activity {
             // but options like the decoder priority or tunneling are baked into it at build time. So
             // rebuild when the screen actually changed something — going in for a look costs nothing.
             // A missing snapshot means the activity was recreated meanwhile, so rebuild to be safe.
-            // A new accent is baked into the whole window, not just the player: the same path that
-            // restarts the screen on a dead decoder rebuilds it with the new theme, position kept.
-            final Map<String, ?> after = mPrefs.snapshot();
-            if (before != null && !Objects.equals(before.get(Prefs.ACCENT_KEY), after.get(Prefs.ACCENT_KEY))) {
-                releasePlayer();
-                playerView.post(this::recreate);
-                return;
-            }
-            if (player != null && (before == null || !before.equals(after))) {
+            if (player != null && (before == null || !before.equals(mPrefs.snapshot()))) {
                 sourceSwitchKeepPaused = true;
                 releasePlayer();
                 initializePlayer();
@@ -11348,43 +10464,11 @@ public class PlayerActivity extends Activity {
         // leaves the flag set from the last bitstream, and DefaultAudioSink may still be holding the new
         // config in pendingConfiguration when we read it. Both only ever cost one needless seek.
         private volatile boolean passthrough;
-        // How far the clock this sink publishes is shifted, in microseconds, one value per route. The
-        // sink's position becomes the player's media clock, and the video renderer picks frames against
-        // it, so reporting it ahead of the sound makes the picture run ahead — which is the sound
-        // arriving late. Two values because a receiver decoding a bitstream adds a latency of its own
-        // that decoding in the app does not; that split is the reference player's.
-        //
-        // Worth saying plainly: this shifts the clock for everyone who reads it, not just the video
-        // renderer. getCurrentPosition, the time bar, the position saved for resume, the position sent
-        // to a Watch Together room and the buffer thresholds all move by the same amount. Nothing
-        // breaks — the watchdogs measure progress rather than absolute position, and "watched to the
-        // end" is decided by the ended state — but two devices in one room with different settings will
-        // sit that far apart.
-        //
-        // A negative value holds the first picture for its own length. That is what asking for the sound
-        // early means, not a bug to clamp away: the renderer position starts around 1e12 microseconds
-        // (the period offset), so nothing here can reach zero to be clamped in the first place.
-        private final long decodedOffsetUs;
-        private final long passthroughOffsetUs;
 
-        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied, boolean forceDecode,
-                                     int decodedSyncMs, int passthroughSyncMs) {
+        AudioPassthroughDenylistSink(AudioSink sink, Set<String> initiallyDenied, boolean forceDecode) {
             super(sink);
             this.deniedMimes = new CopyOnWriteArraySet<>(initiallyDenied);
             this.forceDecode = forceDecode;
-            this.decodedOffsetUs = decodedSyncMs * 1000L;
-            this.passthroughOffsetUs = passthroughSyncMs * 1000L;
-        }
-
-        @Override
-        public long getCurrentPositionUs(boolean sourceEnded) {
-            final long position = super.getCurrentPositionUs(sourceEnded);
-            final long offset = passthrough ? passthroughOffsetUs : decodedOffsetUs;
-            // The sentinel is Long.MIN_VALUE: shifting it would turn "no position yet" into a number.
-            if (offset == 0 || position == AudioSink.CURRENT_POSITION_NOT_SET) {
-                return position;
-            }
-            return position + offset;
         }
 
         private boolean refused(Format format) {
@@ -11420,41 +10504,8 @@ public class PlayerActivity extends Activity {
     }
 
     public void initializePlayer() {
-        // Before anything asks where this file was left: another screen may have written that since
-        // this activity was created, and on a torrent server another device may have.
-        mPrefs.reloadPositions();
-        boolean isNetworkUri = Utils.isNetworkMedia(mPrefs.mediaUri);
+        boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null && !mPrefs.suppressResume;
-        // A join carries no media of its own — the room says what is playing — so the remembered file
-        // must not stand in for it. Without this the branch below that opens the join menu is only ever
-        // reached on a device that has played nothing yet: any other one resumes its last film and the
-        // room is never asked about, which is what "join opens the last video" was.
-        //
-        // Held in a field rather than read off the intent each time, and cleared only when a room has
-        // actually said what to play (see openSession). The intent's extra cannot carry this on its own
-        // in either direction: left in place it would outlive the room and drop a joined session back to
-        // an empty screen on the next rebuild, and consumed on first read it does not survive one — a
-        // viewer who opens the join screen and then leaves the app for the code loses the player to
-        // onStop (nothing is loaded, so it is released), and the rebuild that follows reads an intent
-        // whose extra is gone and resumes their last film instead. Which is the same bug again, behind
-        // one press of Home.
-        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_JOIN_ROOM, false)) {
-            awaitingRoom = true;
-            getIntent().removeExtra(EXTRA_JOIN_ROOM);
-        }
-        // A room the browser already asked about. Same waiting state — there is still no media until
-        // the room answers — but nothing to ask here, so the code goes straight out.
-        if (getIntent() != null && getIntent().getStringExtra(EXTRA_JOIN_CODE) != null) {
-            awaitingRoom = true;
-            pendingRoomCode = getIntent().getStringExtra(EXTRA_JOIN_CODE);
-            pendingRoomPassword = getIntent().getStringExtra(EXTRA_JOIN_PASSWORD);
-            getIntent().removeExtra(EXTRA_JOIN_CODE);
-            getIntent().removeExtra(EXTRA_JOIN_PASSWORD);
-        }
-        final boolean joining = awaitingRoom;
-        if (joining) {
-            haveMedia = false;
-        }
         // Only the transition it was set for may read it. A skip that never produced one would otherwise
         // leave it behind, and the next episode the viewer picked by hand would pass for an automatic step.
         steppedBySkip = false;
@@ -11478,12 +10529,11 @@ public class PlayerActivity extends Activity {
 
         // Unless this is the recovery rebuild itself (which must keep forceHevcForDolbyVision), clear the
         // one-shot Dolby Vision recovery state so a normal open plays DV through its regular path and a
-        // future failure on any item can recover again. Clearing means back to what the viewer asked for,
-        // which is the same route when they have said to keep Dolby Vision away from the decoder for good.
+        // future failure on any item can recover again.
         if (pendingStuckRecovery) {
             pendingStuckRecovery = false;
         } else {
-            forceHevcForDolbyVision = mPrefs.refuseDolbyVision;
+            forceHevcForDolbyVision = false;
         }
 
         // A fresh player, but not a fresh budget when it is the same stream: the rebuild rungs
@@ -11526,8 +10576,6 @@ public class PlayerActivity extends Activity {
         // Fresh media — drop any container track names so the tap re-parses for this item.
         containerTracks.clear();
         containerTracksUri = null;
-        earlyModeRequestedUri = null;
-        earlyModeSwitchRequested = false;
         resolvedTrackNames.clear();
 
         // Also drops a deferred error here, not only in releasePlayer: onNewIntent (sharing a video into
@@ -11617,216 +10665,12 @@ public class PlayerActivity extends Activity {
                 // isTvBox rather than the block itself: that is decided per mime while the player runs
                 // (see mediaUri above), and by then this list is fixed — so on a TV the fallback has to
                 // be in it already or a hidden platform decoder would leave the track with nothing.
-                final int platform = out.size();
                 super.buildAudioRenderers(context,
-                        (isTvBox || !revokedAudioMimes.isEmpty() || !mPrefs.audioPassthrough
-                                || !sessionFfmpegAudioFormats.isEmpty())
+                        (isTvBox || !revokedAudioMimes.isEmpty() || !mPrefs.audioPassthrough)
                                 && extensionRendererMode == EXTENSION_RENDERER_MODE_OFF
                                 ? EXTENSION_RENDERER_MODE_ON : extensionRendererMode,
                         mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler,
                         eventListener, out);
-                // The platform renderer goes in first, the extension ones behind it. Swap it for one that
-                // refuses the exact formats its decoder has already failed to decode, so track selection
-                // walks on to the ffmpeg renderer for those and keeps the platform decoder for everything
-                // else (see recoverByDecodingAudioWithFfmpeg). Identical to the stock renderer while the
-                // set is empty, which is why it is installed unconditionally: same seven-argument
-                // constructor the base class itself uses. Passthrough is untouched by this: a format only
-                // enters the set by failing in a decoder, and a bitstreamed track that fails does not
-                // reach a decoder at all - it fails at the AudioTrack, which recoverByRevokingAudioMime()
-                // answers instead.
-                if (platform < out.size() && out.get(platform) instanceof MediaCodecAudioRenderer) {
-                    out.set(platform, new MediaCodecAudioRenderer(context, getCodecAdapterFactory(),
-                            mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener,
-                            audioSink) {
-                        @Override
-                        protected int supportsFormat(MediaCodecSelector selector, Format format)
-                                throws MediaCodecUtil.DecoderQueryException {
-                            // Refused here rather than by handing back an empty decoder list: the base
-                            // class answers this question through its own static decoder lookup, so an
-                            // overridden getDecoderInfos() never reaches it - the renderer would still be
-                            // given the track and would then fail to open a decoder for it (measured:
-                            // "Decoder init failed: [-49999]"). Saying UNSUPPORTED_SUBTYPE is also the
-                            // truth, and it is what makes track selection walk on to the ffmpeg renderer.
-                            if (sessionFfmpegAudioFormats.contains(audioFormatKey(format))) {
-                                return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
-                            }
-                            return super.supportsFormat(selector, format);
-                        }
-                    });
-                }
-            }
-
-            @Override
-            protected void buildVideoRenderers(Context context, int extensionRendererMode,
-                                               MediaCodecSelector mediaCodecSelector,
-                                               boolean enableDecoderFallback, Handler eventHandler,
-                                               VideoRendererEventListener eventListener,
-                                               long allowedVideoJoiningTimeMs,
-                                               ArrayList<Renderer> out) {
-                final int platform = out.size();
-                super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector,
-                        enableDecoderFallback, eventHandler, eventListener,
-                        allowedVideoJoiningTimeMs, out);
-                // The same dav1d renderer the base class just built, with its pipeline opened up. The
-                // base class can only reach the four-argument constructor by reflection, and that one
-                // takes DEFAULT_MAX_FRAME_DELAY = 2: two frames in flight, whatever the device has.
-                //
-                // Two is the whole difference between "it plays" and "it plays badly" on a 4K AV1 file.
-                // A single-tile stream - which is what a 4K release is, and what the file this was
-                // measured on has (tile_cols_log2 = tile_rows_log2 = 0) - gives dav1d almost nothing to
-                // parallelise inside a frame: eight threads decode it 1.24x faster than one. The
-                // parallelism is between frames, and max_frame_delay is the cap on it. Measured on the
-                // same file with ffmpeg's libdav1d at eight threads: 49 fps at 2, 75 at 3 (which is
-                // dav1d's own default for eight threads, and what VLC asks for), 92 at 4, 118 at 6,
-                // where it saturates. The CPU spent per frame stays at 55 ms throughout - this is
-                // utilisation, not extra work.
-                //
-                // Four, not six: each frame context holds its own 4K picture and state, about 80 MB on a
-                // stream like that, and this runs on phones that have to put it somewhere. Buffers grow
-                // with it so the deeper pipeline stays fed and the renderer keeps a cushion against
-                // decode-time jitter; an input buffer is one compressed frame (tens of KB), an output
-                // buffer a decoded picture (22 MB at 4K 10-bit), which is why they are not equal.
-                //
-                // Threads stay at dav1d's own count. It reads the online processors, and the tempting
-                // alternatives are worse: THREAD_COUNT_PERFORMACE_CORES gives two on a 2+6 chip and caps
-                // the frame contexts at two with it, and half the processors strands the little cores.
-                for (int i = platform; i < out.size(); i++) {
-                    if (out.get(i) instanceof Libdav1dVideoRenderer) {
-                        out.set(i, new Libdav1dVideoRenderer(allowedVideoJoiningTimeMs, eventHandler,
-                                eventListener, MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY,
-                                Libdav1dVideoRenderer.THREAD_COUNT_DECODER_DEFAULT,
-                                /* maxFrameDelay= */ 4, /* numInputBuffers= */ 8,
-                                /* numOutputBuffers= */ 6, /* useCustomAllocator= */ false));
-                    }
-                }
-                if (platform >= out.size()
-                        || !(out.get(platform) instanceof MediaCodecVideoRenderer)) {
-                    return;
-                }
-                // Same renderer the base class built, with one thing taken back: the promise that the
-                // decoder will keep up. Media3 asks the codec for KEY_OPERATING_RATE equal to the
-                // stream's own frame rate, which is a contract - and a decoder that cannot sign it
-                // answers ERROR_INSUFFICIENT_RESOURCE at configure() rather than doing what it can.
-                // Playback then falls through to the software decoder, which on a 4K60 clip is not
-                // slower than the hardware one, it is hopeless. Where the device itself says it cannot
-                // hold that rate at that size, the rate is not asked for: the hardware decoder opens
-                // and runs best-effort, dropping frames, which is what every other player on the phone
-                // does and what the viewer was comparing us with.
-                out.set(platform, new MediaCodecVideoRenderer(context, getCodecAdapterFactory(),
-                        mediaCodecSelector, allowedVideoJoiningTimeMs, enableDecoderFallback,
-                        eventHandler, eventListener, MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY) {
-                    @Override
-                    protected float getCodecOperatingRateV23(float targetPlaybackSpeed, Format format,
-                                                             Format[] streamFormats) {
-                        final float rate = super.getCodecOperatingRateV23(targetPlaybackSpeed, format,
-                                streamFormats);
-                        if (rate != CODEC_OPERATING_RATE_UNSET
-                                && deviceSaysNo(hardwareVerdict(format, codecMimeOfThisCodec()))) {
-                            return CODEC_OPERATING_RATE_UNSET;
-                        }
-                        return rate;
-                    }
-
-                    /** The mime the codec now open was chosen for, which for Dolby Vision is HEVC. */
-                    @Nullable
-                    private String codecMimeOfThisCodec() {
-                        final androidx.media3.exoplayer.mediacodec.MediaCodecInfo info = getCodecInfo();
-                        return info != null ? info.codecMimeType : null;
-                    }
-
-                    @Override
-                    protected androidx.media3.exoplayer.DecoderReuseEvaluation canReuseCodec(
-                            androidx.media3.exoplayer.mediacodec.MediaCodecInfo codecInfo,
-                            Format oldFormat, Format newFormat, boolean allowFlush) {
-                        // A codec that has to be configured plainly has to be *configured*, and a reused
-                        // one never is: Media3 keeps the running codec and hands it the new stream, so
-                        // none of the three keys comes off. Measured on the phone: a second play of the
-                        // portrait file reused the codec from the clip before it and died at
-                        // native_dequeueOutputBuffer, nothing rendered, three seconds gone to the retry
-                        // that then configured it properly. So these formats get their own codec.
-                        if (deviceSaysNo(hardwareVerdict(newFormat, codecInfo.codecMimeType))
-                                || sessionPlainCodecFormats.contains(videoFormatKey(newFormat))) {
-                            return new androidx.media3.exoplayer.DecoderReuseEvaluation(
-                                    codecInfo.name, oldFormat, newFormat,
-                                    androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_NO,
-                                    androidx.media3.exoplayer.DecoderReuseEvaluation
-                                            .DISCARD_REASON_APP_OVERRIDE);
-                        }
-                        return super.canReuseCodec(codecInfo, oldFormat, newFormat, allowFlush);
-                    }
-
-                    @Override
-                    protected androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Configuration
-                            getMediaCodecConfiguration(
-                                    androidx.media3.exoplayer.mediacodec.MediaCodecInfo codecInfo,
-                                    Format format, android.media.MediaCrypto crypto,
-                                    float codecOperatingRate) {
-                        final androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Configuration
-                                configuration = super.getMediaCodecConfiguration(codecInfo, format,
-                                        crypto, codecOperatingRate);
-                        // Ask for the picture and nothing else.
-                        //
-                        // The owner's colleague settled this from the other side: VLC plays the file
-                        // that fails here, and it plays it *only* with hardware acceleration on - its
-                        // software path cannot open it either. So the vendor decoder can decode this
-                        // stream, and 0x44c (ERROR_INSUFFICIENT_RESOURCE) is the platform's resource
-                        // manager refusing what was asked around the stream, not the stream itself.
-                        //
-                        // Media3 asks for six things VLC never mentions: an operating rate equal to the
-                        // frame rate, KEY_PRIORITY 0 (real time), a maximum input size, a maximum width
-                        // and height for adaptive switching, and no-post-process. Every one of them is a
-                        // reservation. Where the device has already said it cannot hold this rate at
-                        // this size, they all come off and the codec is configured the way a player with
-                        // no ambitions would configure it: mime, size, csd, surface.
-                        //
-                        // Scoped to that verdict, so a file the hardware is comfortable with keeps the
-                        // adaptive ceiling and the real-time contract it has always had. Android 29 is
-                        // where MediaFormat learned removeKey; below it the keys stay, which costs
-                        // nothing this was going to fix anyway - the phones that meet this are newer.
-                        if (configuration.mediaFormat != null
-                                && (deviceSaysNo(hardwareVerdict(format, codecInfo.codecMimeType))
-                                        || sessionPlainCodecFormats.contains(videoFormatKey(format)))) {
-                            configuration.mediaFormat.setInteger(
-                                    android.media.MediaFormat.KEY_PRIORITY, 1);
-                            if (Build.VERSION.SDK_INT >= 29) {
-                                // Three keys, and the third is the one the first four builds kept.
-                                //
-                                // operating-rate and priority are the contract, and taking them off is
-                                // what stopped the vendor decoder refusing to open at all: 0x44c at
-                                // configure() became "init OMX.qcom.video.decoder.hevc in 74 ms". The
-                                // failure did not go away, it *moved* - a bare IllegalStateException
-                                // about a hundred milliseconds after start, nothing rendered - which is
-                                // what a codec dying asynchronously looks like from the outside, since
-                                // the framework has already reset the state by the time the next
-                                // dequeueInputBuffer asks and the real OMX code never reaches us.
-                                //
-                                // frame-rate is the declaration. Media3 writes Format.frameRate into it
-                                // unconditionally; Qualcomm's decoder passes it to the msm_vidc driver
-                                // as the session's frame rate, and the driver's load check is
-                                // macroblocks x max(frame_rate, operating_rate) against what the chip
-                                // is rated for. 3840x2160 at 60 is twice this one's ceiling - the same
-                                // ceiling areSizeAndRateSupported() reports as "this rate: no", which is
-                                // exactly the verdict that brought us here. So every build so far took
-                                // away the promise and left the declaration that fails the same check
-                                // one stage later. VLC sends none of the three.
-                                //
-                                // Playback does not need the key: Media3 times frames from the sample
-                                // timestamps, not from what the codec was told.
-                                configuration.mediaFormat.removeKey(
-                                        android.media.MediaFormat.KEY_OPERATING_RATE);
-                                configuration.mediaFormat.removeKey(
-                                        android.media.MediaFormat.KEY_PRIORITY);
-                                configuration.mediaFormat.removeKey(
-                                        android.media.MediaFormat.KEY_FRAME_RATE);
-                            }
-                            Utils.log("codec asked plainly for " + videoFormatKey(format)
-                                    + (Build.VERSION.SDK_INT >= 29
-                                            ? " (rate, priority and frame-rate removed)"
-                                            : " (best-effort priority only)"));
-                        }
-                        return configuration;
-                    }
-                });
             }
 
             @Override
@@ -11836,47 +10680,12 @@ public class PlayerActivity extends Activity {
                 // from the start, since the chain is fixed once the sink exists. Silence skipping and
                 // playback speed are appended after it by DefaultAudioProcessorChain, as before.
                 boostProcessor = new BoostAudioProcessor();
-                // With what the route out of this device can carry, which is what decides how much of a
-                // lift the centre can take and which shape the night mode takes. The route's own answer,
-                // not the forced one: the platform folds the channels by what it really has. Set here
-                // rather than from applyBoost — this is a preference, not a gesture, and a changed
-                // preference rebuilds the player.
-                final int routeChannels = AudioCapabilities.getCapabilities(context).getMaxChannelCount();
-                boostProcessor.setCentreBoost(mPrefs.centreBoost, routeChannels);
-                final boolean forceCapabilities = mPrefs.audioPassthrough && mPrefs.audioPassthroughForce;
-                // Declared capabilities are only honoured by a builder holding no context: given one,
-                // the output provider registers a receiver for the route's own answer and overwrites
-                // anything set here (AudioTrackAudioOutputProvider$Builder.setAudioCapabilities drops
-                // the value outright). So forcing means building without the context — and losing the
-                // hotplug updates that come with it, which is the mode's whole premise anyway: the
-                // route's answer is what the viewer has said not to believe.
-                final DefaultAudioSink.Builder builder;
-                if (forceCapabilities) {
-                    // Built once and both installed and reported: a second probe would ask the route
-                    // again and could answer differently, which is exactly the instability this mode
-                    // exists for.
-                    final AudioCapabilities forced = forcedAudioCapabilities(context);
-                    Utils.log("audio sink: capabilities forced, " + forced);
-                    builder = new DefaultAudioSink.Builder().setAudioCapabilities(forced);
-                } else {
-                    builder = new DefaultAudioSink.Builder(context);
-                }
-                builder.setEnableFloatOutput(enableFloatOutput)
+                AudioSink sink = new DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(enableFloatOutput)
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                        // Night mode after the boost, so it sees what the boost and the dialogue
-                        // lift have already done — the order the reference builds in too. Not that it
-                        // ends the chain: the sink appends silence skipping and Sonic behind whatever is
-                        // passed here, and the system's own loudness effect sits past the sink
-                        // altogether. A route of two channels is a television's own speakers or a
-                        // phone's, and the heavy shape belongs there; the gentle one goes where there
-                        // are speakers worth keeping a mix for.
-                        .setAudioProcessors(mPrefs.dynamicRange
-                                ? new AudioProcessor[]{boostProcessor,
-                                        new DynamicRangeProcessor(routeChannels <= 2)}
-                                : new AudioProcessor[]{boostProcessor});
-                AudioSink sink = builder.build();
-                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes,
-                        !mPrefs.audioPassthrough, mPrefs.audioSyncMs, mPrefs.audioPassthroughSyncMs);
+                        .setAudioProcessors(new AudioProcessor[]{boostProcessor})
+                        .build();
+                audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes, !mPrefs.audioPassthrough);
                 return audioSink;
             }
 
@@ -11919,11 +10728,7 @@ public class PlayerActivity extends Activity {
                 // works. Without this, a decoder that fails to initialise ends playback outright instead
                 // of letting the next candidate try.
                 .setEnableDecoderFallback(true)
-                // Also when Dolby Vision is refused outright: without the mapping Media3 answers that a
-                // profile 7 track has no HEVC alternative, so the decoder this very selector hands it
-                // reads back as "exceeds capabilities" — which plays, but drops those renditions out of
-                // the quality list. The refusal means no Dolby Vision anywhere, so mapping it is free.
-                .setMapDV7ToHevc(mPrefs.mapDV7ToHevc || mPrefs.refuseDolbyVision);
+                .setMapDV7ToHevc(mPrefs.mapDV7ToHevc);
         if (forceHevcForDolbyVision || isTvBox) {
             // One combined codec selector for two independent needs:
             // - heavy MKV audio on a TV: no platform decoder for those codecs, so they passthrough (if
@@ -11936,22 +10741,10 @@ public class PlayerActivity extends Activity {
                         && isMatroskaMedia(mediaUri, mediaType)) {
                     return Collections.emptyList();
                 }
-                if (forceHevcForDolbyVision && MimeTypes.VIDEO_DOLBY_VISION.equals(mimeType)) {
-                    // HEVC first, the Dolby Vision decoders kept behind it rather than dropped. The base
-                    // layer of profiles 4, 7 and 8 is HEVC and the first list plays them; profile 9 is
-                    // AVC and profile 10 is AV1, and for those the HEVC decoder fails to configure and
-                    // decoder fallback walks on to the second list. Dropping them outright would turn a
-                    // profile this cannot redirect into an error screen.
-                    final List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> infos =
-                            new ArrayList<>(MediaCodecSelector.DEFAULT.getDecoderInfos(
-                                    MimeTypes.VIDEO_H265, requiresSecureDecoder,
-                                    requiresTunnelingDecoder));
-                    infos.addAll(MediaCodecSelector.DEFAULT.getDecoderInfos(
-                            mimeType, requiresSecureDecoder, requiresTunnelingDecoder));
-                    return infos;
-                }
                 return MediaCodecSelector.DEFAULT.getDecoderInfos(
-                        mimeType, requiresSecureDecoder, requiresTunnelingDecoder);
+                        forceHevcForDolbyVision && MimeTypes.VIDEO_DOLBY_VISION.equals(mimeType)
+                                ? MimeTypes.VIDEO_H265 : mimeType,
+                        requiresSecureDecoder, requiresTunnelingDecoder);
             });
         }
 
@@ -12060,83 +10853,16 @@ public class PlayerActivity extends Activity {
             uncachedUpstream = adaptive ? null : rangeSeeded;
         }
 
-        // smb:// is read by SmbDataSource; every other scheme carries on to whatever upstream the
-        // branches above settled on. SMB has a positioned read, so it needs no proxy of its own.
-        // A dav:// address is http with a scheme that says what it is, so it is rewritten on the way
-        // out and the credentials of its saved place go with it. Ahead of everything else, because
-        // DefaultDataSource dispatches on the scheme and knows nothing of this one.
-        // A dlna:// address is the same idea: it carries the plain HTTP address the server gave for
-        // the file's bytes, and that is what goes out. No credentials — a media server is browsed and
-        // read anonymously.
-        // A torr:// address is a WebDAV one in everything that matters here: rewritten to the http
-        // address of the file — /stream, derived from the infohash and index it carries — and read
-        // with the same Basic credentials, which is what a TorrServer behind a reverse proxy wants.
-        final androidx.media3.datasource.DataSource.Factory resolvedUpstream =
-                new androidx.media3.datasource.ResolvingDataSource.Factory(upstreamFactory,
-                        dataSpec -> {
-                            if (DlnaFiles.speaks(dataSpec.uri)) {
-                                return dataSpec.buildUpon()
-                                        .setUri(DlnaFiles.media(dataSpec.uri)).build();
-                            }
-                            final Uri http = TorrFiles.speaks(dataSpec.uri)
-                                    ? TorrFiles.stream(dataSpec.uri)
-                                    : DavFiles.speaks(dataSpec.uri)
-                                            ? DavFiles.http(dataSpec.uri) : null;
-                            if (http == null) {
-                                return dataSpec;
-                            }
-                            final String authorization =
-                                    NetworkFiles.authorization(this, dataSpec.uri);
-                            final androidx.media3.datasource.DataSpec asHttp =
-                                    dataSpec.buildUpon().setUri(http).build();
-                            return authorization == null ? asHttp
-                                    : asHttp.withAdditionalHeaders(Collections.singletonMap(
-                                            "Authorization", authorization));
-                        });
-        // Without the track-name wrapper, which exists to watch the bytes going into the extractor and
-        // has nothing to say about the two 64 KiB reads MovieHash makes. Everything below it is wanted
-        // though: smb:// positioned reads, the dav:// and dlna:// rewrites, and the credentials that
-        // go with them — so the hash can be taken over every scheme the player can open.
-        final androidx.media3.datasource.DataSource.Factory hashSource =
-                new SmbDataSource.Factory(this, resolvedUpstream);
-        subtitleHashSource = hashSource;
-        // Outermost on purpose: the loader must see a failed open() as a failed read() whatever failed
-        // underneath, the cache included — see DeferredOpenDataSource.
-        final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new DeferredOpenDataSource.Factory(
-                new TrackNameParsingDataSource.Factory(hashSource, trackNameListener));
+        final androidx.media3.datasource.DataSource.Factory dataSourceFactory = new TrackNameParsingDataSource.Factory(upstreamFactory, trackNameListener);
         // Dolby Vision profile 7 is rewritten as profile 8.1 on the way out of the extractor, so the
         // display gets Dolby Vision instead of the base layer's HDR10 (see Dv7Converter). Not when the
         // user asked for the base layer outright ("Dolby Vision profile 7 fallback", handled by
         // setMapDV7ToHevc above), and not during the recovery that exists to get away from the device's
         // Dolby Vision decoder altogether.
         final boolean convertDV7 = !mPrefs.mapDV7ToHevc && !forceHevcForDolbyVision;
-        dv7Converter = convertDV7
-                ? new Dv7Converter(extractorsFactory, subtitleParserFactory, mPrefs.removeHdr10Plus)
-                : null;
-        // A Matroska file whose index is reached through a chain of SeekHeads is unseekable to the stock
-        // extractor — no time bar focus on TV, no resume, every seek landing back at zero. Outermost, so
-        // that Dv7Converter still finds a MatroskaExtractor where it looks for one; see MkvCuesLink.
-        final ExtractorsFactory seekableExtractorsFactory =
-                new MkvCuesLink.Factory(convertDV7 ? dv7Converter : extractorsFactory);
-        // Outside all of it, and unconditional: Dolby Vision profile 10 is an AV1 stream that Media3
-        // hands to an AV1 decoder with a Dolby Vision profile written onto it, which is a number that
-        // decoder does not have and some refuse to be configured with (see Dv10AsAv1). Nothing below
-        // here looks at the extractors by type, and the DV7 conversion above never sees a profile 10
-        // track.
-        mediaSourceFactory = new DefaultMediaSourceFactory(this, new Dv10AsAv1(seekableExtractorsFactory))
-                .setDataSourceFactory(dataSourceFactory)
-                // A share that refuses the password refuses it again, and the default policy spends
-                // three retries and about three and a half seconds finding that out before anything
-                // is said. Everything else keeps the default budget: a server hiccup is worth a
-                // second read, a wrong password never is.
-                .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy() {
-                    @Override
-                    public long getRetryDelayMsFor(@NonNull final LoadErrorInfo info) {
-                        return NetworkFiles.needsPassword(info.exception)
-                                ? C.TIME_UNSET
-                                : super.getRetryDelayMsFor(info);
-                    }
-                });
+        dv7Converter = convertDV7 ? new Dv7Converter(extractorsFactory, subtitleParserFactory) : null;
+        mediaSourceFactory = new DefaultMediaSourceFactory(this, convertDV7 ? dv7Converter : extractorsFactory)
+                .setDataSourceFactory(dataSourceFactory);
         playerBuilder.setMediaSourceFactory(mediaSourceFactory);
         // Bounded by time rather than by bytes, for streams only. On the defaults the byte budget binds
         // first on anything high-bitrate — 144 MB is about 21 s of a 53 Mbps remux, well short of the 50 s
@@ -12155,30 +10881,6 @@ public class PlayerActivity extends Activity {
         final DefaultLoadControl.Builder loadControlBuilder = new DefaultLoadControl.Builder()
                 .setBufferDurationsMsForStreaming(15_000, 50_000, 500, 5_000)
                 .setPrioritizeTimeOverSizeThresholdsForStreaming(true);
-        // What has just been played is thrown away by default, so stepping back a few seconds re-opens
-        // the source and re-reads — over a torrent backend that is seconds, for media that was in
-        // memory a moment ago. Kept from the last keyframe before the target, which is what lets the
-        // decoder start again without the source at all; that rounding is upward, so the real retention
-        // is the setting plus up to one closed GOP.
-        //
-        // Streams only, by Media3's own list of local schemes rather than by ours: smb, dav and dlna
-        // are not http, but Media3 already treats them as streaming for every other buffer setting, and
-        // they are exactly where a re-read is dearest. A local file re-reads in milliseconds, so the
-        // memory would buy nothing there.
-        //
-        // The memory is real and comes out of what plays ahead: retained samples are counted by the same
-        // allocator the forward buffer draws on, while the budget itself does not grow. If that budget
-        // runs out the player keeps its own valve — once buffering falls under half a second it
-        // discards the whole back buffer and asks again — but by then the picture has already
-        // stalled, which is why the default here is small.
-        //
-        // Read once, when ExoPlayer is constructed: a changed setting takes effect on the next player,
-        // and a live stream that can never seek back holds the samples for nothing (its scheme says
-        // nothing about that before prepare).
-        backBufferAppliedMs = Utils.isLocalPlaybackUri(mPrefs.mediaUri) ? 0 : mPrefs.backBufferMs;
-        if (backBufferAppliedMs > 0) {
-            loadControlBuilder.setBackBuffer(backBufferAppliedMs, true);
-        }
         playerBuilder.setLoadControl(loadControlBuilder.build());
 
         player = playerBuilder.build();
@@ -12225,22 +10927,26 @@ public class PlayerActivity extends Activity {
         }
 
         if (haveMedia) {
-            // What hiding the empty page used to do, and it still has to be done: media is taking the
-            // screen, so the orientation preference applies again and the remembered dimming goes back
-            // on the window. No video format yet, so VIDEO lands on landscape and STATE_READY corrects
-            // it.
-            Utils.setOrientation(this, mPrefs.orientation);
-            mBrightnessControl.setActive(true, !Utils.isReducedMotion(this));
+            emptyState.hide();
             if (isNetworkUri) {
                 // Reads as a light rail ahead of the playhead, the way the design shows a buffering stream.
-                timeBar.setBufferedColor(ContextCompat.getColor(this, R.color.buffered_white));
+                timeBar.setBufferedColor(0xC0FFFFFF);
             } else {
                 // Local files report the whole file as buffered, so anything brighter floods the bar:
                 // https://github.com/google/ExoPlayer/issues/5765
-                timeBar.setBufferedColor(ContextCompat.getColor(this, R.color.track_white));
+                timeBar.setBufferedColor(0x33FFFFFF);
             }
 
-            applyStoredFrameMode();
+            playerView.setResizeMode(mPrefs.resizeMode);
+            currentAspectRatio = mPrefs.aspectRatio;
+            if (mPrefs.aspectRatio > 0) {
+                playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
+            } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+                playerView.setScale(mPrefs.scale);
+            } else {
+                playerView.setScale(1.f);
+            }
+            updatebuttonAspectRatioIcon();
 
             MediaItem.Builder mediaItemBuilder = new MediaItem.Builder()
                     .setUri(mPrefs.mediaUri)
@@ -12298,25 +11004,17 @@ public class PlayerActivity extends Activity {
             notifyAudioSessionUpdate(true);
 
             videoLoading = true;
-            // A new session is a new chance for the route to accept a speed, and a new reason to say so
-            // if it does not.
-            speedRefusalSaid = false;
-            // Whatever the previous session left owing is not owed by this one: the loading branch
-            // matches the mode for the file being opened, and a second match on top of it would
-            // spend the held play before the display has settled.
-            modeMatchPending = false;
 
             updateLoading(true);
 
-            // Opening a film plays it, wherever it starts from: a remembered position says where to pick
-            // the film up, not that the viewer wants to look at a still. Only a session being rebuilt
-            // under the viewer comes back the way they left it, and every such path says so - keepPaused
-            // for the rebuilds inside one activity, pauseAfterScreenRestart for the one that throws the
-            // activity away.
-            if (!keepPaused && !pauseAfterScreenRestart) {
+            // resumeAfterScreenRestart carries the viewer's own play across the restart the decoder
+            // needed; without it a film resumed mid-way would come back paused, since only a zero position
+            // plays by itself.
+            if ((mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial || resumeAfterScreenRestart)
+                    && !keepPaused) {
                 play = true;
             }
-            pauseAfterScreenRestart = false;
+            resumeAfterScreenRestart = false;
 
             updateTopInfo();
 
@@ -12332,18 +11030,6 @@ public class PlayerActivity extends Activity {
                 }
                 nextUri = null;
                 nextUriThread = new Thread(() -> {
-                    // The folder is the playlist wherever it can be listed. Where it cannot — a lone
-                    // content:// grant with no scope behind it — the single "next" button is what is
-                    // left, and it is also the fallback when the played file is not among what the
-                    // folder reports.
-                    final FolderPlaylist playlist = folderPlaylist();
-                    if (Thread.currentThread().isInterrupted()) {
-                        return;
-                    }
-                    if (!playlist.isEmpty()) {
-                        runOnUiThread(() -> adoptFolderPlaylist(playlist));
-                        return;
-                    }
                     Uri uri = findNext();
                     if (!Thread.currentThread().isInterrupted()) {
                         nextUri = uri;
@@ -12354,23 +11040,9 @@ public class PlayerActivity extends Activity {
 
             player.setHandleAudioBecomingNoisy(!isTvBox);
 //            mediaSession.setActive(true);
-        } else if (joining) {
-            // Waiting for a room to say what it is playing — the one case where this activity is
-            // allowed to stand empty.
-            playerView.showController();
-            if (pendingRoomCode != null) {
-                // Already answered elsewhere: the browser asked on its own page and sent the code, so
-                // there is nothing to put on this screen but the wait.
-                final String code = pendingRoomCode;
-                final String password = pendingRoomPassword;
-                pendingRoomCode = null;
-                pendingRoomPassword = null;
-                playerView.post(() -> joinRoom(code, password == null ? "" : password));
-            } else {
-                playerView.post(this::showJoinMenu);
-            }
         } else {
-            backToShell();
+            playerView.showController();
+            emptyState.show();
         }
 
         player.addListener(playerListener);
@@ -12381,7 +11053,6 @@ public class PlayerActivity extends Activity {
             ffmpegAvailable = FfmpegLibrary.isAvailable();
         }
         player.prepare();
-        liveWatchStartMs = SystemClock.elapsedRealtime();
 
         // The second line is view-scoped and survives this rebuild. A track of the media cannot be
         // remembered in the preferences — a Format is not a Uri — so it lives in fields that outlive
@@ -12437,7 +11108,6 @@ public class PlayerActivity extends Activity {
      * mode, which is an emulator and a box with a fixed output, or a phone already at its top rate.
      */
     void frameRateSettled() {
-        earlyModeSwitchRequested = false;
         playerView.removeCallbacks(frameRateGiveUpRunnable);
         if (displayManager != null && displayListener != null) {
             displayManager.unregisterDisplayListener(displayListener);
@@ -12445,96 +11115,6 @@ public class PlayerActivity extends Activity {
         if (play) {
             play = false;
             playPending();
-        }
-    }
-
-    /**
-     * The mode for a playlist item that started mid-session, asked for once its frame rate is readable.
-     *
-     * <p>Tried at two points because neither alone is enough. The track selection for the new period is
-     * the earliest — eight milliseconds after the transition, with the renderer already reporting the new
-     * format — but it can also arrive before the format does, which is what the rate guard is for; the
-     * ready state that follows is then the one that spends it. The video size is no use as a signal at
-     * all: Media3 reports one only when it changes, and consecutive episodes of a series are the same
-     * size. Where nothing fires, nothing is owed — a new item whose format matches the old one to the
-     * byte is already on the right mode.
-     */
-    private void matchDisplayModeForNewItem() {
-        if (!modeMatchPending || player == null || videoFrameRate() <= 0) {
-            return;
-        }
-        modeMatchPending = false;
-        matchDisplayMode();
-    }
-
-    /**
-     * Ask the display for a mode that fits the video that is starting, and hold the pending play until
-     * it settles. Runs for the file a session opens with from the loading branch, and for a later
-     * playlist item from {@link #matchDisplayModeForNewItem()} — the early request off the container head
-     * reaches neither an item whose rate the head does not state nor any item at all while the frame is
-     * being matched too, so without this an episode after the first kept the mode the one before it left.
-     */
-    private void matchDisplayMode() {
-        boolean switched = false;
-        if (mPrefs.frameRateMatching) {
-            if (play) {
-                if (displayManager == null) {
-                    displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
-                }
-                if (displayListener == null) {
-                    displayListener = new DisplayManager.DisplayListener() {
-                        @Override
-                        public void onDisplayAdded(int displayId) {
-
-                        }
-
-                        @Override
-                        public void onDisplayRemoved(int displayId) {
-
-                        }
-
-                        @Override
-                        public void onDisplayChanged(int displayId) {
-                            frameRateSettled();
-                        }
-                    };
-                }
-                displayManager.registerDisplayListener(displayListener, null);
-            }
-            // The rate the stats panel prints is the rate the display needs, and by now the app
-            // usually has it. Measuring it again through a second MediaExtractor costs seconds
-            // and cannot open HLS at all, which is why online sources never switched.
-            final float rate = videoFrameRate();
-            final int width = videoDisplayWidth();
-            if (rate > 0) {
-                Utils.handleFrameRate(this, rate, width);
-                switched = true;
-            } else {
-                // Nothing published a rate — a container neither Media3 nor our parser reads.
-                switched = Utils.switchFrameRate(this, currentMediaUri(), width);
-            }
-        }
-        if (switched) {
-            // A frame change renegotiates the link, which takes longer than a rate change:
-            // the reference player waits close to six seconds for one. The floor is only a
-            // floor — play starts as soon as the display reports back — so the cost of
-            // the longer one is paid only when the display never reports at all.
-            // A requested mode either comes back as onDisplayChanged or never comes back at
-            // all: a panel can apply a refresh-rate-only change without reporting one, and a
-            // request the system declines reports nothing. Without a floor the pending play is
-            // never spent — on a phone whose display is pinned to 60 Hz the file just sits on
-            // its first frame, paused, with no spinner and no error.
-            // Only ever one of these armed, and only while a start is actually being held. A match made
-            // for an item that is already playing has no pending play to spend, and a timer left armed
-            // for it would spend the next one's: a player rebuilt inside the window — a quality switch,
-            // a recovery, a return from the background — would start before its display had settled.
-            playerView.removeCallbacks(frameRateGiveUpRunnable);
-            if (play) {
-                playerView.postDelayed(frameRateGiveUpRunnable, resolutionSwitchRequested
-                        ? RESOLUTION_SWITCH_TIMEOUT_MS : FRAME_RATE_SWITCH_TIMEOUT_MS);
-            }
-        } else {
-            frameRateSettled();
         }
     }
 
@@ -12637,33 +11217,6 @@ public class PlayerActivity extends Activity {
         if (apiPlaylistPositions != null && index >= 0 && index < apiPlaylistPositions.length) {
             apiPlaylistPositions[index] = position;
         }
-    }
-
-    /** The address of a playlist entry, or null where the list is not one this session is holding. */
-    private Uri playlistUri(final int index) {
-        if (index < 0 || index >= apiMediaItems.size()) {
-            return null;
-        }
-        final MediaItem.LocalConfiguration configuration = apiMediaItems.get(index).localConfiguration;
-        return configuration == null ? null : configuration.uri;
-    }
-
-    /**
-     * Where an episode was left, in milliseconds, or 0 for one nobody has watched.
-     *
-     * <p>The launcher's array first, because a launcher that sent a playlist owns the answer for this
-     * session and may have given positions this player has never seen. The file is the fallback, and
-     * the only source a folder or DLNA playlist has.
-     */
-    private long savedPlaylistPosition(final int index) {
-        if (apiPlaylistPositions != null && index >= 0 && index < apiPlaylistPositions.length) {
-            final long saved = apiPlaylistPositions[index];
-            if (saved != C.TIME_UNSET) {
-                return saved;
-            }
-        }
-        final Uri uri = playlistUri(index);
-        return uri == null ? 0L : mPrefs.getPosition(uri);
     }
 
     private void cancelLoadWatchdog() {
@@ -12801,12 +11354,7 @@ public class PlayerActivity extends Activity {
         // backend fetching the piece behind a seek looks exactly like this (see loadWatchdogSilentWindows).
         // Wait it out, up to the bound; a dead socket ends its own wait through the read timeout, as a
         // source error, and takes the re-read ladder from there.
-        // Every scheme here reaches the network as http in the end and can genuinely be waiting on a
-        // piece - except a share, which is a local-LAN read: silence there means the host is gone, and
-        // three more windows of it is two minutes of frozen picture instead of thirty seconds.
-        final Uri waitingOn = currentMediaUri();
-        final boolean connected = player.isLoading() && Utils.isNetworkMedia(waitingOn)
-                && !SmbSessions.SCHEME.equals(waitingOn.getScheme());
+        final boolean connected = player.isLoading() && Utils.isSupportedNetworkUri(currentMediaUri());
         if (connected && ++loadWatchdogSilentWindows < LOAD_SILENT_WINDOWS_MAX) {
             Utils.log("watchdog: +" + progressed + " B, loader connected, silent window "
                     + loadWatchdogSilentWindows + "/" + LOAD_SILENT_WINDOWS_MAX);
@@ -12972,12 +11520,10 @@ public class PlayerActivity extends Activity {
             sleepTimerDialog.dismiss();
             sleepTimerDialog = null;
         }
-        // Likewise the speed, which outlives the file it was set on.
-        if (speedDialog != null) {
-            speedDialog.dismiss();
-            speedDialog = null;
+        if (menuDialog != null) {
+            menuDialog.dismiss();
+            menuDialog = null;
         }
-        Dialogs.dismissMenu();
         if (buttonPlaylist != null) {
             // Keep it while there is a playlist to step through: after a failed episode this is the way
             // off it, and showPlaylistDialog builds the list without a player.
@@ -12991,25 +11537,6 @@ public class PlayerActivity extends Activity {
 
     private class PlayerListener implements Player.Listener {
         @Override
-        public void onPlaybackParametersChanged(PlaybackParameters parameters) {
-            // The sink has the last word on speed, and this is where it says it. Media3 changes speed by
-            // resampling decoded audio, so when the sound is bitstreamed to a receiver or tunnelled to
-            // the display there is nothing to resample: DefaultAudioSink keeps the speed at 1.0, the
-            // media clock notices that the renderer disagrees with the player, and reports it back here.
-            // Everything follows that clock, so the picture does not speed up either. Without this the
-            // viewer picks 1.5x, hears and sees 1.0x, and is told nothing at all.
-            if (Math.abs(parameters.speed - speedRequested) < 0.01f || speedRefusalSaid
-                    || playerView == null) {
-                return;
-            }
-            speedRefusalSaid = true;
-            // Tunnelling first: on a box both it and pass-through are commonly on at once, and then
-            // "turn pass-through off" is advice that changes nothing.
-            showNotice(getString(mPrefs.tunneling ? R.string.speed_refused_tunneling
-                    : R.string.speed_refused_passthrough), true, R.drawable.ic_speed_24dp);
-        }
-
-        @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
             // Fires when the new rendition actually renders, which is when getVideoFormat() finally
             // reports it — onTracksChanged is too early for the header badge.
@@ -13017,22 +11544,6 @@ public class PlayerActivity extends Activity {
             // Media3 resets the content-frame AR to the video's natural AR on every size change (e.g. a
             // mid-stream video-track switch), silently dropping a forced ratio. Reassert it after that
             // update (posted, so it wins).
-            // The frame mode is remembered per shape of picture, so the shape has to be read off the
-            // video before it can be restored. Only on a change of shape: an adaptive stream fires this
-            // on every resolution switch, and those are the same shape — reloading there would throw
-            // away a mode the viewer had just chosen by hand.
-            // A renderer being disabled reports VideoSize.UNKNOWN, i.e. no shape at all: that is a
-            // reason to stop remembering, never to restyle the frame. Nor mid-pinch, where the frame
-            // is being set by hand this very moment.
-            final int aspectClass = Prefs.aspectClassOf(displayAspectRatio(videoSize));
-            if (aspectClass != mPrefs.aspectClass && playerView != null && !isScaling) {
-                mPrefs.loadFrameMode(aspectClass);
-                Utils.log("frame shape " + aspectClass + " resize " + mPrefs.resizeMode
-                        + " ratio " + mPrefs.aspectRatio + " scale " + mPrefs.scale);
-                if (aspectClass >= 0) {
-                    applyStoredFrameMode();
-                }
-            }
             // Skip while ZOOM is active: that means free pinch-zoom has taken over, and reasserting would
             // fight it (adaptive streams fire this on every resolution switch).
             if (currentAspectRatio > 0 && playerView != null
@@ -13105,12 +11616,7 @@ public class PlayerActivity extends Activity {
                     && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) {
                 audioRestartPending = true;
             }
-            // Not gated on apiPlaylistPositions: that array exists only for a playlist a launcher
-            // handed over, and a folder or DLNA playlist the player found for itself has none. Leaving
-            // here is what made every episode of one but the last read as never opened — savePlayer()
-            // writes the position of whatever happens to be playing when the player is released, and
-            // nothing wrote the ones left behind.
-            if (player == null) {
+            if (apiPlaylistPositions == null || player == null) {
                 return;
             }
             final int oldIndex = oldPosition.mediaItemIndex;
@@ -13119,31 +11625,16 @@ public class PlayerActivity extends Activity {
             // played to its end, so that one is remembered as unwatched. Keeping its end would send a
             // manual jump back to it straight to its last frame, from where it advances off again.
             if (oldIndex != newIndex) {
-                final boolean playedToEnd = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION;
-                final long leftAt = playedToEnd ? 0 : oldPosition.positionMs;
-                rememberEpisodePosition(oldIndex, leftAt);
-                // And on disk, keyed by the episode's own uri: the array above lives for this session
-                // and goes back to the launcher, but "have I watched this" is a question the next
-                // opening of the folder asks. A zero from anywhere but the end is a slot that was only
-                // passed through on the way somewhere else, and writing it would erase a real timecode.
-                final Uri leaving = playlistUri(oldIndex);
-                if (leaving != null && (playedToEnd || leftAt > 0)) {
-                    mPrefs.updatePosition(leaving, leftAt);
-                }
+                rememberEpisodePosition(oldIndex,
+                        reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION ? 0 : oldPosition.positionMs);
             }
             // Manually jumping back to an already-watched episode: resume where we left it. Auto-advance
             // (gapless) keeps starting the next episode from the beginning, as it should. The follow-up
             // seek lands with oldIndex == newIndex, so it neither loops nor overwrites the saved slot.
             if (reason == Player.DISCONTINUITY_REASON_SEEK && oldIndex != newIndex
-                    && newPosition.positionMs < 1000) {
-                final long saved = savedPlaylistPosition(newIndex);
-                if (saved > 0) {
-                    // Exactly where it was left, and exact is also what keeps this off the trap in
-                    // seekBackwards: a backwards tolerance is sticky for the life of the player, so a
-                    // rewind gesture earlier in the session would still be in force here, and a saved
-                    // timecode inside the first keyframe of the episode would resolve to nothing a
-                    // clock can hold.
-                    player.setSeekParameters(SeekParameters.EXACT);
+                    && newIndex >= 0 && newIndex < apiPlaylistPositions.length) {
+                final long saved = apiPlaylistPositions[newIndex];
+                if (saved != C.TIME_UNSET && saved > 0 && newPosition.positionMs < 1000) {
                     player.seekTo(newIndex, saved);
                 }
             }
@@ -13153,19 +11644,6 @@ public class PlayerActivity extends Activity {
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
             Utils.log("item transition reason=" + reason
                     + (player != null ? " index=" + player.getCurrentMediaItemIndex() : ""));
-            // The mode for a new item is asked for once its format is readable, in onVideoSizeChanged.
-            // Not for the file a session opens with — the loading branch does that one — and not for a
-            // list that changed under the item already playing, which is the same picture as before.
-            if (!videoLoading && reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
-                modeMatchPending = true;
-            }
-            // A burst in progress belonged to the item that just ended: its target and the place Back
-            // would undo to are offsets into a file nobody is watching any more. releasePlayer says the
-            // same thing for the path it covers, but an auto-advance and seekToNextMediaItem never
-            // reach it.
-            cancelKeyScrub();
-            // A new item is a new sitting, whatever the last one was.
-            liveWatchStartMs = SystemClock.elapsedRealtime();
             // Keep the playlist start index (and mediaUri) tracking the item that is actually
             // playing. They would otherwise stay frozen at the session's initial episode, so a
             // rebuild after onStop (setMediaItems uses apiPlaylistStartIndex) would restart the
@@ -13180,9 +11658,6 @@ public class PlayerActivity extends Activity {
                     }
                 }
             }
-            // The container for this item was very likely parsed while the previous one was still
-            // playing, and back then it was not the current media and could not be asked about. Now it is.
-            requestDisplayModeEarly();
             // The remembered external subtitle belonged to the item that just ended: it was downloaded
             // or picked for that episode, and the next rebuild would put it back — minutes out of sync
             // with what is playing now. PLAYLIST_CHANGED is excluded because that is the transition
@@ -13262,8 +11737,6 @@ public class PlayerActivity extends Activity {
                 }
                 return;
             }
-            matchDisplayModeForNewItem();
-            sayIfTheVideoTrackWasDropped(tracks);
             Utils.log("tracks: video=" + selectedMime(tracks, C.TRACK_TYPE_VIDEO)
                     + " audio=" + selectedMime(tracks, C.TRACK_TYPE_AUDIO)
                     + " passthrough=" + (audioSink != null && audioSink.isPassthrough()));
@@ -13507,8 +11980,6 @@ public class PlayerActivity extends Activity {
 
                 updateMediaInfo();
 
-                matchDisplayModeForNewItem();
-
                 if (videoLoading) {
                     videoLoading = false;
 
@@ -13538,21 +12009,57 @@ public class PlayerActivity extends Activity {
                         timeBar.setKeyCountIncrement(20);
                     }
 
-                    if (backBufferAppliedMs > 0) {
-                        // Said in megabytes as well as seconds, because seconds are not the thing that
-                        // runs out on these boxes. Printed here rather than where it is set: the length
-                        // and the duration that give the bitrate are only known once the file is ready.
-                        final float mbps = overallBitrate();
-                        Utils.log("back buffer: " + backBufferAppliedMs / 1000 + "s "
-                                + (mbps > 0 ? "about " + Math.round(backBufferAppliedMs * mbps / 8000f)
-                                        + " MB at " + Math.round(mbps) + " Mbps"
-                                        : "of unknown weight, no bitrate yet"));
+                    boolean switched = false;
+                    if (mPrefs.frameRateMatching) {
+                        if (play) {
+                            if (displayManager == null) {
+                                displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+                            }
+                            if (displayListener == null) {
+                                displayListener = new DisplayManager.DisplayListener() {
+                                    @Override
+                                    public void onDisplayAdded(int displayId) {
+
+                                    }
+
+                                    @Override
+                                    public void onDisplayRemoved(int displayId) {
+
+                                    }
+
+                                    @Override
+                                    public void onDisplayChanged(int displayId) {
+                                        frameRateSettled();
+                                    }
+                                };
+                            }
+                            displayManager.registerDisplayListener(displayListener, null);
+                        }
+                        // The rate the stats panel prints is the rate the display needs, and by now the app
+                        // usually has it. Measuring it again through a second MediaExtractor costs seconds
+                        // and cannot open HLS at all, which is why online sources never switched.
+                        final float rate = videoFrameRate();
+                        if (rate > 0) {
+                            Utils.handleFrameRate(PlayerActivity.this, rate);
+                            switched = true;
+                        } else {
+                            // Nothing published a rate — a container neither Media3 nor our parser reads.
+                            switched = Utils.switchFrameRate(PlayerActivity.this, currentMediaUri());
+                        }
+                    }
+                    if (switched) {
+                        // A requested mode either comes back as onDisplayChanged or never comes back at
+                        // all: a panel can apply a refresh-rate-only change without reporting one, and a
+                        // request the system declines reports nothing. Without a floor the pending play is
+                        // never spent — on a phone whose display is pinned to 60 Hz the file just sits on
+                        // its first frame, paused, with no spinner and no error.
+                        playerView.postDelayed(frameRateGiveUpRunnable, FRAME_RATE_SWITCH_TIMEOUT_MS);
+                    } else {
+                        frameRateSettled();
                     }
 
-                    matchDisplayMode();
-
                     if (mPrefs.speed <= 0.99f || mPrefs.speed >= 1.01f) {
-                        requestSpeed(mPrefs.speed);
+                        player.setPlaybackSpeed(mPrefs.speed);
                     }
                     // Fresh player: re-assert what the user had picked. Also under apiAccess — the ids are
                     // kept in memory there (Prefs is non-persistent) and cleared by updateMedia, so a
@@ -13728,13 +12235,6 @@ public class PlayerActivity extends Activity {
                             error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED)) {
                 return;
             }
-            // The audio decoder failed while decoding rather than while opening: nothing below can help
-            // (the re-reads hand the same stream to the same decoder, and the screen restart answers a
-            // dead video decoder), so hand the track to ffmpeg before they spend their budget on it.
-            if (error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED
-                    && recoverByDecodingAudioWithFfmpeg(error)) {
-                return;
-            }
             // The decoder never opened for a format software decoding was never going to carry — 4K on
             // a box with no hardware decoder, where the frame buffers alone do not fit. The re-reads below
             // would spend their budget on a certain failure, so offer the lower-quality variant first.
@@ -13749,7 +12249,6 @@ public class PlayerActivity extends Activity {
             // shows twelve such retries and four Dolby Vision rebuilds, every one refused with the same
             // 0x80001000 - twenty seconds of spinner before the one step that works. The budget inside
             // still keeps a box whose decoder really is gone from starting itself over for ever.
-            rememberResourceRefusal(error);
             if (isDecoderFailure(error) && recoverByRestartingTheScreen(error)) {
                 return;
             }
@@ -13798,9 +12297,9 @@ public class PlayerActivity extends Activity {
                 if (!holdsPersistedGrant(mPrefs.mediaUri)) {
                     mPrefs.updateMedia(PlayerActivity.this, null, null);
                 }
-                // Before the notice: showEmptyState() brings the opaque overlay to the front, and the
-                // notice is only added to the content frame afterwards, so it stays on top.
-                backToShell();
+                // Before the snackbar: showEmptyState() brings the opaque overlay to the front, and
+                // the Snackbar is only added to the CoordinatorLayout afterwards, so it stays on top.
+                showEmptyStateWithoutMedia();
                 showSnack(getString(unavailable), null);
                 return;
             }
@@ -13922,8 +12421,8 @@ public class PlayerActivity extends Activity {
         if (uncachedUpstream == null || mediaSourceFactory == null) {
             return;
         }
-        mediaSourceFactory.setDataSourceFactory(new DeferredOpenDataSource.Factory(
-                new TrackNameParsingDataSource.Factory(uncachedUpstream, trackNameListener)));
+        mediaSourceFactory.setDataSourceFactory(
+                new TrackNameParsingDataSource.Factory(uncachedUpstream, trackNameListener));
         uncachedUpstream = null;
     }
 
@@ -13945,12 +12444,6 @@ public class PlayerActivity extends Activity {
         if (player == null || !isBrokenNetworkSource(error)) {
             return false;
         }
-        // A share that answered with a refusal rather than a hiccup - wrong credentials, a share name
-        // that does not exist, a file that is gone. SmbSessions.permanent knows those by status code,
-        // and re-reading them is seven seconds of delay for the same answer.
-        if (SmbSessions.permanent(error)) {
-            return false;
-        }
         if (sourceRetries >= MAX_SOURCE_RETRIES) {
             return false;
         }
@@ -13961,13 +12454,6 @@ public class PlayerActivity extends Activity {
         if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
                 && player.isCurrentMediaItemLive()) {
             player.seekToDefaultPosition();
-        }
-        // Bytes that were not the media have been written into the cache like any others, and a
-        // re-read served from there fails on the same byte without the server being asked - see
-        // MediaCache.forget. Dropped before the retry, and only for this failure.
-        if (isBadBytes(error) && mPrefs.mediaUri != null) {
-            Utils.log("source retry: dropping the cached head, the bytes were not the media");
-            MediaCache.forget(this, mPrefs.mediaUri.toString());
         }
         sourceRetries++;
         updateLoading(true);
@@ -14024,9 +12510,8 @@ public class PlayerActivity extends Activity {
         pendingStuckRecovery = true;
         // Only resume if it was playing: a decode failure can also reach a paused clip (a codec reclaimed
         // while the picture stood still), and the rebuild must not start playing on its own. playWhenReady
-        // survives the error. The rebuild is not an opening, so it also has to say that it is not.
+        // survives the error.
         restorePlayState = player.getPlayWhenReady();
-        sourceSwitchKeepPaused = !restorePlayState;
         // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
         // released while its own listener is executing.
         playerView.post(() -> {
@@ -14058,7 +12543,7 @@ public class PlayerActivity extends Activity {
         screenRestartUsed = true;
         // playWhenReady survives the error, so this is what the viewer was doing, not what the player was
         // managing to do.
-        pauseAfterScreenRestart = !player.getPlayWhenReady();
+        resumeAfterScreenRestart = player.getPlayWhenReady();
         Utils.log(error != null ? "restarting the screen: the decoder will not come back on this one"
                 : "restarting the screen: the retained decoder did not come back with the window");
         reportOutcome("screen-restarted", error);
@@ -14196,13 +12681,13 @@ public class PlayerActivity extends Activity {
         playerView.post(() -> {
             // Announced next to the switch it describes rather than before it, so a player torn down in
             // between (the user leaving) says nothing instead of promising a quality that never loads.
-            // showNotice rather than showSnack: on a TV box showSnack is a modal dialog, and an automatic
+            // A Toast rather than showSnack: on a TV box showSnack is a modal dialog, and an automatic
             // recovery must not stop to be acknowledged (same as recoverByDisablingTunneling).
             if (player == null) {
                 return;
             }
-            showNotice(getString(R.string.notice_quality_lowered, label), true,
-                    R.drawable.ic_high_quality_24dp);
+            Toast.makeText(this, getString(R.string.notice_quality_lowered, label),
+                    Toast.LENGTH_LONG).show();
             applyVideoQuality(VideoQualityChoice.source(label, url));
         });
         return true;
@@ -14294,7 +12779,7 @@ public class PlayerActivity extends Activity {
         }
         Utils.log("rebuild: tunneling off");
         mPrefs.disableTunneling();
-        showNotice(getString(R.string.notice_tunneling_disabled), true, R.drawable.ic_memory_24dp);
+        Toast.makeText(this, R.string.notice_tunneling_disabled, Toast.LENGTH_LONG).show();
         restorePlayState = true;
         // Keeps the Dolby Vision workaround across this rebuild: without it a device that needs both fixes
         // would lose the first one here, and the DV rung would be free to fire again.
@@ -14302,70 +12787,6 @@ public class PlayerActivity extends Activity {
         // Tunneling is applied to the track selector when the player is built, so it takes a rebuild.
         // Rebuild on the next loop, after this onPlayerError callback returns, so the player is not
         // released while its own listener is executing.
-        playerView.post(() -> {
-            releasePlayer();
-            initializePlayer();
-        });
-        return true;
-    }
-
-    /**
-     * What identifies an audio stream for the decoder that has to carry it: the codec, and the profile
-     * inside it that a decoder may or may not implement (mp4a.40.1 is AAC Main, mp4a.40.2 AAC LC, and
-     * only the first of those defeats the platform decoder). A container that declares no codec string
-     * leaves only the mime, and then the refusal is as wide as that container allows it to be.
-     */
-    private static String audioFormatKey(@Nullable Format format) {
-        if (format == null) {
-            return "";
-        }
-        return format.sampleMimeType + (format.codecs != null ? " " + format.codecs : "");
-    }
-
-    /** What identifies a video stream for the decoder that has to carry it — codec and profile. */
-    private static String videoFormatKey(@Nullable Format format) {
-        if (format == null) {
-            return "";
-        }
-        return format.sampleMimeType + (format.codecs != null ? " " + format.codecs : "");
-    }
-
-    /**
-     * The platform decoder opened for the audio track and then failed on its first frames. That is a
-     * profile it does not really implement rather than anything transient: the field case is AAC Main
-     * (mp4a.40.1), which the FDK decoder behind c2.android.aac.decoder cannot do at all, so it accepts
-     * the configuration and dies on the first buffer with CodecException 0xe. Re-reading the source
-     * hands the same bytes to the same decoder, which is why the three re-reads below it all fail
-     * identically; every other player that plays such a film plays it through ffmpeg, and this build
-     * carries that decoder already - it is simply behind the platform one, and Media3 never crosses from
-     * one renderer to another for a failure that happens while decoding.
-     * <p>
-     * So write this one format down and rebuild: the platform renderer then reports no decoder for it and
-     * track selection walks on to FfmpegAudioRenderer. Position and play state are kept by the rebuild
-     * (savePlayer), and the guard is the set itself, so a format ffmpeg cannot carry either fails once
-     * more and reaches the error screen instead of looping.
-     */
-    private boolean recoverByDecodingAudioWithFfmpeg(PlaybackException error) {
-        if (!(error instanceof ExoPlaybackException)) {
-            return false;
-        }
-        final Format format = ((ExoPlaybackException) error).rendererFormat;
-        final String mime = format != null ? format.sampleMimeType : null;
-        // supportsFormat covers both halves of the question: whether the native library is there at all,
-        // and whether this build's ffmpeg was compiled with a decoder for this codec (app/libs/README.md).
-        // Without it the format would be refused by the only decoder the device has, and the film would
-        // play in silence instead of showing what went wrong. It answers by mime, so a profile ffmpeg
-        // cannot decode either still ends on the error screen - one failure later, which is the price of
-        // there being no way to ask it about a profile in advance.
-        if (mime == null || !MimeTypes.isAudio(mime) || !FfmpegLibrary.supportsFormat(mime)
-                || !sessionFfmpegAudioFormats.add(audioFormatKey(format))) {
-            return false;
-        }
-        Utils.log("audio decoding moved to ffmpeg: " + audioFormatKey(format));
-        restorePlayState = true;
-        // Same reason as in recoverByRevokingAudioMime(): keep any Dolby Vision workaround across this
-        // rebuild rather than letting initializePlayer clear it.
-        pendingStuckRecovery = true;
         playerView.post(() -> {
             releasePlayer();
             initializePlayer();
@@ -14550,18 +12971,6 @@ public class PlayerActivity extends Activity {
                     .append(" recoverable=").append(codec.isRecoverable())
                     .append(" diagnostic=").append(codec.getDiagnosticInfo());
         }
-        // A codec that dies asynchronously reaches us as a bare IllegalStateException and nothing else:
-        // the framework resets the state before the next call, so that call fails the state check
-        // instead of reporting the sticky error, and the real OMX code stays in logcat. The one thing
-        // still worth carrying out of it is which call was holding the door - queueing, dequeueing or
-        // releasing - so a report can say that much without a logcat.
-        final IllegalStateException bare = firstCause(error, IllegalStateException.class);
-        if (codec == null && bare != null && bare.getStackTrace().length > 0) {
-            if (sb.length() > 0) {
-                sb.append(' ');
-            }
-            sb.append("threw at ").append(bare.getStackTrace()[0]);
-        }
         return sb.toString();
     }
 
@@ -14574,330 +12983,6 @@ public class PlayerActivity extends Activity {
             }
         }
         return null;
-    }
-
-    /**
-     * What the route out of this device will take: the channel ceiling and the compressed formats it
-     * admits to accepting.
-     *
-     * <p>This is the object the sink itself decides by. Normally it is built from the route rather than
-     * from the app's wishes — the HDMI plug broadcast, the system's external-surround setting, the
-     * output devices the audio manager lists; under forced pass-through it is the app's own declaration
-     * instead, and the line says so. So in a report about silence or a downmix nobody asked for, it is
-     * the line that says what the far end claimed when the decision was made.
-     *
-     * <p>Claimed, not proven: the whole history of bitstreaming on this app is devices that declare an
-     * encoding and then fail to drain it. The value is in comparing this line with what actually
-     * happened, which is why it is reported and nothing is decided from it here.
-     */
-    /**
-     * What this device's own decoders say about the picture that is playing.
-     *
-     * <p>Written for the failure that has no other tell: a decoder that answers {@code configure()} with
-     * {@code ERROR_INSUFFICIENT_RESOURCE} and hands playback to the software one, which then cannot keep
-     * up. The report said which decoder failed and nothing about why, and the two causes want opposite
-     * answers - a rate the hardware cannot sustain can be asked for more gently, a frame geometry it has
-     * no path for cannot. So each line carries both: whether the coded size is supported at all, whether
-     * it is supported turned on its side (a 2160x3840 phone clip is the same picture as 3840x2160, and
-     * most vendor decoders cap the *height* at 2160), and what frame rate that decoder admits to at
-     * exactly this size.
-     *
-     * <p>Asked of {@code MediaCodecList} rather than remembered: it answers for the device in hand, and
-     * that answer is what decides whether another attempt is worth making.
-     */
-    private void appendVideoDecoderLimits(final StringBuilder sb, final Format format) {
-        if (format == null || format.sampleMimeType == null
-                || format.width == Format.NO_VALUE || format.height == Format.NO_VALUE) {
-            return;
-        }
-        final int w = format.width;
-        final int h = format.height;
-        final float fps = format.frameRate != Format.NO_VALUE && format.frameRate > 0
-                ? format.frameRate : 30f;
-        final ArrayList<String> rows = new ArrayList<>();
-        try {
-            for (android.media.MediaCodecInfo info
-                    : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
-                if (info.isEncoder()) {
-                    continue;
-                }
-                boolean handles = false;
-                for (String type : info.getSupportedTypes()) {
-                    if (type.equalsIgnoreCase(format.sampleMimeType)) {
-                        handles = true;
-                        break;
-                    }
-                }
-                if (!handles) {
-                    continue;
-                }
-                final android.media.MediaCodecInfo.CodecCapabilities codec =
-                        info.getCapabilitiesForType(format.sampleMimeType);
-                final android.media.MediaCodecInfo.VideoCapabilities caps =
-                        codec.getVideoCapabilities();
-                if (caps == null) {
-                    continue;
-                }
-                final boolean fits = caps.isSizeSupported(w, h);
-                final StringBuilder row = new StringBuilder(info.getName());
-                if (Build.VERSION.SDK_INT >= 29) {
-                    row.append(info.isHardwareAccelerated() ? " (hw)" : " (sw)");
-                }
-                row.append(" max ").append(caps.getSupportedWidths().getUpper())
-                        .append('x').append(caps.getSupportedHeights().getUpper())
-                        .append(", size ").append(fits ? "yes" : "no")
-                        .append(", turned ").append(caps.isSizeSupported(h, w) ? "yes" : "no");
-                if (fits) {
-                    row.append(", up to ")
-                            .append(Math.round(caps.getSupportedFrameRatesFor(w, h).getUpper()))
-                            .append(" fps, this rate ")
-                            .append(caps.areSizeAndRateSupported(w, h, fps) ? "yes" : "no");
-                }
-                row.append(", instances ").append(codec.getMaxSupportedInstances());
-                rows.add(row.toString());
-            }
-        } catch (Exception e) {
-            rows.add("query failed: " + e);
-        }
-        if (rows.isEmpty()) {
-            return;
-        }
-        sb.append("\nDecoder limits for ").append(w).append('x').append(h).append(" @")
-                .append(Math.round(fps)).append(" fps ").append(format.sampleMimeType).append(':');
-        for (String row : rows) {
-            sb.append("\n  ").append(row);
-        }
-    }
-
-    /** A hardware decoder takes this picture whole - size and frame rate both. */
-    private static final int HW_FITS = 0;
-    /** It takes the size but not the rate: it will run, best-effort, if we stop asking for real time. */
-    private static final int HW_RATE_SHORT = 1;
-    /** Hardware for this codec exists and none of it takes the size. Vendor decoders cap the frame
-     *  height, so this is what a portrait 4K clip meets: 2160x3840 refused, 3840x2160 accepted. */
-    private static final int HW_NO_SIZE = 2;
-    /** No hardware decoder for this codec at all - an emulator, or a codec the chip never had. */
-    private static final int HW_NONE = 3;
-
-    /**
-     * What this device's hardware says about a picture, asked before a codec is configured.
-     *
-     * <p>Three answers and three different repairs, which is why this is not a boolean: a decoder that
-     * takes size and rate is left alone; one that takes the size but not the rate is asked best-effort
-     * instead of in real time ({@code getCodecOperatingRateV23} below); one that takes no size at all is
-     * stepped around entirely, because nothing said to it will give it a path. The last answer is the
-     * measured case - a Mi Note 10 whose OMX.qcom.video.decoder.hevc reports {@code max 4096x2160} and so
-     * refuses a 2160x3840 clip, leaving it to c2.android.hevc.decoder, which the platform itself rates at
-     * 15 fps for that size.
-     *
-     * <p>{@link #HW_NONE} is its own answer rather than folded into the one above it: where the codec has
-     * no hardware decoder at all there is no refusal to answer, and an emulator - which has none - would
-     * otherwise have every file configured as a special case.
-     *
-     * <p>Remembered per format, because the question is asked again on every codec init and every speed
-     * change and a device cannot change its mind.
-     */
-    int hardwareVerdict(final Format format) {
-        return hardwareVerdict(format, null);
-    }
-
-    /**
-     * The same question, asked about the decoder that is actually being opened.
-     *
-     * <p>They are not always the same codec. An iPhone's 4K60 clip arrives as {@code
-     * video/dolby-vision}, profile 8.4 - single-layer HEVC with an RPU every decoder skips - and no
-     * phone without a Dolby Vision decoder has one listed for that mime. Media3 knows this and opens an
-     * HEVC decoder for it ({@code MediaCodecUtil.getAlternativeDecoderInfos}), but the format it hands
-     * round still says Dolby Vision. Asked about that mime this method found no hardware at all,
-     * answered {@link #HW_NONE}, and the three keys stayed on a configuration going to
-     * OMX.qcom.video.decoder.hevc - which refused it with 0x44c, exactly as it refused every 4K60 file
-     * before this was fixed. The question has to name the decoder, not the container.
-     *
-     * @param decoderMime the mime the decoder itself was chosen for, or null to ask about the format's
-     */
-    int hardwareVerdict(final Format format, @Nullable final String decoderMime) {
-        if (format == null || format.sampleMimeType == null
-                || format.width == Format.NO_VALUE || format.height == Format.NO_VALUE) {
-            return HW_FITS;
-        }
-        final String mime = decoderMime != null ? decoderMime : format.sampleMimeType;
-        final boolean rateKnown = format.frameRate != Format.NO_VALUE && format.frameRate > 0;
-        final String key = mime + ' ' + format.width + 'x' + format.height
-                + '@' + (rateKnown ? Math.round(format.frameRate) : 0);
-        final Integer known = hardwareVerdicts.get(key);
-        if (known != null) {
-            return known;
-        }
-        boolean anyHardware = false;
-        boolean sizeTaken = false;
-        boolean rateTaken = false;
-        try {
-            for (android.media.MediaCodecInfo info
-                    : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
-                if (info.isEncoder() || isSoftwareCodec(info)) {
-                    continue;
-                }
-                boolean handles = false;
-                for (String type : info.getSupportedTypes()) {
-                    if (type.equalsIgnoreCase(mime)) {
-                        handles = true;
-                        break;
-                    }
-                }
-                if (!handles) {
-                    continue;
-                }
-                final android.media.MediaCodecInfo.VideoCapabilities caps = info
-                        .getCapabilitiesForType(mime).getVideoCapabilities();
-                if (caps == null) {
-                    continue;
-                }
-                anyHardware = true;
-                if (!caps.isSizeSupported(format.width, format.height)) {
-                    continue;
-                }
-                sizeTaken = true;
-                if (!rateKnown
-                        || caps.areSizeAndRateSupported(format.width, format.height, format.frameRate)) {
-                    rateTaken = true;
-                    break;
-                }
-            }
-        } catch (Exception e) {
-            Utils.log("decoder query failed: " + e);
-            return HW_FITS;
-        }
-        final int verdict = !anyHardware ? HW_NONE
-                : rateTaken ? HW_FITS
-                : sizeTaken ? HW_RATE_SHORT : HW_NO_SIZE;
-        hardwareVerdicts.put(key, verdict);
-        Utils.log("decoder verdict: " + key + ' ' + verdictName(verdict));
-        return verdict;
-    }
-
-    /**
-     * Whether the device has said it cannot take this picture — by rate or by size, it does not matter
-     * which.
-     *
-     * <p>Both verdicts end at the same refusal. The portrait 2160x3840 file reads "no hardware decoder
-     * takes this size" because the capability table caps the height at 2160, and the decoder then
-     * refuses it with 0x44c — {@code ERROR_INSUFFICIENT_RESOURCE}, the load check, the same answer the
-     * 3840x2160 at 60 fps file got. Of course it is: turned on its side it is the same macroblock count
-     * at the same rate. The table talks about geometry and the driver counts work, and what the driver
-     * counts is what refuses. So both get asked plainly.
-     */
-    private static boolean deviceSaysNo(final int verdict) {
-        return verdict == HW_RATE_SHORT || verdict == HW_NO_SIZE;
-    }
-
-    private static String verdictName(final int verdict) {
-        switch (verdict) {
-            case HW_RATE_SHORT:
-                return "hardware takes the size but not the rate - asking best-effort";
-            case HW_NO_SIZE:
-                return "no hardware decoder takes this size";
-            case HW_NONE:
-                return "no hardware decoder for this codec";
-            default:
-                return "within the hardware";
-        }
-    }
-
-    /** Google's own decoders, by the names the platform gives them; everything else is the vendor's. */
-    private static boolean isSoftwareCodec(final android.media.MediaCodecInfo info) {
-        if (Build.VERSION.SDK_INT >= 29) {
-            return !info.isHardwareAccelerated();
-        }
-        final String name = info.getName();
-        return name.startsWith("OMX.google.") || name.startsWith("c2.android.");
-    }
-
-    private String audioOutputCapabilities() {
-        // The forced object when it is the one installed, or the line would report a ceiling and a
-        // format list that nothing in the run obeyed.
-        final boolean forcing = mPrefs.audioPassthrough && mPrefs.audioPassthroughForce;
-        final AudioCapabilities caps = forcing
-                ? forcedAudioCapabilities(this) : AudioCapabilities.getCapabilities(this);
-        final StringBuilder encodings = new StringBuilder();
-        final int[] codes = {C.ENCODING_AC3, C.ENCODING_E_AC3, C.ENCODING_E_AC3_JOC, C.ENCODING_AC4,
-                C.ENCODING_DTS, C.ENCODING_DTS_HD, C.ENCODING_DOLBY_TRUEHD};
-        final String[] names = {"AC3", "E-AC3", "E-AC3 JOC", "AC4", "DTS", "DTS-HD", "TrueHD"};
-        for (int i = 0; i < codes.length; i++) {
-            if (caps.supportsEncoding(codes[i])) {
-                encodings.append(encodings.length() == 0 ? "" : " ").append(names[i]);
-            }
-        }
-        final String forced = forcing ? ", declared by the app, not by the route" : "";
-        return caps.getMaxChannelCount() + " ch, "
-                + (encodings.length() == 0 ? "PCM only" : "bitstream " + encodings) + forced;
-    }
-
-    // The five encodings a receiver is expected to take, which is the set the reference player forces
-    // (MediaEngineNC.java:323-334). Not AC4 or E-AC3 JOC: the reference leaves those out of the same
-    // mode, and a route that has never heard of them is far likelier than one that under-reports them.
-    private static final int[] FORCED_PASSTHROUGH_ENCODINGS = {
-            C.ENCODING_AC3, C.ENCODING_E_AC3, C.ENCODING_DTS, C.ENCODING_DTS_HD,
-            C.ENCODING_DOLBY_TRUEHD};
-
-    /**
-     * The output's own answer with the five bitstream encodings added to it, for the viewer who has
-     * said their receiver takes what the box denies. Every surround encoding the route does report is
-     * carried over, DTS:X UHD included — it degrades to plain DTS the moment it is missing from the
-     * list, so leaving it out would have taken a format away in the name of adding some.
-     *
-     * <p>The channel ceiling is raised to eight with them, which the reference does not do: it has its
-     * own engine to hand the list to, while here a 5.1 bitstream measured against a stereo ceiling is
-     * refused as flatly as an unknown encoding, and forcing the encodings alone would force nothing on
-     * the very boxes this is for. A route that reports nothing at all already answers ten.
-     *
-     * <p>What the reconstruction cannot carry: the speaker-layout and spatializer channel masks, which
-     * the only public constructor drops. So while forcing is on, an IAMF track is configured for stereo,
-     * and a track whose channel count is unknown — or an E-AC3 JOC one — has its ceiling decided
-     * by the platform again, since media3 asks AudioTrack directly when the masks are missing.
-     */
-    private static AudioCapabilities forcedAudioCapabilities(Context context) {
-        final AudioCapabilities routeCaps = AudioCapabilities.getCapabilities(context);
-        final Set<Integer> encodings = new LinkedHashSet<>();
-        // Inert in itself — decoded audio is admitted by the provider without consulting this list
-        // at all — but the list is the whole answer to every other question put to it, and a
-        // capabilities object with no PCM in it is a lie about the one path that always exists.
-        encodings.add(C.ENCODING_PCM_16BIT);
-        for (int encoding : new int[]{C.ENCODING_AC3, C.ENCODING_E_AC3, C.ENCODING_E_AC3_JOC,
-                C.ENCODING_AC4, C.ENCODING_DTS, C.ENCODING_DTS_HD, C.ENCODING_DTS_UHD_P2,
-                C.ENCODING_DOLBY_TRUEHD}) {
-            if (routeCaps.supportsEncoding(encoding)) {
-                encodings.add(encoding);
-            }
-        }
-        for (int encoding : FORCED_PASSTHROUGH_ENCODINGS) {
-            encodings.add(encoding);
-        }
-        final int[] declared = new int[encodings.size()];
-        int i = 0;
-        for (int encoding : encodings) {
-            declared[i++] = encoding;
-        }
-        return new AudioCapabilities(declared, Math.max(routeCaps.getMaxChannelCount(), 8));
-    }
-
-    /** Why a renderer refused a track, in the words of the constant that refused it. */
-    private static String formatSupportName(final int support) {
-        switch (support) {
-            case C.FORMAT_EXCEEDS_CAPABILITIES:
-                // A decoder exists and declines this profile, level or resolution. The usual verdict
-                // behind a 10-bit or 4K file that plays everywhere else.
-                return "exceeds capabilities";
-            case C.FORMAT_UNSUPPORTED_DRM:
-                return "unsupported DRM";
-            case C.FORMAT_UNSUPPORTED_SUBTYPE:
-                // The type is right and the codec is not: no decoder for this mime on this device.
-                return "no decoder";
-            case C.FORMAT_UNSUPPORTED_TYPE:
-                // No renderer handles the track type at all.
-                return "unsupported type";
-            default:
-                return String.valueOf(support);
-        }
     }
 
     private static String stateName(final int state) {
@@ -14974,37 +13059,6 @@ public class PlayerActivity extends Activity {
                 && ((ExoPlaybackException) error).type == ExoPlaybackException.TYPE_UNEXPECTED;
     }
 
-    /**
-     * A decoder that answered {@code ERROR_INSUFFICIENT_RESOURCE} where the device said it would not.
-     *
-     * <p>The proactive half of this - {@link #deviceSaysNo} - reads the capability table and configures
-     * the codec plainly where the table already says the picture is beyond it. This is the other half,
-     * for when the table says yes and the driver says no anyway: the format is written down and the
-     * retry that follows sends the picture without the operating rate, the priority or the frame rate,
-     * the three things a resource refusal is actually about. One line in the trace either way, and the
-     * set makes it a property of the session rather than of this one attempt.
-     */
-    private void rememberResourceRefusal(final Throwable error) {
-        final android.media.MediaCodec.CodecException codec =
-                firstCause(error, android.media.MediaCodec.CodecException.class);
-        if (codec == null || codec.getErrorCode()
-                != android.media.MediaCodec.CodecException.ERROR_INSUFFICIENT_RESOURCE) {
-            return;
-        }
-        // Two ways in, because the refusal does not always reach onPlayerError: with decoder fallback on,
-        // MediaCodecRenderer swallows a failed init and walks to the next decoder, so the only thing that
-        // ever sees the 0x44c is the codec-error callback. Whichever arrives, the format it carries is
-        // the one to configure plainly next time.
-        final Format format = error instanceof ExoPlaybackException
-                ? ((ExoPlaybackException) error).rendererFormat
-                : player != null ? player.getVideoFormat() : null;
-        if (format == null || !MimeTypes.isVideo(format.sampleMimeType)
-                || !sessionPlainCodecFormats.add(videoFormatKey(format))) {
-            return;
-        }
-        Utils.log("resource refusal remembered, next try is plain: " + videoFormatKey(format));
-    }
-
     private boolean recoverFromDecoderFailure() {
         if (player == null || decoderRetries >= MAX_DECODER_RETRIES) {
             return false;
@@ -15063,6 +13117,78 @@ public class PlayerActivity extends Activity {
         restoreOrientationLock = false;
         mPrefs.setRestoreAutoRotate(false);
     }
+
+    boolean useMediaStore() {
+        final int targetSdkVersion = getApplicationContext().getApplicationInfo().targetSdkVersion;
+        return (isTvBox && Build.VERSION.SDK_INT >= 30 && targetSdkVersion >= 30 && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("mediastore");
+    }
+
+    void openFile(Uri pickerInitialUri) {
+        if (useMediaStore()) {
+            Intent intent = new Intent(this, MediaStoreChooserActivity.class);
+            startActivityForResult(intent, REQUEST_CHOOSER_VIDEO_MEDIASTORE);
+        } else if ((isTvBox && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("legacy")) {
+            Utils.alternativeChooser(this, pickerInitialUri, true);
+        } else {
+            enableRotation();
+
+            if (pickerInitialUri == null || Utils.isSupportedNetworkUri(pickerInitialUri)) {
+                pickerInitialUri = Utils.getMoviesFolderUri();
+            }
+
+            final Intent intent = createBaseFileIntent(Intent.ACTION_OPEN_DOCUMENT, pickerInitialUri);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("video/*");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, Utils.supportedMimeTypesVideo);
+
+            if (Build.VERSION.SDK_INT < 30) {
+                final ComponentName systemComponentName = Utils.getSystemComponent(this, intent);
+                if (systemComponentName != null) {
+                    intent.setComponent(systemComponentName);
+                }
+            }
+
+            safelyStartActivityForResult(intent, REQUEST_CHOOSER_VIDEO);
+        }
+    }
+
+    private void loadSubtitleFile(Uri pickerInitialUri) {
+        Toast.makeText(PlayerActivity.this, R.string.open_subtitles, Toast.LENGTH_SHORT).show();
+        final int targetSdkVersion = getApplicationContext().getApplicationInfo().targetSdkVersion;
+        if ((isTvBox && Build.VERSION.SDK_INT >= 30 && targetSdkVersion >= 30 && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("mediastore")) {
+            Intent intent = new Intent(this, MediaStoreChooserActivity.class);
+            intent.putExtra(MediaStoreChooserActivity.SUBTITLES, true);
+            startActivityForResult(intent, REQUEST_CHOOSER_SUBTITLE_MEDIASTORE);
+        } else if ((isTvBox && mPrefs.fileAccess.equals("auto")) || mPrefs.fileAccess.equals("legacy")) {
+            Utils.alternativeChooser(this, pickerInitialUri, false);
+        } else {
+            enableRotation();
+
+            final Intent intent = createBaseFileIntent(Intent.ACTION_OPEN_DOCUMENT, pickerInitialUri);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+
+            final String[] supportedMimeTypes = {
+                    MimeTypes.APPLICATION_SUBRIP,
+                    MimeTypes.TEXT_SSA,
+                    MimeTypes.TEXT_VTT,
+                    MimeTypes.APPLICATION_TTML,
+                    "text/*",
+                    "application/octet-stream"
+            };
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, supportedMimeTypes);
+
+            if (Build.VERSION.SDK_INT < 30) {
+                final ComponentName systemComponentName = Utils.getSystemComponent(this, intent);
+                if (systemComponentName != null) {
+                    intent.setComponent(systemComponentName);
+                }
+            }
+
+            safelyStartActivityForResult(intent, REQUEST_CHOOSER_SUBTITLE);
+        }
+    }
+
     private void requestDirectoryAccess() {
         enableRotation();
         final Intent intent = createBaseFileIntent(Intent.ACTION_OPEN_DOCUMENT_TREE, Utils.getMoviesFolderUri());
@@ -15529,7 +13655,7 @@ public class PlayerActivity extends Activity {
 
     private void dismissOpenPickers() {
         final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog,
-                subtitleOffsetDialog, sleepTimerDialog, Dialogs.openMenu() };
+                subtitleOffsetDialog, sleepTimerDialog, menuDialog };
         for (final android.app.Dialog d : pickers) {
             if (d != null && d.isShowing()) {
                 d.dismiss();
@@ -15545,9 +13671,7 @@ public class PlayerActivity extends Activity {
         showSnack(text, details);
         releasePlayer(false);
         playerView.setPlayer(null);
-        // Said twice on purpose, and the only call that does not take the line: the notice above carries
-        // the Details button for its few seconds, and this is the same sentence left behind when it goes.
-        playerView.readout(text, R.drawable.ic_info_24dp, false);
+        playerView.setCustomErrorMessage(text);
         playerView.setControllerShowTimeoutMs(-1);
         playerView.showController();
     }
@@ -15580,14 +13704,7 @@ public class PlayerActivity extends Activity {
     // because Loader wraps the SecurityException, so walk the cause chain. Network media is excluded:
     // HTTP failures are transient and belong on the normal error path.
     private int mediaUnavailableMessage(PlaybackException error) {
-        // Before the network guard, not after it: this is the one verdict here that is about a remote
-        // source, and it is the schemes that guard covers - a share, a WebDAV server, an http 401 - that
-        // can even raise it. Behind the guard it was unreachable, and a NAS whose password had changed
-        // said "the stream is broken" after spending the re-read ladder on it.
-        if (NetworkFiles.needsPassword(error)) {
-            return R.string.error_media_password_refused;
-        }
-        if (Utils.isNetworkMedia(currentMediaUri())) {
+        if (Utils.isSupportedNetworkUri(currentMediaUri())) {
             return 0;
         }
         // A local file that stops short of its own container index: the extractor re-opens the source
@@ -15615,8 +13732,7 @@ public class PlayerActivity extends Activity {
     private boolean isBrokenNetworkSource(PlaybackException error) {
         if (!(error instanceof ExoPlaybackException)
                 || ((ExoPlaybackException) error).type != ExoPlaybackException.TYPE_SOURCE
-                || !Utils.isNetworkMedia(currentMediaUri())
-                || ourOwnFault(error)) {
+                || !Utils.isSupportedNetworkUri(currentMediaUri())) {
             return false;
         }
         switch (error.errorCode) {
@@ -15631,52 +13747,6 @@ public class PlayerActivity extends Activity {
             default:
                 return true;
         }
-    }
-
-    /**
-     * Whether a load failed because what came back was not the media, rather than because it did not
-     * come back at all. The EBML reader throws a bare {@link IllegalStateException} when it lands on a
-     * byte that starts no element, and Media3's {@code Loader} wraps anything that is not an
-     * {@link IOException} into an {@code UnexpectedLoaderException}; an extractor that understood the
-     * bytes and refused them raises {@code ParserException}. Both are about the content. A timeout or
-     * a dropped connection is neither, and says nothing about the bytes already held.
-     */
-    private static boolean isBadBytes(@Nullable final Throwable error) {
-        for (Throwable e = error; e != null && e != e.getCause(); e = e.getCause()) {
-            if (e instanceof ParserException
-                    || (e instanceof Loader.UnexpectedLoaderException
-                            && e.getCause() instanceof IllegalStateException)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Whether a source failure has this app's own code in it. A stream error is forgiven with one line
-     * and no report - that is the point of the two methods around this one - and the same forgiveness
-     * applied to our own bug hides it: the incident this was written for ended in a NullPointerException
-     * inside {@code Dv7Converter$Dv7TrackOutput.sampleMetadata}, wrapped by the loader as an ordinary
-     * IO_UNSPECIFIED source error over a torrent. Anything thrown by a com.brouken frame keeps the full
-     * screen and the exception report.
-     *
-     * <p>Thrown by, not merely passed through. Every extractor this app installs is a forwarding
-     * wrapper, so its frame is on the call path of everything Media3's own extractors throw: a torrent
-     * that handed back a piece it had not fetched died in {@code VarintReader} with
-     * "No valid varint length mask found", and the stack carried {@code MkvCuesLink.read} three frames
-     * below it. That read the same as our own bug, so the one recovery written for exactly that failure
-     * - re-read the source, which is what gets the index on the second attempt - was vetoed and the film
-     * ended on the error screen. The throw site is the top frame of whichever exception in the chain
-     * actually threw; a wrapper appears below it and does not count.
-     */
-    private static boolean ourOwnFault(final PlaybackException error) {
-        for (Throwable t = error; t != null; t = t.getCause() == t ? null : t.getCause()) {
-            final StackTraceElement[] frames = t.getStackTrace();
-            if (frames.length > 0 && frames[0].getClassName().startsWith("com.brouken.player.")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // The HTTP status the server actually returned, if that's what ended the broken-source retries
@@ -15737,34 +13807,10 @@ public class PlayerActivity extends Activity {
         }
         int video = 0, audio = 0, text = 0;
         Format subtitle = null;
-        Format selectedVideo = null;
-        // Tracks the renderers refused, with the verdict that refused them. A report about a black
-        // picture or a missing dub is otherwise guesswork: the menu hides these tracks, so the reader
-        // cannot tell "the file has no Russian dub" from "this box has no decoder for it". The full
-        // format goes in rather than the mime alone — the language is what names the missing dub, and
-        // the resolution and profile are what "exceeds capabilities" is usually about.
-        // Caveat for text: the two subtitle lines each refuse the other's format as an unsupported
-        // type (see SecondaryTextTrack), so that verdict on a text track sharing a group with another
-        // is ours, not the device's.
-        final Map<String, Integer> refused = new LinkedHashMap<>();
         for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
-            for (int i = 0; i < group.length; i++) {
-                final int support = group.getTrackSupport(i);
-                if (support == C.FORMAT_HANDLED) {
-                    continue;
-                }
-                // Identical rows collapse: an adaptive manifest can carry a dozen renditions the
-                // device tops out on, and a dozen copies of one verdict says nothing extra.
-                final String entry = Format.toLogString(group.getTrackFormat(i))
-                        + " (" + formatSupportName(support) + ')';
-                refused.merge(entry, 1, Integer::sum);
-            }
             switch (group.getType()) {
                 case C.TRACK_TYPE_VIDEO:
                     video++;
-                    if (group.isSelected() && selectedVideo == null) {
-                        selectedVideo = group.getMediaTrackGroup().getFormat(0);
-                    }
                     break;
                 case C.TRACK_TYPE_AUDIO:
                     audio++;
@@ -15778,9 +13824,6 @@ public class PlayerActivity extends Activity {
             }
         }
         sb.append("\nVideo: ").append(Format.toLogString(player.getVideoFormat()));
-        if (droppedVideoCodec() != null) {
-            sb.append("\nVideo dropped by the extractor: ").append(droppedVideoCodec());
-        }
         sb.append("\nAudio: ").append(Format.toLogString(player.getAudioFormat()));
         // Which decoders actually opened — the mime does not say whether this was the vendor's hardware
         // codec or the platform software one, and for a wedged decoder that is the whole question.
@@ -15788,20 +13831,9 @@ public class PlayerActivity extends Activity {
             sb.append("\nDecoders: ").append(videoDecoderName != null ? videoDecoderName : "none")
                     .append(" / ").append(audioDecoderName != null ? audioDecoderName : "none");
         }
-        appendVideoDecoderLimits(sb,
-                player.getVideoFormat() != null ? player.getVideoFormat() : selectedVideo);
-        sb.append("\nAudio out: ").append(audioOutputCapabilities());
         sb.append("\nSubtitle: ").append(subtitle != null ? Format.toLogString(subtitle) : "none");
         sb.append("\nTracks: ").append(video).append(" video, ").append(audio).append(" audio, ")
                 .append(text).append(" subtitle");
-        if (!refused.isEmpty()) {
-            final ArrayList<String> rows = new ArrayList<>(refused.size());
-            for (Map.Entry<String, Integer> entry : refused.entrySet()) {
-                rows.add(entry.getValue() > 1 ? entry.getKey() + " ×" + entry.getValue()
-                        : entry.getKey());
-            }
-            sb.append("\nRefused: ").append(TextUtils.join(", ", rows));
-        }
         final long duration = player.getDuration();
         sb.append("\nPosition: ").append(player.getCurrentPosition()).append('/')
                 .append(duration == C.TIME_UNSET ? "unknown" : String.valueOf(duration))
@@ -15811,26 +13843,6 @@ public class PlayerActivity extends Activity {
                         : player.getPlayWhenReady() ? " (play when ready)" : " (paused)")
                 .append(", item ").append(player.getCurrentMediaItemIndex() + 1)
                 .append('/').append(player.getMediaItemCount());
-        // What the video renderer actually managed, which is the one thing a report about jerky
-        // playback needs and the one thing it never carried: a dropped frame leaves no trace anywhere
-        // else until the renderer is disabled. Rendered against dropped says whether the decoder is
-        // keeping up at all; the consecutive count separates an even limp from the freeze-and-jump of
-        // a skip to the next keyframe; the mean offset says how late a frame arrives, in microseconds,
-        // and is negative when frames come in early - a decoder with room to spare.
-        final androidx.media3.exoplayer.DecoderCounters counters = player.getVideoDecoderCounters();
-        if (counters != null) {
-            counters.ensureUpdated();
-            sb.append("\nVideo frames: ").append(counters.renderedOutputBufferCount)
-                    .append(" rendered, ").append(counters.droppedBufferCount).append(" dropped (")
-                    .append(counters.maxConsecutiveDroppedBufferCount).append(" in a row), ")
-                    .append(counters.skippedOutputBufferCount).append(" skipped");
-            if (counters.videoFrameProcessingOffsetCount > 0) {
-                sb.append(", mean offset ")
-                        .append(counters.totalVideoFrameProcessingOffsetUs
-                                / counters.videoFrameProcessingOffsetCount)
-                        .append(" us");
-            }
-        }
         final long liveOffset = player.getCurrentLiveOffset();
         if (liveOffset != C.TIME_UNSET) {
             sb.append("\nLive: ").append(liveOffset).append(" ms behind the edge");
@@ -15840,23 +13852,13 @@ public class PlayerActivity extends Activity {
                 .append(", resize ").append(mPrefs.resizeMode)
                 .append(mPrefs.tunneling ? ", tunneling" : "")
                 .append(mPrefs.frameRateMatching ? ", frame rate matching" : "")
-                .append(backBufferAppliedMs > 0 ? ", back buffer " + backBufferAppliedMs / 1000 + "s" : "")
-                .append(mPrefs.frameRateMatching && mPrefs.displayResolutionMatching
-                        ? ", resolution matching" : "")
-                .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "")
-                .append(mPrefs.refuseDolbyVision ? ", no DV" : "")
-                .append(mPrefs.removeHdr10Plus ? ", no HDR10+ under DV" : "")
-                .append(mPrefs.centreBoost ? ", dialogue lift" : "")
-                .append(mPrefs.dynamicRange ? ", night mode" : "");
+                .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "");
         // What the recovery ladder had already spent, and where the passthrough restart stood: a decoder
         // that failed right after a reselect and one that failed on its own are the two suspects a report
         // from a TV box has to tell apart.
         sb.append("\nRecovery: retries source=").append(sourceRetries).append(" decoder=")
                 .append(decoderRetries).append(" freeze=").append(videoFreezeRecoveries)
-                // Only when the ladder did it. The setting saying the same thing is two lines above,
-                // and a report that cannot tell them apart is the one a box sends when the decoder broke.
-                .append(forceHevcForDolbyVision && !mPrefs.refuseDolbyVision
-                        ? ", forced HEVC for Dolby Vision" : "")
+                .append(forceHevcForDolbyVision ? ", forced HEVC for Dolby Vision" : "")
                 .append("; audio restart pending=").append(audioRestartPending)
                 .append(" inFlight=").append(audioRestartInFlight)
                 .append(" settling=").append(audioRestartSettling);
@@ -16007,32 +14009,11 @@ public class PlayerActivity extends Activity {
         });
     }
 
-    /**
-     * A passing notice — the plate {@link Notice} drops from the top, never the platform's toast.
-     *
-     * <p>Actionless on purpose, which is what lets one helper serve both device classes: {@link #showSnack}
-     * substitutes a dialog on a television only because <em>its</em> Details button cannot be reached with a
-     * D-pad. A notice has nothing to reach, so the plate is right on a phone and on a set alike — and it is
-     * the same plate {@link Notice} drops at the top of every other screen in the app.
-     */
-    void showNotice(final CharSequence text, final boolean longer, final int iconRes) {
-        clearReadout();
-        Notice.show(this, text, longer, iconRes);
-    }
-
-    /** The message is about to take the line the volume, brightness or seek readout draws on. */
-    private void clearReadout() {
-        if (playerView != null) {
-            playerView.readout(null, 0);
-        }
-    }
-
     void showSnack(final String textPrimary, final String textSecondary) {
-        final Context dialogContext = Dialogs.dialogContext(this);
         // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
         // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
         if (isTvBox) {
-            final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
+            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setMessage(textPrimary);
             builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> dialogInterface.dismiss());
             if (textSecondary != null) {
@@ -16041,19 +14022,11 @@ public class PlayerActivity extends Activity {
             builder.show();
             return;
         }
-        clearReadout();
-        snackbar = Notice.make(this, textPrimary, true, R.drawable.ic_info_24dp);
-        if (snackbar == null) {
-            return;
-        }
+        snackbar = Snackbar.make(coordinatorLayout, textPrimary, Snackbar.LENGTH_LONG);
         if (textSecondary != null) {
             snackbar.setAction(R.string.error_details, v -> showErrorScreen(textSecondary, textSecondary));
-            // Said here rather than left to the theme. Notice paints the plate and its text itself —
-            // but the action's colour travels through Material's own overlay (snackbarButtonStyle →
-            // colorOnContainer ← colorPrimaryInverse) and never arrived: measured #FF00FF on the built
-            // screen, which is no colour this app owns. One line ends the chase.
-            snackbar.setActionTextColor(brandColor());
         }
+        snackbar.setAnchorView(R.id.exo_bottom_bar);
         snackbar.show();
     }
 
@@ -16061,14 +14034,14 @@ public class PlayerActivity extends Activity {
         showErrorScreen(summary, report, null);
     }
 
-    // message is the cause in words, shown above the code in the report card, when it is known well
-    // enough to name; the screen has no generic explanation of its own.
+    // message replaces the screen's generic explanation when the cause is known well enough to name it.
+    // Deliberately not EXTRA_TITLE, which would also swap the error glyph for the logo mark — this is
+    // a failure, it just has a better description than usual.
     private void showErrorScreen(final String summary, final String report, final String message) {
         // Every full-screen report from the player passes through here, so this is the one place that has
         // to keep the next resume from walking straight back into the failure (see the field's comment).
         skipMediaAfterFatalError = true;
         final Intent intent = new Intent(this, ErrorActivity.class)
-                .putExtra(ErrorActivity.EXTRA_TITLE, getString(R.string.error_report_title))
                 .putExtra(ErrorActivity.EXTRA_SUMMARY, summary)
                 .putExtra(ErrorActivity.EXTRA_REPORT, report);
         if (message != null) {
@@ -16083,8 +14056,8 @@ public class PlayerActivity extends Activity {
             scrubbingNoticeable = true;
         }
         if (scrubbingNoticeable) {
-            playerView.readout(Utils.formatMilisSign(diff),
-                    diff < 0 ? R.drawable.ic_rewind_24dp : R.drawable.ic_fast_forward_24dp);
+            playerView.clearIcon();
+            playerView.setCustomErrorMessage(Utils.formatMilisSign(diff));
         }
         seekIfLanded(position);
     }
@@ -16100,10 +14073,18 @@ public class PlayerActivity extends Activity {
         secondarySubtitlesScale =
                 SubtitleUtils.normalizeFontScale(mPrefs.subtitleSecondaryScale, isTvBox || isTablet);
         if (subtitleView != null) {
-            // Built where the settings preview builds it, so the two cannot drift apart.
-            subtitleView.setStyle(SubtitleUtils.captionStyle(mPrefs.subtitleTextColor,
-                    mPrefs.subtitleBackgroundColor, mPrefs.subtitleEdgeType,
-                    mPrefs.subtitleStyleBold));
+            // A window behind the text is a captioning concept nobody asks for, so it stays off. The
+            // outline needs no knob either, it just has to contrast: black around every colour except
+            // black text, which only reads against a light outline.
+            final CaptionStyleCompat captionStyle = new CaptionStyleCompat(
+                    mPrefs.subtitleTextColor,
+                    mPrefs.subtitleBackgroundColor,
+                    Color.TRANSPARENT,
+                    mPrefs.subtitleEdgeType,
+                    mPrefs.subtitleTextColor == Color.BLACK ? Color.WHITE : Color.BLACK,
+                    Typeface.create(Typeface.DEFAULT,
+                            mPrefs.subtitleStyleBold ? Typeface.BOLD : Typeface.NORMAL));
+            subtitleView.setStyle(captionStyle);
         }
         // Sets the sizes, the band the second line sits in, and the padding and margins with them.
         updateSubtitleLayout();
@@ -16190,320 +14171,55 @@ public class PlayerActivity extends Activity {
         subtitleFinder.start();
     }
 
-    /**
-     * The file playing and the folder holding it, as {@code {video, dir}} — or null where this access
-     * mode cannot reach a folder at all. A single {@code content://} grant from another app carries no
-     * way to its siblings, which is what the scope request exists for.
-     *
-     * <p>The two are returned together because the folder is not simply the video's parent: a
-     * {@code DocumentFile} made by {@code fromFile} has no parent to give, so the raw-file branch has
-     * to build the directory itself. Slow enough over SAF to belong off the main thread.
-     */
-    private DocumentFile[] mediaAndFolder() {
-        // TODO: Unify with searchSubtitles()
-        // The scheme decides, not the device. A plain path is read as a plain path wherever it comes
-        // from - the app's own browser hands one out on a phone as readily as on a television - and
-        // this used to branch on isTvBox, which left a phone browsing real files with no playlist at
-        // all. A television is simply the common case of a file uri, not the condition for one.
-        if ("file".equals(mPrefs.mediaUri.getScheme())) {
-            final File videoRaw = new File(mPrefs.mediaUri.getSchemeSpecificPart());
-            final File parentRaw = videoRaw.getParentFile();
-            if (parentRaw == null) {
-                return null;
-            }
-            return new DocumentFile[] { DocumentFile.fromFile(videoRaw), DocumentFile.fromFile(parentRaw) };
-        }
-        // A network address of our own - a share or a WebDAV server - is the fourth way to reach a
-        // folder, and the one the app's own browser hands out.
-        // The address already says where the file sits, so the folder above it is arithmetic rather
-        // than a lookup - and once it is a DocumentFile, the next-file step and the folder playlist
-        // are the same code that serves every other source.
-        if (NetworkFiles.isNetwork(mPrefs.mediaUri)) {
-            final DocumentFile parent = NetworkFiles.parent(this, mPrefs.mediaUri);
-            return parent == null
-                    ? null
-                    : new DocumentFile[] { NetworkFiles.file(mPrefs.mediaUri), parent };
-        }
-        if (mPrefs.scopeUri == null) {
-            return null;
-        }
-        final DocumentFile video;
-        if ("com.android.externalstorage.documents".equals(mPrefs.mediaUri.getHost())) {
-            // Fast search based on path in uri
-            video = SubtitleUtils.findUriInScope(this, mPrefs.scopeUri, mPrefs.mediaUri);
-        } else {
-            // Slow search based on matching metadata, no path in uri
-            // Provider "com.android.providers.media.documents" when using "Videos" tab in file picker
-            final DocumentFile fileScope = DocumentFile.fromTreeUri(this, mPrefs.scopeUri);
-            final DocumentFile fileMedia = DocumentFile.fromSingleUri(this, mPrefs.mediaUri);
-            video = SubtitleUtils.findDocInScope(fileScope, fileMedia);
-        }
-        if (video == null) {
-            return null;
-        }
-        final DocumentFile dir = video.getParentFile();
-        return dir == null ? null : new DocumentFile[] { video, dir };
-    }
-
     Uri findNext() {
-        final DocumentFile[] media = mediaAndFolder();
-        if (media == null) {
-            return null;
-        }
-        final DocumentFile next = SubtitleUtils.findNext(media[0], SubtitleUtils.listSorted(media[1]));
-        return next == null ? null : next.getUri();
-    }
+        // TODO: Unify with searchSubtitles()
+        if (mPrefs.scopeUri != null || isTvBox) {
+            DocumentFile video = null;
+            File videoRaw = null;
 
-    /**
-     * The folder the played file sits in, as a playlist: the videos that come before it and the ones
-     * that come after, in the order a viewer reads the names. Both empty means there is nothing to
-     * make a playlist from — one video in the folder, or an access mode that cannot list it.
-     *
-     * <p>Split rather than handed over whole because the item already playing is left exactly as
-     * {@code initializePlayer} built it, with its metadata and its subtitles: the siblings are
-     * inserted around it instead of replacing the list, which would re-create the source and put a
-     * re-buffer a second into every file opened.
-     */
-    private static final class FolderPlaylist {
-        final List<MediaItem> before = new ArrayList<>();
-        final List<MediaItem> after = new ArrayList<>();
-
-        boolean isEmpty() {
-            return before.isEmpty() && after.isEmpty();
-        }
-    }
-
-    /**
-     * Builds {@link FolderPlaylist} for whatever the current access mode can reach. Never touches the
-     * player and never runs on the main thread: a SAF listing of a large folder takes a visible
-     * moment, and the MediaStore branch is a query.
-     */
-    private FolderPlaylist folderPlaylist() {
-        final FolderPlaylist playlist = new FolderPlaylist();
-        // A MediaStore uri carries its folder with it — the bucket — whichever chooser the viewer
-        // prefers, so what decides here is what the uri is and not which chooser the setting names.
-        // The query needs the media read permission, which is the app's own chooser's to ask for; it
-        // comes back empty where that was never granted, and the folder listing gets its turn.
-        if (isMediaStoreUri(mPrefs.mediaUri)) {
-            fillFromMediaStore(playlist);
-        }
-        if (playlist.isEmpty()) {
-            fillFromFolderListing(playlist);
-        }
-        return playlist;
-    }
-
-    /**
-     * SAF with a granted scope, and raw files on a TV box or in legacy mode: the folder is listed and
-     * the played file is located in it by name. The names are already in hand here, so each sibling
-     * gets its title without a query of its own.
-     */
-    private void fillFromFolderListing(final FolderPlaylist playlist) {
-        final DocumentFile[] media = mediaAndFolder();
-        if (media == null) {
-            return;
-        }
-        final String playingName = media[0].getName();
-        if (playingName == null) {
-            return;
-        }
-        boolean playingSeen = false;
-        for (final DocumentFile file : SubtitleUtils.listSorted(media[1])) {
-            if (file.getName().equals(playingName)) {
-                playingSeen = true;
-                // The file that is playing arrived as a uri and nothing else, so its own picture is
-                // not in its metadata the way its neighbours' are. Kept here, where the folder is
-                // being read anyway, or the one row a viewer is looking at would be the only grey one
-                // in a panel of pictures.
-                final String art = NetworkFiles.artwork(file);
-                playingArtwork = art == null ? null : Uri.parse(art);
-            } else if (SubtitleUtils.isPlayableVideo(file)) {
-                // The same test the browser lists a folder with. They have to be the same set: a
-                // folder showing five files and a playlist holding three is a defect either way
-                // round, and the mime lookup does not know every container the app plays.
-                (playingSeen ? playlist.after : playlist.before)
-                        .add(folderItem(file.getUri(), file.getName(),
-                                NetworkFiles.artwork(file)));
-            }
-        }
-        if (!playingSeen) {
-            // The played file is not among what the folder reports, so nothing here is known to sit
-            // beside it — and a list that does not contain what is playing must not become the
-            // playlist. The next-file lookup, which steps by name, is what is left.
-            playlist.before.clear();
-            playlist.after.clear();
-        }
-    }
-
-    /**
-     * MediaStore mode: the played file's folder is its bucket, and one query returns every video in
-     * it. The app's own chooser picks from exactly this list, so the playlist is the folder the
-     * viewer was just looking at.
-     */
-    private void fillFromMediaStore(final FolderPlaylist playlist) {
-        final long playingId = mediaStoreId(mPrefs.mediaUri);
-        if (playingId < 0) {
-            return;
-        }
-        final String bucket = mediaStoreValue(mPrefs.mediaUri, MediaStore.MediaColumns.BUCKET_ID);
-        if (bucket == null) {
-            return;
-        }
-        // Sorted here rather than by the query: SQL collation orders "Episode 10" before "Episode 2",
-        // which is the whole point of comparing names the way they are read.
-        final List<Long> ids = new ArrayList<>();
-        final List<String> names = new ArrayList<>();
-        try (Cursor cursor = getContentResolver().query(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                new String[] { MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME },
-                MediaStore.MediaColumns.BUCKET_ID + "=?", new String[] { bucket }, null)) {
-            if (cursor == null) {
-                return;
-            }
-            final int columnId = cursor.getColumnIndex(MediaStore.MediaColumns._ID);
-            final int columnName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
-            if (columnId < 0 || columnName < 0) {
-                return;
-            }
-            while (cursor.moveToNext()) {
-                final String name = cursor.getString(columnName);
-                if (name == null) {
-                    continue;
+            if (!isTvBox && mPrefs.scopeUri != null) {
+                if ("com.android.externalstorage.documents".equals(mPrefs.mediaUri.getHost())) {
+                    // Fast search based on path in uri
+                    video = SubtitleUtils.findUriInScope(this, mPrefs.scopeUri, mPrefs.mediaUri);
+                } else {
+                    // Slow search based on matching metadata, no path in uri
+                    // Provider "com.android.providers.media.documents" when using "Videos" tab in file picker
+                    DocumentFile fileScope = DocumentFile.fromTreeUri(this, mPrefs.scopeUri);
+                    DocumentFile fileMedia = DocumentFile.fromSingleUri(this, mPrefs.mediaUri);
+                    video = SubtitleUtils.findDocInScope(fileScope, fileMedia);
                 }
-                ids.add(cursor.getLong(columnId));
-                names.add(name);
+            } else if (isTvBox) {
+                videoRaw = new File(mPrefs.mediaUri.getSchemeSpecificPart());
+                video = DocumentFile.fromFile(videoRaw);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
-        final Integer[] order = new Integer[names.size()];
-        for (int i = 0; i < order.length; i++) {
-            order[i] = i;
-        }
-        Arrays.sort(order, (a, b) -> Utils.compareNatural(names.get(a), names.get(b)));
-        boolean playingSeen = false;
-        for (final int i : order) {
-            final long id = ids.get(i);
-            if (id == playingId) {
-                playingSeen = true;
-            } else {
-                (playingSeen ? playlist.after : playlist.before).add(folderItem(
-                        ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id),
-                        names.get(i), null));
+
+            if (video != null) {
+                DocumentFile next;
+                if (!isTvBox) {
+                    next = SubtitleUtils.findNext(video);
+                } else {
+                    File parentRaw = videoRaw.getParentFile();
+                    DocumentFile dir = DocumentFile.fromFile(parentRaw);
+                    next = SubtitleUtils.findNext(video, dir);
+                }
+                if (next != null) {
+                    return next.getUri();
+                }
             }
-        }
-        if (!playingSeen) {
-            playlist.before.clear();
-            playlist.after.clear();
-        }
-    }
-
-    /**
-     * Whether the uri is MediaStore's own. Checked by authority rather than by whether an id can be
-     * parsed off the end: a SAF document uri can also end in digits, and asking MediaStore about one
-     * of those would be a query against the wrong provider.
-     */
-    private static boolean isMediaStoreUri(final Uri uri) {
-        return uri != null && ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())
-                && MediaStore.AUTHORITY.equals(uri.getAuthority());
-    }
-
-    /** The row id a MediaStore uri addresses, or -1 when it addresses no single row. */
-    private static long mediaStoreId(final Uri uri) {
-        if (!isMediaStoreUri(uri)) {
-            return -1;
-        }
-        try {
-            return ContentUris.parseId(uri);
-        } catch (Exception e) {
-            return -1;
-        }
-    }
-
-    private String mediaStoreValue(final Uri uri, final String column) {
-        try (Cursor cursor = getContentResolver().query(uri, new String[] { column }, null, null, null)) {
-            if (cursor != null && cursor.moveToFirst() && cursor.getColumnCount() > 0) {
-                return cursor.getString(0);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
         return null;
     }
 
-    /**
-     * The picture for the file that is playing, found while its folder was being read. Null for
-     * everything that has no picture to find, which is everything but a media server.
-     */
-    private volatile Uri playingArtwork;
-
-    /**
-     * A sibling as a playlist item: the uri, the file name as the title the playlist shows, and the
-     * picture where one came with the listing.
-     *
-     * <p>The picture is the media server's, and only a media server has one to give: a file on the
-     * device is asked for a frame of itself instead, which is what the panel does when this is null.
-     * It goes in the metadata rather than beside it because that is where the panel reads it from,
-     * and the same field is what a notification and a car head unit would show.
-     */
-    private static MediaItem folderItem(final Uri uri, final String name,
-                                        @Nullable final String artwork) {
-        final MediaItem.Builder builder = new MediaItem.Builder().setUri(uri);
-        if (name != null || artwork != null) {
-            final MediaMetadata.Builder metadata = new MediaMetadata.Builder();
-            if (name != null) {
-                metadata.setTitle(name).setDisplayTitle(name);
-            }
-            if (artwork != null) {
-                metadata.setArtworkUri(Uri.parse(artwork));
-            }
-            builder.setMediaMetadata(metadata.build());
-        }
-        return builder.build();
-    }
-
-    /**
-     * Puts a discovered folder playlist around the item that is playing, on the main thread.
-     *
-     * <p>{@code apiMediaItems} is filled with the same items in the same order as the player's own
-     * list, because that is what {@code onMediaItemTransition} reads to keep {@code mPrefs.mediaUri}
-     * on the item actually playing — without it every position, subtitle and resume would go on being
-     * saved against the file the session opened with.
-     */
-    private void adoptFolderPlaylist(final FolderPlaylist playlist) {
-        if (player == null || apiAccess || playlist.isEmpty()) {
-            return;
-        }
-        if (player.getMediaItemCount() != 1) {
-            // A playlist is already in place — a rebuild got here first, or a second discovery is
-            // racing this one. Either way the list is not this thread's to replace.
-            return;
-        }
-        apiMediaItems.clear();
-        apiMediaItems.addAll(playlist.before);
-        apiMediaItems.add(player.getMediaItemAt(0));
-        apiMediaItems.addAll(playlist.after);
-        apiPlaylistStartIndex = playlist.before.size();
-        if (!playlist.before.isEmpty()) {
-            player.addMediaItems(0, playlist.before);
-        }
-        if (!playlist.after.isEmpty()) {
-            player.addMediaItems(playlist.after);
-        }
-        // The playlist button and the prev/next arrows are hung off the item count, so they only
-        // appear once the list is actually there.
-        updateTopInfo();
-    }
-
-    void askForScope(boolean skipToNextOnCancel) {
-        final Context dialogContext = Dialogs.dialogContext(this);
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
+    void askForScope(boolean loadSubtitlesOnCancel, boolean skipToNextOnCancel) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
         builder.setMessage(String.format(getString(R.string.request_scope), getString(R.string.app_name)));
         builder.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> requestDirectoryAccess()
         );
         builder.setNegativeButton(android.R.string.cancel, (dialog, which) -> {
             mPrefs.markScopeAsked();
+            if (loadSubtitlesOnCancel) {
+                loadSubtitleFile(mPrefs.mediaUri);
+            }
             if (skipToNextOnCancel) {
                 nextUri = findNext();
                 if (nextUri != null) {
@@ -16557,7 +14273,7 @@ public class PlayerActivity extends Activity {
             if (loading == null) {
                 loading = mPrefs.mediaUri;
             }
-            if (Utils.isNetworkMedia(loading)) {
+            if (Utils.isSupportedNetworkUri(loading)) {
                 // Arm it once per wait: this runs again on every STATE_BUFFERING, and re-posting would
                 // push the delay back past the wait itself.
                 if (!loadingSpeedScheduled) {
@@ -16621,7 +14337,7 @@ public class PlayerActivity extends Activity {
         }
         final ImageButton deleteFile = findViewById(R.id.delete);
         if (deleteFile != null) {
-            deleteFile.setImageResource(R.drawable.ic_delete_24dp);
+            deleteFile.setImageResource(R.drawable.ic_delete_24dp_);
         }
         setupEpisodeNavButton(nextFile, size, padding, margin);
         setupEpisodeNavButton(deleteFile, size, padding, margin);
@@ -16662,6 +14378,31 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    /**
+     * Foreground for a round control disc: the press ripple, masked to the disc so it stays circular, plus
+     * the D-pad focus state. Focus is a thin white ring orbiting just outside the disc, not a wash over it —
+     * the theme's borderless ripple alone was a ~20% white scrim the brand disc swallowed, and filling the
+     * disc to signal focus throws away the very colour the button exists to carry.
+     *
+     * @param discInset how far the disc itself is inset within the view (0 when the disc fills the view);
+     *                  the ring is placed halfway into that gap so it reads as attached to the disc.
+     */
+    private Drawable discFocusForeground(final int discInset) {
+        // The ring's own stroke carries the state: white on focus, transparent otherwise. A StateListDrawable
+        // cannot express "nothing" — a null entry leaves the previously drawn state on screen.
+        final GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setStroke(ui.dpS(3), new ColorStateList(
+                new int[][]{{android.R.attr.state_focused}, {}},
+                new int[]{Color.WHITE, Color.TRANSPARENT}));
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setShape(GradientDrawable.OVAL);
+        mask.setColor(Color.WHITE);
+        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF),
+                new InsetDrawable((Drawable) ring, discInset / 2),
+                new InsetDrawable((Drawable) mask, discInset));
+    }
+
     private void setupEpisodeNavButton(final ImageButton button, final int size, final int padding, final int margin) {
         if (button == null) {
             return;
@@ -16677,11 +14418,16 @@ public class PlayerActivity extends Activity {
         button.setPadding(padding, padding, padding, padding);
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         button.setImageTintList(ColorStateList.valueOf(Color.WHITE));
-        // The same chrome plate the hero sits on, circular to suit the round glyphs. The 12dp icon padding
-        // leaves a ring matching the hero's proportion.
-        button.setBackground(Utils.plate(this, Utils.CIRCLE));
-        // Replacing the background drops the touch-press highlight, so re-add it with the focus contour.
-        button.setForeground(Utils.chromeForeground(this, 0));
+        // Neutral chrome disc echoing the coral Play/Pause hero: same pill fill (@color/ui_controls_background),
+        // circular to suit the round glyphs. The 12dp icon padding leaves a ring matching the hero's proportion.
+        final GradientDrawable disc = new GradientDrawable();
+        disc.setShape(GradientDrawable.OVAL);
+        disc.setColor(ContextCompat.getColor(this, R.color.ui_controls_background));
+        button.setBackground(disc);
+        // Replacing the background drops the D-pad focus / touch-press highlight, so re-add both as a
+        // foreground — critical for TV navigation, harmless on touch. The disc fills the whole view here, so
+        // the focus ring lands on its own edge.
+        button.setForeground(discFocusForeground(0));
     }
 
     // Grey out and disable the prev/next episode arrows while a video is loading, using the same disabled
@@ -16786,14 +14532,13 @@ public class PlayerActivity extends Activity {
     }
 
     void askDeleteMedia() {
-        final Context dialogContext = Dialogs.dialogContext(this);
-        final AlertDialog.Builder builder = new MaterialAlertDialogBuilder(dialogContext);
+        final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
         builder.setMessage(getString(R.string.delete_query));
         builder.setPositiveButton(R.string.delete_confirmation, (dialogInterface, i) -> {
             releasePlayer();
             deleteMedia();
             if (nextUri == null) {
-                backToShell();
+                showEmptyStateWithoutMedia();
             } else {
                 skipToNext();
             }
@@ -16803,19 +14548,12 @@ public class PlayerActivity extends Activity {
         dialog.show();
     }
 
-    /**
-     * There is nothing to play, so this activity has no reason to be on screen: the shell is the
-     * app's front door and it is where the viewer picks what is next. It replaces the branded empty
-     * page this activity used to draw over itself.
-     *
-     * <p>Started rather than finished into: the player is {@code singleTask}, so the shell cannot sit
-     * under a second instance of it - the same reason {@link BrowserActivity#reopenFrom} exists.
-     * {@link BrowserActivity#returnTo} brings forward the shell that is already in the task instead of
-     * stacking another, and it lands on the folder browsing was left in, which is remembered.
-     */
-    private void backToShell() {
-        BrowserActivity.returnTo(this);
-        finish();
+    // Nothing left to play: drop the end controls and hand the screen over to the empty state.
+    private void showEmptyStateWithoutMedia() {
+        haveMedia = false;
+        setEndControlsVisible(false);
+        playerView.setControllerShowTimeoutMs(-1);
+        emptyState.show();
     }
 
     void deleteMedia() {
@@ -16905,7 +14643,8 @@ public class PlayerActivity extends Activity {
         }
         scaleFactor = playerView.getVideoSurfaceView().getScaleX();
         playerView.removeCallbacks(playerView.textClearRunnable);
-        playerView.readout((int) (scaleFactor * 100) + "%", R.drawable.ic_fit_screen_24dp);
+        playerView.clearIcon();
+        playerView.setCustomErrorMessage((int)(scaleFactor * 100) + "%");
         playerView.hideController();
         isScaleStarting = true;
     }
@@ -16918,7 +14657,7 @@ public class PlayerActivity extends Activity {
         }
         scaleFactor = Utils.normalizeScaleFactor(scaleFactor, playerView.getScaleFit());
         playerView.setScale(scaleFactor);
-        playerView.readout((int) (scaleFactor * 100) + "%", R.drawable.ic_fit_screen_24dp);
+        playerView.setCustomErrorMessage((int)(scaleFactor * 100) + "%");
     }
 
     private void scaleEnd() {
@@ -16932,7 +14671,6 @@ public class PlayerActivity extends Activity {
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
         }
         updatebuttonAspectRatioIcon();
-        rememberFrameMode();
     }
 
     // A scale mode = a Media3 resize mode plus an optional forced display aspect ratio (ratio 0 = natural).
@@ -16965,51 +14703,12 @@ public class PlayerActivity extends Activity {
         return aspectModes;
     }
 
-    /**
-     * Puts the frame mode held in the preferences onto the view — the one the current shape of picture
-     * last had. A forced ratio is applied as a ratio; a free zoom carries its own scale factor; anything
-     * else is a plain resize mode at natural scale.
-     */
-    /**
-     * Hands the frame the viewer has just set to the preferences, to be kept under the current shape
-     * of picture. Read off the view, which is where every one of those gestures actually lands.
-     */
-    void rememberFrameMode() {
-        mPrefs.updateFrameMode(playerView.getResizeMode(),
-                playerView.getVideoSurfaceView().getScaleX(), currentAspectRatio);
-    }
-
-    private void applyStoredFrameMode() {
-        playerView.setResizeMode(mPrefs.resizeMode);
-        currentAspectRatio = mPrefs.aspectRatio;
-        if (mPrefs.aspectRatio > 0) {
-            playerView.applyAspectMode(mPrefs.resizeMode, mPrefs.aspectRatio);
-        } else if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
-            playerView.setScale(mPrefs.scale);
-        } else {
-            playerView.setScale(1.f);
-        }
-        updatebuttonAspectRatioIcon();
-    }
-
-    /**
-     * The aspect ratio the picture is shown at: pixels are not always square, and a rotation the surface
-     * has not taken up yet swaps the two sides.
-     */
-    private static float displayAspectRatio(VideoSize videoSize) {
-        if (videoSize.width <= 0 || videoSize.height <= 0 || videoSize.pixelWidthHeightRatio <= 0)
-            return 0f;
-        final float ratio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height;
-        return videoSize.unappliedRotationDegrees % 180 != 0 ? 1f / ratio : ratio;
-    }
-
     private void applyAspectMode(int index) {
         final AspectMode mode = getAspectModes().get(index);
         currentAspectRatio = mode.ratio;
         playerView.applyAspectMode(mode.resizeMode, mode.ratio);
-        Dialogs.showText(playerView, mode.label, R.drawable.ic_aspect_ratio_24dp);
+        Utils.showText(playerView, mode.label);
         updatebuttonAspectRatioIcon();
-        rememberFrameMode();
     }
 
     // Tap: cycle Fit → Crop → Fill → 16:9 → 4:3. From any other picker-only ratio, a tap returns to Fit.
@@ -17028,7 +14727,6 @@ public class PlayerActivity extends Activity {
     }
 
     private void showAspectModePicker() {
-        final Context dialogContext = Dialogs.dialogContext(this);
         final List<AspectMode> modes = getAspectModes();
         final String[] labels = new String[modes.size()];
         int checked = -1;
@@ -17037,7 +14735,7 @@ public class PlayerActivity extends Activity {
             if (isCurrentAspectMode(modes.get(i)))
                 checked = i;
         }
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(dialogContext)
+        final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.button_crop)
                 .setSingleChoiceItems(labels, checked, (d, which) -> {
                     applyAspectMode(which);

@@ -80,22 +80,13 @@ final class OpenSubtitles {
         final String release;
         /** Somebody else's machine translation. Offered, but only once no human wrote one. */
         final boolean machine;
-        /**
-         * The index says this file was uploaded against the very bytes being played — see
-         * {@link MovieHash}. Only ever true when the search carried a hash, and the strongest thing
-         * any of these sources says about a file: not "this is for the film" but "this is for this
-         * copy of it", which is the question every cut-and-release heuristic elsewhere is guessing at.
-         */
-        final boolean hashMatch;
 
-        Candidate(String language, long fileId, int downloads, String release, boolean machine,
-                  boolean hashMatch) {
+        Candidate(String language, long fileId, int downloads, String release, boolean machine) {
             this.language = language;
             this.fileId = fileId;
             this.downloads = downloads;
             this.release = release;
             this.machine = machine;
-            this.hashMatch = hashMatch;
         }
     }
 
@@ -104,44 +95,26 @@ final class OpenSubtitles {
      * walking a five-entry priority list costs one request instead of five — a property only this
      * source has, the keyless indexes ignoring every language parameter they are given.
      *
-     * <p>The hash goes <em>alongside</em> the id rather than instead of it. Sent together they answer
-     * with the id's files and the hash's, the latter flagged {@code moviehash_match} — so a hash that
-     * collides with some other title cannot drag that title's subtitles in, because the id in the same
-     * query does not match them. That is the only way it is sent today: a search with no id is turned
-     * away by the two callers above this one (PlayerActivity and {@link SubtitleSearch#find}), both of
-     * which want an id before they will ask anybody anything. The hash-only case below is therefore
-     * unreached — kept because it costs one boolean and because searching by hash alone is the one
-     * thing that would make a file with no recognised id searchable at all, which is a change to those
-     * callers and not to this one.
-     *
      * @param languages ISO 639-1 codes, most wanted first
-     * @param hash the bytes being played, or null when this media cannot be hashed
      * @return every usable candidate, unordered; empty when nothing matched or the call failed
      */
-    static List<Candidate> search(MediaId id, List<String> languages, MovieHash.Hash hash) {
-        final boolean haveId = id != null && !id.isEmpty();
-        if ((!haveId && hash == null) || languages.isEmpty()) {
+    static List<Candidate> search(MediaId id, List<String> languages) {
+        if (id == null || id.isEmpty() || languages.isEmpty()) {
             return Collections.emptyList();
         }
         // Sorted by key: the TreeMap is the whole defence against the alphabetical-order 301.
         final TreeMap<String, String> params = new TreeMap<>();
         params.put("languages", TextUtils.join(",", languages));
-        if (haveId) {
-            if (id.imdbNumeric() != null) {
-                params.put("imdb_id", id.imdbNumeric());
-            } else {
-                params.put("tmdb_id", id.tmdb);
-            }
-            if (!id.isMovie()) {
-                params.put("season_number", String.valueOf(id.season));
-                if (id.episode > 0) {
-                    params.put("episode_number", String.valueOf(id.episode));
-                }
-            }
+        if (id.imdbNumeric() != null) {
+            params.put("imdb_id", id.imdbNumeric());
+        } else {
+            params.put("tmdb_id", id.tmdb);
         }
-        if (hash != null) {
-            params.put("moviehash", hash.hex);
-            params.put("moviebytesize", String.valueOf(hash.size));
+        if (!id.isMovie()) {
+            params.put("season_number", String.valueOf(id.season));
+            if (id.episode > 0) {
+                params.put("episode_number", String.valueOf(id.episode));
+            }
         }
         final StringBuilder url = new StringBuilder(API).append("/subtitles?");
         boolean first = true;
@@ -192,8 +165,7 @@ final class OpenSubtitles {
                 final int downloads =
                         attributes.optInt("new_download_count", attributes.optInt("download_count"));
                 candidates.add(new Candidate(attributes.optString("language"), fileId, downloads,
-                        attributes.optString("release"), machine,
-                        attributes.optBoolean("moviehash_match")));
+                        attributes.optString("release"), machine));
             }
         } catch (Exception e) {
             Utils.log("OpenSubtitles: " + e);
@@ -203,18 +175,11 @@ final class OpenSubtitles {
     }
 
     /**
-     * The best candidate: the most wanted language that turned up at all, within it a file uploaded
-     * against these very bytes, then a human translation over a machine one, and within that the most
-     * downloaded file. Language order beats everything — a rarely downloaded track in the language the
-     * user asked for is still the language they asked for — and popularity is the last word rather
-     * than the second, because a machine translation is the one kind of file that outnumbers the human
-     * ones it is worse than.
-     *
-     * <p>A hash match sits directly under language and above everything else, because what it settles
-     * is not taste but identity: which cut, which release, which timings. The rest of this class only
-     * ever guesses at that, and every other check in the feature — cutMargin, ofOneCut, fitsMedia — is
-     * there because the guess is often wrong. It stays under language all the same: a file timed
-     * perfectly to this copy, in a language nobody in the room reads, is not the answer.
+     * The best candidate: the most wanted language that turned up at all, within it a human translation
+     * over a machine one, and within that the most downloaded file. Language order beats everything — a
+     * rarely downloaded track in the language the user asked for is still the language they asked for —
+     * and popularity is the last word rather than the second, because a machine translation is the one
+     * kind of file that outnumbers the human ones it is worse than.
      *
      * @param allowMachine whether somebody else's machine translation may be taken at all. Off means
      *                     the viewer emptied the translate-from list, i.e. asked for no machine
@@ -241,9 +206,6 @@ final class OpenSubtitles {
         final int rankThan = languages.indexOf(than.language.toLowerCase(Locale.US));
         if (rank != rankThan) {
             return rank < rankThan;
-        }
-        if (candidate.hashMatch != than.hashMatch) {
-            return candidate.hashMatch;
         }
         if (candidate.machine != than.machine) {
             return than.machine;

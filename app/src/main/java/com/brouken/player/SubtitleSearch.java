@@ -167,7 +167,7 @@ final class SubtitleSearch {
      * @return the hit that was downloaded, or null when no enabled source could deliver one
      */
     static Result find(MediaId identifier, List<String> preferred, Prefs prefs, long durationMs,
-                       MovieHash.Hash hash, Sink sink, AtomicBoolean answered) {
+                       Sink sink, AtomicBoolean answered) {
         if (identifier == null || identifier.isEmpty() || preferred.isEmpty()) {
             Utils.log("subtitles: nothing to ask with (id="
                     + (identifier == null ? "null" : identifier.isEmpty() ? "empty" : "ok")
@@ -205,7 +205,7 @@ final class SubtitleSearch {
         final boolean allowMachine = prefs.subtitleTranslate;
         final List<Callable<Result>> sources = new ArrayList<>(4);
         if (prefs.subtitleSourceOpenSubtitles) {
-            sources.add(() -> fromOpenSubtitles(id, preferred, allowMachine, hash));
+            sources.add(() -> fromOpenSubtitles(id, preferred, allowMachine));
         }
         if (prefs.subtitleSourceRest) {
             sources.add(() -> best(SOURCE_REST,
@@ -508,8 +508,7 @@ final class SubtitleSearch {
      * minted last, once nothing has cancelled the search, because a unit is spent even when the
      * answer arrives to a player that no longer exists.
      */
-    private static Result fromOpenSubtitles(MediaId id, List<String> preferred, boolean allowMachine,
-                                            MovieHash.Hash hash) {
+    private static Result fromOpenSubtitles(MediaId id, List<String> preferred, boolean allowMachine) {
         // Every exit here used to be silent, and this is the one source that does not go through best():
         // so when it won, the trace jumped from its quota line straight to a file being painted, and when
         // it lost there was nothing at all. It is also the source most likely to answer, being the keyed
@@ -519,7 +518,7 @@ final class SubtitleSearch {
             Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has no 639-1 code for " + preferred);
             return null;
         }
-        final List<OpenSubtitles.Candidate> found = OpenSubtitles.search(id, codes, hash);
+        final List<OpenSubtitles.Candidate> found = OpenSubtitles.search(id, codes);
         final OpenSubtitles.Candidate best = OpenSubtitles.pick(found, codes, allowMachine);
         if (best == null || cancelled()) {
             Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has " + found.size()
@@ -527,8 +526,7 @@ final class SubtitleSearch {
             return null;
         }
         Utils.log("subtitles: " + SOURCE_OPENSUBTITLES + " has 1 " + best.language
-                + (best.machine ? " machine-translated" : "")
-                + (best.hashMatch ? " matching this file" : "") + " of " + found.size());
+                + (best.machine ? " machine-translated" : "") + " of " + found.size());
         // The id, not a link: see Result.fileId. Every other source is asked and answered for free, and
         // this one used to spend a download here, inside the parallel sweep — so a search that stremio
         // or shegu.st went on to win still cost one of the hundred, as did a hit in a language that was
@@ -544,7 +542,6 @@ final class SubtitleSearch {
      */
     private static List<Candidate> shegu(MediaId id, AtomicBoolean answered) {
         if (id.tmdb == null) {
-            Utils.log("subtitles: " + SOURCE_SHEGU + " needs a tmdb id, and there is none");
             return Collections.emptyList();
         }
         final StringBuilder url = new StringBuilder("https://subtitles.shegu.st/subtitles?tmdb=")
@@ -614,9 +611,6 @@ final class SubtitleSearch {
     /** Stremio's OpenSubtitles addon: imdb only, no filtering, three-letter bibliographic codes. */
     private static List<Candidate> stremio(MediaId id, AtomicBoolean answered) {
         if (id.imdb == null) {
-            // Said out loud: an empty list from here used to read in the trace as "asked and offered
-            // nothing", which is a different fact from "was never in a position to ask".
-            Utils.log("subtitles: " + SOURCE_STREMIO + " needs an imdb id, and there is none");
             return Collections.emptyList();
         }
         final String imdb = id.imdb.startsWith("tt") ? id.imdb : "tt" + id.imdb;
@@ -654,7 +648,6 @@ final class SubtitleSearch {
     private static List<Candidate> restOpenSubtitles(MediaId id, List<String> preferred,
                                                      AtomicBoolean answered, boolean allowMachine) {
         if (id.imdb == null) {
-            Utils.log("subtitles: " + SOURCE_REST + " needs an imdb id, and there is none");
             return Collections.emptyList();
         }
         final String imdb = id.imdbNumeric();

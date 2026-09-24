@@ -71,12 +71,7 @@ final class UiMetrics {
     // ---- alignment / chrome tokens (single producer each — see plan §A) ----
     int gridH()             { return dpS(14); }   // shared right-edge content grid
     int pillCorner()        { return dpS(8); }
-    // The focus contour inside a control pill: the button box less this on every side, so the line has air
-    // against the pill's edge and against the next button. Its corner is the pill's less that inset, which
-    // is Material's rule for a shape nested in another — the two curves stay parallel instead of one being
-    // a circle cut into a rounded box.
-    int contourInset()      { return dpS(4); }
-    int contourCorner()     { return dpS(4); }
+    int pillPadH()          { return dpS(4); }
     int clusterBox()        { return dpS(40); }
     int clusterPad()        { return dpS(8); }
     int heroBox()           { return dpS(90); }   // central play/pause tap target (was exo_icon_size)
@@ -107,41 +102,25 @@ final class UiMetrics {
     }
 
     // ---- TV overscan, synthesized as extra insets (0 on every non-TV class) ----
-    // The 5% every television keeps clear, as Android TV states it for the 960x540dp canvas: 48dp at the
-    // sides, 27dp top and bottom. At the old 24/16 the first interactive pixel sat 42dp from the side edge
-    // (24 + gridH 18) and 16dp from the bottom - inside the band a real set may not show.
-    int overscanH() { return tv() ? dp(48) : 0; }
-    int overscanV() { return tv() ? dp(27) : 0; }
+    int overscanH() { return tv() ? dp(24) : 0; }
+    int overscanV() { return tv() ? dp(16) : 0; }
     int pickerTopPadLand() { return Math.max(dp(16), overscanV()); }
 
-    /**
-     * The width every player panel gets, whichever button opened it.
-     *
-     * <p>One number, because a panel that changes size with the press that opened it reads as several
-     * different panels. It follows the edge the panel is docked to, and that edge follows the window:
-     * a sheet docked to the bottom of a compact-width window is that edge's width, capped at the 640dp of
-     * {@code material_bottom_sheet_max_width}; a sheet at the end edge leaves a strip of the picture beside
-     * it — the cap is the bottom sheet's number, not the side sheet's own 256dp, and it stays that way
-     * deliberately: the playlist's rail of 190dp cards needs 440dp to show a peeking third card, so
-     * narrowing to Material's side-sheet width would cost the rail the affordance that says it continues —
-     * never more than 60% of a window held sideways, and never closer than 56dp to the far edge of one
-     * held upright — capped at the same 640dp.
-     */
-    int panelWidthPx(Configuration cfg) {
+    /** Adaptive picker side-panel width in px: never covers a narrow phone, docks on tablet/TV. */
+    int pickerWidthPx(Configuration cfg) {
         final int windowW = cfg.screenWidthDp;
-        if (windowW < 600) {
-            return dp(Math.min(windowW - 8, 640));
+        final int preferred;
+        switch (deviceClass) {
+            case TV:            preferred = 420; break;
+            case TABLET_LARGE:  preferred = 440; break;
+            case TABLET_MEDIUM: preferred = 400; break;
+            default:            preferred = 360; break;
         }
-        // One number, and it is Google's twice over. Material gives a side sheet a 400dp maximum and ships
-        // 256dp in the library; Leanback's own television settings pane — full height, end edge — is
-        // lb_settings_pane_width, 360dp. So 360dp of usable width, plus the safe band on a television,
-        // because there the outermost 48dp is a strip a set may cut rather than somewhere to put a row.
-        // 360dp on a phone or tablet, 408dp on a television.
-        //
-        // What it has to hold is the speed panel's five segments, the widest thing in the family: they
-        // land at 65.6dp sideways and 60.8dp on a television, both over Material's own 48dp minimum touch
-        // target. The 440dp this replaces was a number of ours and nobody else's.
-        return Math.min(dp(360) + overscanH(), dp(windowW - 56));
+        final int capPortrait = windowW - 56;                       // always leave a strip of video/scrim
+        final int cap = cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
+                ? Math.min(Math.round(windowW * 0.60f), capPortrait)
+                : capPortrait;
+        return dp(Math.min(preferred, cap));
     }
 
     // ---- typography (sp; keeps user font-scale). Columns: PHONE / sw600 / sw720 / TV ----
@@ -156,7 +135,6 @@ final class UiMetrics {
     float textTitle()       { return t(18, 20, 21, 22); }   // picker headers
     float textBody()        { return t(16, 17, 18, 20); }   // picker row title
     float textCaption()     { return t(13, 14, 15, 16); }   // row details / subtitle
-    float textSupporting()  { return t(14, 15, 16, 17); }   // second line of a Material list item
     float textList()        { return t(15, 16, 17, 18); }   // playlist row
     float textInfo()        { return t(12, 13, 13, 14); }   // header meta lines
     float textHeaderTitle() { return t(22, 24, 25, 26); }   // header title (larger than a picker header)
@@ -167,6 +145,7 @@ final class UiMetrics {
     float textValue()       { return t(40, 44, 46, 48); }   // skip-offset readout
     float textAction()      { return t(15, 16, 16, 18); }   // reset pill
     float textPlaceholder() { return t(20, 21, 22, 22); }   // poster fallback
+    float textListNumber()  { return t(18, 19, 20, 20); }   // playlist row number
 
     /** True when a config change would not affect any adaptive size (skip the re-apply pass). */
     boolean sameClassAndWidth(UiMetrics other) {

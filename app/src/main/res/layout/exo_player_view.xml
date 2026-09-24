@@ -25,8 +25,23 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:indeterminate="true"
-            android:indeterminateTint="?attr/colorPrimary"
+            android:indeterminateTint="@color/brand"
             android:layout_gravity="center"/>
+
+        <TextView android:id="@id/exo_error_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="@dimen/exo_error_message_margin_bottom"
+            android:gravity="center"
+            android:textColor="@color/exo_white"
+            android:textSize="@dimen/exo_error_message_text_size"
+            android:lineSpacingMultiplier="1.1"
+            android:background="@drawable/exo_rounded_rectangle"
+            android:paddingLeft="@dimen/exo_error_message_text_padding_horizontal"
+            android:paddingRight="@dimen/exo_error_message_text_padding_horizontal"
+            android:paddingTop="@dimen/exo_error_message_text_padding_vertical"
+            android:paddingBottom="@dimen/exo_error_message_text_padding_vertical"/>
 
     </androidx.media3.ui.AspectRatioFrameLayout>
 
@@ -69,27 +84,6 @@
         android:visibility="invisible"
         app:yt_backgroundCircleColor="@color/ui_controls_background"
         app:yt_playerView="@id/video_view" />
-
-    <!-- The readout: volume, brightness, the seek delta, the zoom factor. The same plate a passing
-         message arrives on (see Notice) and the same line — its top margin is set from Notice.topLine, so
-         the two cannot drift apart. It sits here rather than inside exo_content_frame because that frame
-         is the picture's own rectangle: a letterboxed clip would put the readout and a message on two
-         different lines. -->
-    <TextView android:id="@id/exo_error_message"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:gravity="center"
-        android:textColor="@color/ink_high"
-        android:textSize="@dimen/exo_error_message_text_size"
-        android:lineSpacingMultiplier="1.1"
-        android:background="@drawable/notice_plate"
-        android:drawablePadding="12dp"
-        android:drawableTint="@color/ink_high"
-        android:paddingLeft="16dp"
-        android:paddingRight="16dp"
-        android:paddingTop="@dimen/exo_error_message_text_padding_vertical"
-        android:paddingBottom="@dimen/exo_error_message_text_padding_vertical"/>
 
     <com.brouken.player.LevelBar
         android:id="@+id/level_bar"

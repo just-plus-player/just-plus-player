@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The report as one card: Corner.Medium, the 12dp the settings groups take (DESIGN.md R3, a card
-     72dp or taller), on the surface a step above the ground. colorSurfaceContainer and not a colour,
-     so the accent, the appearance and the AMOLED option all reach it through the theme. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="?attr/colorSurfaceContainer" />
-    <corners android:radius="12dp" />
-</shape>

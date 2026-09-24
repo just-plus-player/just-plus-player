@@ -4,8 +4,6 @@ import android.app.Application;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
 
-import androidx.appcompat.app.AppCompatDelegate;
-
 import com.brouken.player.skip.SegmentFinder;
 
 import io.sentry.SentryEvent;
@@ -28,27 +26,6 @@ public class App extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        // Before any screen reads them: the settings screen is an entry point of its own, and a value
-        // left by a withdrawn option would otherwise sit there unnamed until something played.
-        Prefs.migrateWithdrawnValues(
-                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this));
-        // Here rather than in PlayerActivity, because "System" appearance resolves to whatever default
-        // is in force and this is the only place guaranteed to have run. Prefs.isLight answers false on
-        // a television whatever the system says, and Prefs.getNightMode leaves "System" UNSPECIFIED so
-        // it defers to this default - but SettingsActivity is an APPLICATION_PREFERENCES entry point,
-        // so it can be the first activity in the process. Set in PlayerActivity, the default was not yet
-        // there: a television reporting a light or undefined night mode got the light Material base with
-        // the dark accent overlay on top - dark grounds lettered in near-black.
-        if (Utils.isTvBox(this)) {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-        }
-        // The defaults the settings screen would otherwise write the first time somebody opens it -
-        // androidx.preference persists every default as it inflates. Written here instead, before any
-        // playback, because the player compares the whole preference store across a trip to that screen
-        // (Prefs.snapshot): three dozen keys appearing at once while a film is paused behind it read as
-        // "a setting changed" and rebuilt the player - over a torrent server, a stream re-opened from
-        // zero for a screen that was opened and closed. false: existing choices are never overwritten.
-        androidx.preference.PreferenceManager.setDefaultValues(this, R.xml.root_preferences, false);
         initSentry();
         // Lets the skip-segment lookups honour the caching their sources ask for (see the method).
         SegmentFinder.setCacheDir(getCacheDir());

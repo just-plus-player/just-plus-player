@@ -12,6 +12,20 @@
     <item>off</item>
   </string-array>
 
+  <string-array name="file_access_entries">
+    <item>@string/pref_file_access_auto</item>
+    <item>Storage Access Framework</item>
+    <item>MediaStore</item>
+    <item>Legacy</item>
+  </string-array>
+
+  <string-array name="file_access_values">
+    <item>auto</item>
+    <item>saf</item>
+    <item>mediastore</item>
+    <item>legacy</item>
+  </string-array>
+
   <string-array name="decoder_priority_entries">
     <item>@string/pref_decoder_priority_prefer_device</item>
     <item>@string/pref_decoder_priority_prefer_app</item>
@@ -64,16 +78,6 @@
     <item>always</item>
     <item>demand</item>
   </string-array>
-  <string-array name="skip_countdown_entries">
-    <item>@string/pref_skip_countdown_ring</item>
-    <item>@string/pref_skip_countdown_none</item>
-  </string-array>
-
-  <string-array name="skip_countdown_values">
-    <item>ring</item>
-    <item>off</item>
-  </string-array>
-
 
   <string-array name="skip_undo_entries">
     <item>@string/pref_skip_undo_all</item>
@@ -158,87 +162,5 @@
     <item>1</item>
     <item>2</item>
     <item>0</item>
-  </string-array>
-
-
-
-  <string-array name="audio_sync_entries">
-    <item>-1500 ms</item>
-    <item>-1250 ms</item>
-    <item>-1000 ms</item>
-    <item>-750 ms</item>
-    <item>-500 ms</item>
-    <item>-400 ms</item>
-    <item>-300 ms</item>
-    <item>-250 ms</item>
-    <item>-200 ms</item>
-    <item>-150 ms</item>
-    <item>-100 ms</item>
-    <item>-75 ms</item>
-    <item>-50 ms</item>
-    <item>-25 ms</item>
-    <item>none</item>
-    <item>+25 ms</item>
-    <item>+50 ms</item>
-    <item>+75 ms</item>
-    <item>+100 ms</item>
-    <item>+150 ms</item>
-    <item>+200 ms</item>
-    <item>+250 ms</item>
-    <item>+300 ms</item>
-    <item>+400 ms</item>
-    <item>+500 ms</item>
-    <item>+750 ms</item>
-    <item>+1000 ms</item>
-    <item>+1250 ms</item>
-    <item>+1500 ms</item>
-  </string-array>
-
-  <string-array name="back_buffer_entries">
-    <item>@string/pref_back_buffer_off</item>
-    <item>5 s</item>
-    <item>10 s</item>
-    <item>30 s</item>
-  </string-array>
-
-  <!-- Parsed with Integer.parseInt: a translated item would crash the app on that locale. -->
-  <string-array name="back_buffer_values" translatable="false">
-    <item>0</item>
-    <item>5000</item>
-    <item>10000</item>
-    <item>30000</item>
-  </string-array>
-
-  <!-- Parsed with Integer.parseInt: a translated item would crash the app on that locale. -->
-  <string-array name="audio_sync_values" translatable="false">
-    <item>-1500</item>
-    <item>-1250</item>
-    <item>-1000</item>
-    <item>-750</item>
-    <item>-500</item>
-    <item>-400</item>
-    <item>-300</item>
-    <item>-250</item>
-    <item>-200</item>
-    <item>-150</item>
-    <item>-100</item>
-    <item>-75</item>
-    <item>-50</item>
-    <item>-25</item>
-    <item>0</item>
-    <item>25</item>
-    <item>50</item>
-    <item>75</item>
-    <item>100</item>
-    <item>150</item>
-    <item>200</item>
-    <item>250</item>
-    <item>300</item>
-    <item>400</item>
-    <item>500</item>
-    <item>750</item>
-    <item>1000</item>
-    <item>1250</item>
-    <item>1500</item>
   </string-array>
 </resources>

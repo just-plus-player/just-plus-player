@@ -4,7 +4,7 @@
     tools:keep="@drawable/exo_styled_controls_pause">
     <item android:drawable="@drawable/controls_gradient"/>
     <item
-        android:drawable="@drawable/ic_delete_24dp"
+        android:drawable="@drawable/ic_delete_24dp_"
         android:top="3dp"
         android:left="3dp"
         android:right="3dp"

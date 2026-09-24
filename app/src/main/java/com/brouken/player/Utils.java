@@ -5,7 +5,6 @@ import static android.content.Context.UI_MODE_SERVICE;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.Dialog;
 import android.app.UiModeManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -17,20 +16,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
-import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.database.Cursor;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.InsetDrawable;
-import android.graphics.drawable.LayerDrawable;
-import android.graphics.drawable.RippleDrawable;
-import android.graphics.drawable.StateListDrawable;
-import android.graphics.Bitmap;
-import android.graphics.Outline;
-import android.graphics.Color;
-import android.graphics.Rect;
 import android.media.AudioManager;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -44,30 +31,18 @@ import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
-import android.view.Gravity;
-import android.view.KeyEvent;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Rational;
-import android.util.StateSet;
 import android.view.Display;
-import android.view.LayoutInflater;
-import android.util.TypedValue;
-import android.view.MotionEvent;
-import android.view.ViewOutlineProvider;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
 import androidx.core.text.HtmlCompat;
@@ -78,24 +53,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 
-import com.google.android.material.textfield.TextInputLayout;
-import androidx.core.graphics.ColorUtils;
-import androidx.core.content.ContextCompat;
-import androidx.core.view.WindowCompat;
-
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.animation.AnimationUtils;
-import com.bumptech.glide.Glide;
-import com.bumptech.glide.RequestBuilder;
-import com.bumptech.glide.load.DataSource;
-import com.bumptech.glide.load.engine.GlideException;
-import com.bumptech.glide.request.RequestListener;
-import com.bumptech.glide.request.target.Target;
-import com.google.android.material.color.MaterialColors;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.shape.MaterialShapeDrawable;
-import com.google.android.material.shape.ShapeAppearanceModel;
-
+import com.obsez.android.lib.filechooser.ChooserDialog;
 import com.sigpwned.chardet4j.Chardet;
 import com.sigpwned.chardet4j.io.DecodedInputStreamReader;
 
@@ -215,15 +173,6 @@ class Utils {
     }
 
     public static String getFileName(Context context, Uri uri) {
-        // A media server hands out titles, not file names, so there is never an extension to take
-        // off - not even one that looks exactly like an extension, which is what the test below
-        // cannot tell: "American.Psycho.2000.BDRip.AVC.AC3" is a whole title on a NAS. This is where
-        // the trimming was first seen doing harm, "04. Троллейный усилитель" arriving in the player
-        // as "04" while its siblings in the folder playlist, which come from the listing, kept their
-        // whole titles.
-        if (DlnaFiles.speaks(uri) && uri.getLastPathSegment() != null) {
-            return uri.getLastPathSegment();
-        }
         String result = null;
         try {
             if (ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
@@ -242,37 +191,12 @@ class Utils {
                     result = result.substring(cut + 1);
                 }
             }
-            final int dot = result.lastIndexOf(".");
-            if (dot > 0 && looksLikeExtension(result.substring(dot + 1)))
-                result = result.substring(0, dot);
+            if (result.indexOf(".") > 0)
+                result = result.substring(0, result.lastIndexOf("."));
         } catch (Exception e) {
             e.printStackTrace();
         }
         return result;
-    }
-
-    /**
-     * Whether what follows the last dot of a name is an extension, rather than part of the name.
-     *
-     * <p>Every extension this app opens is short and is letters and digits — mkv, m2ts, srt, ttml —
-     * so a tail that is neither is not one. Taking off whatever follows the last dot regardless is
-     * what turned "Cube.1997.BluRay.DTS.x264-DON" (a file saved without an extension) into
-     * "Cube.1997.BluRay.DTS", and it is why a name whose only dot follows an episode number lost
-     * everything after it. Five characters rather than the four the longest known extension has, so
-     * that one nobody listed yet is still recognised.
-     */
-    private static boolean looksLikeExtension(final String tail) {
-        if (tail.isEmpty() || tail.length() > 5) {
-            return false;
-        }
-        for (int i = 0; i < tail.length(); i++) {
-            final char c = tail.charAt(i);
-            // ASCII only: isLetterOrDigit is true of Cyrillic too, and no extension is written in it.
-            if (c > 127 || !Character.isLetterOrDigit(c)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     // Some senders pass HTML-escaped text in intent extras (e.g. "В&#039;язниця").
@@ -294,7 +218,7 @@ class Utils {
      */
     public static int getVolumePercent(final Context context, final AudioManager audioManager) {
         if (PlayerActivity.boostLevel > 0)
-            return 100 + Math.round(PlayerActivity.boostLevel * 10);
+            return 100 + PlayerActivity.boostLevel * 10;
         if (!PlayerActivity.systemVolume)
             return Math.round(PlayerActivity.playerVolume);
         final int max = getVolume(context, true, audioManager);
@@ -327,7 +251,7 @@ class Utils {
         boolean applied = false;
         if (PlayerActivity.loudnessEnhancer != null) {
             try {
-                PlayerActivity.loudnessEnhancer.setTargetGain(Math.round(PlayerActivity.boostLevel * 200));
+                PlayerActivity.loudnessEnhancer.setTargetGain(PlayerActivity.boostLevel * 200);
                 PlayerActivity.loudnessEnhancer.setEnabled(PlayerActivity.boostLevel > 0);
                 applied = true;
             } catch (Exception e) {
@@ -349,10 +273,7 @@ class Utils {
         if (PlayerActivity.boostWarned || PlayerActivity.boostLevel <= 0)
             return;
         PlayerActivity.boostWarned = true;
-        if (context instanceof PlayerActivity) {
-            ((PlayerActivity) context).showNotice(context.getString(R.string.volume_high_warning), false,
-                    R.drawable.ic_volume_up_24dp);
-        }
+        Toast.makeText(context, R.string.volume_high_warning, Toast.LENGTH_SHORT).show();
     }
 
     /**
@@ -388,7 +309,7 @@ class Utils {
             applyPlayerVolume();
         }
 
-        PlayerActivity.boostLevel = percent > 100f ? Math.min(10f, (percent - 100f) / 10f) : 0f;
+        PlayerActivity.boostLevel = percent > 100f ? Math.min(10, Math.round((percent - 100f) / 10f)) : 0;
         applyBoost();
         warnAboutBoost(context);
 
@@ -416,7 +337,7 @@ class Utils {
         // Boost only exists on top of a maxed-out level, so drop it whenever the level is below that:
         // a volume change outside the app, or a level carried over from the other volume mode.
         if (!maxedOut) {
-            PlayerActivity.boostLevel = 0f;
+            PlayerActivity.boostLevel = 0;
         }
 
         if (!maxedOut || (PlayerActivity.boostLevel == 0 && !raise)) {
@@ -440,12 +361,10 @@ class Utils {
                 applyPlayerVolume();
             }
         } else {
-            // To the next whole step rather than by one, so a key pressed after a drag left the level
-            // at 13.7 lands on 20 and not on 23.7.
             if (canBoost && raise && PlayerActivity.boostLevel < 10)
-                PlayerActivity.boostLevel = Math.min(10f, (float) Math.floor(PlayerActivity.boostLevel) + 1f);
+                PlayerActivity.boostLevel++;
             else if (!raise && PlayerActivity.boostLevel > 0)
-                PlayerActivity.boostLevel = Math.max(0f, (float) Math.ceil(PlayerActivity.boostLevel) - 1f);
+                PlayerActivity.boostLevel--;
 
             applyBoost();
         }
@@ -499,7 +418,16 @@ class Utils {
                 );
     }
 
+    public static void showText(final CustomPlayerView playerView, final CharSequence text, final long timeout) {
+        playerView.removeCallbacks(playerView.textClearRunnable);
+        playerView.clearIcon();
+        playerView.setCustomErrorMessage(text);
+        playerView.postDelayed(playerView.textClearRunnable, timeout);
+    }
 
+    public static void showText(final CustomPlayerView playerView, final CharSequence text) {
+        showText(playerView, text, 1200);
+    }
 
     public enum Orientation {
         VIDEO(0, R.string.video_orientation_video),
@@ -568,515 +496,49 @@ class Utils {
             return new Rational(format.width, format.height);
     }
 
-
-
-
     /**
-     * A 16:9 box that shows a frame of the video inside it, and a quiet glyph while there is none.
+     * Pads a side-panel's content for the system bars, the way every picker in this app wants it.
      *
-     * <p>Glide carries a video decoder, so a local file can be asked for a frame of itself with no
-     * extra machinery — which is the whole reason a poster appears here at all: nothing sends artwork
-     * for a file on the device, and until now a local video was drawn as an empty box. A frame is
-     * taken a second in rather than at zero, because a great many files open on black or on a fade
-     * and the first frame of those is a preview of nothing.
+     * The status bar is hidden while a picker is open (applyPickerBars), so its height is only breathing
+     * room — but breathing room the content genuinely needs, since the window spans the full height and the
+     * camera cutout lives up there. Hence the height is read IGNORING VISIBILITY: {@code getInsets()} reports
+     * zero for a bar that is currently hidden, and a panel opened from another panel (the skip-offset and
+     * sleep-timer panels come off a side menu, which has already turned the bars off) would then get no top
+     * padding at all and put its header under the cutout. The playlist panel only ever escaped this by being
+     * opened straight off the controls, while the bars were still up.
      *
-     * <p>A remote url is left with the glyph on purpose: asking it for a frame means downloading the
-     * video to look at one.
+     * In portrait the status-bar height reads well; landscape is much shorter (and its status-bar inset can
+     * include the camera cutout), where that same height looks oversized — use a compact fixed inset there.
+     * Pad the bottom for the nav/gesture bar. dp keeps it density/resolution-adaptive.
      *
-     * @param artwork a picture sent for this item, which wins when there is one
-     * @param media   the item itself, asked for a frame when there is no artwork
-     * @param glyphRes what stands in the box until a frame arrives, and instead of one for
-     *                 anything that has no frame to give - a folder
+     * @param insetSource any attached view, used to read the window insets
+     * @param target      the view whose padding is set (horizontal padding comes from the caller's own grid)
      */
-    static FrameLayout previewBox(final Context ctx, final Uri artwork, final Uri media,
-                                  final int cornerPx, final int glyphPx, final int glyphRes) {
-        final FrameLayout box = previewBox(ctx, cornerPx, glyphPx);
-        bindPreview(box, artwork, media, glyphRes, glyphPx);
-        return box;
-    }
-
-    /**
-     * An empty still, built once and filled as often as it is asked for.
-     *
-     * <p>Split from {@link #bindPreview} because a list recycles its rows: building a new box, a new
-     * poster and a new request on every bind is what made a folder flicker on every arrival - the
-     * views were thrown away and made again while the pictures they already held were still good.
-     * Glide replaces the request on a view it is already loading into, so one poster can serve one
-     * file after another without either showing through.
-     */
-    /** What a still's stand-in glyph is painted: the secondary ink, well down, on the box's plate. */
-    private static ColorStateList glyphTint(final Context ctx) {
-        return ColorStateList.valueOf(ColorUtils.setAlphaComponent(
-                MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
-                        ContextCompat.getColor(ctx, R.color.ink_secondary)), 0x5C));
-    }
-
-    static FrameLayout previewBox(final Context ctx, final int cornerPx, final int glyphPx) {
-        // Here because every still in the app is built here, and it is a no-op after the first.
-        VideoThumbs.register(ctx);
-        final FrameLayout box = new FrameLayout(ctx);
-        box.setBackgroundColor(MaterialColors.getColor(ctx, R.attr.colorSurfaceContainerHighest,
-                ContextCompat.getColor(ctx, R.color.thumb_box)));
-        box.setClipToOutline(true);
-        box.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(final View view, final Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerPx);
-            }
-        });
-
-        // What stands behind a picture that does not fill the frame. A media server's album art is a
-        // cover, which is taller than it is wide - 114 x 160 on the server this was measured against -
-        // and a cover fitted into a 16:9 still leaves two thirds of the frame flat grey, which is what
-        // it looked like. This is the same picture, cropped to fill and turned right down, so the
-        // frame carries the film's own colour instead of the furniture's.
-        //
-        // The blur is the cheapest one there is: the copy is fetched at a dozen pixels across and the
-        // view scales it up, which is a bilinear smear and costs no filter, no library and no second
-        // decode worth the name.
-        final ImageView backdrop = new ImageView(ctx);
-        backdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        backdrop.setAlpha(0.5f);
-        backdrop.setVisibility(View.GONE);
-        box.addView(backdrop, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-        final ImageView poster = new ImageView(ctx);
-        // Fitted, not cropped: a still is 16:9 and fills the frame, and a tall poster keeps its whole
-        // picture with the frame's own colour beside it rather than losing its head and its feet.
-        poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        box.addView(poster, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-        // The glyph is the placeholder as well as the fallback: it stands there while the frame is
-        // being decoded and goes when it arrives, so a box is never blank and never reads as a fault.
-        final ImageView blank = new ImageView(ctx);
-        blank.setImageTintList(glyphTint(ctx));
-        final FrameLayout.LayoutParams blankLp = new FrameLayout.LayoutParams(glyphPx, glyphPx);
-        blankLp.gravity = Gravity.CENTER;
-        box.addView(blank, blankLp);
-
-        // The track and the run, made here and hidden until a row asks for them: a view created on a
-        // bind is a view destroyed on the next one.
-        final View track = new View(ctx);
-        track.setBackgroundColor(0x80000000);
-        track.setVisibility(View.GONE);
-        box.addView(track, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(4), Gravity.BOTTOM | Gravity.START));
-
-        final View run = new View(ctx);
-        run.setVisibility(View.GONE);
-        box.addView(run, new FrameLayout.LayoutParams(0, dpToPx(4), Gravity.BOTTOM | Gravity.START));
-        return box;
-    }
-
-    /**
-     * Points an existing still at a file: the glyph it falls back to, the frame it shows, and the two
-     * state views reset. Cancels whatever the poster was loading, so a recycled row never finishes the
-     * previous file's decode into the new file's box.
-     */
-    static void bindPreview(final FrameLayout box, final Uri artwork, final Uri media,
-                            final int glyphRes, final int glyphPx) {
-        // The same file as last time is the common case, not the exception: a list re-lists itself on
-        // every arrival - coming back from the player, coming back from Settings - and clearing a
-        // poster that already holds the right frame is a blank row for as long as the decode takes.
-        // Asked here so nobody has to remember to ask it.
-        final Uri wanted = artwork != null ? artwork : media;
-        final String key = (wanted == null ? "" : wanted.toString()) + " " + glyphRes;
-        if (key.equals(box.getTag())) {
-            return;
-        }
-        box.setTag(key);
-        final ImageView backdrop = (ImageView) box.getChildAt(0);
-        final ImageView poster = (ImageView) box.getChildAt(1);
-        final ImageView blank = (ImageView) box.getChildAt(2);
-        final ViewGroup.LayoutParams glyphLp = blank.getLayoutParams();
-        if (glyphLp.width != glyphPx) {
-            glyphLp.width = glyphPx;
-            glyphLp.height = glyphPx;
-            blank.setLayoutParams(glyphLp);
-        }
-        box.getChildAt(3).setVisibility(View.GONE);
-        box.getChildAt(4).setVisibility(View.GONE);
-        blank.setImageTintList(glyphTint(box.getContext()));
-        blank.setImageResource(glyphRes);
-        blank.setVisibility(View.VISIBLE);
-        poster.setVisibility(View.VISIBLE);
-        Glide.with(box.getContext()).clear(poster);
-        poster.setImageDrawable(null);
-        backdrop.setImageDrawable(null);
-        backdrop.setVisibility(View.GONE);
-
-        final Uri source = artwork != null ? artwork : frameSource(media);
-        if (source == null) {
-            poster.setVisibility(View.GONE);
-            return;
-        }
-        RequestBuilder<Bitmap> request = Glide.with(box.getContext()).asBitmap().load(source);
-        if (artwork == null) {
-            // A second in, so a film that opens on black is not a black row. Kept for the address the
-            // system has a thumbnail for as well: VideoThumbs answers that one first and this is what
-            // decodes it if the system cannot.
-            request = request.frame(1_000_000L);
-        }
-        request.listener(new RequestListener<Bitmap>() {
-            @Override
-            public boolean onLoadFailed(final GlideException e, final Object model,
-                                        final Target<Bitmap> target, final boolean firstResource) {
-                poster.setVisibility(View.GONE);
-                blank.setVisibility(View.VISIBLE);
-                return false;
-            }
-
-            @Override
-            public boolean onResourceReady(final Bitmap resource, final Object model,
-                                           final Target<Bitmap> target, final DataSource source,
-                                           final boolean firstResource) {
-                blank.setVisibility(View.GONE);
-                // Out of the picture that just arrived rather than fetched again: a second request per
-                // row doubles what a media server is asked for at once, and a small one answers eight
-                // rows and sixteen requests by refusing some of them - which is one row in a list
-                // wearing the glyph for no reason a viewer could guess at.
-                //
-                // For every picture and not only a server's: a film shot on a telephone is 9:16 and
-                // fitted into a 16:9 still it is the same strip on the same grey. Where the picture
-                // does fill the frame - which is most of them - the backdrop is behind it and nothing
-                // of it can be seen, and a bitmap of twelve by sixteen is not a cost worth branching
-                // on to avoid.
-                if (resource.getWidth() > 0 && resource.getHeight() > 0) {
-                    backdrop.setImageBitmap(
-                            Bitmap.createScaledBitmap(resource, 12, 16, true));
-                    backdrop.setVisibility(View.VISIBLE);
+    public static void padForPickerInsets(final Activity activity, final UiMetrics ui, final View insetSource,
+                                         final View target, final int hPad,
+                                         final int extraTopPx, final int extraBottomPx) {
+        final boolean landscape = activity.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        int padTop = landscape ? ui.pickerTopPadLand() : ui.dp(24);
+        int padBottom = ui.overscanV();
+        final WindowInsets rootInsets = insetSource.getRootWindowInsets();
+        if (rootInsets != null) {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (!landscape) {
+                    padTop = rootInsets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
                 }
-                return false;
+                padBottom = rootInsets.getInsetsIgnoringVisibility(
+                        WindowInsets.Type.navigationBars()).bottom + ui.overscanV();
+            } else {
+                // No ignoring-visibility variant before 30, and the legacy inset drops to 0 just the same
+                // once the bars are off — so the floor above stands in for it.
+                if (!landscape) {
+                    padTop = Math.max(padTop, rootInsets.getSystemWindowInsetTop());
+                }
+                padBottom = Math.max(padBottom, rootInsets.getSystemWindowInsetBottom() + ui.overscanV());
             }
-        }).into(poster);
-    }
-
-    /**
-     * The track the played run sits on: the whole width of the still, dimmed, 4dp at its foot.
-     *
-     * <p>Shown on every file's still and not only on the ones with a position, so the run reads as a
-     * measure of the file rather than as a mark on the picture - and so that whatever the frame itself
-     * happens to show down there (a recording of another player's own seek bar, say) cannot be
-     * mistaken for it.
-     */
-    static void playedTrack(final FrameLayout box) {
-        box.getChildAt(3).setVisibility(View.VISIBLE);
-    }
-
-    static void playedRun(final FrameLayout box, final float played) {
-        final View run = box.getChildAt(4);
-        if (played <= 0.02f) {
-            run.setVisibility(View.GONE);
-            return;
         }
-        run.setBackgroundColor(MaterialColors.getColor(box, R.attr.colorPrimary));
-        run.setVisibility(View.VISIBLE);
-        final ViewGroup.LayoutParams lp = run.getLayoutParams();
-        // The width is a fraction of a box that may not have been measured yet, so it is set once it
-        // has; on a box that is measured already this is the next frame either way.
-        box.post(() -> {
-            lp.width = Math.round(box.getWidth() * Math.min(played, 1f));
-            run.setLayoutParams(lp);
-        });
-    }
-
-    /** A uri that can be asked for a frame of itself without fetching it over a network first. */
-    static Uri frameSource(final Uri media) {
-        final String scheme = media == null ? null : media.getScheme();
-        return "file".equals(scheme) || ContentResolver.SCHEME_CONTENT.equals(scheme) ? media : null;
-    }
-
-
-
-
-
-    /**
-     * A ripple that reaches the whole control. On the 90dp hero the wash stopped at about seven tenths of
-     * the disc — the press lit the middle of the button and never its edge — for two reasons, both fixed
-     * here. A RippleDrawable is a LayerDrawable, and its default padding mode nests each layer inside the
-     * padding of the one before: an {@link InsetDrawable} reports its inset as padding, so the mask came
-     * out inset twice and cut the wash to 50dp of a 70dp disc. And Android's own guess at a masked ripple's
-     * radius falls short of the corners, so the radius is stated here instead.
-     *
-     * <p>The whole diagonal, not half of it. Half is the right answer only for a wave that starts in the
-     * middle, and a row's does not: a {@code CompoundButton} puts the hotspot at its button, so on a
-     * 922x126 picker row the wave began at the radio and a 466px radius died at x=590 — the press lit the
-     * left three fifths of the row and stopped, with the finger held, in the middle of a word. Two people
-     * reported that as a rendering artifact. From a corner, only the full diagonal reaches the far one.
-     */
-    static RippleDrawable coveringRipple(final ColorStateList color, final Drawable content,
-                                                 final Drawable mask) {
-        final RippleDrawable ripple = new RippleDrawable(color, content, mask) {
-            @Override
-            protected void onBoundsChange(final Rect bounds) {
-                super.onBoundsChange(bounds);
-                setRadius((int) Math.ceil(Math.hypot(bounds.width(), bounds.height())));
-            }
-        };
-        ripple.setPaddingMode(LayerDrawable.PADDING_MODE_STACK);
-        return ripple;
-    }
-
-    /**
-     * A ripple colour that shows on press only. A RippleDrawable washes on focus as well, and over the
-     * fill of a current row that wash lifted the accent to #DB5F54 from #D6493C — the very thing the
-     * focus ring exists to avoid. The edge says "here" and leaves the colour underneath it alone.
-     */
-    public static ColorStateList pressOnly(final int color) {
-        return new ColorStateList(
-                new int[][]{{android.R.attr.state_focused, -android.R.attr.state_pressed}, {}},
-                new int[]{Color.TRANSPARENT, color});
-    }
-
-    /**
-     * The D-pad focus ring by itself, in the ink of a Material surface, on a rounded rectangle: for a
-     * control whose fill is drawn by something else — a settings row, sliced out of its group's card.
-     *
-     * @param radii the eight corner radii the row's own outline has, so the ring is that outline
-     */
-    public static Drawable focusOutline(final Context ctx, final float[] radii) {
-        final GradientDrawable ring = new GradientDrawable();
-        ring.setCornerRadii(radii);
-        ring.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
-                ContextCompat.getColorStateList(ctx, R.color.focus_ring));
-        return ring;
-    }
-
-    /** A corner radius no box is big enough to show: a rectangle with it is drawn as a circle. */
-    public static final float CIRCLE = 10_000f;
-
-    /** A filled shape: a rectangle rounded by {@code radius}, a circle when it is {@link #CIRCLE}. */
-    public static GradientDrawable shape(final int color, final float radius) {
-        final GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(radius);
-        return d;
-    }
-
-    /** The translucent black plate every control over the picture is drawn on. */
-    public static GradientDrawable plate(final Context ctx, final float radius) {
-        return shape(ContextCompat.getColor(ctx, R.color.ui_controls_background), radius);
-    }
-
-    /**
-     * What a control over the picture wears on top of its plate: the press wash, and the D-pad focus
-     * contour. Focus is a white line on the control's own shape, drawn on the plate and never on the
-     * picture — which is what gives it a floor of 12.63:1 on the brightest frame a video can be, where an
-     * accent fill's own edge has 1.31:1. Fill and ink are left alone, so a control that is already on keeps
-     * saying so (coral glyph) while the contour says the focus is here.
-     *
-     * <p>The two marks are not the same size, and deliberately: a press belongs to the <em>whole</em>
-     * control, the way it does on the episode discs, so it fills the button's own box (inside a pill the
-     * box is square and the pill's clip rounds its ends); the contour is an indicator and sits inside that
-     * box, with air against the pill's edge and against the next button.
-     *
-     * @param radius the contour's corner: {@link #CIRCLE} for a disc, the concentric inner corner for a
-     *               tile inside a pill (the pill's corner less the inset, so the two stay parallel)
-     * @param inset  how far inside the view the contour sits
-     * @param pressRadius the corner of the press wash, {@link #CIRCLE} for a disc, 0 inside a pill
-     * @param pressInset  how far inside the view the plate sits, so the wash stops where the plate does
-     */
-    public static Drawable chromeForeground(final Context ctx, final float radius, final int inset,
-                                            final float pressRadius, final int pressInset) {
-        // Both marks carry their state in a colour list of their own: a StateListDrawable cannot express
-        // "nothing" — a null entry leaves the previously drawn state on screen.
-        final GradientDrawable contour = new GradientDrawable();
-        contour.setCornerRadius(radius);
-        contour.setStroke(ctx.getResources().getDimensionPixelSize(R.dimen.focus_ring_width),
-                new ColorStateList(new int[][]{{android.R.attr.state_focused}, {}},
-                        new int[]{Color.WHITE, Color.TRANSPARENT}));
-        return coveringRipple(pressOnly(ContextCompat.getColor(ctx, R.color.ripple_chrome)),
-                new InsetDrawable((Drawable) contour, inset),
-                new InsetDrawable((Drawable) shape(Color.WHITE, pressRadius), pressInset));
-    }
-
-    /** {@link #chromeForeground} for a round control, where the press and the contour share the disc. */
-    public static Drawable chromeForeground(final Context ctx, final int discInset) {
-        return chromeForeground(ctx, CIRCLE, discInset, CIRCLE, discInset);
-    }
-
-
-
-
-
-    /**
-     * A panel that carries a text field: it opens with the keyboard up, and the keyboard shortens it
-     * instead of covering it.
-     *
-     * <p>Upright the window is resized above the keys and there is nothing more to do. Sideways the
-     * keyboard is a window of its own the height of the screen, so the panel's window is never resized
-     * and a card centred in it would sit half under the keys. What the keys cover is an inset either
-     * way, and held as the host's padding it bounds the card in both — upright that inset is zero
-     * inside the resized window, so nothing moves twice.
-     */
-    static void keyboardPanel(final Dialog dialog, final View content) {
-        Dialogs.keyboardResizes(dialog);
-        if (Build.VERSION.SDK_INT >= 30) {
-            final View host = (View) content.getParent();
-            final int hostBottom = host.getPaddingBottom();
-            host.setOnApplyWindowInsetsListener((v, insets) -> {
-                v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
-                        hostBottom + insets.getInsets(WindowInsets.Type.ime()).bottom);
-                return insets;
-            });
-        }
-        final Window window = dialog.getWindow();
-        if (window != null) {
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
-                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
-    }
-
-    /**
-     * Makes the system's back gesture step back through a chain of panels rather than end it.
-     *
-     * <p>Back means "undo the last thing I navigated", and in a search that walks title to season to
-     * episode that is the previous list, not the whole errand. Only back: a press outside the card and
-     * the close button still leave, which is the other question a viewer can be asking.
-     *
-     * <p>Two ways in, because the manifest opts this app into predictive back: from 33 a dialog is
-     * given the gesture through the dispatcher and never sees the key at all, and below that the key
-     * is all there is. The registration lives as long as the dialog's window does.
-     */
-    static void panelBack(final Dialog dialog, final Runnable back) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            dialog.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, back::run);
-            return;
-        }
-        dialog.setOnKeyListener((d, keyCode, event) -> {
-            if (keyCode != KeyEvent.KEYCODE_BACK || event.getAction() != KeyEvent.ACTION_UP) {
-                return false;
-            }
-            back.run();
-            return true;
-        });
-    }
-
-
-
-    /**
-     * One segment of a picker's toggle group: outlined, 8dp at the corners, at least 48dp tall,
-     * lettering that shrinks rather than wraps, and the app's focus ring. Shared by every panel that
-     * offers a row of ready-made answers — the sleep timer's durations, the speed panel's rates, the
-     * skip panel's modes — so they all say "pick one of these" in one shape.
-     */
-    public static com.google.android.material.button.MaterialButton pickerSegment(
-            final Context ctx, final UiMetrics ui, final CharSequence label) {
-        final com.google.android.material.button.MaterialButton button =
-                new com.google.android.material.button.MaterialButton(ctx, null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        // A style is not a theme overlay — passing R.style.Widget_JustPlus_Button_Segment to the
-        // constructor would be ignored — so the one thing that style adds arrives here instead, read
-        // from the same resource the XML segments use.
-        button.setShapeAppearanceModel(ShapeAppearanceModel
-                .builder(ctx, R.style.ShapeAppearance_JustPlus_Segment, 0).build());
-        button.setId(View.generateViewId()); // a toggle group tracks its buttons by id
-        button.setText(label);
-        button.setMaxLines(1);
-        // Material insets a button by 6dp top and bottom to reach its 48dp touch target from a 36dp
-        // box. These panels size their own rows, so the inset only shortens them.
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        button.setMinHeight(ui.dpS(48)); // the platform's floor for anything a finger has to hit
-        focusRing(button);
-        button.setPadding(ui.dpS(4), button.getPaddingTop(), ui.dpS(4), button.getPaddingBottom());
-        // Shrunk rather than wrapped or clipped: the widest label already fills its share of the row at
-        // the ordinary size, so a longer language or a system font a notch up used to break one word
-        // across two lines and leave the row ragged.
-        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                button, (int) ui.textAction() - 4, (int) ui.textAction(), 1,
-                TypedValue.COMPLEX_UNIT_SP);
-        return button;
-    }
-
-    /**
-     * "2,50" -> "2,5", "3,00" -> "3". Against the locale's own decimal separator, which is not a dot
-     * everywhere this app is read.
-     */
-    public static String trimZeros(final String number, final Locale locale) {
-        final char point = java.text.DecimalFormatSymbols.getInstance(locale).getDecimalSeparator();
-        if (number.indexOf(point) < 0) {
-            return number;
-        }
-        int end = number.length();
-        while (end > 0 && number.charAt(end - 1) == '0') {
-            end--;
-        }
-        if (end > 0 && number.charAt(end - 1) == point) {
-            end--;
-        }
-        return number.substring(0, end);
-    }
-
-    /**
-     * The ink an outlined action letters in: the surface's quieter one, never the accent.
-     *
-     * <p>Material gives an outlined button {@code colorPrimary}, which is the rule this repository
-     * already overrode for a dialog's Cancel — the accent marks the one action that moves things
-     * forward, and a second control wearing it makes the two look like equal choices. It reads the same
-     * on a panel: Off beside a filled Start, Reset under a coral readout. A segment is left alone, since
-     * its own selector already answers checked and unchecked.
-     */
-    static void quietInk(final MaterialButton button) {
-        button.setTextColor(ContextCompat.getColorStateList(button.getContext(),
-                R.color.dialog_button_dismissive));
-    }
-
-    /**
-     * D-pad focus for an outlined Material button: its own border widens to the focus ring's width and
-     * goes white, and the button draws over its neighbours while it holds it.
-     *
-     * <p>Width, because colour alone is the weakest focus event in the app. Where a picker row grows an
-     * edge out of nothing — measured 16.30:1 between the same pixels focused and not — an outlined
-     * button already has an edge, so focus only recoloured it: grey to white, 2.76:1, under the 3:1 a
-     * non-text indicator wants. An edge that thickens as well is a change in shape, which the eye
-     * catches without being aimed at it.
-     *
-     * <p>Z, because in a segmented control the neighbours' borders are drawn over this one's: the group
-     * collapses adjacent strokes into shared dividers drawn by whoever comes later, so a focused middle
-     * segment was ringed along the top and bottom and left grey down both sides. Lifting it puts it last
-     * in the draw order without moving it in the row, which is what the group already does for the
-     * segment that is checked.
-     */
-    static void focusRing(final MaterialButton button) {
-        final int rest = button.getStrokeWidth();
-        final ColorStateList rested = button.getStrokeColor();
-        final int ring = Math.max(rest,
-                button.getResources().getDimensionPixelSize(R.dimen.focus_ring_width));
-        // The edge is the whole signal: Material's own focus state layer goes, or a focused segment
-        // that is also the chosen one gets its accent painted over in the dark colour of the text on
-        // it. The press ripple stays exactly as it was.
-        button.setRippleColor(ContextCompat.getColorStateList(button.getContext(),
-                R.color.ripple_button));
-        // The lift casts no shadow. A view with Z above zero is a shadow caster, and HWUI takes the
-        // caster's opacity from its outline, which MaterialShapeDrawable reports as fully opaque
-        // whatever the fill is - so Skia draws the shadow of an opaque pill and skips the middle,
-        // the way it always does for a caster that would hide it. Under a transparent fill there is
-        // nothing to hide it: what shows through is the ring of the shadow, eight dark cells around a
-        // clean centre, which reads as a square-cornered block behind the label. That is what a
-        // television showed on this sheet's Cancel, and it matches to the pixel - the clean centre is
-        // the pill inset by its own corner radius. An outline with no alpha stops the shadow before it
-        // is drawn (ReorderBarrierDrawables returns on getAlpha() <= 0) and changes nothing else: the
-        // shape, the ripple and the stroke are the background's own business, not the outline's.
-        button.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(final View view, final Outline outline) {
-                ViewOutlineProvider.BACKGROUND.getOutline(view, outline);
-                outline.setAlpha(0f);
-            }
-        });
-        button.setOnFocusChangeListener((v, focused) -> {
-            button.setStrokeWidth(focused ? ring : rest);
-            // R5's contour is colorOnSurface. An outlined button rests on colorOutline, which is the
-            // border that makes it outlined; left alone on focus it gave a grey mark where the rule
-            // asks for a white one - measured (145,144,150) against text at (226,227,229).
-            button.setStrokeColor(focused ? ColorStateList.valueOf(MaterialColors.getColor(
-                    button.getContext(), R.attr.colorOnSurface, Color.WHITE)) : rested);
-            button.setTranslationZ(focused ? 1f : 0f);
-        });
+        target.setPadding(hPad, padTop + extraTopPx, hPad, padBottom + extraBottomPx);
     }
 
     public static String formatMilis(long time) {
@@ -1226,46 +688,6 @@ class Utils {
         return false;
     }
 
-    /**
-     * Whether this plays out of local storage rather than off a link, by Media3's own list of schemes
-     * (LOCAL_PLAYBACK_SCHEMES in DefaultLoadControl). Not the same question as isSupportedNetworkUri:
-     * smb, dav and dlna are neither http nor local, and Media3 already buffers them as streams, so
-     * anything that has to agree with its buffering has to ask it this way round.
-     */
-    public static boolean isLocalPlaybackUri(final Uri uri) {
-        final String scheme = uri == null ? null : uri.getScheme();
-        if (scheme == null) {
-            // A bare path, which is a file by every reading available here.
-            return true;
-        }
-        switch (scheme.toLowerCase()) {
-            case "file":
-            case "content":
-            case "data":
-            case "android.resource":
-            case "rawresource":
-            case "asset":
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * Media that arrives over a network, whichever scheme carries it.
-     *
-     * <p>Not the same question as {@link #isSupportedNetworkUri}, which asks whether the address is one
-     * the player can hand straight to an HTTP data source. A share, a WebDAV server, a media server and
-     * a torrent server reach the player as {@code smb://}, {@code dav://}, {@code dlna://} or
-     * {@code torr://} and are turned into http inside the data source, so the narrower test calls a
-     * torrent a local file - and everything that treats a stream gently (re-reading a bad block, waiting
-     * out a loader that is still connected, keeping the clip when a read fails) skipped the very sources
-     * that need it most.
-     */
-    public static boolean isNetworkMedia(final Uri uri) {
-        return isSupportedNetworkUri(uri) || NetworkFiles.isNetwork(uri);
-    }
-
     public static boolean isSupportedNetworkUri(final Uri uri) {
         if (uri == null)
             return false;
@@ -1306,13 +728,6 @@ class Utils {
             sb.append(uri.getEncodedPath());
         return sb.toString();
     }
-
-
-
-
-
-
-
 
     public static boolean isTvBox(Context context) {
         final PackageManager pm = context.getPackageManager();
@@ -1359,100 +774,14 @@ class Utils {
         return intent.resolveActivity(pm) != null;
     }
 
-    /**
-     * How long a Back press keeps counting for, so the next one leaves instead of asking again. Three
-     * seconds, which is what the reference player allows, against the two the player used to. The hint
-     * is asked to stay for the same three, so that seeing it means the next press leaves — though
-     * anything else with something to say can take the line over in the meantime.
-     */
-    static final long BACK_CONFIRM_WINDOW_MS = 3_000L;
-
-    /**
-     * "No Back has been pressed yet", far enough back that the first one is never mistaken for a second.
-     * Not zero: these stamps come from the clock since boot, and a player started on a box that has just
-     * come up would read zero as three seconds ago.
-     */
-    static final long BACK_NOT_PRESSED = -BACK_CONFIRM_WINDOW_MS - 1;
-
     public static int normRate(float rate) {
         return (int)(rate * 100f);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)
-    private static String modeText(final Display.Mode mode) {
-        return mode.getPhysicalWidth() + "x" + mode.getPhysicalHeight() + "@" + mode.getRefreshRate();
-    }
-
-    /** Whether the display offers a mode at this width that can keep up with the content. */
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    private static boolean hasRateCapableMode(final Display.Mode[] modes, final int width,
-                                              final float frameRate) {
-        for (Display.Mode mode : modes) {
-            if (mode.getPhysicalWidth() == width
-                    && normRate(mode.getRefreshRate()) >= normRate(frameRate)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * The display width the picture would rather be shown at, or -1 to leave the frame as it is. Taken
-     * from the reference player (DisplaySyncHelper.java:116-124) rule for rule, including the part that
-     * looks wrong at first: a 1920- or 1280-wide video asks for exactly that width even on a wider
-     * screen, so the television scales it rather than the player. Only those two exact widths do that;
-     * anything between them raises the frame and never lowers it.
-     */
-    static int targetDisplayWidth(final int displayWidth, final int videoWidth) {
-        if (videoWidth <= 0) {
-            return -1;
-        }
-        if (videoWidth > 1920 && displayWidth < 3840) {
-            return 3840;
-        }
-        if (videoWidth == 1920 || (videoWidth > 1280 && displayWidth < 1920)) {
-            return 1920;
-        }
-        return videoWidth == 1280 ? 1280 : -1;
-    }
-
-    /**
-     * Asks the display for the mode this video wants, without anything waiting on the answer. For the
-     * moment the container says what it is carrying, which is before the decoder has published a format
-     * and well before the first frame: the reference player switches at that point too, between opening
-     * the file and building its player, and on the boxes this matters for it is the decoder meeting an
-     * already-settled display that they care about. Nothing is armed and nothing is held back — if
-     * the mode never changes, the settled path at the end of loading still runs and still starts
-     * playback.
-     */
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    static void requestFrameRateEarly(final PlayerActivity activity, float frameRate, int videoWidth) {
-        activity.runOnUiThread(() ->
-                activity.earlyModeSwitchRequested = chooseDisplayMode(activity, frameRate, videoWidth));
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    static void handleFrameRate(final PlayerActivity activity, float frameRate, int videoWidth) {
+    static void handleFrameRate(final PlayerActivity activity, float frameRate) {
         activity.runOnUiThread(() -> {
-            // Nothing to switch — unless the early request already asked for the very mode this
-            // search now finds in place. The display reports a mode as soon as the system accepts it,
-            // which is not the same moment the panel has finished changing to it, so a switch that was
-            // asked for a second ago is still worth waiting out: the caller's timer and the display's
-            // own callback are what that wait is made of.
-            if (!chooseDisplayMode(activity, frameRate, videoWidth)
-                    && !activity.earlyModeSwitchRequested) {
-                activity.frameRateSettled();
-            }
-        });
-    }
-
-    /** @return whether a mode change was actually requested, so the caller knows to wait for it. */
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    private static boolean chooseDisplayMode(final PlayerActivity activity, float frameRate,
-                                             int videoWidth) {
-        {
             boolean switchingModes = false;
-            activity.resolutionSwitchRequested = false;
 
             // A detached decor view answers null. Falling through to the settled path rather than returning:
             // the caller has already told the player a switch is pending, so bailing out here left the
@@ -1465,52 +794,27 @@ class Utils {
                 Display.Mode activeMode = display.getMode();
 
                 if (supportedModes.length > 1) {
-                    // The resolution the video asks for, when the viewer has asked for that at all and
-                    // the video says what it is. Without it the search stays inside the current frame
-                    // and only the refresh rate moves, which is what this did before the setting existed.
-                    final int targetWidth = activity.mPrefs.displayResolutionMatching
-                            ? targetDisplayWidth(activeMode.getPhysicalWidth(), videoWidth) : -1;
-                    // Three different things print as -1 otherwise, and the first question asked of this
-                    // line is always which of them happened.
-                    final String targetText = !activity.mPrefs.displayResolutionMatching ? "off"
-                            : targetWidth > 0 ? String.valueOf(targetWidth) : "none for this video";
-                    // Not when the frame the video asks for cannot carry its rate: the point of the
-                    // whole search is the rate, and 4K at 30 Hz for 60 fps content is a worse picture
-                    // than 1080p at 60. Without this the fallback below — top rate at the target
-                    // width — would take that trade every time.
-                    final boolean switchingResolution = targetWidth > 0
-                            && targetWidth != activeMode.getPhysicalWidth()
-                            && hasRateCapableMode(supportedModes, targetWidth, frameRate);
                     // Refresh rate >= video FPS
                     List<Display.Mode> modesHigh = new ArrayList<>();
-                    // Max refresh rate. No starting point of its own when the frame is changing: the
-                    // current mode is not a candidate then, since it is the resolution being left.
-                    Display.Mode modeTop = switchingResolution ? null : activeMode;
+                    // Max refresh rate
+                    Display.Mode modeTop = activeMode;
                     int modesResolutionCount = 0;
 
-                    // Modes at the resolution being aimed at — the current one unless the frame is
-                    // changing. Width alone when it is changing, height as well when it is not: that is
-                    // the reference's own split between its two mode filters, m1987c and m1988d.
+                    // Filter only resolutions same as current
                     for (Display.Mode mode : supportedModes) {
-                        final boolean candidate = switchingResolution
-                                ? mode.getPhysicalWidth() == targetWidth
-                                : mode.getPhysicalWidth() == activeMode.getPhysicalWidth()
-                                        && mode.getPhysicalHeight() == activeMode.getPhysicalHeight();
-                        if (candidate) {
+                        if (mode.getPhysicalWidth() == activeMode.getPhysicalWidth() &&
+                                mode.getPhysicalHeight() == activeMode.getPhysicalHeight()) {
                             modesResolutionCount++;
 
                             if (normRate(mode.getRefreshRate()) >= normRate(frameRate))
                                 modesHigh.add(mode);
 
-                            if (modeTop == null
-                                    || normRate(mode.getRefreshRate()) > normRate(modeTop.getRefreshRate()))
+                            if (normRate(mode.getRefreshRate()) > normRate(modeTop.getRefreshRate()))
                                 modeTop = mode;
                         }
                     }
 
-                    // One mode is enough to be worth taking when it is at another resolution; at the
-                    // current one it can only be the mode already running.
-                    if (switchingResolution ? modesResolutionCount > 0 : modesResolutionCount > 1) {
+                    if (modesResolutionCount > 1) {
                         Display.Mode modeBest = null;
 
                         for (Display.Mode mode : modesHigh) {
@@ -1538,35 +842,72 @@ class Utils {
                             modeBest = modeTop;
 
                         switchingModes = !(modeBest.getModeId() == activeMode.getModeId());
-                        log("display mode: video " + videoWidth + "w @" + frameRate
-                                + ", active " + modeText(activeMode) + ", target width " + targetText
-                                + ", " + modesResolutionCount + " candidates"
-                                + (switchingModes ? ", switching to " + modeText(modeBest)
-                                        : ", staying put"));
                         if (switchingModes) {
-                            // A different frame is a longer wait than a different rate — the sink
-                            // renegotiates — so the caller gives it more time before giving up.
-                            activity.resolutionSwitchRequested =
-                                    modeBest.getPhysicalWidth() != activeMode.getPhysicalWidth();
                             layoutParams.preferredDisplayModeId = modeBest.getModeId();
                             window.setAttributes(layoutParams);
                         }
-                    } else {
-                        log("display mode: video " + videoWidth + "w @" + frameRate
-                                + ", active " + modeText(activeMode) + ", target width " + targetText
-                                + ", " + modesResolutionCount + " candidates, nothing to switch to");
                     }
-                } else {
-                    log("display mode: video " + videoWidth + "w @" + frameRate + ", active "
-                            + modeText(activeMode) + ", the display offers no other mode");
                 }
             }
 
-            return switchingModes;
-        }
+            if (!switchingModes) {
+                activity.frameRateSettled();
+            }
+        });
     }
 
 
+    public static boolean alternativeChooser(PlayerActivity activity, Uri initialUri, boolean video) {
+        String startPath;
+        if (initialUri != null && (new File(initialUri.getSchemeSpecificPart())).exists()) {
+            startPath = initialUri.getSchemeSpecificPart();
+        } else {
+            startPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath();
+        }
+
+        final String[] suffixes = (video ? supportedExtensionsVideo : supportedExtensionsSubtitle);
+
+        ChooserDialog chooserDialog = new ChooserDialog(activity, R.style.FileChooserStyle_Dark)
+                .withStartFile(startPath)
+                .withFilter(false, false, suffixes)
+                .withChosenListener(new ChooserDialog.Result() {
+                    @Override
+                    public void onChoosePath(String path, File pathFile) {
+                        activity.releasePlayer();
+                        Uri uri = DocumentFile.fromFile(pathFile).getUri();
+                        if (video) {
+                            // Picking a file ends whatever session was running — the same thing the SAF
+                            // chooser does in onActivityResult. This one is a dialog, so that callback
+                            // never runs, and without this the launcher's return_result stayed armed
+                            // while persistent mode came back on: finish() then reported this file
+                            // against the launcher's episode, with a position of -1.
+                            activity.resetApiAccess();
+                            activity.mPrefs.updateMedia(activity, uri, null);
+                            activity.searchSubtitles();
+                        } else {
+                            // Convert subtitles to UTF-8 if necessary
+                            SubtitleUtils.clearCache(activity);
+                            uri = Utils.convertToUTF(activity, uri);
+
+                            activity.mPrefs.updateSubtitle(uri);
+                        }
+                        PlayerActivity.focusPlay = true;
+                        activity.initializePlayer();
+                    }
+                })
+                // to handle the back key pressed or clicked outside the dialog:
+                .withOnCancelListener(new DialogInterface.OnCancelListener() {
+                    public void onCancel(DialogInterface dialog) {
+                        dialog.cancel(); // MUST have
+                    }
+                });
+        chooserDialog
+                .withOnBackPressedListener(dialog -> chooserDialog.goBack())
+                .withOnLastBackPressedListener(dialog -> dialog.cancel());
+        chooserDialog.build().show();
+
+        return true;
+    }
 
     public static Uri convertToUTF(PlayerActivity activity, Uri subtitleUri) {
         try {
@@ -1757,26 +1098,6 @@ class Utils {
         return uri;
     }
 
-    /**
-     * Whether a file name ends in a container this app plays. The companion to
-     * {@link #supportedMimeTypesVideo}, for the places where a name is all there is to go on: a
-     * content provider's mime column is its own opinion, and a fair number of them answer
-     * {@code application/octet-stream} for a Matroska file.
-     *
-     * <p>Deliberately not folded into {@link #isProgressiveContainerUri} below, which asks a different
-     * question of a different subject — the suffix of a whole uri path, streaming included — and would
-     * change behaviour there by requiring the dot.
-     */
-    public static boolean hasVideoExtension(final String name) {
-        final String lower = name.toLowerCase();
-        for (final String extension : supportedExtensionsVideo) {
-            if (lower.endsWith('.' + extension)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public static boolean isProgressiveContainerUri(final Uri uri) {
         String path = uri.getPath();
         if (path == null) {
@@ -1870,53 +1191,6 @@ class Utils {
         collator.setStrength(Collator.PRIMARY);
         orderByValue(languages, collator::compare);
         return languages;
-    }
-
-    /**
-     * Compares file names the way a viewer reads them: a run of digits counts as one number, so
-     * "Episode 2" comes before "Episode 10" instead of after it. Plain {@code compareToIgnoreCase}
-     * puts a series in the wrong order from the tenth episode on, which is invisible while only the
-     * next file is looked up and plainly wrong once the whole folder is a playlist.
-     *
-     * <p>Leading zeros do not make a number bigger ("07" and "7" compare equal by value), and case is
-     * ignored, as it was before.
-     */
-    public static int compareNatural(final String a, final String b) {
-        int i = 0;
-        int j = 0;
-        while (i < a.length() && j < b.length()) {
-            final char ca = a.charAt(i);
-            final char cb = b.charAt(j);
-            if (Character.isDigit(ca) && Character.isDigit(cb)) {
-                // Skip the zeros first: what is left is the number's real length, which orders two
-                // runs of digits without parsing them (and so without overflowing on a long one).
-                while (i < a.length() - 1 && a.charAt(i) == '0' && Character.isDigit(a.charAt(i + 1))) i++;
-                while (j < b.length() - 1 && b.charAt(j) == '0' && Character.isDigit(b.charAt(j + 1))) j++;
-                int endA = i;
-                int endB = j;
-                while (endA < a.length() && Character.isDigit(a.charAt(endA))) endA++;
-                while (endB < b.length() && Character.isDigit(b.charAt(endB))) endB++;
-                if (endA - i != endB - j) {
-                    return (endA - i) - (endB - j);
-                }
-                while (i < endA) {
-                    if (a.charAt(i) != b.charAt(j)) {
-                        return a.charAt(i) - b.charAt(j);
-                    }
-                    i++;
-                    j++;
-                }
-            } else {
-                final char la = Character.toLowerCase(ca);
-                final char lb = Character.toLowerCase(cb);
-                if (la != lb) {
-                    return la - lb;
-                }
-                i++;
-                j++;
-            }
-        }
-        return (a.length() - i) - (b.length() - j);
     }
 
     /** The stored audio priority list ("ukr,eng") as a mutable list, blanks dropped. */
@@ -2100,8 +1374,7 @@ class Utils {
         }
     }
 
-    public static boolean switchFrameRate(final PlayerActivity activity, final Uri uri,
-                                          final int videoWidth) {
+    public static boolean switchFrameRate(final PlayerActivity activity, final Uri uri) {
         // preferredDisplayModeId only available on SDK 23+
         // ExoPlayer already uses Surface.setFrameRate() on Android 11+
         if (Build.VERSION.SDK_INT >= 23) {
@@ -2110,76 +1383,12 @@ class Utils {
             }
             activity.frameRateSwitchThread = new Thread(() -> {
                 float frameRate = getFrameRate(activity, uri);
-                // The rate is the only thing missing here — it is measured off a second
-                // extractor because no track published one — so the width still comes from the
-                // format, which a Matroska or an MPEG-TS does publish.
-                Utils.handleFrameRate(activity, frameRate, videoWidth);
+                Utils.handleFrameRate(activity, frameRate);
             });
             activity.frameRateSwitchThread.start();
             return true;
         } else {
             return false;
         }
-    }
-
-    /**
-     * Which of the two doors opens storage on this build. Up to API 29 it is the runtime permission —
-     * on 29 by way of the legacy view the manifest asks for, which the legacy flavour keeps wherever
-     * it runs because it targets 29. Above that the runtime permission buys nothing and the all-files
-     * switch is the only door there is.
-     */
-    public static boolean permissionOpensStorage(final Context context) {
-        return Build.VERSION.SDK_INT < 30 || context.getApplicationInfo().targetSdkVersion <= 29;
-    }
-
-    /**
-     * Whether storage can actually be read. Asked of the thing that governs it rather than by trying
-     * a listing, because a listing is not the test it looks like: measured on a television running
-     * API 36 with all-files access refused, {@code /sdcard} listed its top-level folders quite
-     * happily and every folder below came back with the directories visible and the files gone — the
-     * filtered view scoped storage gives an app for its own files. A browser in that state is worse
-     * than one that says it cannot read anything, because it looks like the folders are empty.
-     */
-    public static boolean canListStorage(final Context context) {
-        if (permissionOpensStorage(context)) {
-            return context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    == PackageManager.PERMISSION_GRANTED;
-        }
-        return Environment.isExternalStorageManager();
-    }
-
-    /**
-     * Opens the all-files switch, the app's own page for it first and the list of every app that can
-     * hold it as the fallback. It hands back no result, so whoever asked has to re-read the state when
-     * the viewer comes home rather than wait to be told.
-     *
-     * @return false when neither screen exists, which is the caller's cue to say so
-     */
-    public static boolean askForAllFiles(final Context context) {
-        // The screen exists on a television too, served by com.android.tv.settings — checked with
-        // `cmd package query-activities` on tv_720p.
-        try {
-            context.startActivity(withTask(context, new Intent(
-                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:" + context.getPackageName()))));
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            try {
-                // The same screen one level out: the list of every app that can hold it.
-                context.startActivity(withTask(context,
-                        new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)));
-                return true;
-            } catch (Exception second) {
-                second.printStackTrace();
-                return false;
-            }
-        }
-    }
-
-    /** A screen started from anything but an activity needs a task of its own to stand in. */
-    private static Intent withTask(final Context context, final Intent intent) {
-        return context instanceof Activity
-                ? intent : intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
     }
 }

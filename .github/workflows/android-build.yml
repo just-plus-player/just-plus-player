@@ -42,14 +42,8 @@ jobs:
       # build as the versioned asset beside it, so whichever one anything picks is the same file.
       - run: cp app/build/outputs/apk/latestUniversal/release/*.apk JustPlus.Player.apk
 
-      # The release notes travel in the tag's annotation. This repository's history is one commit per
-      # release, so there is nothing here to generate them from, and the app itself shows them —
-      # Updater.java reads the release body and renders it as Markdown.
-      - run: git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
-
       - uses: softprops/action-gh-release@v2
         with:
-          body_path: RELEASE_NOTES.md
           files: |
             app/build/outputs/apk/latestUniversal/release/*.apk
             JustPlus.Player.apk

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared player-style icon action row (Copy / Share / Upload log / Close). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="20dp"
+    android:gravity="center"
+    android:orientation="horizontal">
+
+    <ImageButton
+        android:id="@+id/btnCopy"
+        style="@style/ErrorActionButton"
+        android:layout_marginEnd="6dp"
+        android:contentDescription="@string/error_copy"
+        android:nextFocusRight="@+id/btnShare"
+        android:src="@drawable/ic_content_copy_24dp" />
+
+    <ImageButton
+        android:id="@+id/btnShare"
+        style="@style/ErrorActionButton"
+        android:layout_marginEnd="6dp"
+        android:contentDescription="@string/error_share"
+        android:nextFocusLeft="@id/btnCopy"
+        android:nextFocusRight="@+id/btnUpload"
+        android:src="@drawable/ic_share_24dp" />
+
+    <ImageButton
+        android:id="@+id/btnUpload"
+        style="@style/ErrorActionButton"
+        android:layout_marginEnd="6dp"
+        android:contentDescription="@string/error_upload"
+        android:nextFocusLeft="@id/btnShare"
+        android:nextFocusRight="@+id/btnClose"
+        android:src="@drawable/ic_cloud_upload_24dp" />
+
+    <ImageButton
+        android:id="@+id/btnClose"
+        style="@style/ErrorActionButton"
+        android:contentDescription="@string/error_close"
+        android:nextFocusLeft="@id/btnUpload"
+        android:src="@drawable/ic_close_24dp"
+        android:tint="@color/brand" />
+
+</LinearLayout>

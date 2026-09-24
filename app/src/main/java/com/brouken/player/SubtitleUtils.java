@@ -2,8 +2,6 @@ package com.brouken.player;
 
 import android.content.ContentResolver;
 import android.content.Context;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -20,14 +18,12 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
-import androidx.media3.ui.CaptionStyleCompat;
 
 import com.google.common.collect.ImmutableList;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 class SubtitleUtils {
@@ -296,85 +292,35 @@ class SubtitleUtils {
     }
 
     public static DocumentFile findNext(DocumentFile video, DocumentFile dir) {
-        return findNext(video, listSorted(dir));
-    }
-
-    /**
-     * Everything in the folder, in the order a viewer reads the names — one listing and one sort,
-     * shared by the next-file lookup and the folder playlist so the two can never disagree about the
-     * order. Over SAF a listing is slow and is always done off the main thread; the caller that needs
-     * both asks once and passes the result on.
-     */
-    public static List<DocumentFile> listSorted(DocumentFile dir) {
-        final List<DocumentFile> list = new ArrayList<>();
         if (dir == null) {
-            return list;
-        }
-        try {
-            for (DocumentFile file : dir.listFiles()) {
-                // The order is read off the name, so an entry without one cannot take part. It also
-                // spares every comparison a null check.
-                if (file.getName() != null) {
-                    list.add(file);
-                }
-            }
-        } catch (Exception e) {
-            // A provider that has gone away throws from listFiles() rather than returning empty.
-            e.printStackTrace();
-            return list;
-        }
-        Collections.sort(list, (a, b) -> Utils.compareNatural(a.getName(), b.getName()));
-        return list;
-    }
-
-    /**
-     * The next video after {@code video} in an already-listed folder. Non-video entries are stepped
-     * over rather than filtered out beforehand: a provider can report a playable file as
-     * {@code application/octet-stream}, and the file being played has to be found by name whatever
-     * its reported type — which is also why the search is not simply {@code indexOf}.
-     */
-    public static DocumentFile findNext(DocumentFile video, List<DocumentFile> sorted) {
-        final String videoName = video == null ? null : video.getName();
-        if (videoName == null) {
             return null;
         }
-        boolean matchFound = false;
-        for (DocumentFile file : sorted) {
-            if (file.getName().equals(videoName)) {
-                matchFound = true;
-            } else if (matchFound && isPlayableVideo(file)) {
-                // The wider test, the one the browser lists a folder with: stepping to the next file
-                // has to reach whatever that folder showed, and a mime lookup does not know every
-                // container the app plays - nor anything at all about a file on a share.
-                return file;
+
+        try {
+            DocumentFile[] list = dir.listFiles();
+            Arrays.sort(list, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+
+            final String videoName = video.getName();
+            boolean matchFound = false;
+
+            for (DocumentFile file : list) {
+                if (file.getName().equals(videoName)) {
+                    matchFound = true;
+                } else if (matchFound) {
+                    if (isVideoFile(file)) {
+                        return file;
+                    }
+                }
             }
+        } catch (NullPointerException e) {
+            e.printStackTrace();
         }
+
         return null;
     }
 
     public static boolean isVideoFile(DocumentFile file) {
-        // getType() is the provider's opinion and it is allowed to have none: a null there used to
-        // come back as an NPE that the one caller swallowed, and every caller since would have had to
-        // swallow its own. Not a video is the honest answer to "no type".
-        final String type = file.isFile() ? file.getType() : null;
-        return type != null && type.startsWith("video/");
-    }
-
-    /**
-     * Whether a list a viewer is reading should offer this file as a video. Wider than
-     * {@link #isVideoFile}: a provider that reports a playable file as {@code application/octet-stream}
-     * would otherwise hide it, and a file missing from a browser looks like a file that is not there.
-     *
-     * <p>{@link #isVideoFile} stays the narrow test, and stays the one the folder playlist uses: adding
-     * a file to a playlist behind the viewer's back is worth being sure about, hiding one from them is
-     * not.
-     */
-    public static boolean isPlayableVideo(DocumentFile file) {
-        if (isVideoFile(file)) {
-            return true;
-        }
-        final String name = file.isFile() ? file.getName() : null;
-        return name != null && Utils.hasVideoExtension(name);
+        return file.isFile() && file.getType().startsWith("video/");
     }
 
     public static boolean isSubtitleFile(DocumentFile file) {
@@ -471,22 +417,6 @@ class SubtitleUtils {
             subtitleConfigurationBuilder.setSelectionFlags(C.SELECTION_FLAG_DEFAULT);
         }
         return subtitleConfigurationBuilder.build();
-    }
-
-    /**
-     * The look of the first subtitle line, from the four settings that decide it. Here rather than in
-     * the player because the settings screen draws the same line as a preview, and a preview that is
-     * built from its own copy of these rules is a preview of something else.
-     *
-     * <p>A window behind the text is a captioning concept nobody asks for, so it stays off. The outline
-     * needs no knob either, it just has to contrast: black around every colour except black text, which
-     * only reads against a light outline.
-     */
-    static CaptionStyleCompat captionStyle(final int textColor, final int backgroundColor,
-                                           final int edgeType, final boolean bold) {
-        return new CaptionStyleCompat(textColor, backgroundColor, Color.TRANSPARENT, edgeType,
-                textColor == Color.BLACK ? Color.WHITE : Color.BLACK,
-                Typeface.create(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL));
     }
 
     public static float normalizeFontScale(float fontScale, boolean small) {

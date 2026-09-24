@@ -55,9 +55,6 @@ public final class Updater {
 
     private static final String RELEASES_URL =
             "https://api.github.com/repos/just-plus-player/just-plus-player/releases";
-    /** How often a launch may ask; shared by the player and the browser so one launch never asks twice. */
-    public static final long CHECK_INTERVAL_MS = 60 * 60 * 1000L;
-
     private static final String APK_FILE_NAME = "update.apk";
     private static final Pattern VERSION_PATTERN = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)");
 
@@ -109,8 +106,7 @@ public final class Updater {
                         tag.startsWith("v") ? tag.substring(1) : tag,
                         release.optString("body", ""),
                         apk.optString("browser_download_url", ""),
-                        apk.optLong("size", 0),
-                        release.optString("published_at", ""));
+                        apk.optLong("size", 0));
             }
         } catch (Exception e) {
             return null;

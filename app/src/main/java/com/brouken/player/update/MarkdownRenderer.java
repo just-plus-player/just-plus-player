@@ -36,26 +36,20 @@ public final class MarkdownRenderer {
             return out;
         }
         final String[] lines = markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
-        boolean gap = false;
+        boolean lastBlank = true; // suppress leading blank lines
         for (final String rawLine : lines) {
             final String line = rawLine;
             if (line.trim().isEmpty()) {
-                // Leading blank lines say nothing; any run of them after text is one paragraph break.
-                gap = out.length() > 0;
+                if (!lastBlank) {
+                    out.append("\n");
+                    lastBlank = true;
+                }
                 continue;
             }
-            if (out.length() > 0) {
+            if (out.length() > 0 && !endsWithNewline(out)) {
                 out.append("\n");
-                if (gap) {
-                    // A blank line is a paragraph break, not a line break: without the empty line a
-                    // heading sat flush on the paragraph above it. Half a line, so it separates
-                    // without opening a hole.
-                    final int start = out.length();
-                    out.append("\n");
-                    out.setSpan(new RelativeSizeSpan(0.5f), start, start + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
             }
-            gap = false;
+            lastBlank = false;
 
             final Matcher heading = HEADING.matcher(line);
             final Matcher bullet = BULLET.matcher(line);
@@ -70,6 +64,11 @@ public final class MarkdownRenderer {
             } else {
                 appendInline(out, line);
             }
+        }
+
+        // Trim a trailing newline left by a final blank line.
+        while (out.length() > 0 && out.charAt(out.length() - 1) == '\n') {
+            out.delete(out.length() - 1, out.length());
         }
 
         // Bare URLs (Markdown links already stripped their raw URL, so no overlap).
@@ -123,6 +122,10 @@ public final class MarkdownRenderer {
             out.setSpan(factory.create(), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             m = pattern.matcher(out.subSequence(base, out.length()));
         }
+    }
+
+    private static boolean endsWithNewline(final SpannableStringBuilder out) {
+        return out.length() > 0 && out.charAt(out.length() - 1) == '\n';
     }
 
     private interface SpanFactory {

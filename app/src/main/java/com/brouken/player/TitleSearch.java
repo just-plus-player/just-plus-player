@@ -87,8 +87,8 @@ final class TitleSearch {
     }
 
     /**
-     * Blocking; call from a worker. An empty list covers both "no such title" and "that did not
-     * work" — neither is worth telling apart to somebody who is about to retype the name anyway.
+     * Blocking; call from a worker. An empty list is "no such title"; {@code null} is "could not
+     * ask" — a dead network, which retyping the name will not cure and the caller says so.
      *
      * <p>An id in the text is resolved as well as searched for, so pasting one is a way in of its
      * own: what {@code tt3659388} or {@code 286217} names comes first, the name matches after it.
@@ -111,6 +111,10 @@ final class TitleSearch {
                 .addQueryParameter("query", query.trim())
                 .addQueryParameter("include_adult", "false")
                 .build());
+        if (root == null && out.isEmpty()) {
+            // Could not ask, as distinct from asked and told nothing.
+            return null;
+        }
         final JSONArray results = root == null ? null : root.optJSONArray("results");
         if (results == null) {
             return out;

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The plate a meta chip sits on: what a folder holds, how big a file is. A step off the row it is
+     on, in the surface family rather than in the accent - it is a fact, not a choice. 8dp under R2,
+     which is a step below the 12dp frame beside it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="8dp" />
+    <solid android:color="?attr/colorSurfaceContainerHighest" />
+</shape>

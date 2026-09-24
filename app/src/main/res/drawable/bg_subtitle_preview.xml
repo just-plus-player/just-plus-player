@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ground of the subtitle preview in settings. A ramp of grey was here first and answered the only
+     question a subtitle preview has - whether the colour, the plate and the outline hold on a dark scene
+     and on a bright one - but it read as a test card. This is the same answer as a picture: the caption
+     lands half on the dark water and half on the pale shore, so both grounds are under it at once.
+
+     Built to cost as little as a picture can. The sky and the sun are shapes, which are a shader and an
+     oval - no bitmap, no decode, nothing to hold. Only the land is a vector, only in the bottom 120dp,
+     and it is four straight-edged paths. The sun carries its own size and gravity so that it stays a
+     circle on a 360dp phone and on a 640dp card alike; nothing else in here minds being stretched.
+
+     Left out on purpose: clouds and the reflection in the water. Each cloud is a handful of curves in
+     the one layer that would then have to cover the whole row, which is the one expensive thing this
+     avoids. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="#F8DFC7"
+                android:startColor="#F6C79E"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <item
+        android:width="44dp"
+        android:height="44dp"
+        android:gravity="top|center_horizontal"
+        android:top="26dp">
+        <shape android:shape="oval">
+            <solid android:color="#E0685A" />
+        </shape>
+    </item>
+
+    <item
+        android:drawable="@drawable/bg_subtitle_preview_hills"
+        android:top="60dp" />
+
+</layer-list>

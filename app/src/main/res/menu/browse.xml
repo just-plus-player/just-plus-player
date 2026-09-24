@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Search stays in the bar; everything that is not a destination and not a search sits behind the
+     three dots, which is where Android has kept an app's own items all along. A toolbar item rather
+     than a control of our own: the bar is the frame R4 asks for, and Material tints the glyph out of
+     the theme, so the accent follows. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/browse_search"
+        android:icon="@drawable/ic_search_24dp"
+        android:title="@string/browse_search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always|collapseActionView" />
+
+    <!-- The folder being stood in, put aside or taken back out. In the bar because it is one press
+         and because a remote can reach a bar item and cannot reach a long press it does not know
+         about; the glyph is set in code, since it says which of the two states the folder is in.
+
+         always, not ifRoom: measured on a 411dp phone, ifRoom put it behind the three dots, where a
+         control whose whole job is to be found is not found. Three glyphs and the dots is what the
+         bar already carries on a television. -->
+    <item
+        android:id="@+id/browse_favorite"
+        android:icon="@drawable/ic_star_outline_24dp"
+        android:title="@string/browse_favorite_add"
+        app:showAsAction="always" />
+
+    <!-- Its own button, and only where it belongs: adding a folder is what the Network destination is
+         for before there is one in it, and a line in a menu is not where a viewer looks for it. -->
+    <item
+        android:id="@+id/browse_add_network"
+        android:icon="@drawable/ic_add_24dp"
+        android:title="@string/browse_add_network"
+        app:showAsAction="ifRoom" />
+
+    <!-- How the folder is drawn. In the bar and not behind the dots: it is looked at often, it is
+         one press, and the glyph is the answer to "which view am I in" as well as the way out of it.
+         The icon is set in code, because it says which view is on. -->
+    <item
+        android:id="@+id/browse_view"
+        android:icon="@drawable/ic_view_list_24dp"
+        android:title="@string/browse_view"
+        app:showAsAction="always" />
+
+    <!-- Behind the dots, and every one of them with a glyph: a row of words among rows that each
+         carry a picture reads as a row that is missing something. The popup hides icons unless it is
+         told not to - see onPrepareOptionsMenu. -->
+    <group android:id="@+id/browse_group_open">
+        <item
+            android:id="@+id/browse_open_link"
+            android:icon="@drawable/ic_link_24dp"
+            android:title="@string/empty_state_link"
+            app:showAsAction="never" />
+
+        <item
+            android:id="@+id/browse_join_room"
+            android:icon="@drawable/ic_together_24dp"
+            android:title="@string/together_join"
+            app:showAsAction="never" />
+    </group>
+
+    <!-- The gear, in the one place it is looked for and on every window: behind the dots. It rode the
+         bottom bar for a while, which cost the bar an item that was not a destination and left the
+         rail and the television with a different answer; a television also keeps one on its start
+         page, which is the screen it lands on. -->
+    <group android:id="@+id/browse_group_app">
+        <item
+            android:id="@+id/browse_settings"
+            android:icon="@drawable/ic_settings_24dp"
+            android:title="@string/pref_title"
+            app:showAsAction="never" />
+    </group>
+
+    <!-- The way out, in a group of its own so a rule stands between it and everything that only opens
+         something. It closes the task rather than this screen: leaving the browser to find the player
+         still sitting in the recents list is not what somebody who asked to quit meant. -->
+    <group android:id="@+id/browse_group_exit">
+        <item
+            android:id="@+id/browse_exit"
+            android:icon="@drawable/ic_close_24dp"
+            android:title="@string/browse_exit"
+            app:showAsAction="never" />
+    </group>
+
+</menu>

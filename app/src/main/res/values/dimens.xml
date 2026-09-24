@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <dimen name="exo_error_message_margin_bottom" tools:keep="@dimen/exo_error_message_margin_bottom">84dp</dimen>
-    <dimen name="exo_error_message_text_size" tools:keep="@dimen/exo_error_message_text_size">20sp</dimen>
-    <dimen name="exo_error_message_text_padding_vertical" tools:keep="@dimen/exo_error_message_text_padding_vertical">6sp</dimen>
+    <!-- Body Large: one size for the plate, readout and message alike. See Notice.TEXT_SP. -->
+    <dimen name="exo_error_message_text_size" tools:keep="@dimen/exo_error_message_text_size">16sp</dimen>
+    <dimen name="exo_error_message_text_padding_vertical" tools:keep="@dimen/exo_error_message_text_padding_vertical">14dp</dimen>
     <dimen name="exo_icon_size" tools:keep="@dimen/exo_icon_size">90dp</dimen>
     <dimen name="controls_padding">170sp</dimen>
 
@@ -12,7 +13,32 @@
 
     <dimen name="marker_width">3dp</dimen>
 
+    <!-- The D-pad focus contour, everywhere one is drawn: the three button styles in themes.xml, the
+         picker row, the slider thumb, the skip pill and the chrome over video. One number, because it used
+         to be five literal 2dp's reached by three different paths, and they did not agree — Utils.dpToPx
+         truncates, so the row's "2dp" arrived 50% thinner than the buttons' identical 2dp.
+
+         The same 2dp on a television, where it used to be 4dp. A focus mark is read, not measured: 2dp is
+         4px on a 1080p set, which subtends about 3 arcmin at three metres — three times the eye's limit —
+         while 4dp around a 44dp tile is a ninth of the tile and reads as a slab, not a line. Contrast does
+         the carrying instead: the contour is always drawn on a plate, never on the picture. -->
+    <dimen name="focus_ring_width">2dp</dimen>
+    <!-- The same mark on a card big enough that 2dp is a hairline on it: 2dp is 0.67% of a 300dp card,
+         and TV Material draws a focused card's border at 3dp. Width only - the scale and the shadow
+         that go with it in the canon are not taken, so focus stays one mark that does not animate. -->
+    <dimen name="focus_ring_width_card">3dp</dimen>
+
     <dimen name="level_bar_width">6dp</dimen>
     <dimen name="level_bar_height">160dp</dimen>
     <dimen name="level_bar_margin">28dp</dimen>
+
+    <!-- The subtitle preview in settings: a screen in miniature, so a fraction of it reads as the same
+         fraction of a real one. A band rather than 16:9 - it is the bottom of a picture that matters,
+         and a card is at most 640dp wide while this has to stay a sensible height on a phone. -->
+    <dimen name="subtitle_preview_height">180dp</dimen>
+    <!-- The report card (report_card.xml): the QR drawn once the report is up, and how many lines of the
+         summary show before an ellipsis. Both smaller sideways, where the card shares the width with
+         what happened - see values-land. -->
+    <dimen name="report_qr_size">160dp</dimen>
+    <integer name="report_summary_lines">6</integer>
 </resources>

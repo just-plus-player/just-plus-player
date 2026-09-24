@@ -45,7 +45,9 @@ final class MediaCache {
     /** How much of each opened range may be written. See the class comment. */
     private static final long PER_OPEN_BYTES = 1024 * 1024;
     /** The build whose bytes are on disk; a different one starts empty (see clearOnNewBuild). */
-    private static final String PREF_KEY_CACHE_BUILD = "mediaCacheBuild";
+    // Package-private: Prefs.snapshot has to know this key to leave it out, and a second copy of the
+    // string there would go stale silently.
+    static final String PREF_KEY_CACHE_BUILD = "mediaCacheBuild";
 
     private static SimpleCache cache;
     private static boolean unavailable;
@@ -86,6 +88,31 @@ final class MediaCache {
             }
         }
         return cache;
+    }
+
+    /**
+     * Drops what is cached for this media, so the next read goes back to the server.
+     *
+     * <p>For one case only: a read that came back as bytes which are not the media. A torrent backend
+     * that answers for a piece it has not fetched, a proxy that pads a hole with zeros - the extractor
+     * dies on the first malformed element, and what makes that permanent is this cache. The bad bytes
+     * are written into it like any others, so every re-read of the recovery ladder is served from disk
+     * in twenty-five milliseconds and fails on the same byte, without the server ever being asked
+     * again. Measured with a range server that corrupts the tail exactly once: three retries, three
+     * identical failures, two requests on the wire.
+     *
+     * <p>Only on that failure. A read that timed out or a connection that dropped says nothing about
+     * the bytes already held, and throwing them away would make the ladder re-fetch a good head.
+     */
+    static synchronized void forget(final Context context, final String key) {
+        if (cache == null && !new File(context.getCacheDir(), DIRECTORY).exists()) {
+            return;
+        }
+        final SimpleCache simpleCache = get(context);
+        if (simpleCache == null) {
+            return;
+        }
+        simpleCache.removeResource(key);
     }
 
     /**

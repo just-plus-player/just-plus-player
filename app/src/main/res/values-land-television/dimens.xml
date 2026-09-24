@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Large enough to photograph from a sofa, small enough that the code, its link and the hint stack
+         inside the 390dp the card has on a 540dp canvas. Measured on tv_720p: card 354dp. -->
+    <dimen name="report_qr_size">160dp</dimen>
+    <integer name="report_summary_lines">8</integer>
+</resources>

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The same file as a tile: the still above the name rather than beside it, at whatever width a
+    column of the grid turns out to be. Same ids as the row, so one view holder binds either and the
+    two never drift apart.
+
+    The frame keeps 16:9 by measuring itself (RatioFrame): a row's still is a fixed 96 x 54 and a
+    tile's cannot be, because the number of columns changes with the window.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <com.brouken.player.RatioFrame
+        android:id="@+id/browse_row_frame"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- The two facts that fit on a picture, on the picture: how long it runs at the end, how
+             big it is at the start. Below the still there is then only the name, so a tile that takes
+             one line for it and a tile that takes two still end on the same kind of thing - which is
+             what left the row with no line to end on.
+
+             The start one is held clear of the end one by a margin rather than by a measured width: a
+             tile is as wide as a column of the grid turns out to be, and 62dp is the running time at
+             its longest plus its margin. What does not fit is cut.
+
+             Declared first so the still, added at index 0 in code, goes underneath them. -->
+        <TextView
+            android:id="@+id/browse_row_meta"
+            android:layout_width="wrap_content"
+            android:layout_height="20dp"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="6dp"
+            android:layout_marginEnd="62dp"
+            android:background="@drawable/bg_meta_chip_dark"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/browse_row_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="20dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_meta_chip_dark"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+
+        <!-- Put aside: the same 20dp badge the running time wears, at the other corner, with the
+             accent as its ink. On the still because that is where this app already writes what it
+             knows about a file, and a mark beside the name would have to push the name. -->
+        <ImageView
+            android:id="@+id/browse_row_star"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_meta_chip_dark"
+            android:padding="3dp"
+            android:src="@drawable/ic_star_24dp"
+            android:tint="?attr/accentInk"
+            android:visibility="gone" />
+
+    </com.brouken.player.RatioFrame>
+
+    <!-- Up to two lines: a tile holds about eighteen characters on a line, which is not a title.
+         A ceiling and not a floor - held at two, the line a short name does not use is a hole above
+         the size rather than a reserved slot, and the grid row is as tall as its tallest tile anyway,
+         so the space ends up under the row where it reads as spacing.
+
+         Cut at the END. A name is read from the front - the middle cut this had is for a path, where
+         both ends carry something and the middle is a chain of folders, and on a title it threw away
+         the words and kept the number in front of them. -->
+    <TextView
+        android:id="@+id/browse_row_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="16sp" />
+
+    <!-- Where a row shows the folder a search found a file in; a tile has room for one line under
+         the name and this is it when there is one. -->
+    <TextView
+        android:id="@+id/browse_row_path"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="start"
+        android:singleLine="true"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?android:attr/textColorSecondary"
+        android:visibility="gone" />
+
+</LinearLayout>

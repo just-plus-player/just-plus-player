@@ -100,16 +100,22 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
     @Nullable
     private static volatile Boolean profile8Listed;
 
+    /** Whether HDR10+ metadata is taken out along the way; see copyWithoutEnhancementLayer. */
+    private final boolean dropHdr10Plus;
+
     /**
      * @param delegate the factory whose extractors are to be wrapped.
      * @param subtitleParserFactory the very factory {@code delegate} was configured with. Replacing
      *     {@link MatroskaExtractor} means re-creating it, and its subtitle handling is a constructor
      *     argument — passing the same instance keeps embedded Matroska subtitles working by
      *     construction rather than by matching Media3's defaults from memory.
+     * @param dropHdr10Plus whether HDR10+ dynamic metadata is left out of the converted stream.
      */
-    Dv7Converter(ExtractorsFactory delegate, SubtitleParser.Factory subtitleParserFactory) {
+    Dv7Converter(ExtractorsFactory delegate, SubtitleParser.Factory subtitleParserFactory,
+                 boolean dropHdr10Plus) {
         super(delegate);
         this.subtitleParserFactory = subtitleParserFactory;
+        this.dropHdr10Plus = dropHdr10Plus;
     }
 
     /** What happened to the Dolby Vision track, for the playback dump; null until a track decides. */
@@ -344,7 +350,7 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
                 converting = isDolbyVisionProfile7(format)
                         && format.drmInitData == null
                         && deviceListsProfile8()
-                        && (transformer = newTransformer()) != null;
+                        && (transformer = newTransformer(owner.dropHdr10Plus)) != null;
                 if (isDolbyVisionProfile7(format) && !converting) {
                     owner.status = "profile 7, unchanged (no profile 8 decoder or no libdovi here)";
                     owner.shortStatus = "DV 7 → HDR10 · no P8 decoder";
@@ -637,13 +643,19 @@ final class Dv7Converter extends ForwardingExtractorsFactory {
         }
     }
 
+    /**
+     * @param dropHdr10Plus leave HDR10+ out of the rewritten frame, which is what the reference player
+     *     does while it is playing Dolby Vision: a display handed both sets of dynamic metadata has to
+     *     choose between them, and some choose badly. Off, the file's own metadata is passed through and
+     *     the display decides — see the viewer asking for exactly that choice in issue #166.
+     */
     @Nullable
-    private static HevcFrameTransformer newTransformer() {
+    private static HevcFrameTransformer newTransformer(boolean dropHdr10Plus) {
         try {
-            // FEL and MEL alike become profile 8.1. HDR10+ is left alone: nothing here needs it gone, and
-            // dropping metadata the file carries is not this feature's business.
+            // FEL and MEL alike become profile 8.1.
             return new HevcFrameTransformer(new TransformStrategy(
-                    DoviStrategy.CONVERT_TO_P8, DoviStrategy.CONVERT_TO_P8, Hdr10PlusStrategy.KEEP));
+                    DoviStrategy.CONVERT_TO_P8, DoviStrategy.CONVERT_TO_P8,
+                    dropHdr10Plus ? Hdr10PlusStrategy.DISCARD : Hdr10PlusStrategy.KEEP));
         } catch (LinkageError e) {
             // No libdovi for this ABI (it ships for arm64-v8a, armeabi-v7a and x86_64 only). Playback
             // carries on exactly as it did before this class existed.

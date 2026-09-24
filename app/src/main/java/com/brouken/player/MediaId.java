@@ -56,11 +56,21 @@ final class MediaId {
         return imdb + "|" + tmdb + "|" + season + "|" + episode;
     }
 
+    /**
+     * An absent id, whatever shape it arrived in. Blank is the obvious one; the literal word is the
+     * one that cost a search. Android's {@code JSONObject.optString} stringifies a JSON null, so a
+     * TMDB title whose {@code imdb_id} is null hands back {@code "null"} — a non-empty string that
+     * every source then keyed on. api.opensubtitles.com answered {@code imdb_id=null} with 400,
+     * rest.opensubtitles.org answered {@code imdbid-null} with 400, and the trace read as though the
+     * id had been absent all along. A launcher can send the same word, so the guard belongs here,
+     * where every id this app holds is made.
+     */
     private static String blankToNull(String value) {
         if (value == null) {
             return null;
         }
         final String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+        return trimmed.isEmpty() || "null".equalsIgnoreCase(trimmed)
+                || "undefined".equalsIgnoreCase(trimmed) ? null : trimmed;
     }
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The land of the subtitle preview: four straight-edged silhouettes, no curves, no gradients, no
+     groups. Gradients inside a vector need API 24 and this app runs from 23, and a straight-line path
+     is a fan of triangles for the rasteriser - which is what keeps this affordable on an old set.
+
+     Only the bottom 120dp of the row, because a vector renders into a cache the size of its bounds and
+     there is nothing to draw in the sky: the layer-list insets it, so the cache is two thirds of what a
+     full-height vector would hold.
+
+     The authored 320x120 is the phone's own 328x120dp to within 2%; a television stretches it sideways,
+     which flattens the peaks and does nothing worse - there is no circle in here to turn into an
+     ellipse, that is the sun's job and it lives in the layer-list at a fixed size.
+
+     The diagonal from 175,88 to 150,120 is not decoration. It is what puts dark water under the left of
+     the caption and pale shore under its right, so one glance says whether the colour and the outline
+     hold on both. It crosses the caption's own line at half the width, which is the only place that works
+     on both canvases: the caption spans about two thirds of a 360dp phone card and only a seventh of a
+     640dp one, so a boundary anywhere else misses the short line entirely. It was at 150,88 first and did
+     exactly that on a television. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="120dp"
+    android:viewportWidth="320"
+    android:viewportHeight="120">
+
+    <!-- Back to front. -->
+    <path
+        android:fillColor="#7FA6B2"
+        android:pathData="M130,88 L240,4 L320,66 L320,88 Z" />
+    <path
+        android:fillColor="#57767E"
+        android:pathData="M0,88 L100,14 L200,88 Z" />
+    <!-- The near ridge and the water are one shape because they are one colour: a path saved is a path
+         not tessellated. -->
+    <path
+        android:fillColor="#22344B"
+        android:pathData="M0,40 L48,88 L175,88 L150,120 L0,120 Z" />
+    <path
+        android:fillColor="#E9E3D6"
+        android:pathData="M175,88 L320,88 L320,120 L150,120 Z" />
+
+</vector>

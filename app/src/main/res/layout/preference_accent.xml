@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Row layout for the accent preference: the themes as tiles in a row that scrolls sideways — 31 of
+     them do not fit a card, and stretching a handful across it was the layout the owner turned down.
+     The tiles are inflated from accent_card.xml and wired in SettingsActivity.
+
+     The scroller is match_parent and the row inside it wrap_content: GroupCards takes the card's width
+     from its first row, so a row that sizes itself to its content would pull the card in with it. The
+     side padding is inside the scroller, so a focus ring at either end is not clipped, and
+     clipToPadding is off so a tile scrolls through it rather than appearing at its edge. -->
+<HorizontalScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clipToPadding="false"
+    android:focusable="false"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="12dp"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal" />
+
+</HorizontalScrollView>

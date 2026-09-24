@@ -1,5 +1,6 @@
 package com.brouken.player;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.util.TypedValue;
@@ -11,8 +12,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +46,7 @@ final class LanguagePriorityDialog {
     private static final int DOWN = 2;
     private static final int REMOVE = 3;
 
+    private final Activity activity;
     private final Context context;
     private final int emptyRes;
     private final int addRes;
@@ -52,10 +55,12 @@ final class LanguagePriorityDialog {
     private final List<String> languages;
     private final LinearLayout list;
 
-    private LanguagePriorityDialog(final Context context, final int emptyRes, final int addRes,
+    private LanguagePriorityDialog(final Activity activity, final int emptyRes, final int addRes,
                                    final List<String> initial,
                                    final LinkedHashMap<String, String> allLanguages,
                                    final List<String> pinned) {
+        this.activity = activity;
+        final Context context = Dialogs.dialogContext(activity);
         this.context = context;
         this.emptyRes = emptyRes;
         this.addRes = addRes;
@@ -75,24 +80,19 @@ final class LanguagePriorityDialog {
      *                     not only about languages any more: an ordered subset of a known set is also
      *                     exactly what "these translation services, in this order" is
      */
-    static void show(final Context context, final String title, final int emptyRes, final int addRes,
-                     final List<String> initial, final LinkedHashMap<String, String> allLanguages,
+    static void show(final Activity activity, final String title, final int emptyRes,
+                     final int addRes, final List<String> initial,
+                     final LinkedHashMap<String, String> allLanguages,
                      final List<String> pinned, final Listener listener) {
         final LanguagePriorityDialog editor =
-                new LanguagePriorityDialog(context, emptyRes, addRes, initial, allLanguages, pinned);
-
-        final ScrollView scroll = new ScrollView(context);
-        scroll.addView(editor.list);
+                new LanguagePriorityDialog(activity, emptyRes, addRes, initial, allLanguages, pinned);
 
         editor.rebuild(-1, 0);
 
-        new AlertDialog.Builder(context)
-                .setTitle(title)
-                .setView(scroll)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(android.R.string.ok,
-                        (dialog, which) -> listener.onLanguagesPicked(editor.languages))
-                .show();
+        // Through Dialogs like every other window: the editor is a form, so it is the form shape, and
+        // where that form stands is asksAtTheEdge's answer rather than this file's.
+        Dialogs.fields(activity, title, editor.list, activity.getString(android.R.string.ok),
+                () -> listener.onLanguagesPicked(editor.languages));
     }
 
     /**
@@ -212,13 +212,11 @@ final class LanguagePriorityDialog {
         for (int i = 0; i < codes.size(); i++) {
             labels[i] = label(allLanguages, codes.get(i));
         }
-        new AlertDialog.Builder(context)
-                .setTitle(addRes)
-                .setItems(labels, (dialog, which) -> {
+        Dialogs.choice(activity, context.getString(addRes), java.util.Arrays.asList(labels),
+                which -> {
                     languages.add(codes.get(which));
                     rebuild(languages.size() - 1, UP);
-                })
-                .show();
+                });
     }
 
     private static String label(final LinkedHashMap<String, String> allLanguages, final String code) {

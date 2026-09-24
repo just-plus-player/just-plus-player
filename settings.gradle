@@ -1,5 +1,5 @@
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
-include ':app', ':doubletapplayerview', 'android-file-chooser'
+include ':app', ':doubletapplayerview'
 rootProject.name = "Player"

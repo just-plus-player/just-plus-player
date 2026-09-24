@@ -1,6 +1,28 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <style name="BaseTheme.Player" parent="Theme.AppCompat.NoActionBar">
+    <style name="BaseTheme.Player" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- The accent as roles (attrs.xml). These are the coral overlay's dark values, so every
+             ?attr/accent* below resolves even where no overlay was applied; the overlay itself is put
+             on in onApplyThemeResource and in Utils.dialogContext, before anything reads the theme. -->
+        <item name="accentInk">@color/brand</item>
+        <item name="accentOnInk">@color/brand_on</item>
+        <item name="accentSkip">@color/skip_fill</item>
+        <item name="accentFill">@color/brand</item>
+        <item name="accentOnFill">@color/brand_on</item>
+        <item name="accentContainer">#6C3029</item>
+        <item name="accentOnContainer">#FFDBD6</item>
+        <item name="accentGround">#181211</item>
+        <item name="accentCard">#241E1D</item>
+        <item name="accentCardHigh">#2F2928</item>
+        <item name="accentRaised">#3A3332</item>
+        <!-- The Snackbar is the one component in this app that reads Material's inverse roles, and
+             nothing here had ever set them: it arrived in the baseline lavender with a mauve action,
+             which belongs to no other pixel on this screen. Pointed at the chrome the app already
+             draws over video — the same plate Utils.showText uses for its notices — and at the coral
+             that lives there. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <item name="colorPrimaryInverse">?attr/accentInk</item>
         <!-- Transparent so the OS-toggled status bar doesn't paint its own @color/ui_controls_background strip,
              which desyncs from the controller fade. The controller-synced exo_top scrim (given a height on all
              SDKs in PlayerActivity's insets listener) provides the darkening behind the status-bar icons. -->
@@ -9,39 +31,557 @@
         <item name="android:windowBackground">@color/black</item>
         <item name="android:windowLayoutInDisplayCutoutMode" tools:ignore="NewApi">shortEdges</item>
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
-        <item name="colorAccent">@color/brand</item>
-        <item name="android:colorControlActivated">@color/brand</item>
+        <item name="colorPrimary">?attr/accentInk</item>
+        <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
+        <item name="colorOnPrimary">?attr/accentOnInk</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
+        <!-- colorAccent is NOT derived from colorPrimary: Theme.Material3.Dark inherits it through
+             Theme.MaterialComponents, where Base.V14.Theme.MaterialComponents sets it to
+             ?attr/colorSecondary — a role this app leaves at the M3 default on purpose. Drop this line
+             and every AppCompat widget that reads the accent goes baseline mauve. AppCompat's own
+             colorControlActivated maps to ?attr/colorAccent (Base.V7.Theme.AppCompat), so setting that
+             as well is redundant; the framework's android:colorControlActivated is not, since it maps
+             from android:colorAccent, which nothing here sets. -->
+        <item name="colorAccent">?attr/accentInk</item>
+        <item name="android:colorControlActivated">?attr/accentInk</item>
     </style>
 
+    <!-- Split from the base so a qualifier folder could override the theme without redefining it. The
+         values-television / values-notouch overlay that once gave a remote a white focus wash here is
+         gone: focus is a ring every control draws for itself. -->
     <style name="Theme.Player" parent="BaseTheme.Player">
     </style>
 
-    <!-- Player-style icon action button: transparent, borderless ripple, tinted glyph. -->
-    <style name="ErrorActionButton">
-        <item name="android:layout_width">54dp</item>
-        <item name="android:layout_height">54dp</item>
-        <item name="android:padding">14dp</item>
-        <item name="android:scaleType">fitCenter</item>
-        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
-        <item name="android:tint">@color/white</item>
-        <item name="android:focusable">true</item>
+    <!-- The report screen is the same kind of surface as the settings screen: a DayNight window on the
+         accent's own ground, reading the same roles, following the same appearance choice. Until
+         2026-09-17 it had a base of its own - always dark, on the brand wash - and restated the role
+         mapping; inheriting the whole of BaseTheme.Settings is what makes R9 hold here by construction,
+         as it does for Theme.Browser. -->
+    <style name="Theme.Error" parent="BaseTheme.Settings">
     </style>
 
-    <style name="Theme.Error" parent="Theme.AppCompat.NoActionBar">
-        <!-- The wash is the window background, not the layout's, so the one gradient covers the
-             system bars too — a bar painted in a flat colour would cut a seam across it. -->
-        <item name="android:windowBackground">@drawable/bg_brand_wash</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
-        <item name="colorAccent">@color/brand</item>
-        <item name="android:colorControlActivated">@color/brand</item>
+    <style name="BaseTheme.Settings" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- The accent as roles (attrs.xml). These are the coral overlay's light values, so every
+             ?attr/accent* below resolves even where no overlay was applied; the overlay itself — the
+             .Light variant or the dark one, by Prefs.isLight — is put on in onApplyThemeResource,
+             before anything reads the theme. -->
+        <item name="accentInk">@color/brand</item>
+        <item name="accentOnInk">@color/brand_on</item>
+        <item name="accentSkip">@color/skip_fill</item>
+        <item name="accentFill">@color/brand_accent</item>
+        <item name="accentOnFill">@color/white</item>
+        <item name="accentContainer">#F9E4E2</item>
+        <item name="accentOnContainer">#BA3E33</item>
+        <item name="accentGround">#FEF8F7</item>
+        <item name="accentCard">#F2EDEC</item>
+        <item name="accentCardHigh">#ECE7E6</item>
+        <item name="accentRaised">#E7E1E0</item>
+        <!-- The Snackbar is the one component in this app that reads Material's inverse roles, and
+             nothing here had ever set them: it arrived in the baseline lavender with a mauve action,
+             which belongs to no other pixel on this screen. Pointed at the chrome the app already
+             draws over video — the same plate Utils.showText uses for its notices — and at the coral
+             that lives there. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <item name="colorPrimaryInverse">?attr/accentInk</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="actionOverflowMenuStyle">@style/Widget.JustPlus.PopupMenu.Overflow</item>
+        <!-- A menu row, one step up from appcompat's 48dp: the rows of this app are read from
+             across a room as often as from a hand, and the reference player measures 58dp. -->
+        <item name="dropdownListPreferredItemHeight">56dp</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
+        <!-- One field with the list below it. Left unset, a Material theme paints the bar from the
+             primary colour, which with a coral primary is a red band across the top of the screen.
+             SettingsActivity sets the icon appearance to match. -->
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <!-- The one DayNight screen in the app, so the accent is the pair that follows the mode: the
+             bright ink is unreadable as a section header on a white card, at 2.6:1 for the coral. Which
+             tone accentFill holds is decided by which variant of the overlay was applied. -->
+        <item name="colorPrimary">?attr/accentFill</item>
+        <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
+        <item name="colorOnPrimary">?attr/accentOnFill</item>
+        <!-- The window and its cards are the accent theme's own grounds, not M3's neutral ramp — a
+             theme here changes what the surfaces sit on, not only what is drawn on them. AMOLED still
+             wins where it is offered, by being applied after the accent. -->
+        <item name="android:windowBackground">?attr/accentGround</item>
+        <item name="colorSurface">?attr/accentGround</item>
+        <item name="colorSurfaceContainer">?attr/accentCard</item>
+        <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>
+        <item name="colorSurfaceContainerHighest">?attr/accentRaised</item>
+        <item name="colorSurfaceVariant">?attr/accentRaised</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
+        <item name="colorAccent">?attr/accentFill</item>
+        <item name="android:colorControlActivated">?attr/accentFill</item>
     </style>
 
-    <style name="Theme.Settings" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="colorAccent">@color/brand</item>
-        <item name="colorControlActivated">@color/brand</item>
-        <item name="android:colorControlActivated">@color/brand</item>
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
+    <style name="Theme.Settings" parent="BaseTheme.Settings">
+    </style>
+
+    <!-- The browser is the same kind of surface as the settings screen: a full-height DayNight window
+         of rows on the accent's own ground, raising the same Material dialogs, reading the same roles.
+         So it inherits the whole mapping instead of restating it, and that is what makes R9 true here
+         by construction - a role this screen asks for cannot be half-defined, because there is only
+         one definition of it. §2.5 of DESIGN.md records four separate times a restated set shipped
+         with a hole in it, and every one of them arrived as M3's #6750A4. -->
+    <style name="Theme.Browser" parent="BaseTheme.Settings">
+    </style>
+
+    <!-- The overflow menu, wearing the app's own container instead of Material's 4dp default. -->
+    <style name="Widget.JustPlus.PopupMenu.Overflow" parent="Widget.Material3.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
+    </style>
+
+    <!-- androidx.preference builds its list and text dialogs with a plain AlertDialog.Builder, so they
+         get none of what MaterialAlertDialogBuilder applies in code: an AppCompat row with the radio
+         parked on the right, in a square container. Hand it the Material pieces through the theme.
+         The parent must be ThemeOverlay.Material3.MaterialAlertDialog — ThemeOverlay.Material3.Dialog.Alert
+         sets only the button style, and m3_alert_dialog_title.xml needs materialAlertDialogTitlePanelStyle,
+         without which the first preference dialog to open throws InflateException.
+         Every theme that raises a dialog points both `alertDialogTheme` and `materialAlertDialogTheme`
+         here: a plain AlertDialog.Builder reads the first, while MaterialAlertDialogBuilder never looks
+         at it - it applies the second itself, and whatever that names wins over the theme underneath. -->
+    <style name="ThemeOverlay.JustPlus.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:windowBackground">@drawable/bg_dialog_material3</item>
+        <!-- Every action carries a contour: the confirming one is filled, the rest are outlined. The
+             ripple is left as it was: on a television the focus wash of these buttons comes from it. -->
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.JustPlus.Button.Dialog.Filled</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.JustPlus.Button.Dialog.Outlined</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.JustPlus.Button.Dialog.Outlined.Flush</item>
+    </style>
+
+    <!--
+        Three button styles, and one rule between them: a filled button is the action that moves things
+        forward, an outlined one is a choice among several, and a quiet one is everything else. It is the
+        same rule in a dialog and over video, which is what makes the Skip button legible as the top of a
+        hierarchy rather than an exception to it.
+
+        All three take the focus ring. Material draws D-pad focus as a state layer, which measured 2.51:1
+        on a television against the 3:1 a non-text indicator wants — and on a control carrying the accent
+        as a fill it washed the accent out too, leaving 2.21:1 for the label on it.
+    -->
+    <!-- The screen's own name, 28sp at weight 400 on the window's ground: what Android 16 puts at the
+         top of Settings, Files and Photos, and what replaced the coloured 22sp band this app carried.
+         Sized once for both a phone and a set - 28sp is 5.2 % of a 540dp television canvas, inside the
+         2.1-6.1 % band the app measures its television type against. -->
+    <!-- The bar's labels, a step under Material's own. Five destinations on a 411dp window leave each
+         one 82dp, and at the 12sp of labelMedium "Избранное" and "Настройки" fill that slot edge to
+         edge - two labels with no air between them read as one crowded strip. 11sp is labelSmall,
+         which is still a Material size and still legible, and it is the smallest thing that buys the
+         gutter back. The rail wears it too, for the same arithmetic in the other direction: its column
+         is pinned at 80dp, so the label has to fit that rather than the column fitting the label. -->
+    <!-- Material's own label size for a navigation surface. It was 11sp while the bar carried five
+         items - four destinations and the gear - and 82dp per slot was not enough for "Избранное" at
+         12sp. The gear moved behind the three dots, four items leave 102dp each, and the canon size
+         fits again. -->
+    <style name="TextAppearance.JustPlus.NavLabel" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TextAppearance.JustPlus.ScreenTitle" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">28sp</item>
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
+    <!-- The one field shape of the app. 12dp rather than Material's 4dp because a field is a shape
+         nested in a sheet, and DESIGN.md's nesting rule gives the outer corner less the inset: 28dp
+         sheet, 16dp gutter. At 4dp the field was the only nearly-square thing between a 28dp panel
+         and the pills under it - measured 4dp against their 20, where the reference player carries
+         one radius for both and reads as a piece. Buttons are unchanged: a verb is a pill (R5). -->
+    <style name="Widget.JustPlus.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Quiet" parent="Widget.Material3.Button.TextButton">
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <!--
+        Material insets an icon button 4dp at each side and none at top or bottom, so a 48dp box draws
+        its background 40 wide by 48 tall. Nothing showed while that background was a transparent
+        ripple; the moment one of these carries an edge — the focus ring on a television, the outline of
+        the style below — the "circle" is an upright oval. Both insets go, and the shape is the box.
+    -->
+    <!-- An icon button that is a control in its own right rather than one of a row in a bar: a circle
+         of the surface a step above the ground, the glyph in the quiet ink, the focus contour on its
+         own edge. Frameless is right for the toolbar, where four glyphs sit together and the bar is
+         their container; a single gear standing on an empty page has no container but itself. -->
+    <!-- The body the three quiet controls on the start page share: a neutral tonal, one step off the
+         ground, the glyph and the label in the surface's quieter ink, the focus contour on its own
+         edge. Neutral and not the accent container: the accent marks the chosen thing and the one
+         action that moves a surface forward, and neither is what a verb beside a gear is. -->
+    <style name="Widget.JustPlus.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+        <item name="android:textColor">@color/dialog_button_dismissive</item>
+        <item name="iconTint">@color/dialog_button_dismissive</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Tonal.Icon" parent="Widget.Material3.Button.IconButton.Filled.Tonal">
+        <!-- All four, and the vertical pair is the one that matters: Material insets an icon button 6dp
+             top and bottom, so a 64dp box draws 64 x 52 and a 50 % corner on it is a stadium, not a
+             circle. It is the same trap the repository already recorded for the horizontal pair. -->
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+        <item name="iconTint">@color/dialog_button_dismissive</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Quiet.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <!-- A glyph that is a button in its own right — a ± beside a number, the backspace of a keypad —
+         rather than one of a row inside a bar, where the bar is the frame. It keeps its edge at rest,
+         like every other standalone action, and Utils.focusRing widens that edge on a remote. -->
+    <style name="Widget.JustPlus.Button.Icon.Outlined" parent="Widget.Material3.Button.IconButton.Outlined">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <!-- The box is padding plus glyph, never a fixed width around a smaller one: MaterialButton lays
+             its icon against paddingStart and does not move it when the view is stretched, so a 24dp
+             glyph in a 48dp box sat 4.5dp left of the middle. The recipe Icon.Plate carries below. -->
+        <item name="android:padding">12dp</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <!-- The quiet ink, not the accent Material gives an outlined icon button: beside a filled accent
+             disc, coral glyphs made four coral marks for one action. -->
+        <item name="iconTint">?attr/colorOnSurfaceVariant</item>
+        <item name="strokeColor">@color/focus_ring_outlined</item>
+    </style>
+
+    <!-- The one forward action of a surface, as a glyph: Material's filled icon button, the accent
+         disc under white ink, and the same 2dp contour on focus every filled button here wears. All
+         four insets go, for the reason the two styles above record - a 48dp box is a circle only when
+         nothing is inset from it. -->
+    <style name="Widget.JustPlus.Button.Icon.Filled" parent="Widget.Material3.Button.IconButton.Filled">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <!-- Same recipe as Icon.Outlined above. Without it Material's filled icon button drew its glyph
+             at 20dp against a 10dp paddingStart: measured 4.0dp left of the disc's centre and a size
+             smaller than its two neighbours. -->
+        <item name="android:padding">12dp</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <!-- A glyph button drawn on the app's own wash. An outline there has no contrast guarantee - the
+         ground under it moves - so the frame is the plate the player already draws over video, and the
+         glyph is white against it. Utils.focusRing still widens the ring on a remote. -->
+    <style name="Widget.JustPlus.Button.Icon.Plate" parent="Widget.JustPlus.Button.Quiet.Icon">
+        <!-- The vertical twin of the trap above: Material insets a button 6dp at top and bottom, so a
+             48dp box drew its plate 48 by 36 - a lying-down oval, and the focus ring traced it. -->
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <!-- The box is padding plus glyph, never a fixed width around a smaller one: MaterialButton
+             lays its icon against paddingStart and does not move it when the view is stretched, so a
+             24dp glyph in a 48dp box sat 4.5dp left of the middle. The same recipe Utils.iconButton
+             already carries for the panels' glyphs, written here for the two the layout builds. -->
+        <item name="android:padding">12dp</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="backgroundTint">@color/ui_controls_background</item>
+        <item name="iconTint">@color/white</item>
+    </style>
+
+    <!-- One line of the report card (report_card.xml): what the report carries, in Body Medium, on the
+         card's one left axis. 4dp above and below the 20sp line - a reading pitch, not a touch row;
+         nothing here is pressed. -->
+    <style name="ReportRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.BodyMedium</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!-- The one style whose stroke is not only the ring: it is also the border that makes the button
+         outlined. So it keeps the thin border at rest and Utils.focusRing widens it to the ring's own
+         width while it holds focus, which is the second half of the signal. A grey border that only
+         changes colour is a weak event — measured 2.76:1 between the same pixels focused and not,
+         where a ring appearing on a picker row reads 16.30:1. -->
+    <style name="Widget.JustPlus.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <!-- Material's own outline width (m3_comp_outlined_button_outline_width). It used to be 2dp,
+             from before the outline was a resting border on many controls rather than a focus signal on
+             a few: at 2dp a row of segments reads as a grid of boxes instead of one control. -->
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/focus_ring_outlined</item>
+    </style>
+
+    <!--
+        A segment of a toggle group. Material draws segmented buttons fully round, which is where its
+        common buttons are; here the shape says what a control IS. A pill is a verb — press it and
+        something happens — and a segment is a value the viewer picks out of a set, so it takes the
+        8dp of a chip, the shape this app already gives every other value: a picker row, a keypad key,
+        a status badge, the readout of a number.
+
+        Only the outer corners survive: MaterialButtonToggleGroup flattens the inner ones itself, so the
+        row still reads as one control rather than five.
+    -->
+    <style name="ShapeAppearance.JustPlus.Segment" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Segment" parent="Widget.JustPlus.Button.Outlined">
+        <item name="shapeAppearance">@style/ShapeAppearance.JustPlus.Segment</item>
+    </style>
+
+    <style name="Widget.JustPlus.Button.Filled" parent="Widget.Material3.Button">
+        <item name="strokeWidth">@dimen/focus_ring_width</item>
+        <item name="strokeColor">@color/focus_ring</item>
+    </style>
+
+    <!--
+        A dialog's actions, both of them with an edge. Material 3 letters them as text buttons, which
+        leaves a panel whose only pressable things are two words floating in it — nothing says where the
+        button ends, and on a phone the pair reads as a caption. The appearance is the one the three
+        styles above already define; what is restated here is the dialog bar's own geometry, which
+        Widget.Material3.Button.TextButton.Dialog would have carried: minWidth 64dp
+        (m3_btn_dialog_btn_min_width), 8dp between buttons (m3_btn_dialog_btn_spacing), and one line
+        that ellipsizes rather than wraps. The values are written out because neither dimen is in
+        Material's public.txt.
+
+        The pair costs 48dp more than the text buttons did — a filled or outlined button pads 24dp a
+        side where a text one pads 12 — so a bar that was close to stacking will stack sooner. That is
+        AppCompat's ButtonBarLayout doing what it exists for, and the update dialog was already cut to
+        two actions for it.
+    -->
+    <style name="Widget.JustPlus.Button.Dialog.Filled" parent="Widget.JustPlus.Button.Filled">
+        <item name="android:minWidth">64dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:layout_marginLeft">8dp</item>
+        <item name="android:lines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- Only the confirming action is coral: an outlined button letters itself in colorPrimary by
+         default, which would put the brand on Cancel as well and make the two look like equal choices. -->
+    <style name="Widget.JustPlus.Button.Dialog.Outlined" parent="Widget.JustPlus.Button.Outlined">
+        <item name="android:textColor">@color/dialog_button_dismissive</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:layout_marginLeft">8dp</item>
+        <item name="android:lines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- The third action sits at the far edge, so it keeps Material's flush geometry. -->
+    <style name="Widget.JustPlus.Button.Dialog.Outlined.Flush">
+        <item name="android:layout_marginStart">0dp</item>
+        <item name="android:layout_marginLeft">0dp</item>
+    </style>
+
+    <!-- The accents live in themes_accents.xml, generated by feature/accent-themes/palette.py: 31
+         themes, each a dark style holding all ten roles of attrs.xml and a .Light child overriding
+         the seven that differ by mode. Prefs.accentOverlay(context, light) picks the variant and the
+         three activities apply it in onApplyThemeResource; Utils.dialogContext applies it to every
+         dialog and panel. Theme.Dialogs.* deliberately sets no accent* of its own, so a dialog
+         inherits the accent of the context it is wrapped from.
+         The marks stay coral in every theme: the launcher icon and the logo ramp. -->
+
+    <!-- AMOLED: the M3 dark scheme with its greys taken out, for a panel that costs nothing to leave
+         black. Applied to the settings window at runtime, and only when the theme is actually dark. -->
+    <!-- And its inverse. applyStyle cannot be undone: once the overlay below has been on a theme,
+         colorSurface is the literal black for the life of that theme, and everything read back from
+         it afterwards is black too. So turning the option off applies this instead, which puts the
+         four roles back on the accent theme's own grounds. -->
+    <style name="ThemeOverlay.JustPlus.Ground" parent="">
+        <item name="android:windowBackground">?attr/accentGround</item>
+        <item name="colorSurface">?attr/accentGround</item>
+        <item name="colorSurfaceContainer">?attr/accentCard</item>
+        <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>
+    </style>
+
+    <style name="ThemeOverlay.JustPlus.Amoled" parent="">
+        <item name="android:windowBackground">@color/black</item>
+        <item name="colorSurface">@color/black</item>
+        <item name="colorSurfaceContainer">@color/amoled_card</item>
+        <item name="colorSurfaceContainerHigh">@color/amoled_card</item>
+    </style>
+
+    <!-- Themes for dialogs raised from the player, which is dark by design and so cannot follow the
+         appearance choice on its own. Two explicit themes rather than one DayNight theme over an
+         overridden configuration: createConfigurationContext returns a context with no activity
+         token, and a dialog built against one cannot add its window at all. -->
+    <style name="BaseTheme.Dialogs.Light" parent="Theme.Material3.Light.NoActionBar">
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
+        <!-- Not the ink: this theme is light whatever the system is doing, and a bright accent
+             cannot be read on it. Which tone accentFill holds is decided by the overlay variant
+             Utils.dialogContext applies — the light one here. -->
+        <item name="colorPrimary">?attr/accentFill</item>
+        <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
+        <!-- The ink on a filled accent, which follows the mode with the fill: white on the light
+             tone, the theme's own dark on-ink on the bright one. -->
+        <item name="colorOnPrimary">?attr/accentOnFill</item>
+        <!-- Read by more than its name suggests, and unmapped it hands back Material's baseline
+             #6750A4: Utils.textField letters a field's floating label with it on a dark ground, and
+             Material tints a Snackbar's action with it (ThemeOverlay.Material3.Button.TextButton
+             .Snackbar -> colorOnContainer). BaseTheme.Player and BaseTheme.Settings map it; these
+             three did not, which is why every text field in an accent theme carried a purple label.
+             Always the ink, in a light theme and a dark one alike, because this app's inverse pair is
+             its chrome pair - a dark plate - and not Material's opposite scheme. -->
+        <item name="colorPrimaryInverse">?attr/accentInk</item>
+        <!-- The other two thirds of the inverse trio, so the set cannot be half-defined again. Whatever
+             reads colorPrimaryInverse next — a Snackbar shown from one of these surfaces, most likely —
+             finds the plate the ink was chosen against instead of Material's opposite scheme, which in a
+             dark theme is a LIGHT panel and would have taken the bright ink down to 1.9:1 on it. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
+        <!-- The player's panels are built against these themes now, so they need the accent the
+             window themes carry: Material 3 derives colorAccent from colorSecondary, not from
+             colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
+        <item name="colorAccent">?attr/accentFill</item>
+        <!-- The panel and what it holds are the accent theme's own grounds, not M3's neutral ramp.
+             bg_dialog_material3 reads colorSurfaceContainerHigh, a side sheet reads colorSurface, and
+             a field inside one reads colorSurfaceContainerHighest — so all three follow the theme for
+             free. AMOLED, where it applies, is put on after this and wins. -->
+        <item name="colorSurface">?attr/accentGround</item>
+        <item name="colorSurfaceContainer">?attr/accentCard</item>
+        <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>
+        <item name="colorSurfaceContainerHighest">?attr/accentRaised</item>
+        <item name="colorSurfaceVariant">?attr/accentRaised</item>
+    </style>
+
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
+    <style name="Theme.Dialogs.Light" parent="BaseTheme.Dialogs.Light">
+    </style>
+
+    <style name="BaseTheme.Dialogs.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="alertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.JustPlus.AlertDialog</item>
+        <!-- Material's own button attributes, pointed at the three styles below, so every button in
+             here — including the ones no code of ours constructs — wears the focus ring. -->
+        <item name="materialButtonStyle">@style/Widget.JustPlus.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.JustPlus.Button.Outlined</item>
+        <item name="materialIconButtonStyle">@style/Widget.JustPlus.Button.Quiet.Icon</item>
+        <item name="materialIconButtonOutlinedStyle">@style/Widget.JustPlus.Button.Icon.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.JustPlus.Button.Quiet</item>
+        <!-- The dark variant of the same role: on a dark panel accentFill is the ink itself, which
+             is the tone the chrome over video already uses. -->
+        <item name="colorPrimary">?attr/accentFill</item>
+        <item name="colorPrimaryContainer">?attr/accentContainer</item>
+        <item name="colorOnPrimaryContainer">?attr/accentOnContainer</item>
+        <!-- The ink on a filled accent, which follows the mode with the fill: white on the light
+             tone, the theme's own dark on-ink on the bright one. -->
+        <item name="colorOnPrimary">?attr/accentOnFill</item>
+        <!-- Read by more than its name suggests, and unmapped it hands back Material's baseline
+             #6750A4: Utils.textField letters a field's floating label with it on a dark ground, and
+             Material tints a Snackbar's action with it (ThemeOverlay.Material3.Button.TextButton
+             .Snackbar -> colorOnContainer). BaseTheme.Player and BaseTheme.Settings map it; these
+             three did not, which is why every text field in an accent theme carried a purple label.
+             Always the ink, in a light theme and a dark one alike, because this app's inverse pair is
+             its chrome pair - a dark plate - and not Material's opposite scheme. -->
+        <item name="colorPrimaryInverse">?attr/accentInk</item>
+        <!-- The other two thirds of the inverse trio, so the set cannot be half-defined again. Whatever
+             reads colorPrimaryInverse next — a Snackbar shown from one of these surfaces, most likely —
+             finds the plate the ink was chosen against instead of Material's opposite scheme, which in a
+             dark theme is a LIGHT panel and would have taken the bright ink down to 1.9:1 on it. -->
+        <item name="colorSurfaceInverse">@color/chrome_surface</item>
+        <item name="colorOnSurfaceInverse">@color/white</item>
+        <!-- One answer to "this one is chosen", for every control that has to say it: the checked
+             segment of a toggle group, the current row of a picker, the track of a switch. It is the
+             container pair, which is what Material gives a checked segment and what the reference
+             player does: a tonal fill under a light ink. It was the accent pair until 2026-09-05, and
+             on a dark surface that meant a bright fill lettered in the dark on-ink — reported as hard
+             to read, for the second time. The container is gated a visible step off the card it sits
+             on, and its ink at 4.5:1 against it. -->
+        <item name="colorSecondaryContainer">?attr/accentContainer</item>
+        <item name="colorOnSecondaryContainer">?attr/accentOnContainer</item>
+        <!-- The player's panels are built against these themes now, so they need the accent the
+             window themes carry: Material 3 derives colorAccent from colorSecondary, not from
+             colorPrimary, and would hand every AppCompat widget in here a baseline mauve. -->
+        <item name="colorAccent">?attr/accentFill</item>
+        <!-- The panel and what it holds are the accent theme's own grounds, not M3's neutral ramp.
+             bg_dialog_material3 reads colorSurfaceContainerHigh, a side sheet reads colorSurface, and
+             a field inside one reads colorSurfaceContainerHighest — so all three follow the theme for
+             free. AMOLED, where it applies, is put on after this and wins. -->
+        <item name="colorSurface">?attr/accentGround</item>
+        <item name="colorSurfaceContainer">?attr/accentCard</item>
+        <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>
+        <item name="colorSurfaceContainerHighest">?attr/accentRaised</item>
+        <item name="colorSurfaceVariant">?attr/accentRaised</item>
+    </style>
+
+    <!-- Split from its base like Theme.Player, so a qualifier folder could override it without redefining
+         everything above. Nothing does today: the TV focus wash the split once carried is a ring now,
+         drawn by each control (Utils.focusRing, pickerRow, discFocusForeground, focusOutline). -->
+    <style name="Theme.Dialogs.Dark" parent="BaseTheme.Dialogs.Dark">
     </style>
 
     <style name="ExoStyledControls.Button.Center.Secondary" parent="ExoStyledControls.Button.Center">
@@ -50,18 +590,4 @@
         <item name="android:visibility">gone</item>
     </style>
 
-    <style name="Transparent" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowIsTranslucent">true</item>
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowContentOverlay">@null</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowIsFloating">true</item>
-        <item name="android:backgroundDimEnabled">false</item>
-    </style>
-
-    <style name="MediaStoreChooserDialog" parent="@android:style/Theme.Material.Dialog.Alert">
-        <item name="android:maxLines">1</item>
-        <item name="android:ellipsize">end</item>
-        <item name="android:singleLine">true</item> <!-- When focused, line scrolls -->
-    </style>
 </resources>

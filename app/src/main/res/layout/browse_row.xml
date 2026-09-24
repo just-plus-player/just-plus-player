@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One row: a 16:9 still of the file with its running time on it, the name, and a chip or two of
+    what the file is. A folder gets the same frame with a glyph in it rather than a square of its
+    own - the two kinds sit in one list here, and two widths in the left column would leave it
+    ragged.
+
+    The frame's contents and the row's background are both built in code: a video has to be decoded
+    for a still of it (Utils.previewBox), and the focus contour is a colour state list over a shape
+    (Utils.pickerRow). 12dp is the corner R3 gives a card 72dp or taller, which this is.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="4dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:minHeight="72dp"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="8dp">
+
+    <FrameLayout
+        android:id="@+id/browse_row_frame"
+        android:layout_width="96dp"
+        android:layout_height="54dp"
+        android:layout_marginEnd="16dp">
+
+        <!-- Declared first so the still, added at index 0 in code, goes underneath it. -->
+        <TextView
+            android:id="@+id/browse_row_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="20dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_meta_chip_dark"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+
+        <!-- Put aside: the same 20dp badge the running time wears, at the other corner, with the
+             accent as its ink. On the still because that is where this app already writes what it
+             knows about a file, and a mark beside the name would have to push the name. -->
+        <ImageView
+            android:id="@+id/browse_row_star"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_meta_chip_dark"
+            android:padding="3dp"
+            android:src="@drawable/ic_star_24dp"
+            android:tint="?attr/accentInk"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Cut at the end: a name is read from the front. The middle cut belongs to the path on
+             the line below, not to this one. A row has three times a tile's width so it did less
+             damage here, but it was the same misreading of what a filename is. -->
+        <TextView
+            android:id="@+id/browse_row_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/browse_row_path"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="start"
+            android:singleLine="true"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" />
+
+        <!-- What the file is, as a line of text rather than as two boxes: a value is text unless it
+             is pickable, and a plate around a number is a frame nothing needs. -->
+        <TextView
+            android:id="@+id/browse_row_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</LinearLayout>

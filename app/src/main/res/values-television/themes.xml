@@ -1,5 +1,0 @@
-<resources>
-    <style name="Theme.Player" parent="BaseTheme.Player">
-        <item name="colorControlHighlight">@color/white</item>
-    </style>
-</resources>

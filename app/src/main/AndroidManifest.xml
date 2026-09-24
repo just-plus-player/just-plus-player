@@ -33,6 +33,13 @@
 
             <data android:mimeType="text/plain" />
         </intent>
+        <!-- The same question for a link. From API 30 a browser is invisible without this, so the
+             source row would offer "Open" on a television with nothing to open it. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+
+            <data android:scheme="https" />
+        </intent>
     </queries>
 
     <application
@@ -70,12 +77,6 @@
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             tools:targetApi="n">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -724,15 +725,27 @@
             android:exported="false"
             android:taskAffinity=""
             android:theme="@style/Theme.Error" />
+        <!-- The front door. It holds the destinations and the television start page, and the player is
+             somewhere you come back from: launching from the icon opens this, while a file handed over by
+             another app still goes straight to the player's own VIEW and SEND filters above. -->
         <activity
-            android:name=".MediaStoreChooserActivity"
-            android:configChanges="orientation"
-            android:theme="@style/Transparent" />
+            android:name=".BrowserActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|touchscreen"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Browser">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
             android:label="@string/pref_title"
-            android:parentActivityName=".PlayerActivity"
+            android:parentActivityName=".BrowserActivity"
             android:screenOrientation="locked"
             android:theme="@style/Theme.Settings" >
             <intent-filter>

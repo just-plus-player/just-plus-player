@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Names the lines under it, and says at its end that pressing them copies. The glyph is a mark, not
+     a button: what answers the press is the whole group, which is what the report is. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <ImageView
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_info_24dp"
+        android:tint="@color/white" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="@string/pref_about_device"
+        android:textAppearance="?attr/textAppearanceTitleSmall"
+        android:textColor="@color/white" />
+
+    <ImageView
+        android:id="@+id/about_copy_hint"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginStart="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_content_copy_24dp"
+        android:tint="@color/ink_secondary" />
+
+</LinearLayout>

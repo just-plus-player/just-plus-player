@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:tools="http://schemas.android.com/tools" xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- The browser walks the device's own tree, and from API 30 nothing else opens it: scoped
+         storage exists to force apps off exactly this, and the only alternative the platform offers
+         is having the viewer nominate one folder through the system document picker - which is not
+         browsing, and which Android TV has no picker for at all. Not needed below API 30, where
+         READ_EXTERNAL_STORAGE above already reaches everything, nor in the legacy flavour, which
+         targets 29 and keeps the legacy view. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
 </manifest>

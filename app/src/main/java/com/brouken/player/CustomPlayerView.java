@@ -11,6 +11,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -96,7 +97,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
     Rect systemGestureExclusionRect = new Rect();
 
     public final Runnable textClearRunnable = () -> {
-        setCustomErrorMessage(null);
+        readout(null, 0);
         clearIcon();
         keySeekStart = -1;
         // The readout going is the end of the seek as far as the screen is concerned, and the bar the
@@ -192,10 +193,11 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                     removeCallbacks(rewindRunnable);
                     if (PlayerActivity.player != null) {
                         // A rewind tick is skipped while the previous seek is still in flight, so the
-                        // player can sit behind what the pill promised. Land on the promise.
+                        // player can sit behind what the pill promised. Land on the promise, exactly:
+                        // the ticks round to a keyframe, this one may not (PlayerActivity.seekExact).
                         if (rewinding)
-                            PlayerActivity.player.seekTo(rewindPosition);
-                        PlayerActivity.player.setPlaybackSpeed(speedBeforeBoost);
+                            PlayerActivity.seekExact(rewindPosition);
+                        requestSpeed(speedBeforeBoost);
                     }
                     rewinding = false;
                     if (getContext() instanceof PlayerActivity)
@@ -204,10 +206,11 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 if (handleTouch) {
                     if (gestureOrientation == Orientation.HORIZONTAL) {
                         // The drag itself only seeks when the previous seek has landed, so the last steps
-                        // of a fast swipe are usually skipped. Land on what the label promised.
+                        // of a fast swipe are usually skipped. Land on what the label promised, and on the
+                        // label rather than on the keyframe under it (PlayerActivity.seekExact).
                         if (PlayerActivity.haveMedia && PlayerActivity.player != null)
-                            PlayerActivity.player.seekTo(seekStart + seekChange);
-                        setCustomErrorMessage(null);
+                            PlayerActivity.seekExact(seekStart + seekChange);
+                        readout(null, 0);
                     } else {
                         postDelayed(textClearRunnable, isHandledLongPress ? MESSAGE_TIMEOUT_LONG : MESSAGE_TIMEOUT_TOUCH);
                     }
@@ -378,7 +381,8 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                     if (!isControllerFullyVisible()) {
                         message += "\n" + Utils.formatMilis(position);
                     }
-                    setCustomErrorMessage(message);
+                    readout(message, seekChange < 0
+                            ? R.drawable.ic_rewind_24dp : R.drawable.ic_fast_forward_24dp);
                     gestureScrollX = 0.0001f;
                 }
             }
@@ -434,7 +438,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
         boostAnchorX = motionEvent.getX();
         holdSpeed = SPEED_BOOST;
         rewinding = false;
-        PlayerActivity.player.setPlaybackSpeed(SPEED_BOOST);
+        requestSpeed(SPEED_BOOST);
         hideController();
         showHoldSpeed();
     }
@@ -463,8 +467,15 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
                 stopRewind();
         }
         if (!rewinding)
-            PlayerActivity.player.setPlaybackSpeed(holdSpeed);
+            requestSpeed(holdSpeed);
         showHoldSpeed();
+    }
+
+    /** Through the activity, so a speed the audio route refuses is answered in one place. */
+    private void requestSpeed(float speed) {
+        if (getContext() instanceof PlayerActivity) {
+            ((PlayerActivity) getContext()).requestSpeed(speed);
+        }
     }
 
     private void showHoldSpeed() {
@@ -480,7 +491,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
             restorePlayState = true;
             PlayerActivity.player.pause();
         }
-        PlayerActivity.player.setPlaybackSpeed(speedBeforeBoost);
+        requestSpeed(speedBeforeBoost);
         PlayerActivity.player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
         rewindPosition = PlayerActivity.player.getCurrentPosition();
         rewindLastTime = SystemClock.uptimeMillis();
@@ -490,8 +501,10 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     private void stopRewind() {
         removeCallbacks(rewindRunnable);
-        PlayerActivity.player.seekTo(rewindPosition);
-        if (restorePlayState) {
+        PlayerActivity.seekExact(rewindPosition);
+        // The player can go while the finger is still down - a released player under a held rewind is
+        // what the seek above already guards against, and the resume has to answer for the same moment.
+        if (restorePlayState && PlayerActivity.player != null) {
             restorePlayState = false;
             PlayerActivity.player.play();
         }
@@ -538,7 +551,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
             setScale(mScaleFactor);
             restoreSurfaceView();
             clearIcon();
-            setCustomErrorMessage((int)(mScaleFactor * 100) + "%");
+            readout((int) (mScaleFactor * 100) + "%", R.drawable.ic_fit_screen_24dp);
             return true;
         }
         return false;
@@ -584,6 +597,7 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
             showController();
         }
         restoreSurfaceView();
+        ((PlayerActivity) getContext()).rememberFrameMode();
     }
 
     private void restoreSurfaceView() {
@@ -625,20 +639,60 @@ public class CustomPlayerView extends PlayerView implements GestureDetector.OnGe
 
     /** Volume OSD: percent text plus the bar on the volume (right) side, scaled 0-200 to expose the boost zone. */
     public void showVolume(int percent) {
-        exoErrorMessage.setCompoundDrawablesWithIntrinsicBounds(percent > 0 ? R.drawable.ic_volume_up_24dp : R.drawable.ic_volume_off_24dp, 0, 0, 0);
-        setCustomErrorMessage(" " + percent + "%");
+        readout(percent + "%",
+                percent > 0 ? R.drawable.ic_volume_up_24dp : R.drawable.ic_volume_off_24dp);
         showLevelBar(percent, 200f, Gravity.CENTER_VERTICAL | Gravity.END);
     }
 
     /** Brightness OSD: percent text plus the bar on the brightness (left) side; auto mode has no value. */
     public void showBrightness(int percent, boolean auto) {
-        exoErrorMessage.setCompoundDrawablesWithIntrinsicBounds(auto ? R.drawable.ic_brightness_auto_24dp : R.drawable.ic_brightness_medium_24, 0, 0, 0);
-        setCustomErrorMessage(auto ? "" : " " + percent + "%");
+        readout(auto ? "" : percent + "%",
+                auto ? R.drawable.ic_brightness_auto_24dp : R.drawable.ic_brightness_medium_24);
         if (auto) {
             levelBar.setVisibility(GONE);
         } else {
             showLevelBar(percent, 100f, Gravity.CENTER_VERTICAL | Gravity.START);
         }
+    }
+
+    /**
+     * Everything the player says in passing goes through here: it puts the plate on {@link Notice#topLine}
+     * — the line a message uses — and takes that line back from a message first, so the two never stack.
+     *
+     * <p>The glyph comes with the words for the same reason it does in {@link Notice}: two plates in a row,
+     * one with a glyph and one without, are two different heights on the same line, which is what the
+     * owner saw. {@code 0} leaves it off, and nothing passes {@code 0} but the call that takes the plate
+     * down again.
+     */
+    void readout(final CharSequence text, final int iconRes) {
+        readout(text, iconRes, true);
+    }
+
+    /**
+     * @param takeTheLine dismiss a message standing on the line first. True for everything transient.
+     *                    The one caller that passes false is the fatal stop, which puts the same sentence
+     *                    here that its notice is carrying: the notice fades after its seconds and this
+     *                    line is what stays, so taking the line from it would throw away the Details
+     *                    button before anyone could press it.
+     */
+    void readout(final CharSequence text, final int iconRes, final boolean takeTheLine) {
+        exoErrorMessage.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0);
+        // The bar belongs to the value that raised it; anything else said here replaces that value, so it
+        // goes with it. showVolume and showBrightness raise their own again on the next line.
+        levelBar.setVisibility(GONE);
+        if (text != null) {
+            if (takeTheLine) {
+                Notice.dismiss();
+            }
+            final ViewGroup.MarginLayoutParams lp =
+                    (ViewGroup.MarginLayoutParams) exoErrorMessage.getLayoutParams();
+            final int top = Notice.topLine(this);
+            if (lp.topMargin != top) {
+                lp.topMargin = top;
+                exoErrorMessage.setLayoutParams(lp);
+            }
+        }
+        setCustomErrorMessage(text);
     }
 
     private void showLevelBar(int value, float max, int gravity) {

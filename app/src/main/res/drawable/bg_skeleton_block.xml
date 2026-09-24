@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One block of a skeleton: the shape a still or a line of text will be, in the surface tone a card
+    is drawn in. Everything the skeleton is made of is this drawable at a different size, which is
+    what keeps a skeleton a skeleton rather than a drawing of a row.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/colorSurfaceContainerHigh" />
+    <corners android:radius="6dp" />
+</shape>

@@ -1,0 +1,23 @@
+# What ART should compile ahead of time instead of interpreting on the way to it.
+#
+# Every install and every update leaves an app at `status=verify` - no native code at all, everything
+# interpreted until the JIT catches up and until the next idle dexopt, which is hours away and on a
+# charger. Measured on the owner's television: the first subtitle size dialog took 2.0s from the press,
+# the second took 0.2s, and the profile the build was shipping held 2283 lines of library code and not
+# one class of this app's. This file is the difference.
+#
+# Blunt on purpose. The precise way to write one is a :baselineprofile module running macrobenchmarks
+# and recording which methods are actually hot; this compiles the app whole, plus the two libraries
+# whose first use is a visible wait - a Material dialog and the preference screen that opens it. If the
+# on-device odex ever becomes a problem, narrow this, do not delete it.
+#
+# H hot, S startup, P post-startup; ** matches anything, / included.
+
+Lcom/brouken/player/**;
+HSPLcom/brouken/player/**->**(**)**
+
+Lcom/google/android/material/**;
+HSPLcom/google/android/material/**->**(**)**
+
+Landroidx/preference/**;
+HSPLandroidx/preference/**->**(**)**

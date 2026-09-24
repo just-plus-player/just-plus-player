@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The container MaterialAlertDialogBuilder builds in code, as a drawable a plain AlertDialog can
+     use: extra-large corners on the M3 dialog surface. The inset is appcompat's own, so the window
+     keeps the margin its layout already assumes. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="@dimen/appcompat_dialog_background_inset"
+    android:insetTop="@dimen/appcompat_dialog_background_inset"
+    android:insetRight="@dimen/appcompat_dialog_background_inset"
+    android:insetBottom="@dimen/appcompat_dialog_background_inset">
+    <shape android:shape="rectangle">
+        <corners android:radius="28dp" />
+        <solid android:color="?attr/colorSurfaceContainerHigh" />
+    </shape>
+</inset>

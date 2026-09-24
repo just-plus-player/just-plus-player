@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- See values/dimens.xml. 96dp is 288px on a 3x phone, which another phone's camera reads from a
+         hand's distance; the card then stands 224dp tall in a 272dp window, with no page scroll. -->
+    <dimen name="report_qr_size">96dp</dimen>
+    <integer name="report_summary_lines">4</integer>
+</resources>

@@ -96,6 +96,8 @@ final class MatroskaMetadataReader {
         String lang = "und";
         TrackMetadata.Type type = TrackMetadata.Type.UNKNOWN;
         float frameRate = 0f;
+        int width = 0;
+        String codec = null;
 
         final long startPos = reader.totalBytesRead;
 
@@ -109,12 +111,25 @@ final class MatroskaMetadataReader {
                     reader.readUInt(s);
                 } else if (id == 0x536EL) { // Name
                     name = reader.readString(s);
+                } else if (id == 0x86L) { // CodecID, the only place a dropped track leaves its name
+                    codec = reader.readString(s);
                 } else if (id == 0x22B59CL) { // Language
                     lang = reader.readString(s);
                 } else if (id == 0x23E383L) { // DefaultDuration, nanoseconds per frame
                     final long durationNs = reader.readUInt(s);
                     if (durationNs > 0) {
                         frameRate = 1_000_000_000f / durationNs;
+                    }
+                } else if (id == 0xE0L) { // Video, a master element holding the coded size
+                    final long videoStart = reader.totalBytesRead;
+                    while ((reader.totalBytesRead - videoStart) < s) {
+                        final long videoId = reader.readId();
+                        final long videoSize = reader.readSize();
+                        if (videoId == 0xB0L) { // PixelWidth
+                            width = (int) reader.readUInt(videoSize);
+                        } else {
+                            reader.skip(videoSize);
+                        }
                     }
                 } else if (id == 0x83L) { // TrackType
                     final int mkvType = (int) reader.readUInt(s);
@@ -131,13 +146,13 @@ final class MatroskaMetadataReader {
                 return null;
             }
         }
-        return new TrackMetadata(number, name, lang, type, frameRate);
+        return new TrackMetadata(number, name, lang, type, frameRate, width, codec);
     }
 
     /** Ceiling for a string element, so a corrupt size cannot turn into a huge allocation. */
     private static final int MAX_STRING_BYTES = 64 * 1024;
 
-    private static final class EbmlReader {
+    static final class EbmlReader {
         private final InputStream input;
         long totalBytesRead = 0L;
 

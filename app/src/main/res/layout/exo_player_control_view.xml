@@ -31,7 +31,7 @@
       <TextView android:id="@+id/exo_position"
           style="@style/ExoStyledControls.TimeText.Position"/>
 
-      <TextView
+      <TextView android:id="@+id/exo_time_separator"
           style="@style/ExoStyledControls.TimeText.Separator"/>
 
       <TextView android:id="@+id/exo_duration"
@@ -168,7 +168,7 @@
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_gravity="center"
-      android:textColor="#B3FFFFFF"
+      android:textColor="@color/ink_medium"
       android:visibility="gone"/>
 
   <View android:id="@+id/exo_top"

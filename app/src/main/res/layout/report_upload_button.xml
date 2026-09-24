@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The screen's one forward action in its three states - send, sending, sent - as one glyph: the cloud,
+     then a ring turning in its place, then the link it earned. The turning ring is the button's own icon
+     (ErrorActivity.spinner()), so nothing is drawn over the disc and the row keeps its width throughout.
+     See layout-television for the lettered pill a set gets, where this is the only control on the card. -->
+<com.google.android.material.button.MaterialButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/btnUpload"
+    style="@style/Widget.JustPlus.Button.Icon.Filled"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:contentDescription="@string/error_upload"
+    app:icon="@drawable/ic_cloud_upload_24dp" />

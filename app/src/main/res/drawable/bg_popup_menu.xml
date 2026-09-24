@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The container behind the three dots. Material's own menu shape is the 4dp corner, which is a
+     radius nothing else in this app carries: every floating thing here is a dialog at 28dp or a sheet
+     at 16dp, on colorSurfaceContainerHigh. So the menu takes the sheet's pair - it is the smallest
+     member of that family, not a separate register. Both numbers are on R2's scale. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="16dp" />
+    <solid android:color="?attr/colorSurfaceContainerHigh" />
+    <!-- The rows stood 8dp off the panel edge: appcompat's item carries 16dp on its trailing side and
+         nothing on the leading one, so the glyph sat against the corner. 8dp here puts the glyph 16dp
+         in and the trailing edge at 24dp, and gives the first and last row the same air above and
+         below. Symmetric because a shape cannot mirror, and two of the app's languages read the other
+         way round. -->
+    <padding
+        android:left="8dp"
+        android:top="8dp"
+        android:right="8dp"
+        android:bottom="8dp" />
+</shape>

@@ -3435,10 +3435,12 @@ public class PlayerActivity extends Activity {
      * Up navigation synthesised out of a manifest parent, or from a system relaunch of the task, and those
      * are returns to what is already playing: treating them as "the icon was tapped" both opened the empty
      * state over a running session and wrote suppressResume, which then outlived the mistake.
+     * A TV home screen sends LEANBACK_LAUNCHER, and a tile pinned before 2.0 still names this activity.
      */
     private static boolean isLauncherStart(final Intent intent) {
         return intent != null && Intent.ACTION_MAIN.equals(intent.getAction())
-                && intent.hasCategory(Intent.CATEGORY_LAUNCHER);
+                && (intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+                        || intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER));
     }
 
     @SuppressLint("GestureBackNavigation")

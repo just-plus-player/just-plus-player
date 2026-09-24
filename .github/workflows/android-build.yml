@@ -45,7 +45,13 @@ jobs:
       # The release notes travel in the tag's annotation. This repository's history is one commit per
       # release, so there is nothing here to generate them from, and the app itself shows them —
       # Updater.java reads the release body and renders it as Markdown.
-      - run: git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+      #
+      # The fetch first, because checkout leaves the tag lightweight: it fetches it by commit SHA, so
+      # %(contents) read the commit's message instead - v2.0.1 was drafted with "v2.0.1 (#211)" as its
+      # notes. Fetching the tag itself puts the annotated object back.
+      - run: |
+          git fetch --no-tags --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
 
       - uses: softprops/action-gh-release@v2
         with:

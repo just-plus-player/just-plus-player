@@ -1987,12 +1987,15 @@ public final class SegmentFinder {
                 && category != SkipSegment.Category.CREDITS) {
             startSec = 0;
         }
-        if (Double.isNaN(startSec) || Double.isNaN(endSec) || endSec <= startSec) {
-            return;
-        }
-        // Clamp to avoid NaN-duration issues on the first HLS timeupdate (see FIND_INTO.MD §2).
+        // Clamp to avoid NaN-duration issues on the first HLS timeupdate (see FIND_INTO.MD §2) — before the
+        // check, not after: a take ending inside the first second (0-0.8) would otherwise come out as 1-0.8,
+        // and a cluster of nothing but backwards spans leaves bestCluster without a representative (a crash
+        // in 2.0.3).
         if (startSec < 1) {
             startSec = 1;
+        }
+        if (Double.isNaN(startSec) || Double.isNaN(endSec) || endSec <= startSec) {
+            return;
         }
         out.add(new SkipSegment(startSec, endSec, SkipSegment.Type.SKIP, category, coordBase, timeTrust));
     }

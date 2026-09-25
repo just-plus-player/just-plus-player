@@ -54,8 +54,25 @@ public final class SegmentEndpoints {
             + " (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
     /** iQIYI, no key: search by name, an album's episodes one per page, and an episode's skip points. */
     static final String IQIYI_SEARCH = "https://mesh.if.iqiyi.com/portal/lw/search/homePageV3";
-    static final String IQIYI_EPISODES = "https://pcw-api.iqiyi.com/albums/album/avlistinfo";
-    static final String IQIYI_INFO = "https://pcw-api.iqiyi.com/video/video/baseinfo/";
+    // Over plain HTTP, like TENCENT_UNION below: from Europe the TLS handshake with these hosts costs more
+    // than the answer (baseinfo 1.55 s over HTTPS, 0.70 s without). What travels is public metadata asked
+    // by public ids, no key or cookie of the viewer's; a tampered answer could only misplace a skip, and
+    // the length checks in platformMarks and tencent() still gate it. The searches stay on HTTPS: plain
+    // HTTP saves nothing there (iQIYI) or is redirected to it (Tencent, Bilibili).
+    static final String IQIYI_EPISODES = "http://pcw-api.iqiyi.com/albums/album/avlistinfo";
+    static final String IQIYI_INFO = "http://pcw-api.iqiyi.com/video/video/baseinfo/";
+    /**
+     * Tencent Video, where most big donghua stream only: its search (POST, wants v.qq.com as Referer and
+     * Origin) and the union metadata API: table 431 lists a cover's episodes, table 682 carries each one's
+     * length, {@code head_time} and {@code tail_time}. Playback itself is region-locked outside China; this metadata is not.
+     */
+    static final String TENCENT_SEARCH =
+            "https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.MultiTerminalSearch/MbSearch?vplatform=2";
+    /** Plain HTTP (see IQIYI_EPISODES): 0.47-0.67 s a call against 1.1-1.45 s over HTTPS. */
+    static final String TENCENT_UNION = "http://union.video.qq.com/fcgi-bin/data";
+    /** The app key Tencent's own web player sends to the union API (tid 682 is its video-info table). */
+    static final String TENCENT_UNION_KEY = "6c03bbe9658448a4";
+    static final String TENCENT_REFERER = "https://v.qq.com/";
     /** anime only, GraphQL, AniList-keyed ({@code findShowsByExternalId}). */
     static final String ANIMESKIP = "https://api.anime-skip.com/graphql";
     /**

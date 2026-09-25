@@ -541,4 +541,10 @@
     <string name="pref_reset_do">Скинути</string>
     <string name="pref_reset_done">Налаштування скинуто</string>
     <string name="pref_together_nick_blank">Ім’я не може бути порожнім</string>
+    <string name="pref_diagnostics_header">Діагностика</string>
+    <string name="pref_send_app_log">Надіслати журнал застосунку</string>
+    <string name="pref_send_app_log_summary">Що застосунок записав від запуску — для звіту про помилку</string>
+    <string name="pref_mask_reports">Приховувати посилання у звітах</string>
+    <string name="pref_mask_reports_on">Посилання на відео скорочуються до сервера й шляху, локальні файли — до типу</string>
+    <string name="pref_mask_reports_off">Звіти містять повні посилання на відео разом із токенами. Вивантажений звіт публічний</string>
 </resources>

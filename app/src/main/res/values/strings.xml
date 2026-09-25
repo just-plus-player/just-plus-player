@@ -569,4 +569,10 @@
     <string name="pref_reset_do">Reset</string>
     <string name="pref_reset_done">Settings reset</string>
     <string name="pref_together_nick_blank">The name needs at least one character</string>
+    <string name="pref_diagnostics_header">Diagnostics</string>
+    <string name="pref_send_app_log">Send app log</string>
+    <string name="pref_send_app_log_summary">What the app has traced since it started, for a bug report</string>
+    <string name="pref_mask_reports">Hide links in reports</string>
+    <string name="pref_mask_reports_on">Video links are cut to the server and path, local files to their type</string>
+    <string name="pref_mask_reports_off">Reports carry whole video links, tokens included. An uploaded report is public</string>
 </resources>

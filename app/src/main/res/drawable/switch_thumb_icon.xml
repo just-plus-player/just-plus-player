@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The cross marks the off state only. Checked keeps a see-through icon rather than none: a thumb with
+     no icon is drawn smaller when off, and the icon is what keeps it full size in both states. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:drawable="@android:color/transparent" />
+    <item android:drawable="@drawable/ic_close_24dp" />
+</selector>

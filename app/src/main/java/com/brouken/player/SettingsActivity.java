@@ -700,9 +700,9 @@ public class SettingsActivity extends AppCompatActivity
                 });
             }
 
-            PreferenceCategory privacyCategory = findPreference("privacyCategory");
-            if (privacyCategory != null && !BuildConfig.ENABLE_CRASH_REPORTING) {
-                privacyCategory.setVisible(false);
+            Preference crashReporting = findPreference("crashReporting");
+            if (crashReporting != null && !BuildConfig.ENABLE_CRASH_REPORTING) {
+                crashReporting.setVisible(false);
             }
 
             final Preference stand = findPreference("aboutStand");
@@ -711,6 +711,15 @@ public class SettingsActivity extends AppCompatActivity
                 // the row above it and never scroll far enough to show it. Selectable on a television
                 // for the same reason the decoder warning is: a D-pad only reaches what it can land on.
                 stand.setSelectable(true);
+            }
+
+            Preference sendAppLog = findPreference("sendAppLog");
+            if (sendAppLog != null) {
+                sendAppLog.setOnPreferenceClickListener(preference -> {
+                    ErrorActivity.showReport(requireContext(), getString(R.string.pref_send_app_log),
+                            getString(R.string.pref_send_app_log_summary), Utils.recentLog());
+                    return true;
+                });
             }
 
             Preference checkUpdate = findPreference("checkUpdateNow");

@@ -120,7 +120,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
 
-class Utils {
+public class Utils {
 
     public static final String FEATURE_FIRE_TV = "amazon.hardware.fire_tv";
 
@@ -1305,6 +1305,17 @@ class Utils {
         if (uri.getEncodedPath() != null)
             sb.append(uri.getEncodedPath());
         return sb.toString();
+    }
+
+    // The media URI as a report the person hands over themselves prints it: whole when they turned
+    // masking off (Prefs.maskReports), else the route of a network URL and only the scheme of a local one,
+    // since a path or file name can identify their library. Sentry never goes through this: it is masked.
+    public static String reportUri(final Uri uri, final boolean mask) {
+        if (uri == null)
+            return null;
+        if (!mask)
+            return uri.toString();
+        return isSupportedNetworkUri(uri) ? uriToReportString(uri) : uri.getScheme() + " (local)";
     }
 
 

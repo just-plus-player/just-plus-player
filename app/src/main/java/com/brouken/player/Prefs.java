@@ -142,6 +142,7 @@ class Prefs {
     private static final String PREF_KEY_TOGETHER_RELAY = "togetherRelay";
     private static final String PREF_KEY_TOGETHER_INVITE_PAGE = "togetherInvitePage";
     private static final String PREF_KEY_CRASH_REPORTING = "crashReporting";
+    static final String PREF_KEY_MASK_REPORTS = "maskReports";
     private static final String PREF_KEY_AUTO_UPDATE = "autoUpdate";
     private static final String PREF_KEY_UPDATE_LAST_CHECK = "updateLastCheck";
     private static final String PREF_KEY_UPDATE_SKIPPED = "updateSkippedVersionCode";
@@ -376,6 +377,8 @@ class Prefs {
     /** Page an invite link points at. Empty means the built-in default, which is the web player's own. */
     public String togetherInvitePage = "";
     public boolean crashReporting = false;
+    // Off prints the whole media link into the reports the person sends by hand; see Utils.reportUri.
+    public boolean maskReports = true;
     public boolean autoUpdate = true;
     public long updateLastCheck = 0L;
     public int updateSkippedVersionCode = 0;
@@ -552,6 +555,7 @@ class Prefs {
             mSharedPreferences.edit().putString(PREF_KEY_TOGETHER_NICK, togetherNick).apply();
         }
         crashReporting = mSharedPreferences.getBoolean(PREF_KEY_CRASH_REPORTING, crashReporting);
+        maskReports = mSharedPreferences.getBoolean(PREF_KEY_MASK_REPORTS, maskReports);
         autoUpdate = mSharedPreferences.getBoolean(PREF_KEY_AUTO_UPDATE, autoUpdate);
         // Defaulting to the field would hand back the stale in-memory set once the key is gone, so
         // "Reset learned audio workarounds" (which removes the key) would not take effect until the

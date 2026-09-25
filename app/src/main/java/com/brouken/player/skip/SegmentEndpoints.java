@@ -24,12 +24,26 @@ public final class SegmentEndpoints {
     static final String INTROHATER = "https://introhater.com/api/v1/segments/";
     /** Baked-in public read key (permission read:segments); a request without it gets a 401. */
     static final String INTROHATER_KEY = "introhater_mpv_client";
-    /** TV only, imdb-keyed. */
+    /** TV + movies (is_movie=true), imdb-keyed. */
     static final String INTRODB = "https://api.introdb.app/segments";
     /** imdb → MAL mapping per season (never pass ?include=). */
     static final String ARM = "https://arm.haglund.dev/api/v2/imdb";
     /** anime only, MAL-relative episode. */
     static final String ANISKIP = "https://api.aniskip.com/v2/skip-times";
+    /** anime, Russian video CDN; shikimoriID (= MAL id) → player page carrying the skip ranges. */
+    static final String KODIK = "https://kodik-api.com/get-player";
+    /**
+     * The embed token Kodik ships to every site in its own public embed script
+     * (kodik-add.com/add-players.min.js), used there with this same get-player call.
+     */
+    static final String KODIK_TOKEN = "447d179e875efe44217f20d1ee2146be";
+    /** anime only, GraphQL, AniList-keyed ({@code findShowsByExternalId}). */
+    static final String ANIMESKIP = "https://api.anime-skip.com/graphql";
+    /**
+     * The shared read-only client id from anime-skip.com/docs/api; a request without one is refused.
+     * The docs call it heavily rate limited and not meant for production: swap in a registered id here.
+     */
+    static final String ANIMESKIP_CLIENT_ID = "ZGfO0sMF3eCwLYf8yMSCJjlynwNGRXWE";
     /** TV + movies, tmdb-keyed (may 403 behind Cloudflare — treated as empty). */
     static final String THEINTRODB = "https://api.theintrodb.org/v3/media";
     /** imdb → tmdb id. Called lazily, only inside the TheIntroDB step. */

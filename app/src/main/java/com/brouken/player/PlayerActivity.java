@@ -1115,6 +1115,9 @@ public class PlayerActivity extends Activity {
     final List<MediaItem> apiMediaItems = new ArrayList<>();
     final List<String> apiPlaylistSegments = new ArrayList<>();
     int apiPlaylistStartIndex;
+    // The item the single-item extras (season, episode) describe: the one the intent's data uri points
+    // at. Unlike apiPlaylistStartIndex, which follows playback around for rebuilds, this stays put.
+    int apiExtrasIndex;
     // Per-episode resume positions for non-persistent playlist sessions (in-session only). One slot per
     // playlist item aligned by index; null when there is no playlist. Kept off the player so it survives
     // an onStop/release rebuild. See onPositionDiscontinuity()/savePlayer().
@@ -4109,6 +4112,7 @@ public class PlayerActivity extends Activity {
         apiMediaItems.clear();
         apiPlaylistSegments.clear();
         apiPlaylistStartIndex = 0;
+        apiExtrasIndex = 0;
         apiPlaylistPositions = null;
         resolvedMediaTypes.clear();
         apiSeason = -1;
@@ -4416,11 +4420,14 @@ public class PlayerActivity extends Activity {
         // Intent segments win outright; anything else this lookup may already have found is its own
         // earlier, less certain result and is meant to be replaced.
         if (!mPrefs.skipEnabled || !mPrefs.skipFetchOnline || skipSourceFromIntent) {
+            Utils.log("segments: not searching, " + (skipSourceFromIntent ? "the launcher sent them"
+                    : !mPrefs.skipEnabled ? "skipping is off" : "online search is off"));
             return;
         }
         final int index = player.getCurrentMediaItemIndex();
         final MediaId id = mediaIdAt(index);
         if (id.isEmpty()) {
+            Utils.log("segments: no title id, not searching");
             return;
         }
         cancelSegmentFinder();
@@ -4503,8 +4510,11 @@ public class PlayerActivity extends Activity {
         final String imdb = manualTmdbId != null ? null : stringAt(apiPlaylistImdbIds, index, apiImdbId);
         final String tmdb = manualTmdbId != null
                 ? manualTmdbId : stringAt(apiPlaylistTmdbIds, index, apiTmdbId);
-        int season = valueAt(apiPlaylistSeasons, index, apiSeason);
-        int episode = valueAt(apiPlaylistEpisodes, index, apiEpisode);
+        // The single-item season/episode belong to the item the launch opened, not to its neighbours:
+        // lent to them, the next episode is looked up as this one and the name below is never read.
+        final boolean described = index == apiExtrasIndex;
+        int season = valueAt(apiPlaylistSeasons, index, described ? apiSeason : -1);
+        int episode = valueAt(apiPlaylistEpisodes, index, described ? apiEpisode : -1);
         // Last resort, and for at least one launcher the only one that works: LAMPA sends every
         // per-episode field as an empty string and writes the numbers into the item's name instead.
         // Without them a series is looked up as a film, which is not just a worse match but a
@@ -5378,6 +5388,7 @@ public class PlayerActivity extends Activity {
         apiPlaylistTmdbIds.clear();
         apiPlaylistQuality.clear();
         apiPlaylistStartIndex = 0;
+        apiExtrasIndex = 0;
 
         for (int i = 0; i < size; i++) {
             Uri uri = null;
@@ -5415,6 +5426,7 @@ public class PlayerActivity extends Activity {
 
             if (dataUri != null && uri.equals(dataUri)) {
                 apiPlaylistStartIndex = apiMediaItems.size();
+                apiExtrasIndex = apiPlaylistStartIndex;
             }
             final MediaItem.Builder itemBuilder = new MediaItem.Builder()
                     .setUri(uri)
@@ -12377,6 +12389,11 @@ public class PlayerActivity extends Activity {
 
         player.addListener(playerListener);
         player.addAnalyticsListener(playbackInfoListener);
+        // The item set above made its transition before the listener was there to trace it.
+        final Uri startUri = currentMediaUri();
+        if (startUri != null) {
+            Utils.log("media=" + Utils.reportUri(startUri, mPrefs.maskReports));
+        }
         // The renderers factory has just loaded the extension libraries it needs, so this is free here.
         if (ffmpegAvailable == null
                 && mPrefs.decoderPriority != DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF) {
@@ -13153,8 +13170,11 @@ public class PlayerActivity extends Activity {
 
         @Override
         public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+            // The link rides the trace so the app log names the file too, masked as the setting says.
             Utils.log("item transition reason=" + reason
-                    + (player != null ? " index=" + player.getCurrentMediaItemIndex() : ""));
+                    + (player != null ? " index=" + player.getCurrentMediaItemIndex() : "")
+                    + (mediaItem != null && mediaItem.localConfiguration != null
+                    ? " media=" + Utils.reportUri(mediaItem.localConfiguration.uri, mPrefs.maskReports) : ""));
             // The mode for a new item is asked for once its format is readable, in onVideoSizeChanged.
             // Not for the file a session opens with — the loading branch does that one — and not for a
             // list that changed under the item already playing, which is the same picture as before.
@@ -15701,8 +15721,8 @@ public class PlayerActivity extends Activity {
             sb.append('\n').append(message);
         }
         final Uri uri = currentMediaUri();
-        if (Utils.isSupportedNetworkUri(uri)) {
-            sb.append("\n\n").append(Utils.uriToReportString(uri));
+        if (Utils.isSupportedNetworkUri(uri) || (uri != null && !mPrefs.maskReports)) {
+            sb.append("\n\n").append(Utils.reportUri(uri, mPrefs.maskReports));
         }
         return sb.toString();
     }
@@ -15712,12 +15732,8 @@ public class PlayerActivity extends Activity {
     private String errorReport(PlaybackException error) {
         final StringBuilder sb = new StringBuilder("Error code: ").append(error.getErrorCodeName());
         final Uri uri = currentMediaUri();
-        if (Utils.isSupportedNetworkUri(uri)) {
-            sb.append("\nMedia: ").append(Utils.uriToReportString(uri));
-        } else if (uri != null) {
-            // Local media: the scheme only. A path or file name can identify the user's library, so it
-            // never leaves the device — the formats below say everything a decoder bug needs anyway.
-            sb.append("\nMedia: ").append(uri.getScheme()).append(" (local)");
+        if (uri != null) {
+            sb.append("\nMedia: ").append(Utils.reportUri(uri, mPrefs.maskReports));
         }
         final String codec = codecDetails(error);
         if (!codec.isEmpty()) {

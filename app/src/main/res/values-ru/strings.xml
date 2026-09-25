@@ -541,4 +541,10 @@
     <string name="pref_reset_do">Сбросить</string>
     <string name="pref_reset_done">Настройки сброшены</string>
     <string name="pref_together_nick_blank">В имени нужен хотя бы один символ</string>
+    <string name="pref_diagnostics_header">Диагностика</string>
+    <string name="pref_send_app_log">Отправить журнал приложения</string>
+    <string name="pref_send_app_log_summary">Что приложение записало с момента запуска — для отчёта об ошибке</string>
+    <string name="pref_mask_reports">Скрывать ссылки в отчётах</string>
+    <string name="pref_mask_reports_on">Ссылки на видео сокращаются до сервера и пути, локальные файлы — до типа</string>
+    <string name="pref_mask_reports_off">Отчёты содержат полные ссылки на видео вместе с токенами. Загруженный отчёт публичен</string>
 </resources>

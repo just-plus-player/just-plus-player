@@ -27,6 +27,7 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.TooltipCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -38,6 +39,9 @@ import com.google.android.material.color.MaterialColors;
 import com.google.android.material.progressindicator.CircularProgressIndicatorSpec;
 import com.google.android.material.progressindicator.IndeterminateDrawable;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -127,9 +131,14 @@ public class ErrorActivity extends AppCompatActivity {
 
         // Strip URL query strings (tokens/session ids) from everything shown, copied, shared or uploaded
         // — matching Sentry's beforeSend sanitisation. Critical because the report can be pasted publicly
-        // (termbin) and ExoPlayer bakes full URLs into exception messages/stack traces.
-        final String summary = Utils.stripUrlQuery(getIntent().getStringExtra(EXTRA_SUMMARY));
-        final String body = Utils.stripUrlQuery(getIntent().getStringExtra(EXTRA_REPORT));
+        // (termbin) and ExoPlayer bakes full URLs into exception messages/stack traces. Skipped only when
+        // the person turned masking off, to hand over the very link that failed.
+        final boolean mask = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean(Prefs.PREF_KEY_MASK_REPORTS, true);
+        final String summary = mask ? Utils.stripUrlQuery(getIntent().getStringExtra(EXTRA_SUMMARY))
+                : getIntent().getStringExtra(EXTRA_SUMMARY);
+        final String body = mask ? Utils.stripUrlQuery(getIntent().getStringExtra(EXTRA_REPORT))
+                : getIntent().getStringExtra(EXTRA_REPORT);
         report = buildReport(body);
 
         final MaterialToolbar toolbar = findViewById(R.id.toolbar);
@@ -439,6 +448,7 @@ public class ErrorActivity extends AppCompatActivity {
         sb.append("Prefs:")
                 .append(BuildConfig.ENABLE_CRASH_REPORTING && prefs.getBoolean("crashReporting", false)
                         ? " crash reporting on" : " crash reporting off")
+                .append(prefs.getBoolean(Prefs.PREF_KEY_MASK_REPORTS, true) ? "" : ", masking off")
                 .append('\n');
     }
 
@@ -470,11 +480,36 @@ public class ErrorActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * As a .txt file: a messenger cuts a message of five hundred trace lines short or splits it, and a
+     * file arrives whole. Text only when the file cannot be written.
+     */
     private void share(final String text) {
         final Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.error_share_subject));
-        intent.putExtra(Intent.EXTRA_TEXT, text);
+        try {
+            // Stamped, so two reports in one chat can be told apart; the earlier ones are cleared, so the
+            // cache keeps only the last and never a pile of them.
+            final File dir = new File(getCacheDir(), "report");
+            final File[] old = dir.listFiles();
+            if (old != null) {
+                for (File stale : old) {
+                    stale.delete();
+                }
+            }
+            dir.mkdirs();
+            final File file = new File(dir, "justplus-report-"
+                    + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date()) + ".txt");
+            try (OutputStream out = new FileOutputStream(file)) {
+                out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            intent.putExtra(Intent.EXTRA_STREAM,
+                    FileProvider.getUriForFile(this, getPackageName() + ".provider", file));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (IOException | IllegalArgumentException e) {
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+        }
         startActivity(Intent.createChooser(intent, getString(R.string.error_share)));
     }
 

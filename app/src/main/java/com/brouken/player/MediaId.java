@@ -12,7 +12,7 @@ import android.text.TextUtils;
  */
 final class MediaId {
 
-    /** As it arrived from the launcher: {@code "tt14688458"} or {@code "14688458"}. Null when absent. */
+    /** Always the {@code tt} form, e.g. {@code "tt14688458"}, whatever the launcher sent. Null when absent. */
     final String imdb;
     final String tmdb;
     /** Below 1 for a movie. A season implies a series even when the episode number is missing. */
@@ -20,7 +20,7 @@ final class MediaId {
     final int episode;
 
     MediaId(String imdb, String tmdb, int season, int episode) {
-        this.imdb = blankToNull(imdb);
+        this.imdb = withTt(blankToNull(imdb));
         this.tmdb = blankToNull(tmdb);
         this.season = season;
         this.episode = episode;
@@ -65,6 +65,22 @@ final class MediaId {
      * id had been absent all along. A launcher can send the same word, so the guard belongs here,
      * where every id this app holds is made.
      */
+    /**
+     * A launcher may send the imdb id as bare digits ({@code "903747"}). SkipDB, IntroDB.app and arm
+     * answer that with 400, and without the leading zeros {@code tt903747} is simply another title
+     * that has no segments — so the id is prefixed and padded to imdb's seven digits here, once.
+     */
+    private static String withTt(String imdb) {
+        if (imdb == null || !imdb.matches("\\d+")) {
+            return imdb;
+        }
+        final StringBuilder sb = new StringBuilder("tt");
+        for (int i = imdb.length(); i < 7; i++) {
+            sb.append('0');
+        }
+        return sb.append(imdb).toString();
+    }
+
     private static String blankToNull(String value) {
         if (value == null) {
             return null;

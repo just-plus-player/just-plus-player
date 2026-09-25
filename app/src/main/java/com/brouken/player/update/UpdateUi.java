@@ -357,6 +357,15 @@ public final class UpdateUi {
                     }
                     if (file != null) {
                         Updater.installApk(activity, file);
+                        // Installing kills this process without a lifecycle, and the player hands a launcher
+                        // its result (position, length, which episode) only in finish(). Leaving the player
+                        // now is what gets that result to Lampa and the like before the kill; the installer
+                        // is a task of its own and stays in front. Only for a player a launcher waits on:
+                        // anyone else keeps it, paused where they were, should the install not go through.
+                        if (activity instanceof com.brouken.player.PlayerActivity
+                                && ((com.brouken.player.PlayerActivity) activity).returnsResult()) {
+                            activity.finish();
+                        }
                     } else {
                         com.brouken.player.Notice.show(activity, R.string.update_download_failed,
                                 true, R.drawable.ic_update_24dp);

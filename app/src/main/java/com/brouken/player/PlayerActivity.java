@@ -1272,6 +1272,12 @@ public class PlayerActivity extends Activity {
     boolean sourceSwitchKeepPaused;
     List<MediaItem.SubtitleConfiguration> apiSubs = new ArrayList<>();
     boolean intentReturnResult;
+
+    /** Whether the app that started this player is waiting for its result (position, which episode). */
+    public boolean returnsResult() {
+        return intentReturnResult;
+    }
+
     boolean playbackFinished;
     // The last state worth handing a launcher back: an item that really played, where it was left and
     // how long it is. An item that stalled or failed has neither a position nor a duration of its own,
@@ -4434,7 +4440,14 @@ public class PlayerActivity extends Activity {
         final int generation = segmentFetchGeneration;
         segmentFinderThread = SegmentFinder.find(id.imdb, id.tmdb, id.season, id.episode,
                 currentDurationSec(),
-                segments -> runOnUiThread(() -> onSegmentsFetched(generation, index, segments)));
+                segments -> runOnUiThread(() -> {
+                    // On the main thread a throw ends the app; a skip that cannot be applied is only logged.
+                    try {
+                        onSegmentsFetched(generation, index, segments);
+                    } catch (RuntimeException e) {
+                        Utils.log("segments: applying failed " + e);
+                    }
+                }));
         prefetchNextSegments();
     }
 

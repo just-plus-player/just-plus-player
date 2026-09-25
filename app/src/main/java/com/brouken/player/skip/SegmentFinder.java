@@ -82,8 +82,11 @@ public final class SegmentFinder {
     /**
      * A take shorter than this fraction of its cluster's longest is a truncated submission, not a
      * differing opinion on the same segment — a five-second "intro" against a ninety-second one. It
-     * still counts as a vote, but must never supply the cluster's timing, however much its source is
-     * trusted on timing in general.
+     * must never supply the cluster's timing, however much its source is trusted on timing in general.
+     * Between clusters whose timing is trusted alike it counts only where the full takes leave them
+     * level (bestCluster, step two): Silo S1E5 had IntroDB and TheIntroDB at 866 s against TheIntroDB
+     * and an 11 s SkipDB take at 187 s, and the level count handed the intro to the earlier, wrong one.
+     * Elsewhere it counts as a vote as it always did.
      *
      * <p>Deliberately far below the disagreement sources show in practice: across 52 cross-source
      * pairs the widest honest split was 17 s against 46 s (0.37) — and there the shorter take was the
@@ -165,16 +168,16 @@ public final class SegmentFinder {
     private static final long HTTP_CACHE_BYTES = 1024 * 1024;
 
     /**
-     * Where Anime Skip episode lists and timestamps, Kodik's ranges and what Bilibili and iQIYI said are kept;
-     * null until {@link #setCacheDir}.
+     * Where Anime Skip episode lists and timestamps, Kodik's ranges and what Bilibili, iQIYI and Tencent said
+     * are kept; null until {@link #setCacheDir}.
      */
     private static volatile java.io.File animeSkipDir;
 
     /** Replaced once by {@link #setCacheDir} with the same client plus a cache; volatile for that swap. */
     private static volatile OkHttpClient CLIENT = new OkHttpClient.Builder()
-            // One idle connection per host a lookup talks to (twelve now), so the full wave, seconds after
+            // One idle connection per host a lookup talks to (fourteen now), so the full wave, seconds after
             // the early one, finds them open instead of paying a TLS handshake each; OkHttp keeps five.
-            .connectionPool(new okhttp3.ConnectionPool(12, 5, TimeUnit.MINUTES))
+            .connectionPool(new okhttp3.ConnectionPool(14, 5, TimeUnit.MINUTES))
             .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_SEC + 1, TimeUnit.SECONDS)
@@ -219,9 +222,17 @@ public final class SegmentFinder {
      */
     public static Thread find(String imdbId, String tmdbId, int season, int episode, double durationSec,
                               Callback callback) {
-        final Thread thread = new Thread(
-                () -> lookup(imdbId, tmdbId, season, episode, durationSec, new Emitter(callback)),
-                "SegmentFinder");
+        // Nothing a source answers, and no mistake of ours in reading it, may take the player down: skip
+        // points are a convenience, and a bug in the vote crashed 2.0.3 from this very thread. What fails
+        // is logged (the trace carries it into a report) and the lookup simply delivers nothing.
+        final Thread thread = new Thread(() -> {
+            try {
+                lookup(imdbId, tmdbId, season, episode, durationSec, new Emitter(callback));
+            } catch (Throwable t) {
+                Utils.log("segments: lookup failed " + t);
+                io.sentry.Sentry.captureException(t);
+            }
+        }, "SegmentFinder");
         thread.setDaemon(true);
         thread.start();
         return thread;
@@ -387,6 +398,7 @@ public final class SegmentFinder {
                 // still finishes and saves, so the full wave reads it from disk well inside its deadline.
                 steps.add(traced(tag, "Bilibili", () -> bilibili(tmdb, season, ep, durationSec)));
                 steps.add(traced(tag, "iQIYI", () -> iqiyi(tmdb, season, ep, durationSec)));
+                steps.add(traced(tag, "Tencent", () -> tencent(tmdb, season, ep, durationSec)));
             }
             if (imdb != null && INTROHATER_ENABLED) {
                 steps.add(traced(tag, "IntroHater", () -> introHater(imdb, season, ep)));
@@ -600,8 +612,11 @@ public final class SegmentFinder {
 
     /**
      * Clusters same-category votes by start time and returns the winning cluster's representative
-     * segment (a fresh copy with {@code confirmed} set), or null if there are no votes. Winner =
-     * most distinct sources, then highest {@code timeTrust}, then highest signal, then earliest.
+     * segment (a fresh copy with {@code confirmed} set), or null if there are no votes. In two steps, so
+     * the answer does not depend on the order the clusters come in: the old winner first (most distinct
+     * sources, then highest {@code timeTrust}, then highest signal, then earliest); then, among the
+     * clusters whose timing is trusted as much as that winner's, the one with most full takes (see
+     * {@link #TRUNCATED_TAKE_RATIO}), then most sources, then signal, then earliest.
      */
     private static SkipSegment bestCluster(List<Vote> votes) {
         if (votes.isEmpty()) {
@@ -609,10 +624,8 @@ public final class SegmentFinder {
         }
         Collections.sort(votes, (a, b) -> Double.compare(a.seg.startSec, b.seg.startSec));
 
-        SkipSegment bestSeg = null;
-        int bestSources = -1;
-        int bestTrust = -1;
-        double bestSignal = -1;
+        final List<Vote> reps = new ArrayList<>();
+        final List<int[]> counts = new ArrayList<>(); // {distinct sources, sources with a full take}
 
         int i = 0;
         while (i < votes.size()) {
@@ -640,34 +653,60 @@ public final class SegmentFinder {
             }
             Vote rep = null;
             final java.util.Set<Integer> sources = new java.util.HashSet<>();
+            final java.util.Set<Integer> fullSources = new java.util.HashSet<>();
             for (Vote v : cluster) {
                 sources.add(v.sourceId);
                 if (v.seg.endSec - v.seg.startSec < longest * TRUNCATED_TAKE_RATIO) {
                     continue;
                 }
+                fullSources.add(v.sourceId);
                 if (rep == null || v.seg.timeTrust > rep.seg.timeTrust
                         || (v.seg.timeTrust == rep.seg.timeTrust && v.signal > rep.signal)) {
                     rep = v;
                 }
             }
-            final int distinctSources = sources.size();
-
-            final boolean better = distinctSources > bestSources
-                    || (distinctSources == bestSources && rep.seg.timeTrust > bestTrust)
-                    || (distinctSources == bestSources && rep.seg.timeTrust == bestTrust
-                        && rep.signal > bestSignal);
-            if (better) {
-                bestSources = distinctSources;
-                bestTrust = rep.seg.timeTrust;
-                bestSignal = rep.signal;
-                final SkipSegment src = rep.seg;
-                final SkipSegment kept = new SkipSegment(src.startSec, src.endSec, src.type,
-                        src.category, src.coordBase, src.timeTrust);
-                kept.confirmed = distinctSources >= MIN_VOTES;
-                bestSeg = kept;
+            if (rep == null) {
+                continue; // cannot happen since addSeg drops empty spans; a cluster without one is skipped
+            }
+            reps.add(rep);
+            counts.add(new int[]{sources.size(), fullSources.size()});
+        }
+        if (reps.isEmpty()) {
+            return null;
+        }
+        // Step one, the rule as it always was. A truncated take beside a file-accurate one counts here:
+        // Aniskip timed for this file plus a short take must still beat two sources of another cut.
+        int w = 0;
+        for (int k = 1; k < reps.size(); k++) {
+            final Vote c = reps.get(k);
+            final Vote b = reps.get(w);
+            if (counts.get(k)[0] > counts.get(w)[0]
+                    || (counts.get(k)[0] == counts.get(w)[0] && c.seg.timeTrust > b.seg.timeTrust)
+                    || (counts.get(k)[0] == counts.get(w)[0] && c.seg.timeTrust == b.seg.timeTrust
+                        && c.signal > b.signal)) {
+                w = k;
             }
         }
-        return bestSeg;
+        // Step two, among clusters trusted like the winner: full takes first. Silo S1E5 had IntroDB and
+        // TheIntroDB at 866 s against TheIntroDB and an 11 s SkipDB take at 187 s, all trusted alike.
+        final int trust = reps.get(w).seg.timeTrust;
+        int best = -1;
+        for (int k = 0; k < reps.size(); k++) {
+            if (reps.get(k).seg.timeTrust != trust) {
+                continue;
+            }
+            if (best < 0 || counts.get(k)[1] > counts.get(best)[1]
+                    || (counts.get(k)[1] == counts.get(best)[1] && counts.get(k)[0] > counts.get(best)[0])
+                    || (counts.get(k)[1] == counts.get(best)[1] && counts.get(k)[0] == counts.get(best)[0]
+                        && reps.get(k).signal > reps.get(best).signal)) {
+                best = k;
+            }
+        }
+        final SkipSegment src = reps.get(best).seg;
+        final SkipSegment kept = new SkipSegment(src.startSec, src.endSec, src.type,
+                src.category, src.coordBase, src.timeTrust);
+        kept.confirmed = counts.get(best)[0] >= MIN_VOTES;
+        return kept;
     }
 
     // ---- Sources -----------------------------------------------------------------------------
@@ -829,11 +868,21 @@ public final class SegmentFinder {
         if (durationSec > 0) {
             final long mal = malId;
             final JSONArray[] replies = new JSONArray[2];
-            final Thread lowerProbe = new Thread(
-                    () -> replies[0] = aniskipTimes(mal, episode, durationSec - CUT_PROBE_SHIFT_SEC),
-                    "SegmentSource-aniskip-lower");
-            final Thread anyProbe = new Thread(
-                    () -> replies[1] = aniskipTimes(mal, episode, 0), "SegmentSource-aniskip-any");
+            // Guarded like every other worker here (see find): an uncaught throw in a thread ends the process.
+            final Thread lowerProbe = new Thread(() -> {
+                try {
+                    replies[0] = aniskipTimes(mal, episode, durationSec - CUT_PROBE_SHIFT_SEC);
+                } catch (Throwable ignored) {
+                    // No reply, as for a failed request.
+                }
+            }, "SegmentSource-aniskip-lower");
+            final Thread anyProbe = new Thread(() -> {
+                try {
+                    replies[1] = aniskipTimes(mal, episode, 0);
+                } catch (Throwable ignored) {
+                    // No reply, as for a failed request.
+                }
+            }, "SegmentSource-aniskip-any");
             lowerProbe.setDaemon(true);
             anyProbe.setDaemon(true);
             lowerProbe.start();
@@ -897,6 +946,7 @@ public final class SegmentFinder {
             return null;
         }
         JSONObject unseasoned = null;
+        JSONObject seasonOne = null;
         boolean anySeasoned = false;
         for (int i = 0; i < entries.length(); i++) {
             final JSONObject entry = entries.optJSONObject(i);
@@ -924,6 +974,17 @@ public final class SegmentFinder {
             if (entrySeason == season) {
                 return new long[]{entry.optLong(field, -1), episode}; // first match for the season
             }
+            if (entrySeason == 1 && seasonOne == null && !"MOVIE".equals(entry.optString("media"))) {
+                seasonOne = entry;
+            }
+        }
+        // A season arm does not have, of a show TMDB keeps as a single season long enough for the episode:
+        // the launcher numbers it as Kodik files it. Kodik puts all 64 episodes of Fullmetal Alchemist:
+        // Brotherhood under "season 2" (after the 2003 series), so a viewer's S2E5 is episode 5 of the one
+        // season TMDB, arm and Aniskip know. Nothing matched before, so this can only add an answer.
+        if (season > 1 && seasonOne != null
+                && tmdbOnlySeasonHolds(seasonOne.optLong("themoviedb", -1), episode)) {
+            return new long[]{seasonOne.optLong(field, -1), episode};
         }
         // Only a show arm keeps as that one entry: next to seasoned ones, an unseasoned entry is some
         // other part (an OVA filed as TV), and its absolute numbers would name the wrong episode.
@@ -933,6 +994,30 @@ public final class SegmentFinder {
         final int absolute = season == 1 ? episode
                 : tmdbAbsoluteEpisode(unseasoned.optLong("themoviedb", -1), season, episode);
         return absolute < 1 ? null : new long[]{unseasoned.optLong(field, -1), absolute};
+    }
+
+    /** Whether TMDB keeps the show as one regular season (specials aside) of at least {@code episode} episodes. */
+    private static boolean tmdbOnlySeasonHolds(long tmdbTvId, int episode) {
+        if (tmdbTvId < 0 || episode < 1) {
+            return false;
+        }
+        // The same URL tmdbAbsoluteEpisode asks, so it is answered from the HTTP cache after the first time.
+        final JSONObject root = getJson(HttpUrl.parse(SegmentEndpoints.TMDB_BASE).newBuilder()
+                .addPathSegment("tv")
+                .addPathSegment(String.valueOf(tmdbTvId))
+                .addQueryParameter("api_key", SegmentEndpoints.TMDB_KEY)
+                .build());
+        final JSONArray seasons = root == null ? null : root.optJSONArray("seasons");
+        int regular = 0;
+        int count = 0;
+        for (int i = 0; seasons != null && i < seasons.length(); i++) {
+            final JSONObject s = seasons.optJSONObject(i);
+            if (s != null && s.optInt("season_number", 0) >= 1) {
+                regular++;
+                count = s.optInt("episode_count", 0);
+            }
+        }
+        return regular == 1 && episode <= count;
     }
 
     /**
@@ -996,14 +1081,17 @@ public final class SegmentFinder {
         if (shows == null) {
             return new Scored(out, 0);
         }
-        // Every entry for this episode number close enough to be this release, nearest the file first.
+        // Every entry for this episode number that can be this release, nearest the file first. One recorded
+        // with its zero shifted (below) states a length short by that shift, so a shorter entry stays in
+        // until its timestamps say what it really was.
         final List<JSONObject> candidates = new ArrayList<>();
         for (int i = 0; i < shows.length(); i++) {
             final JSONObject show = shows.optJSONObject(i);
             final JSONArray eps = show == null ? null : show.optJSONArray("episodes");
             for (int j = 0; eps != null && j < eps.length(); j++) {
                 final JSONObject ep = eps.optJSONObject(j);
-                if (animeSkipIs(ep, number) && animeSkipDelta(ep, durationSec) <= ANIMESKIP_CUT_SEC) {
+                if (animeSkipIs(ep, number) && (animeSkipDelta(ep, durationSec) <= ANIMESKIP_CUT_SEC
+                        || ep.optDouble("baseDuration", 0) < durationSec)) {
                     candidates.add(ep);
                 }
             }
@@ -1014,14 +1102,47 @@ public final class SegmentFinder {
         // nearest gets one more request. ponytail: two tries, a third entry would cost another 0.9 s.
         JSONObject best = null;
         JSONArray ts = null;
-        for (int i = 0; i < Math.min(2, candidates.size()) && (ts == null || ts.length() == 0); i++) {
-            best = candidates.get(i);
-            ts = animeSkipTimestamps(best.optString("id"));
+        double shift = 0;
+        double bestDelta = 0;
+        for (int i = 0; i < Math.min(2, candidates.size()); i++) {
+            final JSONObject ep = candidates.get(i);
+            final JSONArray got = animeSkipTimestamps(ep.optString("id"));
+            if (got == null || got.length() == 0) {
+                continue;
+            }
+            // An entry recorded with its zero shifted keeps its spacing but starts below 0: Full-Time
+            // Magister S4E6 has Branding -199, Intro -176, Canon -79, Credits 936 and a baseDuration of
+            // 1037.5, where every other episode of the season starts at 0. Moved up to its first marker,
+            // it is 1236.5 s long, the length of the file it was asked for.
+            //
+            // Moved only for an entry the stated length would have ruled out, and only when the moved one
+            // is this file's cut: a marker below 0 is more often a lead-in before the recording's zero than
+            // a shifted recording (13 of 379 entries across 15 shows have one; Demon Slayer's Branding at
+            // -12 is right as it stands). So every entry taken before is read exactly as before, and with
+            // no length to compare nothing moves.
+            double first = 0;
+            for (int k = 0; k < got.length(); k++) {
+                final JSONObject t = got.optJSONObject(k);
+                if (t != null) {
+                    first = Math.min(first, t.optDouble("at", 0));
+                }
+            }
+            final double stated = animeSkipDelta(ep, durationSec);
+            final double moved = durationSec > 0
+                    ? Math.abs(ep.optDouble("baseDuration", 0) - first - durationSec) : stated;
+            final boolean move = stated > ANIMESKIP_CUT_SEC && moved <= CUT_MATCH_SEC;
+            final double delta = move ? moved : stated;
+            if (delta <= ANIMESKIP_CUT_SEC) {
+                best = ep;
+                ts = got;
+                shift = move ? -first : 0;
+                bestDelta = delta;
+                break;
+            }
         }
-        if (ts == null || ts.length() == 0) {
+        if (ts == null) {
             return new Scored(out, 0);
         }
-        final double bestDelta = animeSkipDelta(best, durationSec);
         final List<JSONObject> marks = new ArrayList<>();
         for (int i = 0; i < ts.length(); i++) {
             if (ts.optJSONObject(i) != null) {
@@ -1029,7 +1150,7 @@ public final class SegmentFinder {
             }
         }
         Collections.sort(marks, (a, b) -> Double.compare(a.optDouble("at", 0), b.optDouble("at", 0)));
-        final double fileEnd = best.optDouble("baseDuration", durationSec);
+        final double fileEnd = best.has("baseDuration") ? best.optDouble("baseDuration") + shift : durationSec;
         // Recorded for this file's cut, its seconds are this file's seconds — the same reason Aniskip's own
         // cut outranks the duration-shifted sources. Another cut's only point the right way.
         final int trust = durationSec > 0 && bestDelta <= CUT_MATCH_SEC ? TT_ANIMESKIP : TT_ABS;
@@ -1041,7 +1162,7 @@ public final class SegmentFinder {
             if (!last && cat == prev) {
                 continue; // back-to-back markers of one kind (two recaps) are one segment
             }
-            final double at = last ? fileEnd : marks.get(i).optDouble("at", 0);
+            final double at = last ? fileEnd : marks.get(i).optDouble("at", 0) + shift;
             // Only credits and the preview after them run to the end of the file. An intro that is the
             // last marker (Weathering With You has nothing else) says where it starts, not where it ends.
             if (prev != null && !(last && prev != SkipSegment.Category.CREDITS
@@ -1083,7 +1204,8 @@ public final class SegmentFinder {
 
     /**
      * One episode's timestamps, kept for a day like Aniskip's replies: a rewatch, or the full wave after
-     * the early one, then asks the server nothing. An empty list is kept too — it is an answer.
+     * the early one, then asks the server nothing. An empty list is kept too — it is an answer. A day, not
+     * the platforms' three: people add and correct these, and a fix should arrive by the next evening.
      */
     private static JSONArray animeSkipTimestamps(String episodeId) {
         final String name = "ts-" + episodeId.replaceAll("[^A-Za-z0-9-]", "") + ".json";
@@ -1153,7 +1275,7 @@ public final class SegmentFinder {
         }
         java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified())); // newest first
         final long now = System.currentTimeMillis();
-        long total = keep.length();
+        long total = onDisk(keep);
         for (java.io.File f : files) {
             if (f.equals(keep)) {
                 continue;
@@ -1163,13 +1285,18 @@ public final class SegmentFinder {
             if (inFlight) {
                 continue;
             }
-            total += f.length();
+            total += onDisk(f);
             if (f.getName().endsWith(".tmp") || now - f.lastModified() >= ANIMESKIP_LIST_TTL_MS
                     || total > ANIMESKIP_DIR_BYTES) {
-                total -= f.length();
+                total -= onDisk(f);
                 f.delete();
             }
         }
+    }
+
+    /** What a file takes on disk: whole 4 KB blocks, however few bytes it holds. */
+    private static long onDisk(java.io.File f) {
+        return (f.length() + 4095) / 4096 * 4096;
     }
 
     /**
@@ -1272,6 +1399,127 @@ public final class SegmentFinder {
     }
 
     /**
+     * Fetches of the platforms' marks outlive the lookup that started them. The three sit in China, one to
+     * several seconds a request from Europe, and the early wave that starts them at load was cut off by the
+     * full wave a few seconds later, which then began the same requests again: on the emulator 大王饶命
+     * S2E11 threw away 2.8 s that way. Now a fetch runs in a thread of its own, once per episode: the full
+     * wave, or the next item's prefetch, waits for the one already under way, and a lookup that is cut off
+     * leaves it to finish and save to disk. The answer is the same; only when it arrives changes.
+     */
+    private static final java.util.concurrent.ExecutorService PLATFORM_POOL =
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                final Thread t = new Thread(r, "segments-platform");
+                t.setDaemon(true);
+                return t;
+            });
+    private static final Map<String, java.util.concurrent.Future<JSONArray>> PLATFORM_FETCHES =
+            new ConcurrentHashMap<>();
+
+    /** {@code fetch}'s answer, joining one already under way for {@code key}; null when it failed. */
+    private static JSONArray shared(String key, java.util.concurrent.Callable<JSONArray> fetch) {
+        java.util.concurrent.Future<JSONArray> future =
+                PLATFORM_FETCHES.computeIfAbsent(key, k -> PLATFORM_POOL.submit(fetch));
+        // One that already failed, left behind by a waiter that was cut off, is not an answer: start again.
+        if (future.isDone() && doneValue(future) == null) {
+            PLATFORM_FETCHES.remove(key, future);
+            future = PLATFORM_FETCHES.computeIfAbsent(key, k -> PLATFORM_POOL.submit(fetch));
+        }
+        try {
+            return future.get();
+        } catch (java.util.concurrent.ExecutionException e) {
+            return null;
+        } catch (InterruptedException e) {
+            // This lookup was cut off; the fetch goes on. traced() reads the flag and says so.
+            Thread.currentThread().interrupt();
+            return null;
+        } finally {
+            // Done is forgotten, so the next lookup reads the disk (or retries a failure) afresh. A future
+            // whose waiter was cut off stays until the next one for the key picks it up, answer and all.
+            if (future.isDone()) {
+                PLATFORM_FETCHES.remove(key, future);
+            }
+        }
+    }
+
+    private static JSONArray doneValue(java.util.concurrent.Future<JSONArray> future) {
+        try {
+            return future.get();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * How long what the platforms said is kept. A released episode's marks do not change, and a series
+     * is watched over days, so found answers last three; "not there" (an empty answer) and an episode
+     * with no marks yet last a day, since a title can arrive, a season be added or marks be set later.
+     * A list missing the episode asked for is asked again sooner (see the callers).
+     */
+    private static final long PLATFORM_TTL_MS = TimeUnit.DAYS.toMillis(3);
+
+    private static JSONArray platformLoad(String name) {
+        final JSONArray kept = animeSkipLoad(name, PLATFORM_TTL_MS);
+        return kept != null && kept.length() == 0 ? animeSkipLoad(name, ANISKIP_STALE_MS) : kept;
+    }
+
+    /**
+     * One episode's marks out of its season's file, which holds a row
+     * {@code [episode, length, op start, op end, ed start, ed end, saved at]} per episode: one small file a season
+     * rather than a file an episode, each taking a 4 KB block of disk for its 30 bytes.
+     */
+    private static JSONArray seasonMarks(String prefix, int episode) {
+        final JSONArray rows = animeSkipLoad(prefix + "-marks.json", PLATFORM_TTL_MS);
+        for (int i = 0; rows != null && i < rows.length(); i++) {
+            final JSONArray row = rows.optJSONArray(i);
+            if (row != null && row.length() >= 6 && row.optInt(0) == episode) {
+                // No marks yet (or no such episode): a day, like any empty answer, then asked again. Timed by
+                // the row's own save time, since writing another episode refreshes the file's; a row an
+                // older build wrote without one goes by the file.
+                final long savedAt = row.optLong(6, 0);
+                final boolean dayOld = savedAt > 0
+                        ? System.currentTimeMillis() - savedAt >= ANISKIP_STALE_MS
+                        : animeSkipLoad(prefix + "-marks.json", ANISKIP_STALE_MS) == null;
+                if (row.optDouble(3) <= 0 && row.optDouble(5) <= 0 && dayOld) {
+                    return null;
+                }
+                return marks(row.optDouble(1), row.optDouble(2), row.optDouble(3), row.optDouble(4),
+                        row.optDouble(5));
+            }
+        }
+        return null;
+    }
+
+    private static final Object SEASON_MARKS_LOCK = new Object();
+
+    /** Adds episodes to their season's file; an episode already there is replaced. */
+    private static void saveSeasonMarks(String prefix, Map<Integer, JSONArray> byEpisode) {
+        if (byEpisode.isEmpty()) {
+            return;
+        }
+        // Read, merge and write as one: two episodes of a season can be fetched at once (this one and the
+        // next item's prefetch), and each would otherwise write over the other's row.
+        synchronized (SEASON_MARKS_LOCK) {
+            final JSONArray old = animeSkipLoad(prefix + "-marks.json", PLATFORM_TTL_MS);
+            final JSONArray out = new JSONArray();
+            for (int i = 0; old != null && i < old.length(); i++) {
+                final JSONArray row = old.optJSONArray(i);
+                if (row != null && !byEpisode.containsKey(row.optInt(0))) {
+                    out.put(row);
+                }
+            }
+            final long now = System.currentTimeMillis();
+            for (Map.Entry<Integer, JSONArray> e : byEpisode.entrySet()) {
+                final JSONArray row = new JSONArray().put(e.getKey());
+                for (int i = 0; i < 5; i++) {
+                    row.put(e.getValue().opt(i));
+                }
+                out.put(row.put(now)); // when this row was learnt, for seasonMarks' day on an empty one
+            }
+            animeSkipSave(prefix + "-marks.json", out);
+        }
+    }
+
+    /**
      * The streaming platforms' own marks for Chinese animation (donghua), which the anime sources barely
      * cover: Bilibili and iQIYI each mark an episode's opening and ending for their skip button, and say
      * how long that episode is. Asked only for a series TMDB calls Chinese, by its original name.
@@ -1284,14 +1532,21 @@ public final class SegmentFinder {
      * <p>{@code marks} is {@code [length s, op start, op end, ed start, ed end]}; 0-0 is "none", and an
      * empty array "not on this platform".
      */
-    private static Scored platformMarks(JSONArray marks, double durationSec) {
+    private static Scored platformMarks(JSONArray marks, double durationSec, boolean moveOpeningEnd) {
         final List<SkipSegment> out = new ArrayList<>();
         if (marks == null || marks.length() < 5) {
             return new Scored(out, 0);
         }
         final boolean ours = durationSec > 0 && Math.abs(marks.optDouble(0) - durationSec) <= CUT_MATCH_SEC;
         final int trust = ours ? TT_PLATFORM : TT_ABS;
-        addSeg(out, marks.optDouble(1), marks.optDouble(2), SkipSegment.Category.INTRO,
+        // Tencent only (a new source, so nothing it did before can get worse): a file shorter than its
+        // episode ends its opening earlier by the difference. The viewer's rip of 大王饶命 S2E12, 10 s short of
+        // Tencent's 1694 s, ends its opening at 113 s against Tencent's 123, by frames. Only the end moves;
+        // the start is where the vote clusters and the opening begins, so it stays. Bilibili and iQIYI keep
+        // their marks as they were: had the loss been at the end, this would leave seconds of opening.
+        final double lost = moveOpeningEnd && durationSec > 0 && !ours ? marks.optDouble(0) - durationSec : 0;
+        final double shift = lost > 0 && lost <= ANIMESKIP_CUT_SEC ? lost : 0;
+        addSeg(out, marks.optDouble(1), marks.optDouble(2) - shift, SkipSegment.Category.INTRO,
                 SkipSegment.CoordBase.ABSOLUTE, trust);
         if (ours || durationSec <= 0 || marks.optDouble(4) <= durationSec + CUT_MATCH_SEC) {
             addSeg(out, marks.optDouble(3), marks.optDouble(4), SkipSegment.Category.CREDITS,
@@ -1309,31 +1564,51 @@ public final class SegmentFinder {
         if (tmdbTvId < 0 || season < 1 || episode < 1) {
             return new Scored(new ArrayList<>(), 0);
         }
+        return platformMarks(shared("bilibili-" + tmdbTvId + "-" + season + "-" + episode,
+                () -> bilibiliFetch(tmdbTvId, season, episode)), durationSec, false);
+    }
+
+    /** The episode's marks, from disk or from Bilibili (and then saved); null when not to be had. */
+    private static JSONArray bilibiliFetch(long tmdbTvId, int season, int episode) {
         final String show = "bilibili-" + tmdbTvId + "-" + season;
-        JSONArray marks = animeSkipLoad(show + "-" + episode + ".json", ANISKIP_STALE_MS);
+        JSONArray marks = seasonMarks(show, episode);
         if (marks == null) {
-            JSONArray eps = animeSkipLoad(show + ".json", ANISKIP_STALE_MS);
-            if (eps == null) {
+            JSONArray eps = platformLoad(show + ".json");
+            long epId = pairedId(eps, episode);
+            // Not listed, or listed without this episode: a running show adds one a week, so the list is asked
+            // again, but no more than once a day.
+            if (eps == null || (epId < 0 && eps.length() > 0 && animeSkipLoad(show + ".json", ANISKIP_STALE_MS) == null)) {
+                // Not a Chinese series: nothing is saved, TMDB's reply being HTTP-cached for hours, so a
+                // Western show costs no disk block here.
+                final String name = chineseName(tmdbTvId);
+                if (name == null || name.isEmpty()) {
+                    return null;
+                }
                 eps = bilibiliEpisodes(tmdbTvId, season);
                 if (eps == null) {
-                    return new Scored(new ArrayList<>(), 0); // a request failed: nothing to remember
+                    return null; // a request failed: nothing to remember
                 }
-                animeSkipSave(show + ".json", eps); // an empty one remembers "not there"
-            }
-            long epId = -1;
-            for (int i = 0; i < eps.length(); i++) {
-                final JSONArray pair = eps.optJSONArray(i);
-                if (pair != null && pair.optInt(0) == episode) {
-                    epId = pair.optLong(1, -1);
-                }
+                animeSkipSave(show + ".json", eps); // an empty one remembers "not there", for a day
+                epId = pairedId(eps, episode);
             }
             marks = epId < 0 ? null : bilibiliMarks(epId);
             if (marks == null) {
-                return new Scored(new ArrayList<>(), 0);
+                return null;
             }
-            animeSkipSave(show + "-" + episode + ".json", marks);
+            saveSeasonMarks(show, java.util.Collections.singletonMap(episode, marks));
         }
-        return platformMarks(marks, durationSec);
+        return marks;
+    }
+
+    /** The id paired with {@code episode} in {@code [episode, id]} pairs; -1 when it is not there. */
+    private static long pairedId(JSONArray pairs, int episode) {
+        for (int i = 0; pairs != null && i < pairs.length(); i++) {
+            final JSONArray pair = pairs.optJSONArray(i);
+            if (pair != null && pair.optInt(0) == episode) {
+                return pair.optLong(1, -1);
+            }
+        }
+        return -1;
     }
 
     /**
@@ -1433,27 +1708,42 @@ public final class SegmentFinder {
         if (tmdbTvId < 0 || season < 1 || episode < 1) {
             return new Scored(new ArrayList<>(), 0);
         }
+        return platformMarks(shared("iqiyi-" + tmdbTvId + "-" + season + "-" + episode,
+                () -> iqiyiFetch(tmdbTvId, season, episode)), durationSec, false);
+    }
+
+    /** The episode's marks, from disk or from iQIYI (and then saved); null when not to be had. */
+    private static JSONArray iqiyiFetch(long tmdbTvId, int season, int episode) {
         final String show = "iqiyi-" + tmdbTvId + "-" + season;
-        JSONArray marks = animeSkipLoad(show + "-" + episode + ".json", ANISKIP_STALE_MS);
+        JSONArray marks = seasonMarks(show, episode);
         if (marks == null) {
-            JSONArray album = animeSkipLoad(show + ".json", ANISKIP_STALE_MS);
+            JSONArray album = platformLoad(show + ".json");
             if (album == null) {
+                // Not a Chinese series: nothing is saved, TMDB's reply being HTTP-cached for hours, so a
+                // Western show costs no disk block here.
+                final String name = chineseName(tmdbTvId);
+                if (name == null || name.isEmpty()) {
+                    return null;
+                }
                 album = iqiyiAlbum(tmdbTvId, season);
                 if (album == null) {
-                    return new Scored(new ArrayList<>(), 0);
+                    return null;
                 }
                 animeSkipSave(show + ".json", album);
             }
             if (album.length() < 2) {
-                return new Scored(new ArrayList<>(), 0); // not on iQIYI
+                return null; // not on iQIYI
             }
             marks = iqiyiMarks(album.optLong(0), episode + album.optInt(1));
             if (marks == null) {
-                return new Scored(new ArrayList<>(), 0);
+                return null; // a request failed: asked again next time
             }
-            animeSkipSave(show + "-" + episode + ".json", marks);
+            if (marks.length() < 5) {
+                marks = marks(0, 0, 0, 0, 0); // no such episode (yet): remembered for a day, see seasonMarks
+            }
+            saveSeasonMarks(show, java.util.Collections.singletonMap(episode, marks));
         }
-        return platformMarks(marks, durationSec);
+        return marks;
     }
 
     /**
@@ -1534,6 +1824,267 @@ public final class SegmentFinder {
             out.put(Double.valueOf(Double.isNaN(v) ? 0 : v)); // put(Object): put(double) throws on NaN
         }
         return out;
+    }
+
+    /**
+     * Tencent Video, where most big donghua stream only (斗罗大陆, 全职法师, 大王饶命, 完美世界, 仙逆).
+     * Playback is region-locked outside China, but the metadata its web player reads is not: per episode
+     * its length, {@code head_time} (where the skip jumps, the opening's end) and {@code tail_time} (how
+     * long the credits run to the end, 0 when none: 87 on 大王饶命 S2E11, whose credits start at 1264-1268 s
+     * of 1355).
+     *
+     * <p>Three requests to China, each once: the search (1.8 s, 380 KB whatever the page size) lists every
+     * season of the show and is kept per show; a season's cover names its episodes in order (1 s); and one
+     * union call answers for up to thirty episodes at a time (1 s), all kept, so the rest of a binge reads
+     * from disk. Kept as platformLoad says: three days found, a day empty.
+     */
+    private static Scored tencent(long tmdbTvId, int season, int episode, double durationSec) {
+        if (tmdbTvId < 0 || season < 1 || episode < 1) {
+            return new Scored(new ArrayList<>(), 0);
+        }
+        final JSONArray marks = shared("tencent-" + tmdbTvId + "-" + season + "-" + episode,
+                () -> tencentFetch(tmdbTvId, season, episode));
+        if (marks == null) {
+            return new Scored(new ArrayList<>(), 0);
+        }
+        // An episode more than a minute off the file is not this show's: TMDB's 斗罗大陆 drama shares its name
+        // with the animation Tencent returns, and its 45-minute episodes would get the cartoon's marks.
+        if (durationSec > 0 && marks.length() >= 5
+                && Math.abs(marks.optDouble(0) - durationSec) > ANIMESKIP_CUT_SEC) {
+            return new Scored(new ArrayList<>(), 0);
+        }
+        return platformMarks(marks, durationSec, true);
+    }
+
+    /** The episode's marks, from disk or from Tencent (and then saved); null when not to be had. */
+    private static JSONArray tencentFetch(long tmdbTvId, int season, int episode) {
+        final String show = "tencent-" + tmdbTvId;
+        final JSONArray marks = seasonMarks(show + "-" + season, episode);
+        if (marks != null) {
+            return marks;
+        }
+        JSONArray covers = platformLoad(show + ".json");
+        int[] entry = covers == null ? null : tencentEntry(covers, tmdbTvId, season);
+        // Not kept, or kept without this season, which a running show may have added since: asked again,
+        // no more than once a day.
+        if (covers == null || (entry == null && covers.length() > 0
+                && animeSkipLoad(show + ".json", ANISKIP_STALE_MS) == null)) {
+            // Not a Chinese series: nothing is saved, TMDB's reply being HTTP-cached for hours, so a
+            // Western show costs no disk block here.
+            final String name = chineseName(tmdbTvId);
+            if (name == null || name.isEmpty()) {
+                return null;
+            }
+            covers = tencentCovers(tmdbTvId);
+            if (covers == null) {
+                return null; // a request failed: nothing to remember
+            }
+            animeSkipSave(show + ".json", covers); // an empty one remembers "not there", for a day
+            entry = tencentEntry(covers, tmdbTvId, season);
+        }
+        if (entry == null) {
+            return null;
+        }
+        final String cover = covers.optJSONArray(entry[0]).optString(1);
+        final String prefix = show + "-" + season;
+        tencentSeason(cover, episode, entry[1], prefix, false);
+        JSONArray found = seasonMarks(prefix, episode);
+        // Not among the episodes kept: a running season gives a new episode a new id, which a list older
+        // than a day may not have yet (仙逆 lists episode 160 only as a trailer until it airs).
+        if (found == null && animeSkipLoad(prefix + ".json", ANISKIP_STALE_MS) == null) {
+            tencentSeason(cover, episode, entry[1], prefix, true);
+            found = seasonMarks(prefix, episode);
+        }
+        return found;
+    }
+
+    /** Which kept cover is TMDB season {@code season}, as seasonEntry answers; null when none is. */
+    private static int[] tencentEntry(JSONArray covers, long tmdbTvId, int season) {
+        final List<String> rests = new ArrayList<>();
+        for (int i = 0; i < covers.length(); i++) {
+            rests.add(covers.optJSONArray(i) == null ? "\u0000" : covers.optJSONArray(i).optString(0));
+        }
+        return seasonEntry(rests, tmdbTvId, season);
+    }
+
+    /**
+     * Every season of the show on Tencent as {@code [what the cover adds to the name, cover id]}; empty
+     * when the title is not Chinese animation or not Tencent's own; null when a request failed.
+     */
+    private static JSONArray tencentCovers(long tmdbTvId) {
+        final String name = chineseName(tmdbTvId);
+        if (name == null || name.isEmpty()) {
+            return name == null ? null : new JSONArray();
+        }
+        // Animation only (TMDB genre 16): Tencent's search keeps the cartoon under a name a live-action
+        // drama shares, which Bilibili and iQIYI filter on their side. The TMDB reply is the HTTP-cached one
+        // chineseName just read.
+        final JSONObject tv = getJson(HttpUrl.parse(SegmentEndpoints.TMDB_BASE).newBuilder()
+                .addPathSegment("tv").addPathSegment(String.valueOf(tmdbTvId))
+                .addQueryParameter("api_key", SegmentEndpoints.TMDB_KEY).build());
+        if (tv == null) {
+            return null;
+        }
+        final JSONArray genres = tv.optJSONArray("genres");
+        boolean animation = false;
+        for (int i = 0; genres != null && i < genres.length(); i++) {
+            animation |= genres.optJSONObject(i) != null && genres.optJSONObject(i).optInt("id") == 16;
+        }
+        if (!animation) {
+            return new JSONArray();
+        }
+        final JSONObject found;
+        try {
+            found = tencentPost(SegmentEndpoints.TENCENT_SEARCH, new JSONObject()
+                    .put("query", name).put("pagenum", 0).put("pagesize", 10).put("isneedQc", true)
+                    .put("extraInfo", new JSONObject().put("multi_terminal_pc", "1")));
+        } catch (Exception e) {
+            return null;
+        }
+        final JSONObject data = found == null || found.optInt("ret", -1) != 0 ? null : found.optJSONObject("data");
+        if (data == null) {
+            return null;
+        }
+        // The seasons sit in the main box for some titles (全职法师) and in the plain list for others (大王饶命).
+        final List<JSONObject> items = new ArrayList<>();
+        final JSONObject normal = data.optJSONObject("normalList");
+        final JSONArray boxes = data.optJSONArray("areaBoxList");
+        for (int b = -1; b < (boxes == null ? 0 : boxes.length()); b++) {
+            final JSONObject box = b < 0 ? normal : boxes.optJSONObject(b);
+            final JSONArray list = box == null ? null : box.optJSONArray("itemList");
+            for (int i = 0; list != null && i < list.length(); i++) {
+                if (list.optJSONObject(i) != null) {
+                    items.add(list.optJSONObject(i));
+                }
+            }
+        }
+        final JSONArray out = new JSONArray();
+        final List<String> seen = new ArrayList<>();
+        for (JSONObject item : items) {
+            final JSONObject doc = item.optJSONObject("doc");
+            final JSONObject info = item.optJSONObject("videoInfo");
+            // A cover (dataType 2) of animation (videoType 3) that Tencent plays itself: the same name also
+            // heads a live-action drama (斗罗大陆, videoType 2) and covers it only links to elsewhere.
+            if (doc == null || info == null || doc.optInt("dataType") != 2 || info.optInt("videoType") != 3
+                    || info.optJSONArray("episodeSites") == null || info.optJSONArray("episodeSites").length() == 0) {
+                continue;
+            }
+            final String title = info.optString("title").replaceAll("<[^>]+>", "").trim();
+            if (title.startsWith(name) && !seen.contains(doc.optString("id"))) {
+                seen.add(doc.optString("id"));
+                out.put(new JSONArray().put(title.substring(name.length()).trim()).put(doc.optString("id")));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Saves the marks of the thirty episodes around TMDB episode {@code episode} of a season's cover into
+     * the season's file (saveSeasonMarks); {@code offset} is how many of the cover's episodes come before
+     * this TMDB season (a show kept as one long cover). {@code fresh} asks for the episode list again rather
+     * than reading the kept one. Nothing is saved when a request fails.
+     */
+    private static void tencentSeason(String coverId, int episode, int offset, String prefix, boolean fresh) {
+        JSONArray vids = fresh ? null : platformLoad(prefix + ".json");
+        // A running season lists more episodes each week: one past the end of the kept list asks for the list
+        // again, no more than once a day.
+        if (vids != null && episode + offset > vids.length()
+                && animeSkipLoad(prefix + ".json", ANISKIP_STALE_MS) == null) {
+            vids = null;
+        }
+        if (vids == null) {
+            final JSONObject cover = tencentUnion("431", coverId);
+            vids = cover == null ? null : cover.optJSONArray("video_ids");
+            if (vids == null) {
+                return;
+            }
+            animeSkipSave(prefix + ".json", vids);
+        }
+        final int order = episode + offset;
+        // The cover lists its episodes in order, so the block holding position order - 1 usually holds the
+        // episode; where trailers or specials push it along (完美世界 lists 293 of 338), the block next to it
+        // is asked once. ponytail: two blocks, a list off by more than thirty would need a search through it.
+        int start = Math.max(0, Math.min(order - 1, vids.length() - 1)) / 30 * 30;
+        for (int tries = 0; tries < 2 && start >= 0 && start < vids.length(); tries++) {
+            final StringBuilder ids = new StringBuilder();
+            for (int i = start; i < Math.min(start + 30, vids.length()); i++) {
+                ids.append(ids.length() > 0 ? "," : "").append(vids.optString(i));
+            }
+            final JSONArray results = tencentUnionAll("682", ids.toString());
+            if (results == null) {
+                return;
+            }
+            int lowest = Integer.MAX_VALUE;
+            int highest = Integer.MIN_VALUE;
+            boolean found = false;
+            final Map<Integer, JSONArray> block = new java.util.HashMap<>();
+            for (int i = 0; i < results.length(); i++) {
+                final JSONObject r = results.optJSONObject(i);
+                final JSONObject fields = r == null ? null : r.optJSONObject("fields");
+                final int number = fields == null ? -1 : wholeNumber(fields.optString("episode"));
+                // The episodes proper; a cover also lists trailers and extras under episode numbers of their own.
+                final JSONArray kind = fields == null ? null : fields.optJSONArray("category_map");
+                if (number < 1 || (kind != null && !kind.toString().contains("正片"))) { // 正片
+                    continue;
+                }
+                lowest = Math.min(lowest, number);
+                highest = Math.max(highest, number);
+                found |= number == order;
+                if (number - offset >= 1) {
+                    final double length = fields.optDouble("duration", 0);
+                    final double opEnd = Math.max(0, fields.optDouble("head_time", 0));
+                    final double tail = Math.max(0, fields.optDouble("tail_time", 0));
+                    block.put(number - offset, tail > 0 && tail < length
+                            ? marks(length, 0, opEnd, length - tail, length) : marks(length, 0, opEnd, 0, 0));
+                }
+            }
+            saveSeasonMarks(prefix, block);
+            if (found || lowest == Integer.MAX_VALUE) {
+                return;
+            }
+            start = order > highest ? start + 30 : start - 30;
+        }
+    }
+
+    /** The {@code fields} of one id from Tencent's union metadata API (table {@code tid}); null on failure. */
+    private static JSONObject tencentUnion(String tid, String id) {
+        final JSONArray results = tencentUnionAll(tid, id);
+        final JSONObject first = results == null ? null : results.optJSONObject(0);
+        return first == null ? null : first.optJSONObject("fields");
+    }
+
+    /** Every result for comma-separated {@code ids} from the union API; null when the request failed. */
+    private static JSONArray tencentUnionAll(String tid, String ids) {
+        final String body = execute(new Request.Builder()
+                .url(HttpUrl.parse(SegmentEndpoints.TENCENT_UNION).newBuilder()
+                        .addQueryParameter("otype", "json").addQueryParameter("tid", tid)
+                        .addQueryParameter("appid", "20001238")
+                        .addQueryParameter("appkey", SegmentEndpoints.TENCENT_UNION_KEY)
+                        .addQueryParameter("idlist", ids).build())
+                .build());
+        try {
+            // JSONP: "QZOutputJson={...};"
+            return body == null ? null
+                    : new JSONObject(body.substring(body.indexOf('{'), body.lastIndexOf('}') + 1))
+                            .optJSONArray("results");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** A JSON POST the way Tencent's web pages send it: with v.qq.com as Referer and Origin, or it refuses. */
+    private static JSONObject tencentPost(String url, JSONObject body) {
+        final String reply = execute(new Request.Builder()
+                .url(url)
+                .header("Referer", SegmentEndpoints.TENCENT_REFERER)
+                .header("Origin", "https://v.qq.com")
+                .post(RequestBody.create(body.toString(), JSON))
+                .build());
+        try {
+            return reply == null ? null : new JSONObject(reply);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** TMDB's original name for a Chinese series; "" when it is not Chinese, null when TMDB did not answer. */

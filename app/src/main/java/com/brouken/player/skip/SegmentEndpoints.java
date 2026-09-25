@@ -37,6 +37,25 @@ public final class SegmentEndpoints {
      * (kodik-add.com/add-players.min.js), used there with this same get-player call.
      */
     static final String KODIK_TOKEN = "447d179e875efe44217f20d1ee2146be";
+    /**
+     * Chinese animation (donghua): Bilibili's own opening/ending marks per episode, with the episode's exact
+     * length. No key; the search wants a WBI signature, whose keys the nav call hands out to anyone.
+     */
+    static final String BILIBILI_NAV = "https://api.bilibili.com/x/web-interface/nav";
+    static final String BILIBILI_SEARCH = "https://api.bilibili.com/x/web-interface/wbi/search/all/v2";
+    /** An episode's player: {@code clip_info_list} (CLIP_TYPE_OP / _ED, seconds) and {@code timelength} (ms). */
+    static final String BILIBILI_PLAYURL = "https://api.bilibili.com/pgc/player/web/playurl";
+    /**
+     * The search's risk control scores the client: OkHttp's own User-Agent gets an empty
+     * {@code v_voucher} reply most of the time (1 in 4 answered), a browser's none (4 in 4, 2026-09-25);
+     * the episode player answers OkHttp's with a flat 412.
+     */
+    static final String BILIBILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            + " (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+    /** iQIYI, no key: search by name, an album's episodes one per page, and an episode's skip points. */
+    static final String IQIYI_SEARCH = "https://mesh.if.iqiyi.com/portal/lw/search/homePageV3";
+    static final String IQIYI_EPISODES = "https://pcw-api.iqiyi.com/albums/album/avlistinfo";
+    static final String IQIYI_INFO = "https://pcw-api.iqiyi.com/video/video/baseinfo/";
     /** anime only, GraphQL, AniList-keyed ({@code findShowsByExternalId}). */
     static final String ANIMESKIP = "https://api.anime-skip.com/graphql";
     /**

@@ -101,6 +101,8 @@ public final class SegmentFinder {
     private static final int TT_ANIME = SkipSegment.TIME_TRUST_DURATION_AWARE + 50;   // 250 (Aniskip primary)
     private static final int TT_ANIMESKIP = TT_ANIME - 10;                            // 240 (one curator, no votes)
     private static final int TT_ABS = SkipSegment.TIME_TRUST_ABSOLUTE;                // 100
+    // A platform's own marks on a file of its episode's exact length (Bilibili, iQIYI): its cut, measured by it.
+    private static final int TT_PLATFORM = TT_ANIME + 20;                             // 270
 
     /**
      * Aniskip sends an ETag and no lifetime, so OkHttp would ask it again on every lookup. It is one
@@ -162,12 +164,15 @@ public final class SegmentFinder {
      */
     private static final long HTTP_CACHE_BYTES = 1024 * 1024;
 
-    /** Where Anime Skip episode lists and timestamps, and Kodik's ranges, are kept; null until {@link #setCacheDir}. */
+    /**
+     * Where Anime Skip episode lists and timestamps, Kodik's ranges and what Bilibili and iQIYI said are kept;
+     * null until {@link #setCacheDir}.
+     */
     private static volatile java.io.File animeSkipDir;
 
     /** Replaced once by {@link #setCacheDir} with the same client plus a cache; volatile for that swap. */
     private static volatile OkHttpClient CLIENT = new OkHttpClient.Builder()
-            // One idle connection per host a lookup talks to (nine now), so the full wave, seconds after
+            // One idle connection per host a lookup talks to (twelve now), so the full wave, seconds after
             // the early one, finds them open instead of paying a TLS handshake each; OkHttp keeps five.
             .connectionPool(new okhttp3.ConnectionPool(12, 5, TimeUnit.MINUTES))
             .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
@@ -374,6 +379,14 @@ public final class SegmentFinder {
             }
             if (imdb != null || tmdb >= 0) {
                 steps.add(traced(tag, "TheIntroDB", () -> theIntroDb(imdb, tmdb, season, ep, false)));
+            }
+            if (tmdb >= 0) {
+                // Chinese titles only (they ask TMDB first); their trust rests on the episode length they
+                // state. In the early wave too, though no length can vouch for them yet: three requests to
+                // China take 3-5 s from Europe and up to 20 on a slow link, and a fetch the deadline cuts off
+                // still finishes and saves, so the full wave reads it from disk well inside its deadline.
+                steps.add(traced(tag, "Bilibili", () -> bilibili(tmdb, season, ep, durationSec)));
+                steps.add(traced(tag, "iQIYI", () -> iqiyi(tmdb, season, ep, durationSec)));
             }
             if (imdb != null && INTROHATER_ENABLED) {
                 steps.add(traced(tag, "IntroHater", () -> introHater(imdb, season, ep)));
@@ -1256,6 +1269,392 @@ public final class SegmentFinder {
             }
             return null;
         }
+    }
+
+    /**
+     * The streaming platforms' own marks for Chinese animation (donghua), which the anime sources barely
+     * cover: Bilibili and iQIYI each mark an episode's opening and ending for their skip button, and say
+     * how long that episode is. Asked only for a series TMDB calls Chinese, by its original name.
+     *
+     * <p>The length is what the trust rests on. A file within {@link #CUT_MATCH_SEC} of it is that
+     * platform's cut, and its seconds are this file's seconds: the most exact timing any source here has.
+     * Any other length is another release (Tencent's, a re-encode, a dub with a studio card), and the marks
+     * only point the right way: a vote, like Kodik's, with an ending past the file dropped.
+     *
+     * <p>{@code marks} is {@code [length s, op start, op end, ed start, ed end]}; 0-0 is "none", and an
+     * empty array "not on this platform".
+     */
+    private static Scored platformMarks(JSONArray marks, double durationSec) {
+        final List<SkipSegment> out = new ArrayList<>();
+        if (marks == null || marks.length() < 5) {
+            return new Scored(out, 0);
+        }
+        final boolean ours = durationSec > 0 && Math.abs(marks.optDouble(0) - durationSec) <= CUT_MATCH_SEC;
+        final int trust = ours ? TT_PLATFORM : TT_ABS;
+        addSeg(out, marks.optDouble(1), marks.optDouble(2), SkipSegment.Category.INTRO,
+                SkipSegment.CoordBase.ABSOLUTE, trust);
+        if (ours || durationSec <= 0 || marks.optDouble(4) <= durationSec + CUT_MATCH_SEC) {
+            addSeg(out, marks.optDouble(3), marks.optDouble(4), SkipSegment.Category.CREDITS,
+                    SkipSegment.CoordBase.ABSOLUTE, trust);
+        }
+        return new Scored(out, ours ? 0.9 : 0.4);
+    }
+
+    /**
+     * Bilibili: the search lists a season's episodes with their ids, and an episode's player carries its
+     * marks ({@code clip_info_list}) and its exact length. Both sit in China, a second or more a request
+     * from Europe, so the season's ids and each episode's marks are kept on disk for a day.
+     */
+    private static Scored bilibili(long tmdbTvId, int season, int episode, double durationSec) {
+        if (tmdbTvId < 0 || season < 1 || episode < 1) {
+            return new Scored(new ArrayList<>(), 0);
+        }
+        final String show = "bilibili-" + tmdbTvId + "-" + season;
+        JSONArray marks = animeSkipLoad(show + "-" + episode + ".json", ANISKIP_STALE_MS);
+        if (marks == null) {
+            JSONArray eps = animeSkipLoad(show + ".json", ANISKIP_STALE_MS);
+            if (eps == null) {
+                eps = bilibiliEpisodes(tmdbTvId, season);
+                if (eps == null) {
+                    return new Scored(new ArrayList<>(), 0); // a request failed: nothing to remember
+                }
+                animeSkipSave(show + ".json", eps); // an empty one remembers "not there"
+            }
+            long epId = -1;
+            for (int i = 0; i < eps.length(); i++) {
+                final JSONArray pair = eps.optJSONArray(i);
+                if (pair != null && pair.optInt(0) == episode) {
+                    epId = pair.optLong(1, -1);
+                }
+            }
+            marks = epId < 0 ? null : bilibiliMarks(epId);
+            if (marks == null) {
+                return new Scored(new ArrayList<>(), 0);
+            }
+            animeSkipSave(show + "-" + episode + ".json", marks);
+        }
+        return platformMarks(marks, durationSec);
+    }
+
+    /**
+     * TMDB season {@code season} on Bilibili as {@code [episode, ep_id]} pairs in TMDB's numbering, straight
+     * from the search, which lists every episode of each entry. Empty when the title is not Chinese or not
+     * on Bilibili; null when a request failed.
+     */
+    private static JSONArray bilibiliEpisodes(long tmdbTvId, int season) {
+        final String name = chineseName(tmdbTvId);
+        if (name == null || name.isEmpty()) {
+            return name == null ? null : new JSONArray();
+        }
+        final JSONObject found = bilibiliSearch(name);
+        // A refused signature answers 200 with a code of its own, and a search its risk control turned away
+        // 200 with no result list at all (a v_voucher instead): either is a failed request, not "not there".
+        final JSONObject data = found == null || found.optInt("code", -1) != 0 ? null
+                : found.optJSONObject("data");
+        if (data == null || !data.has("result")) {
+            return null;
+        }
+        final List<String> rests = new ArrayList<>();
+        final List<JSONArray> episodes = new ArrayList<>();
+        final JSONArray blocks = data.optJSONArray("result");
+        for (int i = 0; blocks != null && i < blocks.length(); i++) {
+            final JSONObject block = blocks.optJSONObject(i);
+            final JSONArray items = block == null || !"media_bangumi".equals(block.optString("result_type"))
+                    ? null : block.optJSONArray("data");
+            for (int j = 0; items != null && j < items.length(); j++) {
+                final JSONObject item = items.optJSONObject(j);
+                // 1 is anime, 4 is Chinese animation; the rest are live-action namesakes.
+                if (item == null || (item.optInt("media_type") != 1 && item.optInt("media_type") != 4)) {
+                    continue;
+                }
+                final String title = item.optString("title").replaceAll("<[^>]+>", "").trim();
+                if (title.startsWith(name) && item.optJSONArray("eps") != null) {
+                    rests.add(title.substring(name.length()).trim());
+                    episodes.add(item.optJSONArray("eps"));
+                }
+            }
+        }
+        final int[] entry = seasonEntry(rests, tmdbTvId, season);
+        final JSONArray out = new JSONArray();
+        if (entry == null) {
+            return out;
+        }
+        final JSONArray eps = episodes.get(entry[0]);
+        for (int i = 0; i < eps.length(); i++) {
+            final JSONObject e = eps.optJSONObject(i);
+            final int number = e == null ? -1 : wholeNumber(e.optString("title"));
+            if (number - entry[1] >= 1) { // not a special ("SP", "12.5") or an episode of another season
+                out.put(new JSONArray().put(number - entry[1]).put(e.optLong("id")));
+            }
+        }
+        return out;
+    }
+
+    /** One Bilibili episode's marks, from its player; null when the request failed. */
+    private static JSONArray bilibiliMarks(long epId) {
+        // The player refuses OkHttp's User-Agent outright (412), as the search's risk control mostly does.
+        final String body = execute(new Request.Builder()
+                .url(HttpUrl.parse(SegmentEndpoints.BILIBILI_PLAYURL).newBuilder()
+                        .addQueryParameter("ep_id", String.valueOf(epId)).build())
+                .header("User-Agent", SegmentEndpoints.BILIBILI_UA)
+                .build());
+        final JSONObject result;
+        try {
+            final JSONObject reply = body == null ? null : new JSONObject(body);
+            result = reply == null || reply.optInt("code", -1) != 0 ? null : reply.optJSONObject("result");
+        } catch (Exception e) {
+            return null;
+        }
+        if (result == null) {
+            return null;
+        }
+        final double[] op = new double[2];
+        final double[] ed = new double[2];
+        final JSONArray clips = result.optJSONArray("clip_info_list");
+        for (int i = 0; clips != null && i < clips.length(); i++) {
+            final JSONObject clip = clips.optJSONObject(i);
+            final String type = clip == null ? "" : clip.optString("clipType");
+            final double[] into = "CLIP_TYPE_OP".equals(type) ? op : "CLIP_TYPE_ED".equals(type) ? ed : null;
+            if (into != null) {
+                into[0] = clip.optDouble("start", 0);
+                into[1] = clip.optDouble("end", 0);
+            }
+        }
+        return marks(result.optLong("timelength") / 1000.0, op[0], op[1], ed[0], ed[1]);
+    }
+
+    /**
+     * iQIYI: its own donghua (万古神话 and the like; the big titles it lists are links to Tencent). An
+     * episode says where its opening ends ({@code startTime}, the point its skip button jumps to) and where
+     * its credits begin ({@code endTime}); 0 or -1 is none. Its servers answer in 1 to 20 s from Europe, so
+     * the album and each episode's marks are kept on disk for a day, as Bilibili's are.
+     */
+    private static Scored iqiyi(long tmdbTvId, int season, int episode, double durationSec) {
+        if (tmdbTvId < 0 || season < 1 || episode < 1) {
+            return new Scored(new ArrayList<>(), 0);
+        }
+        final String show = "iqiyi-" + tmdbTvId + "-" + season;
+        JSONArray marks = animeSkipLoad(show + "-" + episode + ".json", ANISKIP_STALE_MS);
+        if (marks == null) {
+            JSONArray album = animeSkipLoad(show + ".json", ANISKIP_STALE_MS);
+            if (album == null) {
+                album = iqiyiAlbum(tmdbTvId, season);
+                if (album == null) {
+                    return new Scored(new ArrayList<>(), 0);
+                }
+                animeSkipSave(show + ".json", album);
+            }
+            if (album.length() < 2) {
+                return new Scored(new ArrayList<>(), 0); // not on iQIYI
+            }
+            marks = iqiyiMarks(album.optLong(0), episode + album.optInt(1));
+            if (marks == null) {
+                return new Scored(new ArrayList<>(), 0);
+            }
+            animeSkipSave(show + "-" + episode + ".json", marks);
+        }
+        return platformMarks(marks, durationSec);
+    }
+
+    /**
+     * {@code [album id, episodes before this season]} for TMDB season {@code season} on iQIYI; empty when
+     * the title is not Chinese or not iQIYI's own; null when a request failed.
+     */
+    private static JSONArray iqiyiAlbum(long tmdbTvId, int season) {
+        final String name = chineseName(tmdbTvId);
+        if (name == null || name.isEmpty()) {
+            return name == null ? null : new JSONArray();
+        }
+        final JSONObject found = getJson(HttpUrl.parse(SegmentEndpoints.IQIYI_SEARCH).newBuilder()
+                .addQueryParameter("key", name)
+                .addQueryParameter("current_page", "1")
+                .addQueryParameter("mode", "1")
+                .addQueryParameter("source", "input")
+                .addQueryParameter("pcode", "pcw_search")
+                .addQueryParameter("version", "13.034.21571")
+                .build());
+        final JSONArray templates = found == null || found.optJSONObject("data") == null ? null
+                : found.optJSONObject("data").optJSONArray("templates");
+        if (templates == null) {
+            return null;
+        }
+        final List<String> rests = new ArrayList<>();
+        final List<Long> ids = new ArrayList<>();
+        for (int i = 0; i < templates.length(); i++) {
+            final JSONObject t = templates.optJSONObject(i);
+            final JSONObject album = t == null ? null : t.optJSONObject("albumInfo");
+            // Its own animation only: the search also lists what it links to on Tencent or Youku, and the
+            // clips people cut from an episode, which carry the show's name in theirs.
+            if (album == null || !"iqiyi".equals(album.optString("siteId"))
+                    || !album.optString("channel").startsWith("动漫")) { // 动漫
+                continue;
+            }
+            final String title = album.optString("title").trim();
+            if (title.startsWith(name)) {
+                rests.add(title.substring(name.length()).trim());
+                ids.add(album.optLong("qipuId", -1));
+            }
+        }
+        final int[] entry = seasonEntry(rests, tmdbTvId, season);
+        return entry == null ? new JSONArray() : new JSONArray().put(ids.get(entry[0])).put(entry[1]);
+    }
+
+    /** Episode {@code order} of an iQIYI album: its length and marks; empty when absent, null on failure. */
+    private static JSONArray iqiyiMarks(long albumId, int order) {
+        // One episode a page, so the page number is the episode; the order it names is checked all the same.
+        final JSONObject list = getJson(HttpUrl.parse(SegmentEndpoints.IQIYI_EPISODES).newBuilder()
+                .addQueryParameter("aid", String.valueOf(albumId))
+                .addQueryParameter("page", String.valueOf(order))
+                .addQueryParameter("size", "1")
+                .build());
+        final JSONArray eps = list == null || list.optJSONObject("data") == null ? null
+                : list.optJSONObject("data").optJSONArray("epsodelist");
+        if (eps == null) {
+            return null;
+        }
+        final JSONObject ep = eps.optJSONObject(0);
+        if (ep == null || ep.optInt("order") != order) {
+            return new JSONArray();
+        }
+        final JSONObject info = getJson(HttpUrl.parse(SegmentEndpoints.IQIYI_INFO + ep.optLong("tvId")));
+        final JSONObject data = info == null ? null : info.optJSONObject("data");
+        if (data == null) {
+            return null;
+        }
+        final double length = clockSec(ep.optString("duration"));
+        final double opEnd = Math.max(0, data.optDouble("startTime", 0));
+        final double edStart = Math.max(0, data.optDouble("endTime", 0));
+        return marks(length, 0, opEnd, edStart, edStart > 0 ? length : 0);
+    }
+
+    /** The {@link #platformMarks} array; a value that is not a number (an unreadable length) becomes 0. */
+    private static JSONArray marks(double... values) {
+        final JSONArray out = new JSONArray();
+        for (double v : values) {
+            out.put(Double.valueOf(Double.isNaN(v) ? 0 : v)); // put(Object): put(double) throws on NaN
+        }
+        return out;
+    }
+
+    /** TMDB's original name for a Chinese series; "" when it is not Chinese, null when TMDB did not answer. */
+    private static String chineseName(long tmdbTvId) {
+        final JSONObject tv = getJson(HttpUrl.parse(SegmentEndpoints.TMDB_BASE).newBuilder()
+                .addPathSegment("tv").addPathSegment(String.valueOf(tmdbTvId))
+                .addQueryParameter("api_key", SegmentEndpoints.TMDB_KEY).build());
+        if (tv == null) {
+            return null;
+        }
+        final JSONArray countries = tv.optJSONArray("origin_country");
+        final boolean chinese = "zh".equals(tv.optString("original_language"))
+                || (countries != null && countries.toString().contains("\"CN\""));
+        return chinese ? tv.optString("original_name", "") : "";
+    }
+
+    /**
+     * Which of a platform's entries for a show is TMDB season {@code season}, by what each adds to the
+     * show's name: nothing or "第一季" for the first, "第二季" / "第2季" for the rest. A show kept as one
+     * long entry (Bilibili's 凡人修仙传, 193 episodes) is taken only when no entry names a season, and then
+     * counts straight through. {@code {index, episodes before this season}}; null when none fits or TMDB
+     * cannot say where the season starts.
+     */
+    private static int[] seasonEntry(List<String> rests, long tmdbTvId, int season) {
+        int bare = -1;
+        boolean anySeasoned = false;
+        for (int i = 0; i < rests.size(); i++) {
+            final int named = cnSeasonNumber(rests.get(i));
+            if (named == season) {
+                return new int[]{i, 0};
+            }
+            anySeasoned |= named > 0;
+            if (bare < 0 && rests.get(i).isEmpty()) {
+                bare = i;
+            }
+        }
+        if (bare < 0 || (season > 1 && anySeasoned)) {
+            return null;
+        }
+        if (season == 1) {
+            return new int[]{bare, 0};
+        }
+        final int first = tmdbAbsoluteEpisode(tmdbTvId, season, 1);
+        return first < 1 ? null : new int[]{bare, first - 1};
+    }
+
+    /** "第二季" or "第2季" as 2; 0 for anything else, nothing at all included. */
+    private static int cnSeasonNumber(String rest) {
+        if (!rest.startsWith("第") || !rest.endsWith("季") || rest.length() < 3) { // 第…季
+            return 0;
+        }
+        final String n = rest.substring(1, rest.length() - 1);
+        final int cn = "一二三四五六七八九十".indexOf(n); // 一…十
+        if (n.length() == 1 && cn >= 0) {
+            return cn + 1;
+        }
+        return wholeNumber(n);
+    }
+
+    /** A whole number, or -1: Bilibili titles an episode "12", a special "SP" or "12.5". */
+    private static int wholeNumber(String title) {
+        try {
+            return Integer.parseInt(title.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    // WBI: the search signs its query with a key mixed from two file names the nav call returns. The table
+    // and the steps are Bilibili's own, from its web client. The key changes daily; a day-old one is
+    // refetched. ponytail: no retry on a rejected signature, the next day's lookup gets a fresh key.
+    private static final int[] WBI_MIX = {46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27,
+            43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17,
+            0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52};
+    private static volatile String wbiKey;
+    private static volatile long wbiKeyAt;
+
+    private static JSONObject bilibiliSearch(String keyword) {
+        if (wbiKey == null || System.currentTimeMillis() - wbiKeyAt > TimeUnit.DAYS.toMillis(1)) {
+            final JSONObject nav = getJson(HttpUrl.parse(SegmentEndpoints.BILIBILI_NAV));
+            final JSONObject img = nav == null || nav.optJSONObject("data") == null ? null
+                    : nav.optJSONObject("data").optJSONObject("wbi_img");
+            if (img == null) {
+                return null;
+            }
+            final String raw = wbiName(img.optString("img_url")) + wbiName(img.optString("sub_url"));
+            if (raw.length() < 64) {
+                return null;
+            }
+            final StringBuilder key = new StringBuilder();
+            for (int i = 0; i < 32; i++) {
+                key.append(raw.charAt(WBI_MIX[i]));
+            }
+            wbiKey = key.toString();
+            wbiKeyAt = System.currentTimeMillis();
+        }
+        try {
+            // Keys in order, and the query signed exactly as it is sent.
+            final String query = "keyword=" + java.net.URLEncoder.encode(keyword.replaceAll("[!'()*]", ""), "UTF-8")
+                    .replace("+", "%20") + "&wts=" + System.currentTimeMillis() / 1000;
+            final byte[] md5 = java.security.MessageDigest.getInstance("MD5")
+                    .digest((query + wbiKey).getBytes("UTF-8"));
+            final StringBuilder rid = new StringBuilder();
+            for (byte b : md5) {
+                rid.append(String.format(java.util.Locale.US, "%02x", b));
+            }
+            final String reply = execute(new Request.Builder()
+                    .url(SegmentEndpoints.BILIBILI_SEARCH + "?" + query + "&w_rid=" + rid)
+                    .header("User-Agent", SegmentEndpoints.BILIBILI_UA)
+                    .build());
+            return reply == null ? null : new JSONObject(reply);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** "https://i0.hdslb.com/bfs/wbi/7cd0...077c.png" as "7cd0...077c". */
+    private static String wbiName(String url) {
+        final String file = url.substring(url.lastIndexOf('/') + 1);
+        final int dot = file.indexOf('.');
+        return dot < 0 ? file : file.substring(0, dot);
     }
 
     /** "mm:ss" or "h:mm:ss" in seconds; NaN when it is neither. */

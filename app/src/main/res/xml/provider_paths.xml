@@ -4,4 +4,8 @@
     <external-files-path
         name="update"
         path="." />
+    <!-- The report the report screen shares as a file (ErrorActivity.share). -->
+    <cache-path
+        name="report"
+        path="report/" />
 </paths>

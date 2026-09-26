@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material's own button ripple with the focus state layer taken out, for the controls that wear
+     @color/focus_ring: on those, focus is the edge and nothing else.
+
+     The layer had to go rather than be left alone, because on a checked segment Material draws it in
+     the colour of the text on the accent — dark, by definition — so focusing the chosen pill *darkened* its
+     coral, measured #D6493C to #C04236. Darker on focus reads as pressed, or as switched off, and it is
+     the state a panel opens in: the first focus goes to the option in force. Omitting the entry is not
+     enough either — a RippleDrawable falls through to the catch-all and washes anyway, so focus has to
+     be named and made transparent. Everything else is Material's: press 0.1, hover 0.08, and the 0.16
+     the ripple animation itself draws with. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:state_pressed="false"
+        android:color="@android:color/transparent" />
+
+    <item android:state_checked="true" android:state_pressed="true"
+        android:alpha="0.1" android:color="?attr/colorOnSurface" />
+    <item android:state_pressed="true"
+        android:alpha="0.1" android:color="?attr/colorOnSecondaryContainer" />
+
+    <item android:state_checked="true" android:state_hovered="true"
+        android:alpha="0.08" android:color="?attr/colorOnSecondaryContainer" />
+    <item android:state_hovered="true"
+        android:alpha="0.08" android:color="?attr/colorOnSurface" />
+
+    <item android:alpha="0.16" android:color="?attr/colorOnSurface" />
+</selector>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Press feedback, one tone for every player surface. The three it replaced looked like a scale
+     keyed to how bright the ground is, but they were not: a picker row and an OffsetPanel pill sit
+     on the same dark panel and took #40 and #20.
+
+     The accent, not white: a press on chrome is the app's own touch, and a neutral wash on a neutral
+     plate reads as the plate getting lighter rather than as the control answering. Material sizes a
+     state layer by its colour — 0.10 for a content-coloured one — and coral at 0.10 over the plate is
+     barely there, so it runs at 0.20, which lands within a point of L* of the white 0.10 it replaces
+     (over black: #1A1A1A against #331613) while carrying the hue. A press fills the shape the focus
+     contour outlines; it does not repaint it. Read through the theme so it follows the accent. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/colorPrimary" android:alpha="0.2" />
+</selector>

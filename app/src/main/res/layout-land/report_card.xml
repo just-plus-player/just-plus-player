@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The report card where the window is wider than it is tall. Same object, same ids, two columns: the
+     heading across the top, then what failed beside what the report carries, then the actions on the
+     card's bottom edge. Upright this is one column and the card is 310dp tall, which on a 360dp phone
+     turned onto its side left the page scrolling for want of ~40dp; side by side the card is ~200dp and
+     the page has no scroll to offer. See layout/report_card.xml for the upright arrangement. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_report_card"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/reportHeading"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/report_contents"
+        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+        android:textColor="?attr/colorOnSurface" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- Only when the caller can name the cause in words; gone otherwise. -->
+            <TextView
+                android:id="@+id/errorMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone"
+                tools:text="HEVC 3840x2160 is being decoded in software on this device and cannot keep up." />
+
+            <TextView
+                android:id="@+id/errorDetails"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:maxLines="@integer/report_summary_lines"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="13sp"
+                tools:text="ERROR_CODE_IO_NETWORK_CONNECTION_FAILED\nUnable to resolve host" />
+
+            <!-- Tap to copy the link: see the upright card. The code stands beside its link rather than
+                 above it - stacked, the sent report was taller than the window it had just fit in. -->
+            <LinearLayout
+                android:id="@+id/uploadResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:baselineAligned="false"
+                android:clickable="true"
+                android:focusable="false"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <ImageView
+                    android:id="@+id/qrImage"
+                    android:layout_width="@dimen/report_qr_size"
+                    android:layout_height="@dimen/report_qr_size"
+                    android:contentDescription="@string/error_qr_description"
+                    android:scaleType="fitCenter" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/uploadUrl"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/colorPrimary"
+                        tools:text="https://termbin.com/abcd" />
+
+                    <TextView
+                        android:id="@+id/uploadHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/error_upload_hint"
+                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/rowDevice"
+                style="@style/ReportRow"
+                tools:text="OnePlus CPH2447 · Android 16" />
+
+            <TextView
+                android:id="@+id/rowApp"
+                style="@style/ReportRow"
+                tools:text="Just+ Player 1.4.7" />
+
+            <TextView
+                android:id="@+id/rowPlayer"
+                style="@style/ReportRow"
+                android:text="@string/report_row_player" />
+
+            <TextView
+                android:id="@+id/rowLog"
+                style="@style/ReportRow"
+                tools:text="Log: 143 lines" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/reportActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCopy"
+            style="@style/Widget.JustPlus.Button.Icon.Outlined"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@string/error_copy"
+            app:icon="@drawable/ic_content_copy_24dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShare"
+            style="@style/Widget.JustPlus.Button.Icon.Outlined"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@string/error_share"
+            app:icon="@drawable/ic_share_24dp" />
+
+        <include layout="@layout/report_upload_button" />
+
+    </LinearLayout>
+
+</LinearLayout>

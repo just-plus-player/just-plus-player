@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A tile before it has anything in it. Same shape as browse_tile.xml: the still on top at 16:9 by
+    the same RatioFrame the real tile uses - so a column of skeletons is exactly as tall as the
+    column of tiles that replaces it, and nothing jumps when it does.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <com.brouken.player.RatioFrame
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_skeleton_block" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="11dp"
+        android:orientation="horizontal">
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="13dp"
+            android:layout_weight="8"
+            android:background="@drawable/bg_skeleton_block" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="2" />
+
+    </LinearLayout>
+
+    <!-- The name's second line. The tile keeps two whether the name needs them or not, so the
+         skeleton keeps two as well - 8dp and a 13dp bar is the 21dp a line of it comes to. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="13dp"
+            android:layout_weight="5"
+            android:background="@drawable/bg_skeleton_block" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="5" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -68,15 +68,27 @@ public class SkipManager {
         classifyCredits(durationSec);
     }
 
+    /** An end past a day cannot be a real mark; it is the open-end sentinel (99999) or worse. */
+    private static final double UNKNOWN_LENGTH_MAX_END_SEC = 24 * 60 * 60;
+
     /**
      * Clamps segment ends to the file end — an open-ended credits segment arrives with a sentinel end
      * far past it — and drops whatever is left spanning more than {@link #MAX_SEGMENT_FRACTION} of the
-     * file. A no-op while the duration is unknown: there is nothing to judge a segment against then,
-     * and the next rebuild runs this once it is.
+     * file. While the duration is unknown there is nothing to judge a segment against, so only what
+     * cannot be sought to goes: an end that is not a number, infinite, or the "runs to the end" sentinel
+     * (a live stream never learns its length, and an auto-skip there would seek to 99999 s). The next
+     * rebuild, once the duration is known, brings those back clamped.
      */
     private static List<SkipSegment> sanitize(List<SkipSegment> in, double durationSec) {
-        if (!(durationSec > 0)) {
-            return in; // also covers NaN
+        if (!(durationSec > 0)) { // also covers NaN
+            final List<SkipSegment> out = new ArrayList<>(in.size());
+            for (SkipSegment s : in) {
+                if (!Double.isNaN(s.startSec) && !Double.isInfinite(s.startSec)
+                        && !Double.isNaN(s.endSec) && s.endSec < UNKNOWN_LENGTH_MAX_END_SEC) {
+                    out.add(s);
+                }
+            }
+            return out;
         }
         final double maxSpan = durationSec * MAX_SEGMENT_FRACTION;
         final List<SkipSegment> out = new ArrayList<>(in.size());

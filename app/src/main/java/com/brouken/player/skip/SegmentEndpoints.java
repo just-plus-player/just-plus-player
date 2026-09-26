@@ -24,12 +24,62 @@ public final class SegmentEndpoints {
     static final String INTROHATER = "https://introhater.com/api/v1/segments/";
     /** Baked-in public read key (permission read:segments); a request without it gets a 401. */
     static final String INTROHATER_KEY = "introhater_mpv_client";
-    /** TV only, imdb-keyed. */
+    /** TV + movies (is_movie=true), imdb-keyed. */
     static final String INTRODB = "https://api.introdb.app/segments";
     /** imdb → MAL mapping per season (never pass ?include=). */
     static final String ARM = "https://arm.haglund.dev/api/v2/imdb";
     /** anime only, MAL-relative episode. */
     static final String ANISKIP = "https://api.aniskip.com/v2/skip-times";
+    /** anime, Russian video CDN; shikimoriID (= MAL id) → player page carrying the skip ranges. */
+    static final String KODIK = "https://kodik-api.com/get-player";
+    /**
+     * The embed token Kodik ships to every site in its own public embed script
+     * (kodik-add.com/add-players.min.js), used there with this same get-player call.
+     */
+    static final String KODIK_TOKEN = "447d179e875efe44217f20d1ee2146be";
+    /**
+     * Chinese animation (donghua): Bilibili's own opening/ending marks per episode, with the episode's exact
+     * length. No key; the search wants a WBI signature, whose keys the nav call hands out to anyone.
+     */
+    static final String BILIBILI_NAV = "https://api.bilibili.com/x/web-interface/nav";
+    static final String BILIBILI_SEARCH = "https://api.bilibili.com/x/web-interface/wbi/search/all/v2";
+    /** An episode's player: {@code clip_info_list} (CLIP_TYPE_OP / _ED, seconds) and {@code timelength} (ms). */
+    static final String BILIBILI_PLAYURL = "https://api.bilibili.com/pgc/player/web/playurl";
+    /**
+     * The search's risk control scores the client: OkHttp's own User-Agent gets an empty
+     * {@code v_voucher} reply most of the time (1 in 4 answered), a browser's none (4 in 4, 2026-09-25);
+     * the episode player answers OkHttp's with a flat 412.
+     */
+    static final String BILIBILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            + " (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+    /** iQIYI, no key: search by name, an album's episodes one per page, and an episode's skip points. */
+    static final String IQIYI_SEARCH = "https://mesh.if.iqiyi.com/portal/lw/search/homePageV3";
+    // Over plain HTTP, like TENCENT_UNION below: from Europe the TLS handshake with these hosts costs more
+    // than the answer (baseinfo 1.55 s over HTTPS, 0.70 s without). What travels is public metadata asked
+    // by public ids, no key or cookie of the viewer's; a tampered answer could only misplace a skip, and
+    // the length checks in platformMarks and tencent() still gate it. The searches stay on HTTPS: plain
+    // HTTP saves nothing there (iQIYI) or is redirected to it (Tencent, Bilibili).
+    static final String IQIYI_EPISODES = "http://pcw-api.iqiyi.com/albums/album/avlistinfo";
+    static final String IQIYI_INFO = "http://pcw-api.iqiyi.com/video/video/baseinfo/";
+    /**
+     * Tencent Video, where most big donghua stream only: its search (POST, wants v.qq.com as Referer and
+     * Origin) and the union metadata API: table 431 lists a cover's episodes, table 682 carries each one's
+     * length, {@code head_time} and {@code tail_time}. Playback itself is region-locked outside China; this metadata is not.
+     */
+    static final String TENCENT_SEARCH =
+            "https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.MultiTerminalSearch/MbSearch?vplatform=2";
+    /** Plain HTTP (see IQIYI_EPISODES): 0.47-0.67 s a call against 1.1-1.45 s over HTTPS. */
+    static final String TENCENT_UNION = "http://union.video.qq.com/fcgi-bin/data";
+    /** The app key Tencent's own web player sends to the union API (tid 682 is its video-info table). */
+    static final String TENCENT_UNION_KEY = "6c03bbe9658448a4";
+    static final String TENCENT_REFERER = "https://v.qq.com/";
+    /** anime only, GraphQL, AniList-keyed ({@code findShowsByExternalId}). */
+    static final String ANIMESKIP = "https://api.anime-skip.com/graphql";
+    /**
+     * The shared read-only client id from anime-skip.com/docs/api; a request without one is refused.
+     * The docs call it heavily rate limited and not meant for production: swap in a registered id here.
+     */
+    static final String ANIMESKIP_CLIENT_ID = "ZGfO0sMF3eCwLYf8yMSCJjlynwNGRXWE";
     /** TV + movies, tmdb-keyed (may 403 behind Cloudflare — treated as empty). */
     static final String THEINTRODB = "https://api.theintrodb.org/v3/media";
     /** imdb → tmdb id. Called lazily, only inside the TheIntroDB step. */

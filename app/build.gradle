@@ -183,12 +183,28 @@ dependencies {
         exclude group: "androidx.core", module: "core-ktx"
     }
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
-    implementation 'com.google.android.material:material:1.12.0'
+    // 1.14 for Material 3 Expressive: the shape state list a pressed pill morphs with, the size
+    // overlays, the spring motion attributes. It is also where documentfile stopped arriving on its
+    // own - the app carries its own DocumentFile subclass in that package, so the library is named
+    // here rather than inherited.
+    implementation 'com.google.android.material:material:1.14.0'
+    implementation 'androidx.documentfile:documentfile:1.1.0'
     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.3.0'
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.preference:preference:1.2.1'
     implementation 'com.squareup.okhttp3:okhttp:5.5.0'
     implementation 'com.sigpwned:chardet4j:78.1.0'
+    // SMB 2/3 for network folders. The protocol has a real pread, so a Media3 DataSource can sit
+    // straight on it — no local HTTP proxy, no Range parsing, no re-open on seek.
+    implementation 'com.hierynomus:smbj:0.14.0'
+    // Asks a host which shares it has (NetShareEnumAll over the IPC$ pipe). smbj gives the pipe
+    // and nothing above it - no DCERPC at all - and without this a found host is an address with
+    // the folder name left to guess, which on a remote is where the feature would be given up on.
+    // The old bcprov it asks for collides class-for-class with the current one already in the
+    // build (bcprov-jdk18on), and nothing here needs the 2018 edition.
+    implementation('com.rapid7.client:dcerpc:0.12.0') {
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk15on'
+    }
     implementation 'com.github.bumptech.glide:glide:4.16.0'
     // Drawing one QR code, for the invite on a device with nothing to share it with. Pure Java, no
     // transitive dependencies, and the alternative — handing the invite to a web service that draws it —
@@ -197,6 +213,5 @@ dependencies {
     def sentry_version = '8.16.0'
     implementation "io.sentry:sentry-android:$sentry_version"
     implementation project(path: ':doubletapplayerview')
-    implementation project(path: ':android-file-chooser')
     implementation fileTree(dir: "libs", include: ["lib-*.aar"])
 }

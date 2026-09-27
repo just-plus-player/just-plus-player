@@ -104,12 +104,14 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.color.MaterialColors;
+import com.google.common.collect.ImmutableList;
 import com.google.android.material.shape.ShapeAppearanceModel;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import androidx.core.graphics.ColorUtils;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
+import androidx.media3.common.util.Clock;
 import androidx.media3.common.util.Util;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
@@ -157,6 +159,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.Loader;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo;
@@ -167,6 +170,7 @@ import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.video.MediaCodecVideoDecoderException;
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer;
 import androidx.media3.exoplayer.video.VideoRendererEventListener;
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -661,8 +665,13 @@ public class PlayerActivity extends Activity {
     // Backgrounding keeps the player (see onStop) instead of tearing it down, so a quick round-trip —
     // settings, notification shade, app switch — returns to the same session, paused, instead of
     // re-buffering the stream. The decoder is held for it, so give up once the user is plainly gone: after
-    // this the teardown is the same as before. Tune if holding a decoder that long proves a problem.
-    private static final long BACKGROUND_RELEASE_MS = TimeUnit.MINUTES.toMillis(5);
+    // this the teardown is the same as before. Thirty minutes rather than five, so a pause and a locked
+    // phone keep the buffer a weak mobile link paid for. A paused decoder does no work, and a phone's is
+    // not exclusive: the system reclaims it from a background app that is asked for, and the return
+    // then takes the player-error branch in onStart, the same rebuild as this release. The one exclusive
+    // resource, a passthrough output, onStop hands back at once. A pause on screen has no timer at all:
+    // the stop() it used to get after five minutes freed only an idle socket and threw the buffer away.
+    private static final long BACKGROUND_RELEASE_MS = TimeUnit.MINUTES.toMillis(30);
     private final Runnable backgroundReleaseRunnable = () -> {
         // The return finds no player and rebuilds it; that rebuild must not start playing on its own.
         sourceSwitchKeepPaused = true;
@@ -735,6 +744,8 @@ public class PlayerActivity extends Activity {
     // of their fade — with the states in between keeping whatever the last edge decided.
     private boolean controllerChromeVisible;
     public static Snackbar snackbar;
+    // The TV dialog of a held load stall, closed when playback resumes on its own.
+    private AlertDialog stallDialog;
 
     /** What {@link #hardwareVerdict} answered, per format; the device cannot change its mind. */
     private final Map<String, Integer> hardwareVerdicts = new HashMap<>();
@@ -866,18 +877,6 @@ public class PlayerActivity extends Activity {
     // the controller timeout to -1) burnt into a panel for as long as the pause lasts. So the hold comes
     // with a black sheet faded over everything once the pause has stood a minute, and is given up
     // altogether once it has stood two hours: whoever fell asleep does not need the television on.
-    /**
-     * How long a pause may hold the source open. Nothing on the pause path closes it: the loader is
-     * blocked at the byte cap with a read half-issued, so the connection stays established and silent —
-     * measured at four minutes and counting, zero bytes, while 144 MB of buffer stays allocated. A
-     * torrent backend has a reader registered for that socket the whole time.
-     *
-     * <p>Long on purpose. player.stop() keeps the timeline and the position but drops the buffer, so
-     * resuming pays a fresh container read (four cold range requests on a 56 GB Matroska) plus the
-     * refill — which for a short pause costs the server more than the idle socket does. Five minutes is
-     * past the point where the viewer is coming straight back.
-     */
-    private static final long PAUSE_RELEASE_MS = 5 * 60 * 1000L;
     private static final long DIM_DELAY_MS = 60_000L;
     private static final long KEEP_AWAKE_MAX_MS = 2 * 60 * 60 * 1000L;
     private static final float DIM_ALPHA = 0.85f;
@@ -885,37 +884,9 @@ public class PlayerActivity extends Activity {
     private static final int DIM_OUT_MS = 300;
     private View dimOverlay;
     private final Runnable dimRunnable = this::dim;
-    // Set while the source was let go under a standing pause, so the next play re-prepares rather than
-    // leaving an idle player with a play button that does nothing.
-    private boolean stoppedForPause;
     // Set while the audio track type is disabled for a trip to the background (see onStop), so onStart
     // knows to put it back.
     private boolean audioReleasedForBackground;
-    private final Runnable pauseReleaseRunnable = () -> {
-        if (player == null || player.getPlayWhenReady() || player.isPlaying()) {
-            return;
-        }
-        // Letting the source go means re-preparing it on resume, and a re-prepare re-instantiates the
-        // video decoder. On a TV box that is the one move that can fail for good: a Realtek 4K Dolby
-        // Vision decoder re-init after teardown returns OMX_ErrorInsufficientResources (0x80001000),
-        // reports it unrecoverable, and no rung of the recovery ladder can get it back — while a cold app
-        // start allocates the very same decoder in half a second (field trace, S01E05, 4K dvhe.08.06).
-        // So on a TV box the idle socket and the held buffer are the cheaper cost; keep them. Phones
-        // re-instantiate decoders without complaint and keep the optimisation. The exclusive passthrough
-        // route this stop() also used to hand back is handed back by onStop instead, which is where a
-        // real trip to the background — the case that route contention actually comes from — goes.
-        // ponytail: gated by device class, not by probing the format, because there is no ask-in-advance
-        // for "will this decoder re-init", and a held buffer on a five-minute TV pause is nothing next to
-        // an error screen. Revisit if a TV box turns up that both needs the socket freed and re-inits fine.
-        if (isTvBox) {
-            return;
-        }
-        Utils.log("pause: releasing the source after " + PAUSE_RELEASE_MS / 1000 + "s");
-        stoppedForPause = true;
-        // Not releasePlayer(): stop() leaves the item, the position and the surface in place, so this
-        // costs one prepare() on resume and nothing else.
-        player.stop();
-    };
     private final Runnable keepAwakeGiveUpRunnable = () -> holdScreen(false);
     // Set while a Down press is opening the controls, so focus lands on the time bar instead of play/pause.
     private boolean focusTimeBarOnShow;
@@ -2931,8 +2902,15 @@ public class PlayerActivity extends Activity {
                 player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false).build());
             }
-            resumeFrameRendered = false;
-            playerView.postDelayed(resumeWatchdogRunnable, RESUME_WATCHDOG_MS);
+            // Only a session that had started before we left. A VIEW intent delivered to a stopped screen
+            // reaches onNewIntent before onStart, so the player here may be one built a moment ago for new
+            // media: a slow stream with its first bytes in and no frame yet looked like a dead return, and
+            // the rebuild - paused, as a return should be - is what opened a Lampa link on a pause.
+            // A fresh load that never gets going is the load watchdog's, armed below.
+            if (playerStartPositionMs != C.TIME_UNSET) {
+                resumeFrameRendered = false;
+                playerView.postDelayed(resumeWatchdogRunnable, RESUME_WATCHDOG_MS);
+            }
             // Put back what onStop cancelled, and only that: a load that was still buffering when the user
             // left gets a full timeout from the moment they are looking at it again.
             if (player.getPlaybackState() == Player.STATE_BUFFERING) {
@@ -3039,8 +3017,8 @@ public class PlayerActivity extends Activity {
         // not change across the trip and onPlaybackStateChanged never re-fires.
         cancelLoadWatchdog();
         playerView.removeCallbacks(resumeWatchdogRunnable);
-        // Not on a TV box: the return would rebuild the decoder inside the same window, which is what
-        // pauseReleaseRunnable stopped doing there for the same reason. The exclusive route is handed
+        // Not on a TV box: the return would rebuild the decoder inside the same window, and a Realtek 4K
+        // Dolby Vision decoder does not survive that (0x80001000). The exclusive route is handed
         // back above; what stays is an idle socket and the buffer, and the system reclaims the process
         // if it needs the memory - that return is a cold start, which is the one that works.
         if (!isTvBox) {
@@ -7248,6 +7226,13 @@ public class PlayerActivity extends Activity {
         TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                 .setForceHighestSupportedBitrate(choice.mode == VideoQualityChoice.MODE_MAXIMUM);
+        // The default viewport caps even the forced pick at the screen: a 2412x1080 phone stopped at
+        // 1440p on a 4K stream its decoder plays. Maximum means what the decoder takes, Auto the screen.
+        if (choice.mode == VideoQualityChoice.MODE_MAXIMUM) {
+            builder.clearViewportSizeConstraints();
+        } else {
+            builder.setViewportSizeToPhysicalDisplaySize(this, true);
+        }
         if (choice.mode == VideoQualityChoice.MODE_TRACK && choice.group != null) {
             builder.setOverrideForType(new TrackSelectionOverride(
                     choice.group, Collections.singletonList(choice.trackIndex)));
@@ -11286,6 +11271,38 @@ public class PlayerActivity extends Activity {
         return mimeType.substring(mimeType.lastIndexOf('/') + 1).toUpperCase(Locale.US);
     }
 
+    // Auto weighs a rendition by its AVERAGE-BANDWIDTH where the playlist gives one, not by the peak
+    // Format.bitrate prefers. One CDN declares peaks 4-6x the real rate (4K: 18.9 Mbit/s peak,
+    // 2.9 average, 4.2 measured), which held a phone with a 10+ Mbit/s link at 480p. The buffer absorbs
+    // a real peak; the selector still steps down when it drains.
+    private static final class AverageBitrateTrackSelection extends AdaptiveTrackSelection {
+        AverageBitrateTrackSelection(TrackGroup group, int[] tracks, int type, BandwidthMeter meter,
+                                     List<AdaptationCheckpoint> checkpoints) {
+            super(group, tracks, type, meter,
+                    DEFAULT_MIN_DURATION_FOR_QUALITY_INCREASE_MS,
+                    DEFAULT_MAX_DURATION_FOR_QUALITY_DECREASE_MS,
+                    DEFAULT_MIN_DURATION_TO_RETAIN_AFTER_DISCARD_MS,
+                    DEFAULT_MAX_WIDTH_TO_DISCARD, DEFAULT_MAX_HEIGHT_TO_DISCARD,
+                    DEFAULT_BANDWIDTH_FRACTION,
+                    DEFAULT_BUFFERED_FRACTION_TO_LIVE_EDGE_FOR_QUALITY_INCREASE,
+                    checkpoints, Clock.DEFAULT);
+        }
+
+        @Override
+        protected boolean canSelectFormat(Format format, int trackBitrate, long effectiveBitrate) {
+            return super.canSelectFormat(format, format.averageBitrate != Format.NO_VALUE
+                    ? format.averageBitrate : trackBitrate, effectiveBitrate);
+        }
+
+        static final class Factory extends AdaptiveTrackSelection.Factory {
+            @Override
+            protected AdaptiveTrackSelection createAdaptiveTrackSelection(TrackGroup group, int[] tracks,
+                    int type, BandwidthMeter meter, ImmutableList<AdaptationCheckpoint> checkpoints) {
+                return new AverageBitrateTrackSelection(group, tracks, type, meter, checkpoints);
+            }
+        }
+    }
+
     private static final class VideoQualityChoice {
         static final int MODE_AUTO = 0;
         static final int MODE_MAXIMUM = 1;
@@ -11648,7 +11665,7 @@ public class PlayerActivity extends Activity {
             dynamicRangeProcessor = null;
         }
 
-        trackSelector = new DefaultTrackSelector(this);
+        trackSelector = new DefaultTrackSelector(this, new AverageBitrateTrackSelection.Factory());
         trackSelector.setParameters(trackSelector.buildUponParameters()
                 .setAllowInvalidateSelectionsOnRendererCapabilitiesChange(true));
         if (mPrefs.tunneling) {
@@ -12921,7 +12938,7 @@ public class PlayerActivity extends Activity {
         }
         // A stuck load on a TV box must not be answered with stop(): that releases the video decoder, and
         // a Realtek 4K Dolby Vision decoder does not come back — the resume prepare() fails for good with
-        // 0x80001000, the same death pauseReleaseRunnable was taught to avoid. The load is stuck, the
+        // 0x80001000. The load is stuck, the
         // decoder is not, so leave it be: hold the player on the position it already has and let a seek
         // back into buffered data, or the source finally answering the right range, resume on that same
         // decoder. The spinner stays (its rate readout still reads 0), the episode arrows come back, and
@@ -12932,7 +12949,7 @@ public class PlayerActivity extends Activity {
                     + ", TV box, holding the decoder");
             reportOutcome("load-stalled-held", null);
             setEpisodeNavLoading(false);
-            showSnack(getString(R.string.error_playback_stalled), null);
+            stallDialog = showSnack(getString(R.string.error_playback_stalled), null);
             return;
         }
         Utils.log("watchdog: +" + progressed + " B, loading=" + player.isLoading() + ", stopping");
@@ -12982,8 +12999,6 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(passthroughRestartRunnable);
             playerView.removeCallbacks(reselectWedgeRunnable);
             playerView.removeCallbacks(rebufferArmRunnable);
-            playerView.removeCallbacks(pauseReleaseRunnable);
-            stoppedForPause = false;
             audioReleasedForBackground = false;
             audioRestartPending = false;
             audioRestartInFlight = false;
@@ -13433,19 +13448,6 @@ public class PlayerActivity extends Activity {
         // by the sink no longer reporting passthrough.
         @Override
         public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-            if (playWhenReady && stoppedForPause) {
-                stoppedForPause = false;
-                // The re-prepare opens a fresh output of its own, so the pause's latch has nothing left to
-                // recreate — spent here it would tear that output down the instant playback begins, which is
-                // the shape that has produced a silent start before (see audioEverStarted). Outside the check
-                // below: the play button has usually re-prepared already (Util.handlePlayButtonAction does so
-                // on an idle player before it calls play()), so the state here is rarely still IDLE.
-                audioRestartPending = false;
-                if (player != null && player.getPlaybackState() == Player.STATE_IDLE) {
-                    Utils.log("pause: re-preparing after the source was let go");
-                    player.prepare();
-                }
-            }
             if (playWhenReady) {
                 return;
             }
@@ -13480,6 +13482,12 @@ public class PlayerActivity extends Activity {
                 secondarySubtitleOffset.wake();
             }
             if (isPlaying) {
+                // The held stall came back by itself (see reportVideoLoadTimeout): its message is stale.
+                if (stallDialog != null) {
+                    stallDialog.dismiss();
+                    stallDialog = null;
+                    reportOutcome("load-stalled-recovered", null);
+                }
                 // Fresh baseline for the freeze watchdog: nothing is output while paused, and whatever
                 // the last window measured belongs to a playback that has since stopped.
                 frameOutputSeen = -1;
@@ -13506,13 +13514,6 @@ public class PlayerActivity extends Activity {
                 playerView.postDelayed(rebufferArmRunnable, REBUFFER_ARM_MS);
             }
             resetDim();
-
-            // A pause by the viewer, not a stall: playWhenReady is what separates them, and only the
-            // first should start the clock on letting the source go.
-            playerView.removeCallbacks(pauseReleaseRunnable);
-            if (!isPlaying && player != null && !player.getPlayWhenReady()) {
-                playerView.postDelayed(pauseReleaseRunnable, PAUSE_RELEASE_MS);
-            }
 
             if (Utils.isPiPSupported(PlayerActivity.this)) {
                 if (isPlaying) {
@@ -16134,7 +16135,8 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    void showSnack(final String textPrimary, final String textSecondary) {
+    /** Returns the dialog on TV, which stays until dismissed; null elsewhere, where the snack times out. */
+    AlertDialog showSnack(final String textPrimary, final String textSecondary) {
         final Context dialogContext = Dialogs.dialogContext(this);
         // On TV the Snackbar action button is not reachable with the D-pad, so the "Details" affordance
         // would be lost. Present the error as an AlertDialog instead — its buttons are D-pad focusable.
@@ -16145,13 +16147,12 @@ public class PlayerActivity extends Activity {
             if (textSecondary != null) {
                 builder.setNeutralButton(R.string.error_details, (dialogInterface, i) -> showErrorScreen(textSecondary, textSecondary));
             }
-            builder.show();
-            return;
+            return builder.show();
         }
         clearReadout();
         snackbar = Notice.make(this, textPrimary, true, R.drawable.ic_info_24dp);
         if (snackbar == null) {
-            return;
+            return null;
         }
         if (textSecondary != null) {
             snackbar.setAction(R.string.error_details, v -> showErrorScreen(textSecondary, textSecondary));
@@ -16162,6 +16163,7 @@ public class PlayerActivity extends Activity {
             snackbar.setActionTextColor(brandColor());
         }
         snackbar.show();
+        return null;
     }
 
     private void showErrorScreen(final String summary, final String report) {

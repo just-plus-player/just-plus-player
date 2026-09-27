@@ -53,6 +53,17 @@
   <!-- When the second subtitle line is drawn. "Off" takes the whole feature away rather than just the
        line, and "on demand" is what the line was made for: the original read on its own, the hint
        asked for in the one moment a phrase did not land. -->
+  <!-- Utils.Orientation.value of each. -->
+  <string-array name="screen_orientation_entries">
+    <item>@string/video_orientation_video</item>
+    <item>@string/video_orientation_system</item>
+  </string-array>
+
+  <string-array name="screen_orientation_values">
+    <item>0</item>
+    <item>1</item>
+  </string-array>
+
   <string-array name="subtitle_secondary_mode_entries">
     <item>@string/pref_subtitle_secondary_mode_off</item>
     <item>@string/pref_subtitle_secondary_mode_always</item>

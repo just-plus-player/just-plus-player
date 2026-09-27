@@ -316,6 +316,9 @@ public final class UpdateUi {
         final com.google.android.material.progressindicator.LinearProgressIndicator bar =
                 new com.google.android.material.progressindicator.LinearProgressIndicator(dialogContext);
         bar.setMax(100);
+        // No dot at the far end: M3 draws one on a determinate track, and at the start of a download it
+        // read as a second, stray piece of progress rather than as where the bar ends.
+        bar.setTrackStopIndicatorSize(0);
         bar.setIndeterminate(info.size <= 0);
 
         final int pad = dp(dialogContext, 20);

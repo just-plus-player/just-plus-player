@@ -817,6 +817,7 @@ public class PlayerActivity extends Activity {
     private android.app.Dialog qualityDialog;
     private android.app.Dialog playlistDialog;
     private android.app.Dialog skipOffsetDialog;
+    private android.app.Dialog soundDialog;
     private android.app.Dialog subtitleOffsetDialog;
     private android.app.Dialog sleepTimerDialog;
     private android.app.Dialog speedDialog;
@@ -1180,6 +1181,11 @@ public class PlayerActivity extends Activity {
     // Skip-segment timing offset (seconds) — in-session only, never persisted; applies to all
     // playlist items and is reset on a new media session (resetApiAccess).
     private double skipOffsetSec = 0;
+    // The sound's two switches for this session, null = follow the settings. Scoped like the skip
+    // offset: the next file of the folder keeps them, a film picked afresh starts from the settings.
+    private Boolean dynamicRangeSession;
+    private Boolean centreBoostSession;
+    private DynamicRangeProcessor dynamicRangeProcessor;
     // How this session offers segments, or null to follow the settings. One value for both kinds,
     // because the viewer mid-film holds one intention and not two — "stop interrupting me in this
     // series" — and two rows of it were two rows of the same answer. Same life as the offset above and
@@ -1862,8 +1868,8 @@ public class PlayerActivity extends Activity {
         }
         buttonRotation = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonRotation.setContentDescription(getString(R.string.button_rotate));
-        updateButtonRotation();
-        buttonRotation.setOnClickListener(view -> cycleOrientation());
+        buttonRotation.setImageResource(R.drawable.ic_screen_rotation_24dp);
+        buttonRotation.setOnClickListener(view -> rotateScreen());
 
         buttonLock = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
         buttonLock.setImageResource(R.drawable.ic_lock_24dp);
@@ -2940,7 +2946,6 @@ public class PlayerActivity extends Activity {
             together.resume();
         }
         updateRoomBadge();
-        updateButtonRotation();
     }
 
     @Override
@@ -4161,9 +4166,15 @@ public class PlayerActivity extends Activity {
         // while a film picked afresh starts from the settings again.
         skipOffsetSec = 0;
         skipModeSession = null;
+        dynamicRangeSession = null;
+        centreBoostSession = null;
+        applySoundSession();
         skipSeenThisSession = false;
         if (skipOffsetDialog != null && skipOffsetDialog.isShowing()) {
             skipOffsetDialog.dismiss();
+        }
+        if (soundDialog != null && soundDialog.isShowing()) {
+            soundDialog.dismiss();
         }
         // Same for the subtitle offset: it was tuned against one file's timing and means nothing to the next.
         applySubtitleOffset(0);
@@ -10054,12 +10065,12 @@ public class PlayerActivity extends Activity {
         player.setPlaybackSpeed(speed);
     }
 
-    private void cycleOrientation() {
-        mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
-        Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
-        updateButtonRotation();
-        Dialogs.showText(playerView, getString(mPrefs.orientation.description),
-                R.drawable.ic_screen_rotation_24dp, 2500);
+    // Turns the screen to the other side and keeps the sensor for upside down. Not remembered: the
+    // orientation setting takes over again with the next video.
+    private void rotateScreen() {
+        setRequestedOrientation(getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE
+                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         resetHideCallbacks();
     }
 
@@ -10246,6 +10257,67 @@ public class PlayerActivity extends Activity {
         showPickerDialog(sleepTimerDialog);
     }
 
+    private boolean dynamicRangeOn() {
+        return dynamicRangeSession != null ? dynamicRangeSession : mPrefs.dynamicRange;
+    }
+
+    private boolean centreBoostOn() {
+        return centreBoostSession != null ? centreBoostSession : mPrefs.centreBoost;
+    }
+
+    /** Hands the session's answer to the processors, which take it on the next buffer. */
+    private void applySoundSession() {
+        if (dynamicRangeProcessor != null) {
+            dynamicRangeProcessor.setEnabled(dynamicRangeOn());
+        }
+        if (boostProcessor != null) {
+            boostProcessor.setCentreBoost(centreBoostOn());
+        }
+    }
+
+    /** What is on, in the words of the panel; null when both are off, like any row at rest. */
+    private String soundSummary() {
+        final List<String> on = new ArrayList<>();
+        if (dynamicRangeOn()) {
+            on.add(getString(R.string.sound_summary_dynamic_range));
+        }
+        if (centreBoostOn()) {
+            on.add(getString(R.string.sound_summary_centre_boost));
+        }
+        return on.isEmpty() ? null : TextUtils.join(" · ", on);
+    }
+
+    private OffsetPanel.Toggle soundToggle(final int title, final int summaryOn, final int summaryOff,
+                                           final boolean on, final boolean settings,
+                                           final OffsetPanel.Toggle.Picked picked) {
+        return new OffsetPanel.Toggle(getString(title), getString(summaryOn), getString(summaryOff),
+                on, settings, picked);
+    }
+
+    /**
+     * The two switches of the settings screen's audio section, for this session only: reached from
+     * the film, forgotten with it. The settings stay where the lasting answer is given.
+     */
+    private void showSoundPanel() {
+        if (soundDialog != null) {
+            soundDialog.dismiss();
+        }
+        soundDialog = OffsetPanel.create(this, ui, getString(R.string.sound_session_title),
+                soundToggle(R.string.pref_dynamic_range, R.string.pref_dynamic_range_on,
+                        R.string.pref_dynamic_range_off, dynamicRangeOn(), mPrefs.dynamicRange,
+                        value -> {
+                            dynamicRangeSession = value;
+                            applySoundSession();
+                        }),
+                soundToggle(R.string.pref_centre_boost, R.string.pref_centre_boost_on,
+                        R.string.pref_centre_boost_off, centreBoostOn(), mPrefs.centreBoost,
+                        value -> {
+                            centreBoostSession = value;
+                            applySoundSession();
+                        }));
+        showPickerDialog(soundDialog);
+    }
+
     /**
      * Overflow menu: everything used rarely or once per session, so the control row stays calm.
      *
@@ -10269,6 +10341,8 @@ public class PlayerActivity extends Activity {
                     // and "Normal" is the absence of a change.
                     userSpeed() == 1f ? null : SpeedPanel.format(userSpeed()),
                     false, this::showSpeedDialog));
+            items.add(new Dialogs.MenuItem(R.drawable.ic_volume_up_24dp, getString(R.string.sound_row),
+                    soundSummary(), false, this::showSoundPanel));
         }
         // Only with subtitles on: there is nothing to shift otherwise. One row for both lines — the
         // panel behind it carries a slider each, and which is which is answered there.
@@ -11571,6 +11645,7 @@ public class PlayerActivity extends Activity {
             player = null;
             audioSink = null;
             boostProcessor = null;
+            dynamicRangeProcessor = null;
         }
 
         trackSelector = new DefaultTrackSelector(this);
@@ -11869,7 +11944,7 @@ public class PlayerActivity extends Activity {
                 // rather than from applyBoost — this is a preference, not a gesture, and a changed
                 // preference rebuilds the player.
                 final int routeChannels = AudioCapabilities.getCapabilities(context).getMaxChannelCount();
-                boostProcessor.setCentreBoost(mPrefs.centreBoost, routeChannels);
+                boostProcessor.setCentreBoost(centreBoostOn(), routeChannels);
                 final boolean forceCapabilities = mPrefs.audioPassthrough && mPrefs.audioPassthroughForce;
                 // Declared capabilities are only honoured by a builder holding no context: given one,
                 // the output provider registers a receiver for the route's own answer and overwrites
@@ -11897,10 +11972,10 @@ public class PlayerActivity extends Activity {
                         // altogether. A route of two channels is a television's own speakers or a
                         // phone's, and the heavy shape belongs there; the gentle one goes where there
                         // are speakers worth keeping a mix for.
-                        .setAudioProcessors(mPrefs.dynamicRange
-                                ? new AudioProcessor[]{boostProcessor,
-                                        new DynamicRangeProcessor(routeChannels <= 2)}
-                                : new AudioProcessor[]{boostProcessor});
+                        // Always in the chain, bypassed while off: the session switches it mid-film.
+                        .setAudioProcessors(new AudioProcessor[]{boostProcessor,
+                                dynamicRangeProcessor = new DynamicRangeProcessor(routeChannels <= 2,
+                                        dynamicRangeOn())});
                 AudioSink sink = builder.build();
                 audioSink = new AudioPassthroughDenylistSink(sink, revokedAudioMimes,
                         !mPrefs.audioPassthrough, mPrefs.audioSyncMs, mPrefs.audioPassthroughSyncMs);
@@ -12633,7 +12708,6 @@ public class PlayerActivity extends Activity {
         mPrefs.updateVolume(Math.round(playerVolume));
         if (player != null) {
             mPrefs.updateBrightness(Math.round(mBrightnessControl.percent));
-            mPrefs.updateOrientation();
 
             if (haveMedia) {
                 // Prevent overwriting temporarily inaccessible media position
@@ -12952,6 +13026,7 @@ public class PlayerActivity extends Activity {
             player = null;
             audioSink = null;
             boostProcessor = null;
+            dynamicRangeProcessor = null;
         }
         stopSkipPolling();
         cancelSegmentFinder();
@@ -12998,6 +13073,10 @@ public class PlayerActivity extends Activity {
         if (subtitleOffsetDialog != null) {
             subtitleOffsetDialog.dismiss();
             subtitleOffsetDialog = null;
+        }
+        if (soundDialog != null) {
+            soundDialog.dismiss();
+            soundDialog = null;
         }
         // Only the panel goes: this runs on a quality switch too, and an armed timer has to ride across that.
         if (sleepTimerDialog != null) {
@@ -13541,16 +13620,16 @@ public class PlayerActivity extends Activity {
                 }
 
                 updateMediaInfo();
+                final MediaItem current = player.getCurrentMediaItem();
+                if (current != null && current.localConfiguration != null) {
+                    Prefs.rememberLength(PlayerActivity.this, current.localConfiguration.uri,
+                            player.getDuration());
+                }
 
                 matchDisplayModeForNewItem();
 
                 if (videoLoading) {
                     videoLoading = false;
-
-                    if (mPrefs.orientation == Utils.Orientation.UNSPECIFIED) {
-                        mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
-                        Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
-                    }
 
                     final Format format = player.getVideoFormat();
 
@@ -13561,7 +13640,6 @@ public class PlayerActivity extends Activity {
                             } else {
                                 PlayerActivity.this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
                             }
-                            updateButtonRotation();
                         }
 
                         updateSubtitleLayout();
@@ -15546,8 +15624,6 @@ public class PlayerActivity extends Activity {
 
         updateSubtitleLayout(newConfig.orientation);
 
-        updateButtonRotation();
-
         // Recompute adaptive metrics on resize/fold/rotation (manifest opts out of recreate for these, so
         // playback isn't interrupted). Re-run the inset pass (grid/overscan) and drop any open picker — it was
         // sized for the old width/orientation and is rebuilt fresh on next open. Density/fontScale changes are
@@ -15564,7 +15640,7 @@ public class PlayerActivity extends Activity {
 
     private void dismissOpenPickers() {
         final android.app.Dialog[] pickers = { qualityDialog, playlistDialog, skipOffsetDialog,
-                subtitleOffsetDialog, sleepTimerDialog, Dialogs.openMenu() };
+                subtitleOffsetDialog, soundDialog, sleepTimerDialog, Dialogs.openMenu() };
         for (final android.app.Dialog d : pickers) {
             if (d != null && d.isShowing()) {
                 d.dismiss();
@@ -15877,8 +15953,8 @@ public class PlayerActivity extends Activity {
                 .append(mPrefs.mapDV7ToHevc ? ", map DV7" : "")
                 .append(mPrefs.refuseDolbyVision ? ", no DV" : "")
                 .append(mPrefs.removeHdr10Plus ? ", no HDR10+ under DV" : "")
-                .append(mPrefs.centreBoost ? ", dialogue lift" : "")
-                .append(mPrefs.dynamicRange ? ", night mode" : "");
+                .append(centreBoostOn() ? ", dialogue lift" : "")
+                .append(dynamicRangeOn() ? ", night mode" : "");
         // What the recovery ladder had already spent, and where the passthrough restart stood: a decoder
         // that failed right after a reselect and one that failed on its own are the two suspects a report
         // from a TV box has to tell apart.
@@ -17118,34 +17194,6 @@ public class PlayerActivity extends Activity {
             buttonAspectRatio.setImageResource(R.drawable.ic_fit_screen_24dp);
         } else {
             buttonAspectRatio.setImageResource(R.drawable.ic_aspect_ratio_24dp);
-        }
-    }
-
-    private void updateButtonRotation() {
-        boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
-        boolean auto = false;
-        try {
-            auto = Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION) == 1;
-        } catch (Settings.SettingNotFoundException e) {
-            e.printStackTrace();
-        }
-
-        if (mPrefs.orientation == Utils.Orientation.VIDEO) {
-            if (auto) {
-                buttonRotation.setImageResource(R.drawable.ic_screen_lock_rotation_24dp);
-            } else if (portrait) {
-                buttonRotation.setImageResource(R.drawable.ic_screen_lock_portrait_24dp);
-            } else {
-                buttonRotation.setImageResource(R.drawable.ic_screen_lock_landscape_24dp);
-            }
-        } else {
-            if (auto) {
-                buttonRotation.setImageResource(R.drawable.ic_screen_rotation_24dp);
-            } else if (portrait) {
-                buttonRotation.setImageResource(R.drawable.ic_screen_portrait_24dp);
-            } else {
-                buttonRotation.setImageResource(R.drawable.ic_screen_landscape_24dp);
-            }
         }
     }
 }

@@ -51,7 +51,7 @@ class Prefs {
     private static final String PREF_KEY_AUDIO_TRACK_ID = "audioTrackId";
     private static final String PREF_KEY_SUBTITLE_TRACK_ID = "subtitleTrackId";
     private static final String PREF_KEY_RESIZE_MODE = "resizeMode";
-    private static final String PREF_KEY_ORIENTATION = "orientation";
+    private static final String PREF_KEY_ORIENTATION = "screenOrientation";
     private static final String PREF_KEY_SCALE = "scale";
     private static final String PREF_KEY_ASPECT_RATIO = "aspectRatio";
     private static final String PREF_KEY_SCOPE_URI = "scopeUri";
@@ -207,8 +207,7 @@ class Prefs {
     public Uri scopeUri;
     public String mediaType;
     public int resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT;
-    // VIDEO from the start: UNSPECIFIED is a no-op in Utils.setOrientation, so defaulting to it left the
-    // first-ever launch following the device until the first STATE_READY upgraded it to VIDEO anyway.
+    // A setting now, not what the rotate button last left behind: the button only turns the screen.
     public Utils.Orientation orientation = Utils.Orientation.VIDEO;
     public float scale = 1.f;
     public float aspectRatio = 0f; // 0 = natural video AR; >0 = forced display AR (16:9, 4:3, …)
@@ -452,7 +451,6 @@ class Prefs {
             audioTrackId = mSharedPreferences.getString(PREF_KEY_AUDIO_TRACK_ID, audioTrackId);
         if (mSharedPreferences.contains(PREF_KEY_SUBTITLE_TRACK_ID))
             subtitleTrackId = mSharedPreferences.getString(PREF_KEY_SUBTITLE_TRACK_ID, subtitleTrackId);
-        orientation = Utils.Orientation.values()[mSharedPreferences.getInt(PREF_KEY_ORIENTATION, orientation.value)];
         if (mSharedPreferences.contains(PREF_KEY_SCOPE_URI))
             scopeUri = Uri.parse(mSharedPreferences.getString(PREF_KEY_SCOPE_URI, null));
         askScope = mSharedPreferences.getBoolean(PREF_KEY_ASK_SCOPE, askScope);
@@ -470,6 +468,8 @@ class Prefs {
     }
 
     public void loadUserPreferences() {
+        orientation = Utils.Orientation.values()[Integer.parseInt(mSharedPreferences.getString(
+                PREF_KEY_ORIENTATION, String.valueOf(orientation.value)))];
         autoPiP = mSharedPreferences.getBoolean(PREF_KEY_AUTO_PIP, autoPiP);
         disableVolumeBrightnessGestures = mSharedPreferences.getBoolean(
                 PREF_KEY_DISABLE_VOLUME_BRIGHTNESS_GESTURES, disableVolumeBrightnessGestures);
@@ -1258,9 +1258,28 @@ class Prefs {
      * {@link Prefs}, and the player writes this while that screen is away, so a cached copy would be
      * one film out of date on every return. A listing reads it once and asks the map per row.
      */
-    @SuppressWarnings("unchecked")
     static Map<String, Long> readPositions(final Context context) {
-        try (FileInputStream fis = context.openFileInput("positions");
+        return readMap(context, "positions");
+    }
+
+    /**
+     * How long each file the player has held plays for, keyed by uri - the other half of a row's bar.
+     * The browser measures that itself for a file on the device, and cannot for one on SMB or WebDAV:
+     * the retriever it asks does not speak those. The player has just played the file and knows.
+     */
+    static Map<String, Long> readLengths(final Context context) {
+        return readMap(context, "lengths");
+    }
+
+    static void rememberLength(final Context context, final Uri uri, final long length) {
+        if (length > 0) {
+            remember(context, "lengths", uri, length);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Long> readMap(final Context context, final String name) {
+        try (FileInputStream fis = context.openFileInput(name);
              ObjectInputStream is = new ObjectInputStream(fis)) {
             return (LinkedHashMap<String, Long>) is.readObject();
         } catch (Exception e) {
@@ -1278,13 +1297,18 @@ class Prefs {
      * that has the timecode is a listing thread and owns no {@link Prefs}. It runs before the player
      * is built, so the instance that will read this file has not loaded it yet.
      */
-    @SuppressWarnings("unchecked")
     static void rememberPosition(final Context context, final Uri uri, final long position) {
+        remember(context, "positions", uri, position);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void remember(final Context context, final String name, final Uri uri,
+                                 final long position) {
         if (uri == null) {
             return;
         }
         LinkedHashMap<String, Long> known;
-        try (FileInputStream fis = context.openFileInput("positions");
+        try (FileInputStream fis = context.openFileInput(name);
              ObjectInputStream is = new ObjectInputStream(fis)) {
             known = (LinkedHashMap<String, Long>) is.readObject();
         } catch (Exception e) {
@@ -1299,7 +1323,7 @@ class Prefs {
             known.remove(known.keySet().toArray()[0]);
         }
         known.put(uri.toString(), position);
-        try (FileOutputStream fos = context.openFileOutput("positions", Context.MODE_PRIVATE);
+        try (FileOutputStream fos = context.openFileOutput(name, Context.MODE_PRIVATE);
              ObjectOutputStream os = new ObjectOutputStream(fos)) {
             os.writeObject(known);
         } catch (Exception e) {
@@ -1378,12 +1402,6 @@ class Prefs {
         } catch (IllegalArgumentException e) {
             return null;
         }
-    }
-
-    public void updateOrientation() {
-        final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
-        sharedPreferencesEditor.putInt(PREF_KEY_ORIENTATION, orientation.value);
-        sharedPreferencesEditor.apply();
     }
 
     /**
@@ -1556,7 +1574,7 @@ class Prefs {
                     PREF_KEY_SUBTITLE_URI, PREF_KEY_SUBTITLE_SECONDARY_URI,
                     PREF_KEY_AUDIO_TRACK_ID, PREF_KEY_SUBTITLE_TRACK_ID,
                     PREF_KEY_BRIGHTNESS, PREF_KEY_BRIGHTNESS_PERCENT, PREF_KEY_VOLUME_PERCENT,
-                    PREF_KEY_ORIENTATION, PREF_KEY_SPEED, PREF_KEY_HOLD_SPEED,
+                    PREF_KEY_SPEED, PREF_KEY_HOLD_SPEED,
                     PREF_KEY_PLAYLIST_GRID, PREF_KEY_SCOPE_URI, PREF_KEY_ASK_SCOPE,
                     PREF_KEY_FIRST_RUN, PREF_KEY_RESTORE_AUTO_ROTATE,
                     PREF_KEY_BROWSE_TRAIL, PREF_KEY_BROWSE_DEST,

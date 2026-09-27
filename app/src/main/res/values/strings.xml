@@ -146,6 +146,7 @@
     <string name="pref_framerate_matching">Match the refresh rate to the video</string>
     <string name="pref_framerate_matching_on">A matching mode is asked for as the file opens</string>
     <string name="pref_framerate_matching_off">The screen keeps whatever mode it is set to now</string>
+    <string name="pref_screen_orientation">Screen orientation</string>
     <string name="pref_back_buffer">Keep played media for stepping back</string>
     <string name="pref_back_buffer_off">Off</string>
     <string name="pref_back_buffer_summary">%s. Kept in memory for a short rewind, about 10 MB per five seconds. Not for local files</string>
@@ -322,6 +323,10 @@
     <string name="pref_centre_boost">Dialogue louder than the rest</string>
     <string name="pref_centre_boost_on">Speech is lifted above music; a tight mix may clip</string>
     <string name="pref_centre_boost_off">Dialogue plays at exactly the level it was mixed</string>
+    <string name="sound_row">Sound</string>
+    <string name="sound_session_title">Sound in this session</string>
+    <string name="sound_summary_dynamic_range">Evened out</string>
+    <string name="sound_summary_centre_boost">Dialogue lifted</string>
     <string name="pref_audio_passthrough_force">Pass through even if unsupported</string>
     <string name="pref_audio_passthrough_force_on">Sent even when the device says it takes none of it</string>
     <string name="pref_audio_passthrough_force_off">Only what the HDMI route reports is ever sent on</string>

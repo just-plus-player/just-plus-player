@@ -107,9 +107,14 @@ final class SmbSessions {
         }
         drop(key);
 
+        // No socket timeout. smbj reads the socket on one thread for the whole connection, and a
+        // timeout there closes the connection rather than failing a request — and the player leaves
+        // the socket silent for 35 s every time its buffer is full (50 s held, refilled below 15 s).
+        // So every refill found the share closed and started from a reconnect: the stall of #219,
+        // measured on a Synology as a dead share after 31 s idle and a live one after 90 s without
+        // it. A host that stops answering is still caught, per request, by the 20 s timeout.
         final SmbConfig config = SmbConfig.builder()
                 .withTimeout(20, TimeUnit.SECONDS)
-                .withSoTimeout(30, TimeUnit.SECONDS)
                 .withDfsEnabled(false)
                 .build();
         final SMBClient client = new SMBClient(config);

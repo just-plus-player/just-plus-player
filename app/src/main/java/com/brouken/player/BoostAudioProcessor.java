@@ -47,7 +47,10 @@ class BoostAudioProcessor extends BaseAudioProcessor {
     // Whether the viewer asked for the lift at all. The amount is not a setting: it is decided per
     // configuration, since it depends on what the route will do with the channels.
     private volatile boolean centreBoost;
-    // The amount in force, written by onConfigure and read on the playback thread. 1 = nothing to do.
+    // What this configuration's route earns, whether or not it is asked for: the lift can then be
+    // switched mid-film without waiting for a reconfiguration. Written by onConfigure.
+    private volatile float armedGain = 1f;
+    // The amount in force, read on the playback thread. 1 = nothing to do.
     private volatile float centreGain = 1f;
     // What the route out of this device will take, so the lift can tell a discrete centre from one the
     // platform is about to fold into stereo. 0 = not known, treated as discrete.
@@ -67,9 +70,12 @@ class BoostAudioProcessor extends BaseAudioProcessor {
     void setCentreBoost(boolean on, int routeChannelCount) {
         this.centreBoost = on;
         this.routeChannelCount = routeChannelCount;
-        if (!on) {
-            centreGain = 1f;
-        }
+        centreGain = on ? armedGain : 1f;
+    }
+
+    /** The same, on the route already known: the session's switch, flipped while the film plays. */
+    void setCentreBoost(boolean on) {
+        setCentreBoost(on, routeChannelCount);
     }
 
     /**
@@ -99,10 +105,11 @@ class BoostAudioProcessor extends BaseAudioProcessor {
         // Said once per configuration, because the effect itself cannot be seen from a log or a
         // screenshot: this is the line that shows the lift was actually armed, on how many channels, and
         // which of its two amounts the route earned.
+        final float armed = centreGainFor(inputAudioFormat.channelCount, routeChannelCount);
+        armedGain = armed;
+        centreGain = centreBoost ? armed : 1f;
+        clipReported = false;
         if (centreBoost) {
-            final float armed = centreGainFor(inputAudioFormat.channelCount, routeChannelCount);
-            centreGain = armed;
-            clipReported = false;
             Utils.log("centre boost: " + inputAudioFormat.channelCount + " channels, route "
                     + (routeChannelCount > 0 ? String.valueOf(routeChannelCount) : "unknown ")
                     + (armed == 1f ? ", no centre to lift"

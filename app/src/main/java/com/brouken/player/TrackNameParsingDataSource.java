@@ -300,6 +300,8 @@ final class TrackNameParsingDataSource implements DataSource {
         private ByteArrayOutputStream header;
         /** Bytes worth collecting for this container; 0 until the signature has been read. */
         private int budget;
+        /** An MP4 whose budget still waits on the size of its moov — see ContainerMetadataReader.mp4Budget. */
+        private boolean moovPending;
         private boolean done;
         private Uri uri;
 
@@ -310,6 +312,7 @@ final class TrackNameParsingDataSource implements DataSource {
             signatureLength = 0;
             header = null;
             budget = 0;
+            moovPending = false;
             done = listener.isMetadataParsed(uri);
         }
 
@@ -349,6 +352,7 @@ final class TrackNameParsingDataSource implements DataSource {
                 if (uri != null && ContainerMetadataReader.isMatroska(signature)) {
                     matroskaUri = uri.toString();
                 }
+                moovPending = ContainerMetadataReader.isMp4(signature);
                 if (budget == 0) {
                     // Nothing here any parser reads — an HLS manifest, an MPEG-TS segment. Every segment
                     // of a streaming playback opens at offset 0, and this is what keeps them free: the
@@ -365,6 +369,10 @@ final class TrackNameParsingDataSource implements DataSource {
                 }
             }
             header.write(buffer, offset, length);
+            if (moovPending && header.size() >= ContainerMetadataReader.MP4_FRONT_BYTES) {
+                moovPending = false;
+                budget = ContainerMetadataReader.mp4Budget(header.toByteArray(), budget);
+            }
             if (header.size() >= budget) {
                 parseHeader();
             }

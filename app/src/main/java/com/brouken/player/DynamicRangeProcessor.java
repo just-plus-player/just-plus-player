@@ -140,13 +140,23 @@ class DynamicRangeProcessor extends BaseAudioProcessor {
 
     private final boolean strong;
     private Compressor compressor;
+    // Kept in the chain either way and bypassed here, so the session can switch it mid-film: the chain
+    // is fixed once the sink exists. Written on the app thread, read on the playback thread.
+    private volatile boolean enabled;
+    // Whether the last buffer went through untouched, so the detector starts afresh when it is back.
+    private boolean bypassed;
 
     /**
      * @param strong the shape for a route that will play this on its own small speakers: the reference's
      *               heavy preset. Otherwise its gentle one, for a receiver that has speakers worth using.
      */
-    DynamicRangeProcessor(boolean strong) {
+    DynamicRangeProcessor(boolean strong, boolean enabled) {
         this.strong = strong;
+        this.enabled = enabled;
+    }
+
+    void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 
     private Compressor newCompressor(int sampleRate) {
@@ -165,7 +175,7 @@ class DynamicRangeProcessor extends BaseAudioProcessor {
             return AudioFormat.NOT_SET;
         }
         compressor = newCompressor(inputAudioFormat.sampleRate);
-        Utils.log("dynamic range: " + (strong ? "strong" : "gentle") + " on "
+        Utils.log("dynamic range: " + (strong ? "strong" : "gentle") + (enabled ? "" : ", off for now") + " on "
                 + inputAudioFormat.channelCount + " channels at " + inputAudioFormat.sampleRate + " Hz");
         return inputAudioFormat;
     }
@@ -174,6 +184,17 @@ class DynamicRangeProcessor extends BaseAudioProcessor {
     public void queueInput(ByteBuffer inputBuffer) {
         if (!inputBuffer.hasRemaining()) {
             return;
+        }
+        if (!enabled) {
+            bypassed = true;
+            replaceOutputBuffer(inputBuffer.remaining()).put(inputBuffer).flip();
+            return;
+        }
+        if (bypassed) {
+            // A detector left where it was when the switch went off would duck the first moments for
+            // a peak long gone.
+            bypassed = false;
+            compressor = newCompressor(inputAudioFormat.sampleRate);
         }
         final int channelCount = inputAudioFormat.channelCount;
         final int frameBytes = 2 * channelCount;

@@ -12,8 +12,11 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.LayoutInflater;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -23,6 +26,7 @@ import androidx.core.view.ViewCompat;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.slider.LabelFormatter;
 import com.google.android.material.slider.Slider;
 
@@ -135,6 +139,37 @@ final class OffsetPanel {
         }
     }
 
+    /**
+     * A setting that is only on or off, drawn the way the settings screen draws it: a title, the line
+     * saying what it does in its current state, and a switch at the end. The whole row is the target,
+     * so a remote flips it with one press where a pair of segments wanted a sideways step first.
+     */
+    static final class Toggle {
+
+        interface Picked {
+            /** @param value the new state, or null to go back to following the settings */
+            void onPicked(Boolean value);
+        }
+
+        private final CharSequence title;
+        private final CharSequence summaryOn;
+        private final CharSequence summaryOff;
+        private final boolean current;
+        private final boolean inherited;
+        private final Picked listener;
+
+        /** @param inherited what the settings say, put back when the panel is reset */
+        Toggle(final CharSequence title, final CharSequence summaryOn, final CharSequence summaryOff,
+               final boolean current, final boolean inherited, final Picked listener) {
+            this.title = title;
+            this.summaryOn = summaryOn;
+            this.summaryOff = summaryOff;
+            this.current = current;
+            this.inherited = inherited;
+            this.listener = listener;
+        }
+    }
+
     private OffsetPanel() {
     }
 
@@ -150,6 +185,18 @@ final class OffsetPanel {
     static Dialog create(final Activity activity, final UiMetrics ui,
                          final String title, final double maxSec,
                          final double stepSec, final Choice[] choices, final Line... lines) {
+        return create(activity, ui, title, maxSec, stepSec, choices, null, lines);
+    }
+
+    /** A panel of switches and nothing to nudge: the session's answers to settings that are on or off. */
+    static Dialog create(final Activity activity, final UiMetrics ui, final String title,
+                         final Toggle... toggles) {
+        return create(activity, ui, title, 0, 1, null, toggles);
+    }
+
+    private static Dialog create(final Activity activity, final UiMetrics ui,
+                                 final String title, final double maxSec, final double stepSec,
+                                 final Choice[] choices, final Toggle[] toggles, final Line... lines) {
         // Every view in here is built against the appearance choice, not against the player's own dark
         // theme, so the panel is light when the app is light and black under AMOLED. A
         // ContextThemeWrapper keeps the activity's window token, which the dialog still needs.
@@ -182,6 +229,16 @@ final class OffsetPanel {
                 final MaterialButton lit = addChoice(ctx, ui, root, choice, resets);
                 if (firstPill == null) {
                     firstPill = lit;
+                }
+            }
+        }
+
+        View firstToggle = null;
+        if (toggles != null) {
+            for (final Toggle toggle : toggles) {
+                final View row = addToggle(ctx, ui, root, onSurface, toggle, resets);
+                if (firstToggle == null) {
+                    firstToggle = row;
                 }
             }
         }
@@ -257,7 +314,7 @@ Dialogs.pickerWindow(activity, ui, dialog, scroller);
         // The choice, not the slider: it is the panel's first decision and it is at the top, so a
         // remote lands on it and the scroller stays where the title is. Focusing the slider scrolled
         // the panel to its own bottom the moment it opened.
-        final View focus = firstPill != null ? firstPill : firstBar;
+        final View focus = firstPill != null ? firstPill : firstToggle != null ? firstToggle : firstBar;
         if (focus != null) {
             focus.post(focus::requestFocus);
         }
@@ -330,6 +387,72 @@ Dialogs.pickerWindow(activity, ui, dialog, scroller);
             choice.listener.onPicked(null);
         });
         return pills[Math.max(0, start)];
+    }
+
+    /** One switch row, the settings screen's own switch at its end. Returns the row, for first focus. */
+    private static View addToggle(final Context ctx, final UiMetrics ui, final LinearLayout root,
+                                  final int onSurface, final Toggle toggle,
+                                  final List<Runnable> resets) {
+        final LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(Utils.dpToPx(12), Utils.dpToPx(12), Utils.dpToPx(12), Utils.dpToPx(12));
+        // Material's two-line list item, and the tile every row of a player panel wears.
+        row.setMinimumHeight(ui.dpS(72));
+        row.setBackground(Dialogs.pickerRow(ctx, Color.TRANSPARENT));
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        final LinearLayout text = new LinearLayout(ctx);
+        text.setOrientation(LinearLayout.VERTICAL);
+        final TextView name = new TextView(ctx);
+        name.setText(toggle.title);
+        name.setTextColor(onSurface);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textBody());
+        text.addView(name);
+        final TextView summary = new TextView(ctx);
+        summary.setTextColor(MaterialColors.getColor(ctx, R.attr.colorOnSurfaceVariant,
+                ContextCompat.getColor(ctx, R.color.ink_secondary)));
+        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, ui.textSupporting());
+        text.addView(summary);
+        final LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        textLp.setMarginEnd(Utils.dpToPx(16));
+        row.addView(text, textLp);
+
+        // The very widget the settings screen inflates, so the two places draw one switch.
+        final MaterialSwitch widget = (MaterialSwitch) LayoutInflater.from(ctx)
+                .inflate(R.layout.preference_widget_switch_compat, row, false);
+        widget.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(widget);
+
+        final Runnable render = () -> summary.setText(widget.isChecked()
+                ? toggle.summaryOn : toggle.summaryOff);
+        widget.setChecked(toggle.current);
+        render.run();
+        row.setOnClickListener(v -> {
+            widget.setChecked(!widget.isChecked());
+            render.run();
+            toggle.listener.onPicked(widget.isChecked());
+        });
+        // The row speaks for the switch it carries, which is kept out of the tree above.
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override
+            public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Switch.class.getName());
+                info.setCheckable(true);
+                info.setChecked(widget.isChecked());
+            }
+        });
+        resets.add(() -> {
+            widget.setChecked(toggle.inherited);
+            render.run();
+            toggle.listener.onPicked(null);
+        });
+        root.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return row;
     }
 
     private static int indexOf(final String[] values, final String value) {

@@ -2060,6 +2060,7 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
             // progress one visit out of date - the whole point of asking the server being that it
             // knows where another player stopped.
             final Map<String, Long> read = Prefs.readPositions(this);
+            final Map<String, Long> played = Prefs.readLengths(this);
             // Kept for the search, which then asks the server nothing: this is the same folder it
             // would have had to list, already listed. Only a plain listing - a search's own answer
             // is not what the folder holds.
@@ -2087,6 +2088,18 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
                     }
                     dropSkeleton();
                     positions = read;
+                    // A network file's length is known only if the player has had it: nothing here
+                    // can open one to measure. A file on the device is measured as before, and a
+                    // torrent's row says where the viewer stopped instead of drawing a bar.
+                    for (final Map.Entry<String, Long> entry : played.entrySet()) {
+                        final Uri uri = Uri.parse(entry.getKey());
+                        final String had = durations.get(entry.getKey());
+                        if (NetworkFiles.isNetwork(uri) && !TorrFiles.speaks(uri)
+                                && (had == null || had.isEmpty())) {
+                            lengths.put(entry.getKey(), entry.getValue());
+                            durations.put(entry.getKey(), Utils.formatMilis(entry.getValue()));
+                        }
+                    }
                     bound = wanted;
                     bind(listed, why, landing);
                     if (searching == null && folder != null && indexed) {

@@ -497,6 +497,7 @@
     <string name="browse_place_rename">Перейменувати</string>
     <string name="pref_audio_sync">Затримка звуку</string>
     <string name="pref_audio_sync_passthrough">Затримка звуку під час прямої передачі</string>
+    <string name="pref_screen_orientation">Орієнтація екрана</string>
     <string name="pref_back_buffer">Тримати програне для кроку назад</string>
     <string name="pref_back_buffer_summary">%s. Тримається в пам’яті для короткого перемотування, близько 10 МБ на п’ять секунд. Не для локальних файлів</string>
     <string name="pref_back_buffer_off">Вимкнено</string>
@@ -512,6 +513,10 @@
     <string name="pref_centre_boost">Діалоги гучніші за решту</string>
     <string name="pref_centre_boost_on">Мовлення підіймається над музикою, може різати</string>
     <string name="pref_centre_boost_off">Діалоги звучать на тому рівні, на якому їх звели</string>
+    <string name="sound_row">Звук</string>
+    <string name="sound_session_title">Звук у цьому сеансі</string>
+    <string name="sound_summary_dynamic_range">Вирівняно</string>
+    <string name="sound_summary_centre_boost">Діалоги гучніші</string>
     <string name="pref_refuse_dv">Не віддавати Dolby Vision декодеру</string>
     <string name="pref_refuse_dv_on">Грає звичайний декодер, і кольори можуть хибити</string>
     <string name="pref_refuse_dv_off">Грає декодер Dolby Vision пристрою, якщо він є</string>

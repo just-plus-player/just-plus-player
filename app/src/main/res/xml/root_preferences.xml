@@ -199,6 +199,14 @@
             app:title="@string/pref_video_header">
 
             <ListPreference
+                app:key="screenOrientation"
+                app:defaultValue="0"
+                app:entries="@array/screen_orientation_entries"
+                app:entryValues="@array/screen_orientation_values"
+                app:title="@string/pref_screen_orientation"
+                app:useSimpleSummaryProvider="true" />
+
+            <ListPreference
                 app:key="backBufferMs"
                 app:defaultValue="5000"
                 app:entries="@array/back_buffer_entries"

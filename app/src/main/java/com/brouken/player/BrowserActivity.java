@@ -80,6 +80,7 @@ import com.google.android.material.navigation.NavigationBarView;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -832,10 +833,11 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
 
     /**
      * Every storage volume, as a row. The primary one always, and the removable ones — an SD card, a
-     * stick in a television's socket, which is how most of what gets watched on one arrives — found
-     * by walking up out of the private directory the system gives this app on each of them. That
-     * detour is the portable way to enumerate volumes: {@code StorageManager} only began handing out
-     * their paths at API 30, well above where this app runs.
+     * stick in a television's socket, which is how most of what gets watched on one arrives — asked
+     * of {@link #mountedVolumes()} first, then found by walking up out of the private directory the
+     * system gives this app on each of them. The walk alone missed sticks: where that directory
+     * cannot be made - a drive mounted read-only, as televisions mount NTFS - the system hands back a
+     * null for the volume, and the only drive plugged in was not there (#225).
      */
     private List<Item> volumes() {
         final List<Item> found = new ArrayList<>();
@@ -849,6 +851,14 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
             found.add(new Item(getString(R.string.browse_internal),
                     DocumentFile.fromFile(primary), true));
             seen.add(primary.getAbsolutePath());
+        }
+        for (final File root : Utils.canListStorage(this)
+                ? mountedVolumes() : new ArrayList<File>()) {
+            if (!root.isDirectory() || seen.contains(root.getAbsolutePath())) {
+                continue;
+            }
+            seen.add(root.getAbsolutePath());
+            found.add(new Item(volumeLabel(root), DocumentFile.fromFile(root), true));
         }
         for (final File appDir : Utils.canListStorage(this)
                 ? ContextCompat.getExternalFilesDirs(this, null) : new File[0]) {
@@ -1401,6 +1411,46 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
             }
         }
         return null;
+    }
+
+    /**
+     * The roots of the volumes the system says are mounted, read-only ones included. The list is
+     * public from API 24 and the path from 30; below that both are hidden methods, present since
+     * Android 4 and open to reflection until 28, greylisted - allowed - on 28 and 29. Anything that
+     * fails leaves the volume to the walk in {@link #volumes()}, which is what ran before.
+     */
+    private List<File> mountedVolumes() {
+        final List<File> roots = new ArrayList<>();
+        final StorageManager storage = (StorageManager) getSystemService(STORAGE_SERVICE);
+        final List<Object> listed = new ArrayList<>();
+        try {
+            if (Build.VERSION.SDK_INT >= 24) {
+                listed.addAll(storage.getStorageVolumes());
+            } else {
+                listed.addAll(Arrays.asList((Object[]) StorageManager.class
+                        .getMethod("getVolumeList").invoke(storage)));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        for (final Object volume : listed) {
+            try {
+                final String state = (String) volume.getClass().getMethod("getState").invoke(volume);
+                if (!Environment.MEDIA_MOUNTED.equals(state)
+                        && !Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
+                    continue;
+                }
+                final File root = Build.VERSION.SDK_INT >= 30
+                        ? ((StorageVolume) volume).getDirectory()
+                        : new File((String) volume.getClass().getMethod("getPath").invoke(volume));
+                if (root != null) {
+                    roots.add(root);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return roots;
     }
 
     /** The name the system has for a volume, or its directory name where there is none to ask. */
@@ -2543,12 +2593,35 @@ public class BrowserActivity extends AppCompatActivity implements Dialogs.Chrome
      * {@code is_pending=1} and their folder would have vanished. A folder that looks empty is a
      * nuisance; a folder that disappears takes its files with it.
      *
-     * <p>One level deep, and only for the folders the index says nothing about, so it costs a listing
-     * per candidate rather than a walk of the tree.
+     * <p>Below, not only in: a stick the television is still scanning - or skipped - has its films in
+     * Films/Dune/dune.mkv, and one level deep hid Films while Movies, already indexed beside it, stayed
+     * (#225). Only ever asked of the folders the index says nothing about, and it stops at the first
+     * video, so a folder of films costs one listing per level down to the first of them.
+     *
+     * <p>ponytail: three levels and {@link #VALVE_FOLDERS} folders, then the answer is no - the same
+     * no the folder got before this looked deeper. What that costs is a video buried below the limit;
+     * what it saves is walking Android/data on every visit to internal storage.
      */
     private boolean holdsAVideo(final DocumentFile folder) {
+        return holdsAVideo(folder, 3, new int[]{VALVE_FOLDERS});
+    }
+
+    private static final int VALVE_FOLDERS = 200;
+
+    private boolean holdsAVideo(final DocumentFile folder, final int depth, final int[] budget) {
+        final List<DocumentFile> below = new ArrayList<>();
         for (final DocumentFile child : SubtitleUtils.listSorted(folder)) {
-            if (!child.isDirectory() && SubtitleUtils.isPlayableVideo(child)) {
+            if (child.isDirectory()) {
+                below.add(child);
+            } else if (SubtitleUtils.isPlayableVideo(child)) {
+                return true;
+            }
+        }
+        for (final DocumentFile child : below) {
+            if (depth <= 1 || --budget[0] < 0) {
+                return false;
+            }
+            if (holdsAVideo(child, depth - 1, budget)) {
                 return true;
             }
         }

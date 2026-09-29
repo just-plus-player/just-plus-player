@@ -120,7 +120,7 @@
         <!-- The window and its cards are the accent theme's own grounds, not M3's neutral ramp — a
              theme here changes what the surfaces sit on, not only what is drawn on them. AMOLED still
              wins where it is offered, by being applied after the accent. -->
-        <item name="android:windowBackground">?attr/accentGround</item>
+        <item name="android:windowBackground">@drawable/window_ground</item>
         <item name="colorSurface">?attr/accentGround</item>
         <item name="colorSurfaceContainer">?attr/accentCard</item>
         <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>
@@ -442,7 +442,7 @@
          it afterwards is black too. So turning the option off applies this instead, which puts the
          four roles back on the accent theme's own grounds. -->
     <style name="ThemeOverlay.JustPlus.Ground" parent="">
-        <item name="android:windowBackground">?attr/accentGround</item>
+        <item name="android:windowBackground">@drawable/window_ground</item>
         <item name="colorSurface">?attr/accentGround</item>
         <item name="colorSurfaceContainer">?attr/accentCard</item>
         <item name="colorSurfaceContainerHigh">?attr/accentCardHigh</item>

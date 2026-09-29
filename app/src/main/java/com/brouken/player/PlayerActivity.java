@@ -3334,8 +3334,10 @@ public class PlayerActivity extends Activity {
                 }
                 apiSegments = bundle.getString(API_SEGMENTS);
                 apiHeaders = bundle.getStringArray(API_HEADERS);
-                apiSeason = bundle.getInt(API_SEASON, -1);
-                apiEpisode = bundle.getInt(API_EPISODE, -1);
+                // Some launchers send the numbers as strings, which getInt() drops for -1: the episode
+                // is then looked up as a film.
+                apiSeason = getIntOrStringExtra(bundle, API_SEASON);
+                apiEpisode = getIntOrStringExtra(bundle, API_EPISODE);
                 apiImdbId = bundle.getString(API_IMDB_ID);
                 apiTmdbId = getStringOrIntExtra(bundle, API_ID);
                 // Quality variants for a single (non-playlist) video; playlists carry per-episode maps.
@@ -5554,6 +5556,16 @@ public class PlayerActivity extends Activity {
         }
         final String s = String.valueOf(value).trim();
         return s.isEmpty() ? null : s;
+    }
+
+    /** An int extra sent as any number or numeric string; -1 when absent or not a number. */
+    private static int getIntOrStringExtra(Bundle bundle, String key) {
+        final String s = getStringOrIntExtra(bundle, key);
+        try {
+            return s == null ? -1 : (int) Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     private static Integer parseIntOrNull(String[] array, int i) {

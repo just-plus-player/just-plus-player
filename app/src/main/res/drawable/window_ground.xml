@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window ground as a resource, because a window background must be one up to Android 9:
+     PhoneWindow there reads windowBackground with getResourceId, and ?attr/accentGround resolves to a
+     literal colour with no id behind it - so the decor got no background at all, nothing cleared the
+     buffer, and a Mi Box S showed old frames under new ones. Android 10 reads the value itself. -->
+<color xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/accentGround" />

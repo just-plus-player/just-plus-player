@@ -12154,11 +12154,19 @@ public class PlayerActivity extends Activity {
             // playlist whose UTF-8 body is 4910 bytes long, having counted characters rather than bytes.
             // Media3 believes Content-Range, so the playlist arrived cut mid-line and every variant was
             // lost with it. Without the header the same server answers 200 and streams all of it.
+            // A proxy does it too: api.framextv.tech rewrites every link in the playlist it forwards and
+            // passes on the origin's "bytes 0-4172/4173" for a body of 140818, so an episode arrived as
+            // its first 106 seconds with no end tag, and played as a live broadcast.
+            //
+            // Known by the load rather than by the URL, which is exactly what does not say: a proxy's
+            // address is /api/proxy?url=… whatever it carries. Media3 allows gzip on every load it reads
+            // whole — the HLS, DASH and SmoothStreaming manifests, HLS keys, sideloaded subtitles — and on
+            // no media load: progressive reads and HLS/DASH segments keep the seed.
             final androidx.media3.datasource.DataSource.Factory rangeSeeded =
                     new androidx.media3.datasource.ResolvingDataSource.Factory(
                             new DefaultDataSource.Factory(this, httpDataSourceFactory),
                             dataSpec -> dataSpec.position == 0 && dataSpec.length == C.LENGTH_UNSET
-                                    && Util.inferContentType(dataSpec.uri) == C.CONTENT_TYPE_OTHER
+                                    && !dataSpec.isFlagSet(androidx.media3.datasource.DataSpec.FLAG_ALLOW_GZIP)
                                     ? dataSpec.withAdditionalHeaders(
                                             Collections.singletonMap("Range", "bytes=0-"))
                                     : dataSpec);

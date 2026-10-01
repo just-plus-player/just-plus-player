@@ -21,7 +21,6 @@ import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -615,10 +614,11 @@ public class PlayerActivity extends Activity {
     };
     // A fatal report has just been shown for the current clip. onStart re-initialises the player every
     // time the activity comes back, so without this the clip is prepared again the moment the report is
-    // closed, fails the same way and reopens it — a window that cannot be dismissed. Fall back to the
-    // empty state instead, as the media-gone path does. One-shot: consumed by that next initialisation,
-    // so re-opening the same clip, or picking another one, plays normally.
-    private boolean skipMediaAfterFatalError;
+    // closed, fails the same way and reopens it — a window that cannot be dismissed. The clip stays loaded
+    // but idle at the position it failed at, and play is the retry: an error never closes the player,
+    // only the viewer does. One-shot: consumed by that next return. Held by the clip, not as a flag, so
+    // a different clip opened meanwhile (onNewIntent, a picker) plays as usual.
+    private Uri heldAfterError;
     // Re-reads spent on network source errors this session (see recoverFromSourceError), reset per player
     // build so a chronically bad stream costs a bounded number of re-prepares instead of one per resume.
     private int sourceRetries;
@@ -2889,12 +2889,16 @@ public class PlayerActivity extends Activity {
             // The session survived being backgrounded but the player did not: Media3 stops it when the
             // surface detach times out (see onPlayerError), so resuming would show a dead picture. Same
             // window rule as the resume watchdog: a TV box gets a fresh one rather than a rebuild.
-            if (!recoverByRestartingTheScreen(player.getPlayerError())) {
+            // Not when the viewer is back from the report on that failure: a fresh window would replay it,
+            // and the rebuild below holds it idle instead.
+            if (heldAfterError != null || !recoverByRestartingTheScreen(player.getPlayerError())) {
                 sourceSwitchKeepPaused = true;
                 releasePlayer(false);
                 initializePlayer();
             }
         } else {
+            // A report opened over a healthy session (a notice's Details) has nothing to hold.
+            heldAfterError = null;
             // The audio track type onStop disabled to hand the receiver's route back. The track this builds
             // is unstarted, since the player is paused; the latch the pause armed recreates it on play.
             if (audioReleasedForBackground) {
@@ -3450,10 +3454,12 @@ public class PlayerActivity extends Activity {
                 if (keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
                     pauseByUser();
                 } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
+                    prepareIfIdle();
                     player.play();
                 } else if (player.isPlaying()) {
                     pauseByUser();
                 } else {
+                    prepareIfIdle();
                     player.play();
                 }
                 return true;
@@ -3473,6 +3479,7 @@ public class PlayerActivity extends Activity {
                     if (player.isPlaying()) {
                         pauseByUser();
                     } else {
+                        prepareIfIdle();
                         player.play();
                     }
                     return true;
@@ -11588,10 +11595,8 @@ public class PlayerActivity extends Activity {
         // Only the transition it was set for may read it. A skip that never produced one would otherwise
         // leave it behind, and the next episode the viewer picked by hand would pass for an automatic step.
         steppedBySkip = false;
-        if (skipMediaAfterFatalError) {
-            skipMediaAfterFatalError = false;
-            haveMedia = false;
-        }
+        final boolean holdIdle = haveMedia && mPrefs.mediaUri.equals(heldAfterError);
+        heldAfterError = null;
 
         // A reinitialisation that must not auto-play — a SOURCE quality switch, or a rebuild triggered by
         // returning to the foreground; otherwise apiAccess or a zero position would force it. Consumed here
@@ -12445,14 +12450,15 @@ public class PlayerActivity extends Activity {
             // spend the held play before the display has settled.
             modeMatchPending = false;
 
-            updateLoading(true);
+            // Not for a held failure: nothing is loading, and hiding play would push the remote off it.
+            updateLoading(!holdIdle);
 
             // Opening a film plays it, wherever it starts from: a remembered position says where to pick
             // the film up, not that the viewer wants to look at a still. Only a session being rebuilt
             // under the viewer comes back the way they left it, and every such path says so - keepPaused
             // for the rebuilds inside one activity, pauseAfterScreenRestart for the one that throws the
             // activity away.
-            if (!keepPaused && !pauseAfterScreenRestart) {
+            if (!keepPaused && !pauseAfterScreenRestart && !holdIdle) {
                 play = true;
             }
             pauseAfterScreenRestart = false;
@@ -12524,7 +12530,13 @@ public class PlayerActivity extends Activity {
                 && mPrefs.decoderPriority != DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF) {
             ffmpegAvailable = FfmpegLibrary.isAvailable();
         }
-        player.prepare();
+        if (holdIdle) {
+            // Idle with the timeline set, as a stopped load leaves it: the play button re-prepares this
+            // item (handlePlayButtonAction) and the arrows step out of it (stepEpisodeWhileIdle).
+            setEpisodeNavLoading(false);
+        } else {
+            player.prepare();
+        }
         liveWatchStartMs = SystemClock.elapsedRealtime();
 
         // The second line is view-scoped and survives this rebuild. A track of the media cannot be
@@ -12760,18 +12772,22 @@ public class PlayerActivity extends Activity {
                     mPrefs.updatePosition(position);
                     rememberEpisodePosition(player.getCurrentMediaItemIndex(), position);
                 }
-                mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
-                        // A painted subtitle is on screen with no track selected, so getSelectedTrack
-                        // answers "#none" — which reads back as "the viewer chose off" and disables the
-                        // very track the next rebuild restores from mPrefs.subtitleUri. Null means no
-                        // choice recorded, letting that track's DEFAULT flag select it as a fresh open does.
-                        paintedSubtitleUri != null ? null : getSelectedTrack(C.TRACK_TYPE_TEXT),
-                        playerView.getResizeMode(),
-                        playerView.getVideoSurfaceView().getScaleX(),
-                        currentAspectRatio,
-                        // The viewer's speed, not the one a room may be nudging to close a gap —
-                        // otherwise leaving mid-correction remembers 1.05× as a preference.
-                        userSpeed());
+                // Not from a player that has no tracks yet (one held after an error, never prepared):
+                // getSelectedTrack would answer "#none" and switch the subtitles off for the retry.
+                if (!player.getCurrentTracks().isEmpty()) {
+                    mPrefs.updateMeta(getSelectedTrack(C.TRACK_TYPE_AUDIO),
+                            // A painted subtitle is on screen with no track selected, so getSelectedTrack
+                            // answers "#none" — which reads back as "the viewer chose off" and disables the
+                            // very track the next rebuild restores from mPrefs.subtitleUri. Null means no
+                            // choice recorded, letting that track's DEFAULT flag select it as a fresh open does.
+                            paintedSubtitleUri != null ? null : getSelectedTrack(C.TRACK_TYPE_TEXT),
+                            playerView.getResizeMode(),
+                            playerView.getVideoSurfaceView().getScaleX(),
+                            currentAspectRatio,
+                            // The viewer's speed, not the one a room may be nudging to close a gap —
+                            // otherwise leaving mid-correction remembers 1.05× as a preference.
+                            userSpeed());
+                }
             }
         }
     }
@@ -13602,6 +13618,8 @@ public class PlayerActivity extends Activity {
                 resolverNotReadyUri = null;
                 // Playing again, so the screen has earned another restart if it ever needs one.
                 screenRestartUsed = false;
+                // A retry the viewer made from a held failure worked, so there is nothing left to hold.
+                heldAfterError = null;
                 // Playback that only got here by spending a recovery budget is worth one line: without it a
                 // stall that resolved after twenty seconds of re-reads leaves no trace anywhere.
                 if (decoderRetries > 0 || sourceRetries > 0 || videoFreezeRecoveries > 0) {
@@ -13708,9 +13726,8 @@ public class PlayerActivity extends Activity {
                 armLoadWatchdog();
             // Only real media can end. initializePlayer prepares unconditionally, and a prepare with no
             // media items reports STATE_ENDED at once, so the empty state — a launcher start with nothing
-            // to resume, the fallback after a fatal error, a deleted file — would otherwise count as a
-            // video watched to its end and report that to the launcher. Same guard as on the end controls
-            // above.
+            // to resume, a deleted file — would otherwise count as a video watched to its end and report
+            // that to the launcher. Same guard as on the end controls above.
             } else if (state == Player.STATE_ENDED && haveMedia) {
                 cancelLoadWatchdog();
                 playbackFinished = true;
@@ -13902,39 +13919,20 @@ public class PlayerActivity extends Activity {
                             ((ExoPlaybackException) error).rendererFormat)) {
                 return;
             }
-            // The remembered clip can no longer be opened: a foreign app's one-off URI grant has
-            // expired (a video streamed from a messenger, reopened after that app restarted) or the
-            // file is gone. Expected external state, not an app bug — forget the clip so it stops
-            // failing on every launch, fall back to the empty state, and report nothing.
-            // Forgetting also breaks the loop where closing the error screen resumes the activity,
-            // onStart re-prepares the same dead URI and the error screen comes straight back, which
-            // reads as a window that cannot be dismissed. For an API session (persistentMode off)
-            // updateMedia only drops the in-memory URI, so nothing remembered in prefs is lost.
+            // The clip can no longer be opened: a foreign app's one-off URI grant has expired (a video
+            // streamed from a messenger, reopened after that app restarted) or the file is gone. Expected
+            // external state, not an app bug, so a notice rather than a report. The player stays where it
+            // is, as after any error — closing it is the viewer's call. A playlist keeps everything with
+            // it: the other episodes are still watchable, and nothing walks the list on its own, which
+            // would march past every episode with a message each time (a modal dialog each time on TV)
+            // and lose the viewer's place. The arrows are re-enabled: they are gated while loading and
+            // would otherwise only be cleared by STATE_READY or releasePlayer. Held like a reported
+            // failure, so coming back to the screen does not prepare the dead URI again.
             final int unavailable = mediaUnavailableMessage(error);
             if (unavailable != 0) {
                 reportOutcome("media-unavailable", error);
-                // A playlist keeps everything: the other episodes are still watchable, and the user may
-                // want to step back to the one they were on (an accidental switch, say). So never tear the
-                // view down and never walk the list on its own — that would march past every episode with
-                // a message each time (a modal dialog each time on TV) and lose the user's place. Stay on
-                // this episode and re-enable the arrows, which are gated while loading and would otherwise
-                // only be cleared by STATE_READY or releasePlayer.
-                if (player != null && player.getMediaItemCount() > 1) {
-                    setEpisodeNavLoading(false);
-                    showSnack(getString(unavailable), null);
-                    return;
-                }
-                releasePlayer(false);
-                // Forget the clip only when nothing entitles us to it any more: a one-off grant from
-                // another app is gone for good, so retrying it on every launch is pointless. A URI we hold
-                // a persisted grant for may just be unreachable right now (cloud provider offline, card
-                // ejected), so keep it and let the next launch try again.
-                if (!holdsPersistedGrant(mPrefs.mediaUri)) {
-                    mPrefs.updateMedia(PlayerActivity.this, null, null);
-                }
-                // Before the notice: showEmptyState() brings the opaque overlay to the front, and the
-                // notice is only added to the content frame afterwards, so it stays on top.
-                backToShell();
+                heldAfterError = mPrefs.mediaUri;
+                setEpisodeNavLoading(false);
                 showSnack(getString(unavailable), null);
                 return;
             }
@@ -14919,9 +14917,15 @@ public class PlayerActivity extends Activity {
      * 3840x2160 at 60 fps file got. Of course it is: turned on its side it is the same macroblock count
      * at the same rate. The table talks about geometry and the driver counts work, and what the driver
      * counts is what refuses. So both get asked plainly.
+     *
+     * <p>Never on a TV box. The table was believed here for a phone's Qualcomm decoder, and a TV's
+     * Dolby Vision decoder can publish one that undersells it - Dolby Vision on a TV was reported to
+     * play before 2.0.1, which brought this, and to fail after it. A TV keeps the configuration Media3
+     * builds, as it did then; a codec that really refuses it still gets the plain one, through
+     * sessionPlainCodecFormats, which only a refusal fills.
      */
     private static boolean deviceSaysNo(final int verdict) {
-        return verdict == HW_RATE_SHORT || verdict == HW_NO_SIZE;
+        return !isTvBox && (verdict == HW_RATE_SHORT || verdict == HW_NO_SIZE);
     }
 
     private static String verdictName(final int verdict) {
@@ -15694,19 +15698,6 @@ public class PlayerActivity extends Activity {
                         ? softwareVideoMessage(error.rendererFormat) : null);
     }
 
-    // Whether a SAF grant we took ourselves still covers this uri, i.e. it is ours to retry later.
-    private boolean holdsPersistedGrant(final Uri uri) {
-        if (uri == null) {
-            return false;
-        }
-        for (final UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
-            if (permission.getUri().equals(uri)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     // The message for a clip that can no longer be opened, or 0 when this is a different failure.
     // Matching on errorCode is not enough: a revoked grant arrives as ERROR_CODE_IO_UNSPECIFIED
     // because Loader wraps the SecurityException, so walk the cause chain. Network media is excluded:
@@ -16195,7 +16186,13 @@ public class PlayerActivity extends Activity {
     private void showErrorScreen(final String summary, final String report, final String message) {
         // Every full-screen report from the player passes through here, so this is the one place that has
         // to keep the next resume from walking straight back into the failure (see the field's comment).
-        skipMediaAfterFatalError = true;
+        heldAfterError = mPrefs.mediaUri;
+        // Most callers release the player straight after, and onPause would then find nothing to save:
+        // the clip has to come back where it failed, not where it was last saved. Only the position: the
+        // renderers are down by now, so the tracks would be remembered as none.
+        if (player != null && haveMedia && player.isCurrentMediaItemSeekable()) {
+            mPrefs.updatePosition(player.getCurrentPosition());
+        }
         final Intent intent = new Intent(this, ErrorActivity.class)
                 .putExtra(ErrorActivity.EXTRA_TITLE, getString(R.string.error_report_title))
                 .putExtra(ErrorActivity.EXTRA_SUMMARY, summary)

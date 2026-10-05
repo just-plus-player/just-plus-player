@@ -106,7 +106,7 @@ Sideloaded builds check for updates themselves, show what changed and install th
 
 **Launcher integration**
 
- * Intent extras for position, title, poster, subtitles, HTTP headers, a playlist of episodes with per-episode segments and resume positions, quality variants, and IMDb/TMDB ids — as used by [LAMPA](https://github.com/lampa-app/LAMPA)/Lampac. See [Integration](#integration)
+ * A playlist API for other apps: episodes with qualities, dubs, subtitles, skip segments and resume positions in, what was watched out. See the [Playlist API](docs/PLAYLIST_API.md)
 
 ## Screenshots
 
@@ -160,109 +160,7 @@ Two flavour dimensions: `targetSdk` (`latest` = targetSdk 36, `legacy` = targetS
 
 ## Integration
 
-### Launching the player from another app
-
-An `ACTION_VIEW` intent addressed to `com.justplus.player`, with the video as the data URI:
-
-```java
-Intent intent = new Intent(Intent.ACTION_VIEW);
-intent.setPackage("com.justplus.player");                 // or the explicit component
-intent.setDataAndType(Uri.parse(url), "video/*");         // content:// also needs FLAG_GRANT_READ_URI_PERMISSION
-intent.putExtra("title", "Machines");
-startActivityForResult(intent, REQUEST_PLAY);             // startActivity if you do not want a result
-```
-
-Everything else is optional extras:
-
-| Extra | Type | Meaning |
-|---|---|---|
-| `title` | String / CharSequence | Title in the header. HTML entities are unescaped |
-| `thumbnail` | String | Poster shown next to the title |
-| `position` | int, ms | Where to start |
-| `return_result` | boolean | Report position and duration back on exit (see below) |
-| `headers` | String[] | Flat `name, value, name, value…`, applied to every HTTP request |
-| `subs` | Parcelable[] of Uri | External subtitle files |
-| `subs.name` | String[] | Their labels, aligned by index with `subs` |
-| `subs.enable` | Parcelable[] of Uri | Its first element is the track to pre-select |
-| `segments` | String | Skip/ad segments as JSON — format below |
-| `season`, `episode` | int | Episode this file belongs to |
-| `imdb_id` | String | IMDb id, used to look segments up online |
-| `id` | String or int | TMDB id, same purpose |
-| `quality_levels` | String[] | Labels of the quality variants, e.g. `1080p` |
-| `quality_urls` | String[] or Parcelable[] of Uri | Their URLs, aligned by index with `quality_levels` |
-
-A queue is passed the same way, with everything aligned by index against `video_list`:
-
-| Extra | Type | Meaning |
-|---|---|---|
-| `video_list` | Parcelable[] of Uri, or String[] | The queue. The entry equal to the intent's data URI becomes the starting item |
-| `video_list.name` | String[] | Titles; `video_list.filename` is the fallback, then the last path segment |
-| `video_list.thumbnail` | String[] | Posters for the playlist panel |
-| `video_list.segments` | String[] | One segments JSON per item |
-| `video_list.season`, `.episode`, `.imdb_id`, `.id` | String[] | Episode metadata per item |
-| `video_list.subtitles` | Parcelable[] or ArrayList of Bundle | External subtitles per item. Each Bundle holds `uris` (Parcelable[] of Uri) and `names` (String[]), aligned with each other |
-| `video_list.quality_levels.<i>` | String[] | Quality labels for item `<i>` (0-based index in `video_list`) |
-| `video_list.quality_urls.<i>` | String[] | Matching URLs for item `<i>` |
-
-`video_list` and every `video_list.*` string array, as well as `quality_levels` and `quality_urls`, are read leniently — `String[]`, `ArrayList<String>` and `CharSequence[]` all work, and `quality_urls` also takes a `Parcelable[]` of `Uri`. `subs`, `subs.name` and `headers` are not: they have to be exactly the types in the table above, or they are silently ignored.
-
-**Segments JSON** — `start` and `end` are seconds, `duration_ms` is the duration those timings were measured against, so the player can rescale them to the real file. `skip` is intro/recap/credits, `ad` is advertising:
-
-```json
-{ "duration_ms": 2696000,
-  "skip": [{ "start": 62, "end": 152 }],
-  "ad":   [{ "start": 0,  "end": 12  }] }
-```
-
-**Session mode.** The presence of `position`, `return_result`, `subs`, `subs.enable`, `video_list` or `quality_levels` puts the player in API mode: it keeps positions for that session only and writes nothing to its own resume store, so a launcher stays the owner of the watch state. `title` alone does not — the title is used and the state is still persisted.
-
-**Result** (only with `return_result`): `RESULT_OK` and an intent with action `com.mxtech.intent.result.VIEW` (MX Player's contract), whose data URI is the item that was playing — not necessarily the one that was launched. Extras: `end_by` is `playback_completion` or `user`, and on an early exit `position` and `duration` (both int, ms).
-
-The player is `singleTask`: a further `ACTION_VIEW` sent to the running instance replaces the extras rather than being ignored, which is how a source or an episode is switched without a restart.
-
-### Feeding it from a LAMPA plugin
-
-A plugin does not build the intent — LAMPA does, from the JSON handed to `Lampa.Player.play()`. Use these keys and it maps onto the extras above by itself:
-
-```js
-Lampa.Player.play({
-    url: 'https://host/s01e03-1080.mp4',        // required, and must be byte-identical to the playlist entry
-    title: 'Machines',
-    thumbnail: 'https://host/still.jpg',
-    quality: { '1080p': 'https://host/s01e03-1080.mp4', '720p': 'https://host/s01e03-720.mp4' },
-    subtitles: [{ url: 'https://host/en.srt', label: 'English', language: 'en' }],
-    segments: { duration_ms: 2696000, skip: [{ start: 62, end: 152 }], ad: [] },
-    season: 1, episode: 3,
-    imdb_id: 'tt14688458',
-    headers: { 'User-Agent': '…', Referer: '…' },
-    playlist: [ /* the same objects, one per episode */ ]
-})
-```
-
-| Plugin JSON | Becomes |
-|---|---|
-| `url` | The data URI, and the entry in `video_list` |
-| `title` | `title`, `video_list.name` |
-| `thumbnail` | `thumbnail`, `video_list.thumbnail` |
-| `quality` (`{label: url}`) | `quality_levels` / `quality_urls`, or `video_list.quality_*.<i>` per episode |
-| `subtitles` (`[{url, label, language}]`) | `subs` / `subs.name` for a single video, `video_list.subtitles` in a queue |
-| `segments` | `segments` / `video_list.segments`, serialised verbatim |
-| `season`, `episode` | `season`, `episode` and the per-item arrays |
-| `imdb_id`, or `card.imdb_id` from the open card | `imdb_id` |
-| the card's `id` | `id` (TMDB) |
-| `headers` (`{name: value}`) | `headers`, flattened to pairs |
-
-What actually decides whether it matches:
-
- * **`url` must be identical** to the `playlist` entry it stands for. LAMPA finds the starting index by exact string comparison, and the player then matches its data URI against `video_list` the same way. One extra token or a trailing slash and the queue opens on episode 1.
- * **`playlist` is only read when auto-next is on** in LAMPA; otherwise the payload itself is the only item. Put the episode's own metadata on the top-level object as well, not just inside `playlist`.
- * **Name quality variants by resolution.** Both sides sort them by the number in the label, so `1080p`/`720p` order correctly while `HD`/`SD` do not.
- * **`segments` is passed through untouched**, so it has to be the shape above — seconds, plus `duration_ms` for rescaling.
- * **`imdb_id` and the card's `id` are what the online lookup keys on.** Without them only the segments you supply yourself are used; there is no title search.
- * **Nothing is switched on for the viewer.** Subtitles arrive as selectable tracks and LAMPA sends no default, so one has to be picked from the subtitle panel. `language` is not forwarded either — put whatever should be shown into `label`.
- * `subtitles[]` entries need both `url` and `label`; an entry without a label takes the whole list down with it.
- * **The subtitle format is taken from the URL path**, falling back to SubRip. A WebVTT or ASS file served from an extension-less endpoint therefore arrives labelled as SRT and will not parse — keep the real extension in the URL.
-
+Another app can launch the player with a playlist and read back what was watched. Every key, how the dub, audio track and subtitle are chosen, and the result callback are in the [Playlist API reference](docs/PLAYLIST_API.md).
 
 ## FAQ
 

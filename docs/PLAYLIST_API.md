@@ -24,6 +24,11 @@ malformed input.
 `putParcelableArray` (an `ArrayList<Bundle>` is accepted too); read one from the result with
 `getParcelableArray`, as it arrives as `Parcelable[]`. `A | B` means either type.
 
+**Times.** Every time key comes in two units: `<name>_ms` in milliseconds and `<name>_sec` in seconds.
+On input send either; when both are sent, `_ms` wins. The result always carries both: `_ms` as `long`
+(`long[]` for `positions_ms`), `_sec` as whole seconds in `int` (`int[]`), rounded down. This reference
+names the `_sec` key; everything said of it holds for its `_ms` pair.
+
 ---
 
 ## Quick start
@@ -77,13 +82,15 @@ entry:
 | `items` | `Bundle[]` | P | [2](#2-input-the-playlist-bundle), [3](#3-input-an-item) |
 | `start_index` | `int` | P | [2](#2-input-the-playlist-bundle) |
 | `result_callback` | `PendingIntent` | P | [8](#8-the-result-callback) |
-| `report_interval_sec` | `int` | P | [2](#2-input-the-playlist-bundle) |
+| `report_interval_sec` / `_ms` | `int` / `long` | P | [2](#2-input-the-playlist-bundle) |
+| `resume_mode` | `String` | P | [2](#2-input-the-playlist-bundle) |
 | `title`, `logo`, `background` | `String` | P, I | [2](#2-input-the-playlist-bundle), [3](#3-input-an-item) |
 | `headers` | `String[]` | P, I | [2](#2-input-the-playlist-bundle) |
 | `uri` | `String` | I, Q, V, S | [3](#3-input-an-item), [4](#4-qualities-voices-subtitles) |
 | `episode_title`, `thumbnail`, `imdb_id`, `tmdb_id`, `segments` | `String` | I | [3](#3-input-an-item) |
-| `season`, `episode`, `position_sec` | `int` | I | [3](#3-input-an-item) |
-| `clip_start_sec`, `clip_end_sec` | `double` | I | [3](#3-input-an-item) |
+| `season`, `episode` | `int` | I | [3](#3-input-an-item) |
+| `position_sec` / `_ms` | `int` / `long` | I | [3](#3-input-an-item) |
+| `clip_start_sec`, `clip_end_sec` / `_ms` | `double` / `long` | I | [3](#3-input-an-item) |
 | `qualities` | `Bundle[]` | I, V | [4.1](#41-qualities) |
 | `voices` | `Bundle[]` | I | [4.2](#42-voices--one-dub-per-stream) |
 | `subtitles` | `Bundle[]` | I, V | [4.3](#43-external-subtitles) |
@@ -102,13 +109,14 @@ entry:
 | Key | Type | Section |
 |---|---|---|
 | `uri` | `String` | [7.2](#72-extras) |
-| `index`, `position_sec`, `duration_sec` | `int` | [7.2](#72-extras) |
-| `positions_sec` | `int[]` | [7.2](#72-extras) |
+| `index` | `int` | [7.2](#72-extras) |
+| `position_sec`, `duration_sec` / `_ms` | `int` / `long` | [7.2](#72-extras) |
+| `positions_sec` / `_ms` | `int[]` / `long[]` | [7.2](#72-extras) |
 | `end_by`, `error_message` | `String` | [7.2](#72-extras) |
 | `history` | `Bundle[]` | [7.4](#74-history) |
 | `audio_language`, `audio_label`, `subtitle_language`, `subtitle_label` | `String` | [7.2](#72-extras) |
 | `audio_language_ordinal`, `audio_language_count`, `subtitle_language_ordinal`, `subtitle_language_count` | `int` | [7.2](#72-extras) |
-| `subtitle_index` | `int` | [7.2](#72-extras) |
+| `audio_index`, `subtitle_index` | `int` | [7.2](#72-extras) |
 | `audio_chosen_by`, `subtitle_chosen_by` | `String` | [7.3](#73-audio_chosen_by--subtitle_chosen_by) |
 | `voice_label` | `String` | [7.2](#72-extras) |
 | `warnings` | `String[]` | [7.2](#72-extras) |
@@ -175,7 +183,8 @@ playlist : Bundle
 ├─ start_index         int             item to start on; default 0
 ├─ headers             String[]        HTTP headers as name, value pairs, for every item
 ├─ result_callback     PendingIntent   optional; section 8
-├─ report_interval_sec int             optional; a report every N s while playing, N ≥ 30
+├─ report_interval_sec int             optional; a report every N s while playing, N ≥ 30 (or _ms)
+├─ resume_mode         String          optional; the viewer's resume setting, overridden
 ├─ (track keys)                        optional; section 5 — an item's own key beats these
 └─ items               Bundle[]        at least one; section 3
 ```
@@ -186,10 +195,39 @@ playlist : Bundle
 | `logo` | `String` (URL) | none | Shown in place of the title (the viewer can turn this off). A logo narrower than 3:2, or one that fails to load, shows the title instead. A wide transparent PNG reads best. |
 | `background` | `String` (URL) | none | Backdrop of the loading screen. |
 | `start_index` | `int` | 0 | Out of range → bad input (section 6.3). |
-| `headers` | `String[]` | none | `{"User-Agent", "x", "Referer", "y"}`. An item's `headers` override these name by name, case-insensitive. With an odd count the last name is dropped silently; a pair with a `null` is skipped. |
+| `headers` | `String[]` | none | `{"User-Agent", "x", "Referer", "y"}`. An item's `headers` override these name by name, case-insensitive. With an odd count the last name is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
 | `result_callback` | `PendingIntent` | none | Section 8. |
 | `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays. |
+| `resume_mode` | `String` | the viewer's setting | Replaces the viewer's "Resume playback" setting for this playlist — see below. Any other value is dropped with a warning. |
 | `items` | `Bundle[]` | — | Required, at least one. |
+
+**`resume_mode`** decides what happens when an item with a saved position opens: the start item when it
+carries no `position_sec` (the player's own saved position), and an item the viewer jumps to from the
+playlist panel. A `position_sec` on the start item always opens there without asking — that choice is
+already made. Moving on to the next item by itself always starts at its beginning.
+
+| Value | The start item, without `position_sec` | A jump in the playlist panel |
+|---|---|---|
+| `ask_open` | asks "Resume / Start over" | resumes without asking |
+| `ask_every` | asks | asks |
+| `always` | resumes without asking | resumes without asking |
+| `never` | starts at 0 | starts at 0 |
+
+In an asking mode, a position under 30 s is not worth a question: it starts at 0. A position that counts as watched starts at 0, in
+every mode: one in the last 5 % of the file, or one past the start of the end credits in the item's
+`segments`. Credits count only when they reach into that last 5 % and take at most 15 % of the file —
+anything else is a wrong entry and is ignored. The length is the one the player saw the file play
+with, else the one this session saw, else the `duration_ms` of the item's `segments`; with none of
+them known, the position is used as it is.
+
+A "continue watching" card that opens episode 5 at 12:30 with no question, while a pick of another
+episode inside the player asks:
+
+```kotlin
+playlist.putInt("start_index", 4)
+items[4].putInt("position_sec", 750)       // the card's position: opens there, no question
+playlist.putString("resume_mode", "ask_every") // a jump to an episode with a position: asks
+```
 
 ---
 
@@ -208,8 +246,8 @@ items[i] : Bundle
 ├─ season           int
 ├─ episode          int
 ├─ headers          String[]        name, value pairs; override the playlist's per name
-├─ position_sec     int             where the item starts, in seconds
-├─ clip_start_sec   double          play only a part of the file as this item
+├─ position_sec     int             where the item starts, in seconds (or position_ms)
+├─ clip_start_sec   double          play only a part of the file as this item (or _ms)
 ├─ clip_end_sec     double
 ├─ segments         String          JSON: skippable intros, recaps, credits, ads
 ├─ (track keys)                     section 5
@@ -229,7 +267,7 @@ items[i] : Bundle
 | `headers` | `String[]` | Name, value pairs, as on the playlist. |
 | `position_sec` | `int` | For the start item: where playback starts. For any other item: where a jump to it from the playlist panel starts; moving on to it by itself starts at its beginning. With a clip, relative to the clip and clamped to it. |
 | `clip_start_sec`, `clip_end_sec` | `double` | Fractional seconds, so a boundary between two episodes in one file lands on the exact frame. No key = start / end of the file. An end at or before the start is ignored. Positions in and out are relative to the clip. |
-| `segments` | `String` | JSON, see below. |
+| `segments` | `String` | JSON, see below. The file's own chapters outrank it: a chapter named as an opening ("Opening", "Intro", "OP", "Заставка") or as the credits ("Credits", "Ending", "ED", "Титры") replaces what `segments` says about that stretch, and a credits chapter replaces the credits in `segments` wherever they are. Ads and everything else stay. |
 
 **Segments JSON.** `start` / `end` in seconds; `duration_ms` is the length those timings were measured
 on, so the player can rescale them to the real file. `skip` = intro / recap / credits, `ad` = advertising.
@@ -489,8 +527,8 @@ why the caller's key did not apply — to see it, ask the viewer to send a repor
 | Kind | Read as |
 |---|---|
 | `String` keys | any value's text, trimmed; blank = absent |
-| `int` keys (`start_index`, `season`, `episode`, `position_sec`, `report_interval_sec`) | any number or numeric `String`, rounded down; anything else = absent |
-| `double` keys (`clip_start_sec`, `clip_end_sec`) | any number or numeric `String` |
+| `int` keys (`start_index`, `season`, `episode`) | any number or numeric `String`, rounded down; anything else = absent |
+| time keys (`position`, `report_interval`, `clip_start`, `clip_end` with `_sec` or `_ms`) | any number or numeric `String`; `position` and `report_interval` rounded down to a millisecond; anything else = absent, and then the other unit is read |
 | `boolean` keys (`selected`) | a `boolean`, or the `String` `"true"` exactly (case-sensitive) |
 | `Bundle[]` keys (`items`, `qualities`, `voices`, `subtitles`) | `Parcelable[]` or `ArrayList<Bundle>` |
 | `headers` | `String[]`, name / value pairs |
@@ -537,7 +575,7 @@ and — when `result_callback` is given — the same extras to the callback on e
 | `index` | `int` | Item playback ended on; `-1` when the request was refused. |
 | `position_sec` | `int` | Position in that item, seconds (relative to its clip). |
 | `duration_sec` | `int` | That item's duration, seconds; **`0` = not known**. |
-| `positions_sec` | `int[]` | One per item: `-1` = never opened; equal to the item's duration = watched to the end; otherwise the last position. Empty when the request was refused. |
+| `positions_sec` | `int[]` | One per item: `-1` = never opened (also in `positions_ms`); equal to the item's duration = watched to the end; otherwise the last position. Empty when the request was refused. |
 | `end_by` | `String` | `completion` — the playlist played to its end; `user` — the viewer left; `cancelled` — closed before anything played; `error` — see below. |
 | `error_message` | `String` | Only with `error`. |
 | `history` | `Bundle[]` | The session journal, section 7.4. Empty when the request was refused. |
@@ -545,12 +583,13 @@ and — when `result_callback` is given — the same extras to the callback on e
 | `audio_label` | `String` | Its name; `null` when it has none (a packager's positional name like `rus0` counts as none). |
 | `audio_language_ordinal` | `int` | Its place among the tracks of its language, from 0. For a track with no language: among the tracks with none. |
 | `audio_language_count` | `int` | How many tracks of that language the file has. |
+| `audio_index` | `int` | Its number in the audio menu, from 0 — the number `audio_index` takes on input (section 5.2). |
 | `audio_chosen_by` | `String` | Which step chose it — section 7.3. |
 | `subtitle_language` | `String` | As audio; `null` = the track names no language, subtitles are off, or the subtitle is a file the player found itself (online search). |
 | `subtitle_label` | `String` | As audio. For a subtitle file the player found itself (online search), the file's label, with no language, ordinal or count. |
 | `subtitle_language_ordinal` | `int` | As audio. |
 | `subtitle_language_count` | `int` | As audio. |
-| `subtitle_index` | `int` | Present only as `-1`, when subtitles are off. |
+| `subtitle_index` | `int` | As audio, numbered as section 5.2 numbers subtitles; `-1` when subtitles are off. Absent for a subtitle file the player found itself (online search). |
 | `subtitle_chosen_by` | `String` | Section 7.3. |
 | `voice_label` | `String` | The voice that played, when the item has `voices`. Says which, not why. |
 | `warnings` | `String[]` | Present only when something was dropped while reading the request: a track key (section 6.1) or a skipped subtitle entry (section 4.3). Each reads `<path>: <problem>` — `items[3].audio_index: "two" is not a whole number`, `items[0]: subtitles[2] has no uri; skipped`. At most 20; the last one then reads `… N more`. For humans and logs: the wording may change. |
@@ -594,9 +633,12 @@ One Bundle per visit of an item, in order, the visit in progress included:
 | Key | Type | Meaning |
 |---|---|---|
 | `index` | `int` | The item. |
-| `started_at` | `long` | Unix time, seconds. |
+| `started_at` | `long` | Unix time, seconds: when the visit opened. |
+| `ended_at` | `long` | Unix time, seconds: when `position_sec` was last moved — the moment the item was left, paused or stopped; for the visit playing now, about now. |
 | `position_sec` | `int` | Where that visit ended; for the current one, where it is now. |
 | `duration_sec` | `int` | The item's duration; **`-1` = not known** (unlike the top-level `duration_sec`, where it is `0`). |
+
+Each entry carries `position_ms` and `duration_ms` as well.
 
 A visit opens on the first playback and on every move to another item (auto-next, a jump, a repeat); a
 rebuild of the same item (a quality or voice switch) continues the open visit. The journal survives a
@@ -619,6 +661,10 @@ repeat is harmless:
 - a new launch replacing the session — to the **old** session's callback;
 - every `report_interval_sec` while something plays;
 - possibly when the player opens a screen of its own (settings, a file picker).
+
+A snapshot identical to the one sent before is not sent again (Home used to deliver one report twice,
+and the next launch a third time). Still, never treat a report as the last one: the latest received is
+the state of the session.
 
 **How to build it**
 
@@ -657,8 +703,9 @@ them onto the next launch — on the playlist (for the whole series) or on the i
 | `audio_language`, `audio_label`, `audio_language_ordinal`, `audio_language_count` | the same keys |
 | `subtitle_language`, `subtitle_label`, `subtitle_language_ordinal`, `subtitle_language_count` | the same keys |
 | `subtitle_index = -1` | the same key — subtitles stay off |
+| `audio_index`, `subtitle_index` ≥ 0 | the same keys, for the **same file** only. Another episode may number its tracks differently; the label beside the index guards it (section 5.2), but the label keys above are what carries a dub across a series. |
 | `voice_label` | `selected = true` on the voice with that label |
-| `positions_sec[i]` | `items[i].position_sec` (skip `-1` and finished ones) |
+| `positions_sec[i]` (or `positions_ms[i]`) | `items[i].position_sec` (or `position_ms`; skip `-1` and finished ones) |
 
 When `*_language` is `null`, leave out the ordinal and the count as well: without a language they are
 dropped with a warning (section 5.4).

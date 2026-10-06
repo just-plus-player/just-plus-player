@@ -2,7 +2,10 @@
 
 [![Latest release](https://img.shields.io/github/v/release/just-plus-player/just-plus-player?logo=github&logoColor=white&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/just-plus-player/just-plus-player/total?logo=github&logoColor=white&label=downloads&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases)
-[![Media3](https://img.shields.io/badge/Media3-1.11.0-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.0)
+[![Media3](https://img.shields.io/badge/Media3-1.11.1-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.1)
+
+> [!NOTE]
+> Starting with 2.1.1, this repository publishes releases only — the APKs and their release notes — and not the source code. The source here stays at 2.0.11.
 
 Video player and file browser for Android phones, tablets and Android TV, built on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)). Android 6.0 or later, one APK for all form factors.
 

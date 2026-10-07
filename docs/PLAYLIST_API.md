@@ -83,7 +83,7 @@ entry:
 | `start_index` | `int` | P | [2](#2-input-the-playlist-bundle) |
 | `result_callback` | `PendingIntent` | P | [8](#8-the-result-callback) |
 | `report_interval_sec` / `_ms` | `int` / `long` | P | [2](#2-input-the-playlist-bundle) |
-| `resume_mode` | `String` | P | [2](#2-input-the-playlist-bundle) |
+| `ask_resume` | `boolean` | P | [2](#2-input-the-playlist-bundle) |
 | `title`, `logo`, `background` | `String` | P, I | [2](#2-input-the-playlist-bundle), [3](#3-input-an-item) |
 | `headers` | `String[]` | P, I | [2](#2-input-the-playlist-bundle) |
 | `uri` | `String` | I, Q, V, S | [3](#3-input-an-item), [4](#4-qualities-voices-subtitles) |
@@ -184,7 +184,7 @@ playlist : Bundle
 ├─ headers             String[]        HTTP headers as name, value pairs, for every item
 ├─ result_callback     PendingIntent   optional; section 8
 ├─ report_interval_sec int             optional; a report every N s while playing, N ≥ 30 (or _ms)
-├─ resume_mode         String          optional; the viewer's resume setting, overridden
+├─ ask_resume          boolean         optional; ask before resuming an item
 ├─ (track keys)                        optional; section 5 — an item's own key beats these
 └─ items               Bundle[]        at least one; section 3
 ```
@@ -198,35 +198,35 @@ playlist : Bundle
 | `headers` | `String[]` | none | `{"User-Agent", "x", "Referer", "y"}`. An item's `headers` override these name by name, case-insensitive. With an odd count the last name is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
 | `result_callback` | `PendingIntent` | none | Section 8. |
 | `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays. |
-| `resume_mode` | `String` | the viewer's setting | Replaces the viewer's "Resume playback" setting for this playlist — see below. Any other value is dropped with a warning. |
+| `ask_resume` | `boolean` | `false` | `true`: an item opening with a position asks "Resume / Start over" first — see below. |
 | `items` | `Bundle[]` | — | Required, at least one. |
 
-**`resume_mode`** decides what happens when an item with a saved position opens: the start item when it
-carries no `position_sec` (the player's own saved position), and an item the viewer jumps to from the
-playlist panel. A `position_sec` on the start item always opens there without asking — that choice is
-already made. Moving on to the next item by itself always starts at its beginning.
+**`ask_resume`** decides what happens when an item with a position opens: the start item, with its
+`position_sec` or the player's own saved position, and an item the viewer jumps to from the playlist
+panel. The viewer's "Resume playback" setting does not apply to a playlist. Moving on to the next item
+by itself always starts at its beginning.
 
-| Value | The start item, without `position_sec` | A jump in the playlist panel |
+`ask_resume` is read from Just+ Player 2.2.1. It replaces `resume_mode` (2.1.1–2.1.4), which is no
+longer read: a caller that still sends it gets no question and no error, the item resumes.
+
+| `ask_resume` | The start item | A jump in the playlist panel |
 |---|---|---|
-| `ask_open` | asks "Resume / Start over" | resumes without asking |
-| `ask_every` | asks | asks |
-| `always` | resumes without asking | resumes without asking |
-| `never` | starts at 0 | starts at 0 |
+| absent or `false` | resumes without asking | resumes without asking |
+| `true` | asks "Resume / Start over" | asks |
 
-In an asking mode, a position under 30 s is not worth a question: it starts at 0. A position that counts as watched starts at 0, in
-every mode: one in the last 5 % of the file, or one past the start of the end credits in the item's
+When it asks, a position under 30 s is not worth a question: it starts at 0. Without `ask_resume` a
+`position_sec` is taken as it is. Any other position that counts as watched starts at 0: one in the last 5 % of the file, or one past the start of the end credits in the item's
 `segments`. Credits count only when they reach into that last 5 % and take at most 15 % of the file —
 anything else is a wrong entry and is ignored. The length is the one the player saw the file play
 with, else the one this session saw, else the `duration_ms` of the item's `segments`; with none of
 them known, the position is used as it is.
 
-A "continue watching" card that opens episode 5 at 12:30 with no question, while a pick of another
-episode inside the player asks:
+A "continue watching" card that opens episode 5 at 12:30 and lets the viewer choose:
 
 ```kotlin
 playlist.putInt("start_index", 4)
-items[4].putInt("position_sec", 750)       // the card's position: opens there, no question
-playlist.putString("resume_mode", "ask_every") // a jump to an episode with a position: asks
+items[4].putInt("position_sec", 750)
+playlist.putBoolean("ask_resume", true)    // "Resume from 12:30 / Start over"; a jump asks too
 ```
 
 ---

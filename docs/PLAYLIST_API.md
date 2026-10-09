@@ -197,7 +197,7 @@ playlist : Bundle
 | `start_index` | `int` | 0 | Out of range → bad input (section 6.3). |
 | `headers` | `String[]` | none | `{"User-Agent", "x", "Referer", "y"}`. An item's `headers` override these name by name, case-insensitive. With an odd count the last name is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
 | `result_callback` | `PendingIntent` | none | Section 8. |
-| `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays. |
+| `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays. **Ignored from 2.2.2 on, for now:** the player reports when the viewer leaves it. |
 | `ask_resume` | `boolean` | `false` | `true`: an item opening with a position asks "Resume / Start over" first — see below. |
 | `items` | `Bundle[]` | — | Required, at least one. |
 
@@ -375,7 +375,7 @@ nothing falls through to the next — never to "track 0".
 | 6 | Steps 2, 4, 5 with the playlist's keys | Off / index, label, ordinal with the playlist's keys | as above |
 | 7 | The dub remembered for this title (needs `imdb_id` or `tmdb_id`; not for a live stream). If the file lacks it, its language is kept for step 8 | — | `remembered` |
 | 8 | The first language of the item's, else the playlist's `audio_languages` the file has; within it the viewer's habitual dub, else the track already playing if it is in that language, else the first non-commentary track | The first language of the item's, else the playlist's `subtitle_languages` the file has; full subtitles before forced or SDH | `languages` |
-| 9 | What the player's selector took (the playlist's `audio_languages` if sent, else the player's audio language setting), refined by the habit within that language | The same with subtitle languages; a subtitle the file merely flags as default is never turned on by itself | `player` |
+| 9 | What the player's selector took (the playlist's `audio_languages` if sent, else the player's audio language setting), refined by the habit within that language. The selector reads only language tags, so from 2.3.0 on an item's first open a track with no tag whose name (`Українська`, `rus`) or studio (one voicing in a single language) gives away a language ranked higher on that same list is played instead - the first such track in the media's order | The same with subtitle languages; a subtitle the file merely flags as default is never turned on by itself. From 2.3.0 a track forced only by its name loses to a full one of its language, as a flagged one does, and with the player's "Forced subtitles only" on: the forced track in the language of the audio, only if that language is on the list, else none | `player` |
 
 So caller keys outrank both memories for the audio track; only the viewer's pick in this launch
 outranks the caller. Subtitles have no per-title memory.
@@ -406,7 +406,7 @@ is optional; an item's key beats the playlist's.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `audio_index` | `int` | The audio track's number in the audio menu, from 0. |
+| `audio_index` | `int` | The audio track's number in the media, from 0 (section 5.2). |
 | `audio_label` | `String` | The dub's name: a studio ("LostFilm") or a track title. |
 | `audio_language_ordinal` | `int`, ≥ 0 | "The n-th track of the language", from 0, counted in the first language of the same level. |
 | `audio_language_count` | `int`, ≥ 1 | How many tracks of that language there were where the ordinal was taken. Guards the ordinal. |
@@ -421,9 +421,14 @@ is optional; an item's key beats the playlist's.
 
 ### 5.2 Index
 
-- From 0, in the order the menu lists the tracks. Audio: the tracks of the stream that plays (with
+- From 0, in the order the media lists the tracks. Audio: the tracks of the stream that plays (with
   `voices`, the list under "In the file"; voices themselves have no number). Subtitles: the file's own
   tracks first, then `subtitles[]` in array order (a voice's own list when it has one).
+- From 2.3.0 the menus show the tracks in another order - audio: the original first, then the preferred
+  languages (the playlist's `audio_languages` if sent, else the player's setting), then the rest by
+  language and dub name; subtitles: the preferred languages first, then the rest by language name, and
+  within a language a forced track (by its flag or by "forced" / "signs" in its name) ahead of the
+  others. That is display only: the index counts the media's order, not the menu's.
 - A track this device cannot decode keeps its number but an index on it does not apply.
 - A phantom closed-caption channel (an empty CEA-608 track some streams declare) has no number; "Off"
   has no number.
@@ -583,7 +588,7 @@ and — when `result_callback` is given — the same extras to the callback on e
 | `audio_label` | `String` | Its name; `null` when it has none (a packager's positional name like `rus0` counts as none). |
 | `audio_language_ordinal` | `int` | Its place among the tracks of its language, from 0. For a track with no language: among the tracks with none. |
 | `audio_language_count` | `int` | How many tracks of that language the file has. |
-| `audio_index` | `int` | Its number in the audio menu, from 0 — the number `audio_index` takes on input (section 5.2). |
+| `audio_index` | `int` | Its number in the media, from 0 — the number `audio_index` takes on input (section 5.2). |
 | `audio_chosen_by` | `String` | Which step chose it — section 7.3. |
 | `subtitle_language` | `String` | As audio; `null` = the track names no language, subtitles are off, or the subtitle is a file the player found itself (online search). |
 | `subtitle_label` | `String` | As audio. For a subtitle file the player found itself (online search), the file's label, with no language, ordinal or count. |
@@ -617,7 +622,7 @@ together.
 | `language_ordinal` | a caller's ordinal |
 | `remembered` | the dub remembered for this title (audio) — also when only its language decided and the track within it came from the habit or was the first of that language |
 | `languages` | a caller's `*_languages` decided the language (for subtitles, also `[]` = off); the dub within it may come from the viewer's habit |
-| `player` | the player's own choice: its language settings, the habit within a language the caller did not name, the file's defaults |
+| `player` | the player's own choice: its language settings (or the playlist's `audio_languages`) read from the tags and, for an untagged audio track, from its name or studio; the habit within a language the caller did not name; the file's defaults |
 | `null` | nothing was chosen for this item: a refused request, its tracks not loaded yet, or no playable track of that type |
 
 Sent `audio_label = "LostFilm"` and got `audio_chosen_by = languages`? The episode had no LostFilm and
@@ -659,7 +664,7 @@ repeat is harmless:
 - every stop of the player but a recreate of its screen (screen off, a TV switched off, the task swiped
   away);
 - a new launch replacing the session — to the **old** session's callback;
-- every `report_interval_sec` while something plays;
+- every `report_interval_sec` while something plays (ignored for now, see section 2);
 - possibly when the player opens a screen of its own (settings, a file picker).
 
 A snapshot identical to the one sent before is not sent again (Home used to deliver one report twice,

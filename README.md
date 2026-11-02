@@ -1,135 +1,123 @@
-# Just+ Player
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/logo.svg" width="72" alt="">
+</p>
 
-[![Latest release](https://img.shields.io/github/v/release/just-plus-player/just-plus-player?logo=github&logoColor=white&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/just-plus-player/just-plus-player/total?logo=github&logoColor=white&label=downloads&cacheSeconds=3600)](https://github.com/just-plus-player/just-plus-player/releases)
-[![Media3](https://img.shields.io/badge/Media3-1.11.1-007ec6?cacheSeconds=3600)](https://github.com/androidx/media/releases/tag/1.11.1)
+<h1 align="center">Just+ Player</h1>
 
-> [!NOTE]
-> Starting with 2.1.1, this repository publishes releases only — the APKs and their release notes — and not the source code. The source here stays at 2.0.11.
+<p align="center">
+  A video player and file browser for Android phones, tablets and Android TV, built on <a href="https://github.com/androidx/media">Media3</a>.<br>
+  Android 6.0 or later, one APK for every form factor.
+</p>
 
-Video player and file browser for Android phones, tablets and Android TV, built on [Media3](https://github.com/androidx/media) (formerly [ExoPlayer](https://github.com/google/ExoPlayer)). Android 6.0 or later, one APK for all form factors.
+<p align="center">
+  <a href="https://github.com/just-plus-player/just-plus-player/releases/latest"><img src="https://img.shields.io/github/v/release/just-plus-player/just-plus-player?logo=github&logoColor=white&cacheSeconds=3600" alt="Latest release"></a>
+  <a href="https://github.com/just-plus-player/just-plus-player/releases"><img src="https://img.shields.io/github/downloads/just-plus-player/just-plus-player/total?logo=github&logoColor=white&label=downloads&cacheSeconds=3600" alt="Downloads"></a>
+  <a href="https://github.com/androidx/media/releases/tag/1.11.1"><img src="https://img.shields.io/badge/Media3-1.11.1-007ec6?cacheSeconds=3600" alt="Media3 1.11.1"></a>
+</p>
 
-It is a fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita and keeps what makes it good: no ads, no tracking, very few permissions, ExoPlayer's `ffmpeg` extension for AC3, E-AC-3, DTS, DTS-HD and TrueHD, and audio that stays in sync over Bluetooth. On top of that it opens on a file browser with network folders, has a reworked player interface, and adds the features below.
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/player.jpg" width="100%" alt="The player on a phone held sideways: the series logo, season and episode in the header, the time bar and the control row below">
 
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/player.jpg" width="880">
+A fork of [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita that keeps what makes it good: no ads, no tracking, very few permissions, and ExoPlayer's `ffmpeg` extension for AC3, E-AC-3, DTS, DTS-HD and TrueHD. On top of that it opens on a file browser with network folders, has a reworked player, and adds the features below.
 
 ## Install
 
 [![Download the APK](https://img.shields.io/badge/Download%20the%20APK-latest%20release-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/just-plus-player/just-plus-player/releases/latest) [![Downloader code 1183424](https://img.shields.io/badge/Downloader%20code-1183424-FF9900?style=for-the-badge&logo=amazonfiretv&logoColor=white)](https://www.aftvnews.com/downloader/)
 
-**Phone, tablet, TV box** — download the APK and open it. **Android TV / Fire TV** — no keyboard needed: install [Downloader](https://www.aftvnews.com/downloader/) and enter the code above.
+**Phone, tablet, TV box**: download the APK and open it. **Android TV / Fire TV**: no keyboard needed, install [Downloader](https://www.aftvnews.com/downloader/) and enter the code above.
 
-Sideloaded builds check for updates themselves, show what changed and install the new version through the system installer, without going through a store.
+Installed this way, the app checks for updates itself, shows what changed and installs the new version through the system installer.
+
+## A look around
+
+**Phone.** A title opens on its own artwork while the first frames load. ⋮ More holds everything that is not a button of its own. Ambient light fills the bars beside the picture, here reflecting it as on glass.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/loading.jpg" width="49%" alt="Loading screen: the series logo filling in over a dimmed backdrop, with the download speed below"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/more.jpg" width="49%" alt="The More panel beside the picture: speed, sound, ambient light, picture, equalizer">
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/ambient.jpg" width="49%" alt="The Ambient light panel set to Mirror, with the picture reflected in the bar to its left">
+
+**Files and settings.** Folders and episodes as tiles with a still from each, and settings grouped by what they are about.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/files.jpg" width="32%" alt="A season folder as tiles, each with a still, its length and its size"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/settings.jpg" width="32%" alt="Settings, grouped into Look and controls, Playback and Features">
+
+**Android TV.** The start page, the player and its controls, the episodes of a season, and the Skip button over an intro.
+
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv.jpg" width="49%" alt="TV start page with Favorites, Files and Network"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv-player.jpg" width="49%" alt="The player on a TV with the control row up">
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv-playlist.jpg" width="49%" alt="The episodes of a season as a rail of stills"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv-skip.jpg" width="49%" alt="The Skip button with its countdown ring over the opening titles">
+<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv-loading.jpg" width="49%" alt="The loading screen on a TV">
+
+<sub>Screenshots show <i>Game of Thrones</i> © Home Box Office, Inc., with artwork from <a href="https://www.themoviedb.org/">TMDB</a>, to illustrate the player.</sub>
 
 ## What Just+ adds
 
 **Files and network folders**
 
- * The app opens on a browser with three destinations: **Files**, **Network** and **Favorites**. On a TV it opens on a start page with a card for each, plus Open link and Join a room
- * Files lists the device's own storage as rows, as tiles with a still from each video, or in columns on a wide screen. Each file shows its resolution, size and date, and where you stopped watching
- * Search the folder that is open, or everything below it
- * **Network**: play and browse SMB shares, WebDAV servers, DLNA/UPnP media servers and TorrServer. Machines on the local network are found for you; an address can be typed in as well, and a share that wants a password asks for it
- * A media server shows its own posters; on a TorrServer you can add a magnet link and delete a torrent
- * Hold a folder or a file to put it in Favorites
- * The folder a file was opened from becomes its playlist
- * Optional access to all files (Android 11+) so every folder can be listed, and switches for hidden files and `.nomedia`
+ * Opens on a browser with **Files**, **Network** and **Favorites**; on a TV, on a start page with a card for each, plus Open link and Join a room
+ * Files as rows, as tiles with a still from each video, or in columns on a wide screen, with resolution, size, date and where you stopped watching
+ * **Network**: SMB shares, WebDAV servers, DLNA/UPnP media servers and TorrServer, found on the local network or typed in
+ * The folder a file was opened from becomes its playlist; hold a folder or a file to put it in Favorites
 
-**Player and controls**
+**Player**
 
- * Poster, title and a metadata line (resolution · codec · fps · audio) in the header, next to the clock and the time playback will end
- * Tap anywhere on the time bar to seek there; letting go of a drag lands exactly where the finger was
- * Hold the picture to speed up: 2× and drag to change, always 2×, or off
- * Ten scaling modes — Fit, Crop, Fill, 16:9, 4:3, 16:10, 2:1, 2.35:1, 2.39:1, 5:4. A tap cycles the first five, a long press opens the full list
- * Volume up to 200 % with a loudness boost, and volume and brightness gestures that report a percentage
- * Lock the screen from the bottom bar, unlock with a swipe
- * Everything else sits behind ⋮ **More**: speed, sleep timer, skips in this session, online subtitles, watch together, open link, browse, settings
- * Speed from 0.25× to 4× in 0.05 steps, with presets
- * Sleep timer: 15–90 minutes, after the current file, or any time up to 12 hours on a keypad, with −/+ 5 minutes; the volume fades out over the last 30 seconds
- * Optional clock over the video, a transfer line (buffer, network, bitrate) above the seek bar, and a statistics overlay
+ * A header with the title's logo or poster, season and episode, and a details line (resolution · codec · fps · audio), next to the clock and the time playback will end
+ * A loading screen built from the title's backdrop and logo when the launching app sends them
+ * Tap anywhere on the time bar to seek there; hold the picture to speed up
+ * Ten scaling modes, volume up to 200 %, and volume and brightness gestures
+ * ⋮ **More**: speed, sound, ambient light around the picture, picture adjustments, equalizer, skips, sleep timer, repeat, online subtitles, watch together, settings. On a TV, Back from a panel opened from More goes back to More
 
 **Picture**
 
- * Match the display's refresh rate — and, if you want, its resolution — to the video, for every episode of a playlist and not only the first
- * 10-bit AV1 plays, including Dolby Vision profile 10
- * Dolby Vision options: keep it away from the decoder, map profile 7 onto an ordinary HEVC decoder, drop HDR10+ when converting
- * A video track the device cannot decode is reported, instead of the sound playing over a black screen
+ * **Ambient light** fills the bars around a picture that does not fill the screen: Glow lights them from the picture's edges, Cinema puts the scene blurred behind it, Echo ripples light out from it, Mirror reflects it as on glass. Brightness, reach and how quickly the light follows the picture can be set
+ * **Picture** presets, Vivid, Cinema, Bright and Night, or brightness, contrast, saturation, gamma, warmth, shadows and sharpness by hand
+ * Match the display's refresh rate, and if you want its resolution, to the video
+ * 10-bit AV1 including Dolby Vision profile 10; Dolby Vision profile 7 on an ordinary HEVC decoder
 
 **Sound**
 
- * Pass-through of Dolby and DTS to a receiver, and a forced mode for TV boxes that under-report what the receiver accepts
- * Audio delay, set separately for decoded sound and for pass-through
- * Even out loud and quiet (night mode), and dialogue louder than the rest
- * A list of preferred audio languages: the player takes the first one a file actually has, and a language can be promoted straight from the audio panel
- * Audio tracks no decoder on the device can play are listed with the reason instead of being hidden, and a track the system decoder fails on partway through is handed to the bundled one
+ * A 10-band **equalizer** with Film, Voice, Bass, Treble and TV presets
+ * **Sound in this session**: even out loud and quiet (night mode), dialogue louder than the rest, and an audio delay kept separately for decoded sound and for pass-through
+ * Pass-through of Dolby and DTS to a receiver, or Dolby encoding of surround sound for a receiver that takes no multichannel PCM
+ * A list of preferred audio languages; tracks no decoder on the device can play are listed with the reason
 
 **Subtitles**
 
- * Their own appearance settings with a live preview: size, colour, bold, background and outline. A long press on the subtitle button opens them
- * A second subtitle line in another language — always under the first, or only when you pause
- * Search online (OpenSubtitles and others), by hand from ⋮ More or automatically when your language is missing. Results are matched to your exact file by its hash where the index knows it
- * Machine translation into your language when no subtitles in it exist
- * Subtitles next to a video are picked up by name, locally and over HTTP
+ * Their own look with a live preview: size, colour, bold, background and outline
+ * A second line in another language, always or only when you pause
+ * Search online by hand or automatically when your language is missing, matched to your file by its hash; machine translation when no subtitles in your language exist
+ * Files next to a video on the device are picked up by name
 
 **Skip segments**
 
- * Skip intros, recaps, ad breaks and end credits — segments are drawn right on the time bar
- * Segments come from the launching app, or are looked up online in SkipDB, SkipMe.db, IntroHater, IntroDB, TheIntroDB and Aniskip; the sources vote, and a segment several of them agree on is used
- * Separately for the intro and the end credits: a Skip button for five seconds, a Skip button for the whole segment, or skip automatically. The button can show the time left as a ring
- * Every skip can be undone, an automatic skip can be cancelled, and a session offset corrects a database that is a few seconds off
-
-**Tracks and quality**
-
- * Side panels for audio, subtitles, quality, speed, sleep timer and the playlist; a button stays hidden until the media has something to put in it
- * Manual video quality: optimal, highest, a specific resolution, or one of the sources the launching app supplied
- * The playlist as a list or as a rail of frames
+ * Intros, recaps, ads and end credits drawn on the time bar
+ * From the launching app, from the file's own chapters (a chapter counts when its whole name says intro or credits), or looked up online in several databases that vote
+ * A Skip button for a few seconds, for the whole segment, or skipping automatically; every skip can be undone
 
 **Watch together**
 
- * Watch the same film in step with someone else — play, pause and seek are shared. Create a room, find one, or join by code or invite link; a password is optional
- * The room protocol is [LAMPA](https://github.com/lampa-app/LAMPA)'s `lparty` plugin's, so a viewer in the web player and a viewer here can share a room
- * On a TV box the invite is shown as a QR code
+ * Play, pause and seek in step with someone else, by room, code or invite link, using [LAMPA](https://github.com/lampa-app/LAMPA)'s `lparty` protocol; on a TV the invite is a QR code
 
 **Android TV**
 
- * A start page and focus that every control shows the same way, sized for a remote
- * Left and Right accelerate while held, and each press lands on a keyframe, so seeking is quick and goes where the readout says
- * Down opens the controls on the time bar; Back asks for a second press before it leaves the player (or leaves at once, if you prefer)
- * Long press the resize button to zoom with Up and Down
-
-**Look**
-
- * Material 3 throughout: dark, light or following the system, AMOLED black, 32 accent colours
- * The app language is picked in the app
+ * A start page and focus every control shows the same way, sized for a remote
+ * Left and Right accelerate while held; on a stream a run of presses lands once, after the last one
+ * Closing a panel brings the controls back on the button that opened it
 
 **When something breaks**
 
- * A full-screen report in plain language instead of ExoPlayer codes, with Copy, Share and Upload; the uploaded log can be read off the screen as a QR code
- * Watchdogs for a load that never starts, a stall in the middle of a film and a frozen picture, and retries for network sources that drop a piece
- * Fallbacks for Dolby Vision profile 7 and for tunnelled playback that freezes the picture
+ * A report in plain language instead of codes, with Copy, Share and Link: Link puts the report on a public page and shows its address as a QR code for you to pass on. Nothing is sent by itself
+ * Watchdogs for a load that never starts, a stall in the middle of a film and a picture that stops while the sound goes on
 
 **Launcher integration**
 
- * A playlist API for other apps: episodes with qualities, dubs, subtitles, skip segments and resume positions in, what was watched out. See the [Playlist API](docs/PLAYLIST_API.md)
+ * Intent extras for position, title, logo and backdrop, subtitles, HTTP headers, a playlist of episodes with per-episode segments and resume positions, quality variants and IMDb/TMDB ids, as sent by [LAMPA](https://github.com/lampa-app/LAMPA)/Lampac and Nuvio. See the [Playlist API](docs/PLAYLIST_API.md)
 
-## Screenshots
+**Look**
 
-**Files** — folders with a still from what is inside. **Network** — SMB, WebDAV, DLNA and TorrServer, found on the network or typed in. **Settings** — grouped by what they are about.
-
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/files.jpg" width="280"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/network.jpg" width="280"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/settings.jpg" width="280">
-
-**More** — everything that is not a button of its own. **Skip segments** — a segment on the time bar and one button to skip it.
-
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/panel.jpg" width="430"> <img src="fastlane/metadata/android/en-US/images/readmeScreenshots/skip.jpg" width="430">
-
-**Android TV** — the start page.
-
-<img src="fastlane/metadata/android/en-US/images/readmeScreenshots/tv.jpg" width="880">
+ * Material 3 throughout: dark, light or following the system, AMOLED black, 32 accent colours, and the app language picked in the app
 
 ## Supported formats
 
  * **Audio**: Vorbis, Opus, FLAC, ALAC, PCM/WAVE (μ-law, A-law), MP1, MP2, MP3, AMR (NB, WB), AAC (LC, ELD, HE; xHE on Android 9+), AC-3, E-AC-3, DTS, DTS-HD, TrueHD, IAMF, MPEG-H
- * **Video**: H.263, H.264 AVC (Baseline Profile; Main Profile on Android 6+), H.265 HEVC, MPEG-4 SP, VP8, VP9, AV1 (8- and 10-bit)
- * **Containers**: MP4, MOV, WebM, MKV, AVI, Ogg, MPEG-TS, MPEG-PS, FLV
+ * **Video**: H.263, H.264 AVC (Baseline Profile; Main Profile on Android 6+), H.265 HEVC (including 4:2:2 and 4:4:4 in software), MPEG-4 SP and ASP (XviD, DivX), VP8, VP9, AV1 (8- and 10-bit)
+ * **Containers**: MP4, MOV, WebM, MKV, AVI (including OpenDML past 1 GB), Ogg, MPEG-TS, M2TS, MPEG-PS, FLV
  * **Streaming**: DASH, HLS, SmoothStreaming, RTSP
  * **Network folders**: SMB 2/3, WebDAV, DLNA/UPnP, TorrServer
  * **Subtitles**: SRT, SSA/ASS ([limited styling](https://github.com/google/ExoPlayer/issues/8435)), TTML, VTT, DVB
@@ -147,19 +135,6 @@ HDR (HDR10+ and Dolby Vision) playback on compatible hardware. AC-4 audio works 
  * Third-party equalizer / audio processing support (e.g. [Wavelet](https://github.com/Pittvandewitt/Wavelet))
  * Media Session and Audio Focus support, pause when headphones are disconnected
  * No ads, no tracking, no excessive permissions
-
-## Build
-
-JDK 17 and the Gradle wrapper:
-
-```bash
-./gradlew assembleLatestUniversalDebug   # debug APK
-./gradlew build                          # what CI runs
-```
-
-Two flavour dimensions: `targetSdk` (`latest` = targetSdk 36, `legacy` = targetSdk 29 for legacy storage access) × `distribution` (`universal` with the in-app updater, `amazon`, `accrescent`). `latestUniversal` is the one that gets released.
-
-`app/libs/lib-*.aar` are **prebuilt binaries** — an ExoPlayer core plus the ffmpeg, AV1, IAMF and MPEG-H decoder extensions. They are what makes AC3/DTS/TrueHD work, and their version has to stay in step with `media3_version` in `app/build.gradle`. All but one are taken as upstream publishes them; the AV1 one carries a rebuilt native library for 10-bit AV1. See [`app/libs/README.md`](app/libs/README.md).
 
 ## Integration
 
@@ -181,7 +156,7 @@ In the browser, **⋮ → Settings**; on a TV, the gear on the start page. In th
 
 ### How do I get subtitles?
 
- * A subtitle file next to the video with the same name (`video.mkv` → `video.srt`) is picked up automatically, locally and over HTTP
+ * A subtitle file next to the video with the same name (`video.mkv` → `video.srt`) is picked up automatically on the device; a subtitle the launching app sends along is applied too
  * **⋮ More → Find subtitles online** searches OpenSubtitles and others; in Settings → Subtitles the search can run by itself when your language is missing, and translate when nothing in it exists
  * A subtitle file opened from a file manager is applied to the last video. 📺 On Android TV this is the way to bring your own file: open the video, go back, then open the subtitle file
 
@@ -212,9 +187,3 @@ The system folder picker, used when the app asks for access to a folder, always 
 ### The orientation button does nothing
 
 Since Android 16 apps cannot [switch orientation](https://android-developers.googleblog.com/2025/01/orientation-and-resizability-changes-in-android-16.html) programmatically, but it can be re-enabled per app: open "Aspect ratio" in system Settings, find Just+ Player and switch it from "Full screen" to "App default".
-
-## Credits and licence
-
-Built on [Just (Video) Player](https://github.com/moneytoo/Player) by Marcel Dopita and on [AndroidX Media3](https://github.com/androidx/media). Translations come from upstream's [Weblate project](https://hosted.weblate.org/engage/just-player/). Released into the public domain under [the Unlicense](LICENSE), like upstream.
-
-Other open source Android video players worth knowing: [VLC](https://code.videolan.org/videolan/vlc-android), [mpv](https://github.com/mpv-android/mpv-android), [Next Player](https://github.com/anilbeesetti/nextplayer), [Fermata](https://github.com/AndreyPavlenko/Fermata), [Nova Video Player](https://github.com/nova-video-player/aos-AVP), [Kodi](https://github.com/xbmc/xbmc) — or a [longer list on IzzyOnDroid](https://android.izzysoft.de/applists/category/named/multimedia_video_player).

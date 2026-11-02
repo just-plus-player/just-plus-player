@@ -1,6 +1,0 @@
-<resources>
-    <plurals name="quick_seek_x_second">
-        <item quantity="other">තත්පර %dක්</item>
-        <item quantity="one">තත්පර %dක්</item>
-    </plurals>
-</resources>

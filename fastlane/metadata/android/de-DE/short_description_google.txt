@@ -1,1 +1,0 @@
-Quelloffener Videoplayer ohne Bluetooth-Verzögerung (mit verschiedene Codecs)

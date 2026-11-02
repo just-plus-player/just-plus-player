@@ -1,1 +1,0 @@
-Jednoduchý video přehrávač založený na knihovně ExoPlayer

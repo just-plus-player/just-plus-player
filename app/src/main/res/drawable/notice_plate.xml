@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The notice plate: the shape a heads-up notification has on Android 12+, which is where this app
-     now puts a passing message too. The colour is set in code (Notice) so the plate reads the same
-     over video and over a light settings list; this file carries only the corner. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/sheet_surface"/>
-    <corners android:radius="28dp"/>
-</shape>

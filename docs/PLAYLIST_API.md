@@ -136,6 +136,8 @@ entry:
 9. [Passing a result back](#9-passing-a-result-back)
 10. [Limits and platform notes](#10-limits-and-platform-notes)
 11. [Complete example (Kotlin)](#11-complete-example-kotlin)
+12. [One video without a playlist](#12-one-video-without-a-playlist)
+13. [Feeding it from a LAMPA plugin](#13-feeding-it-from-a-lampa-plugin)
 
 ---
 
@@ -181,7 +183,7 @@ playlist : Bundle
 ├─ logo                String (URL)    series logo; fallback for an item without one
 ├─ background          String (URL)    backdrop image; fallback for an item without one
 ├─ start_index         int             item to start on; default 0
-├─ headers             String[]        HTTP headers as name, value pairs, for every item
+├─ headers             String[]        HTTP headers as name, value pairs or lines, for every item
 ├─ result_callback     PendingIntent   optional; section 8
 ├─ report_interval_sec int             optional; a report every N s while playing, N ≥ 30 (or _ms)
 ├─ ask_resume          boolean         optional; ask before resuming an item
@@ -195,9 +197,9 @@ playlist : Bundle
 | `logo` | `String` (URL) | none | Shown in place of the title (the viewer can turn this off). A logo narrower than 3:2, or one that fails to load, shows the title instead. A wide transparent PNG reads best. |
 | `background` | `String` (URL) | none | Backdrop of the loading screen. |
 | `start_index` | `int` | 0 | Out of range → bad input (section 6.3). |
-| `headers` | `String[]` | none | `{"User-Agent", "x", "Referer", "y"}`. An item's `headers` override these name by name, case-insensitive. With an odd count the last name is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
+| `headers` | `String[]` | none | Name, value pairs, `{"User-Agent", "x", "Referer", "y"}`, or whole lines, `{"User-Agent: x", "Referer: y"}`, or both mixed: an element with a colon where a name is due is a line of its own. An item's `headers` override these name by name, case-insensitive. A name left without a value at the end is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
 | `result_callback` | `PendingIntent` | none | Section 8. |
-| `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays. **Ignored from 2.2.2 on, for now:** the player reports when the viewer leaves it. |
+| `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays, with `end_by = interval`. |
 | `ask_resume` | `boolean` | `false` | `true`: an item opening with a position asks "Resume / Start over" first — see below. |
 | `items` | `Bundle[]` | — | Required, at least one. |
 
@@ -245,7 +247,7 @@ items[i] : Bundle
 ├─ tmdb_id          String          "1399"
 ├─ season           int
 ├─ episode          int
-├─ headers          String[]        name, value pairs; override the playlist's per name
+├─ headers          String[]        pairs or lines; override the playlist's per name
 ├─ position_sec     int             where the item starts, in seconds (or position_ms)
 ├─ clip_start_sec   double          play only a part of the file as this item (or _ms)
 ├─ clip_end_sec     double
@@ -264,10 +266,10 @@ items[i] : Bundle
 | `logo`, `background`, `thumbnail` | `String` (URL) | Images by URL only — a Bitmap would blow the Binder limit. |
 | `imdb_id`, `tmdb_id` | `String` | Used for subtitle search and for remembering the viewer's dub per title (section 5.6). Without either, nothing is remembered per title. |
 | `season`, `episode` | `int` | No key = no value. `0` or a negative number is accepted but not shown; never send `""` as "none". |
-| `headers` | `String[]` | Name, value pairs, as on the playlist. |
+| `headers` | `String[]` | Pairs or "Name: value" lines, as on the playlist. |
 | `position_sec` | `int` | For the start item: where playback starts. For any other item: where a jump to it from the playlist panel starts; moving on to it by itself starts at its beginning. With a clip, relative to the clip and clamped to it. |
 | `clip_start_sec`, `clip_end_sec` | `double` | Fractional seconds, so a boundary between two episodes in one file lands on the exact frame. No key = start / end of the file. An end at or before the start is ignored. Positions in and out are relative to the clip. |
-| `segments` | `String` | JSON, see below. The file's own chapters outrank it: a chapter named as an opening ("Opening", "Intro", "OP", "Заставка") or as the credits ("Credits", "Ending", "ED", "Титры") replaces what `segments` says about that stretch, and a credits chapter replaces the credits in `segments` wherever they are. Ads and everything else stay. |
+| `segments` | `String` | JSON, see below; a bare `[{"type", "start", "end"}]` array in seconds is read too, every entry as a skip except `post-credits`. The file's own chapters outrank it: a chapter whose whole name says opening ("Opening", "Intro", "OP2", "Заставка"), credits ("Credits", "Ending", "ED", "Титры"), recap or preview replaces every segment of that kind in `segments`, and a segment edge within 3 s of any chapter boundary is moved onto it. Ads and everything else stay. |
 
 **Segments JSON.** `start` / `end` in seconds; `duration_ms` is the length those timings were measured
 on, so the player can rescale them to the real file. `skip` = intro / recap / credits, `ad` = advertising.
@@ -375,7 +377,7 @@ nothing falls through to the next — never to "track 0".
 | 6 | Steps 2, 4, 5 with the playlist's keys | Off / index, label, ordinal with the playlist's keys | as above |
 | 7 | The dub remembered for this title (needs `imdb_id` or `tmdb_id`; not for a live stream). If the file lacks it, its language is kept for step 8 | — | `remembered` |
 | 8 | The first language of the item's, else the playlist's `audio_languages` the file has; within it the viewer's habitual dub, else the track already playing if it is in that language, else the first non-commentary track | The first language of the item's, else the playlist's `subtitle_languages` the file has; full subtitles before forced or SDH | `languages` |
-| 9 | What the player's selector took (the playlist's `audio_languages` if sent, else the player's audio language setting), refined by the habit within that language. The selector reads only language tags, so from 2.3.0 on an item's first open a track with no tag whose name (`Українська`, `rus`) or studio (one voicing in a single language) gives away a language ranked higher on that same list is played instead - the first such track in the media's order | The same with subtitle languages; a subtitle the file merely flags as default is never turned on by itself. From 2.3.0 a track forced only by its name loses to a full one of its language, as a flagged one does, and with the player's "Forced subtitles only" on: the forced track in the language of the audio, only if that language is on the list, else none | `player` |
+| 9 | What the player's selector took (the playlist's `audio_languages` if sent, else the player's audio language setting), refined by the habit within that language. The selector reads only language tags, so on an item's first open a track with no tag whose name (`Українська`, `rus`) or studio (one voicing in a single language) gives away a language ranked higher on that same list is played instead - the first such track in the media's order | The same with subtitle languages; a subtitle the file merely flags as default is never turned on by itself. A track forced only by its name loses to a full one of its language, as a flagged one does. With the player's "Forced subtitles only" on: the forced track in the language of the audio, only if that language is on the list, else none | `player` |
 
 So caller keys outrank both memories for the audio track; only the viewer's pick in this launch
 outranks the caller. Subtitles have no per-title memory.
@@ -424,9 +426,8 @@ is optional; an item's key beats the playlist's.
 - From 0, in the order the media lists the tracks. Audio: the tracks of the stream that plays (with
   `voices`, the list under "In the file"; voices themselves have no number). Subtitles: the file's own
   tracks first, then `subtitles[]` in array order (a voice's own list when it has one).
-- From 2.3.0 the menus show the tracks in another order - audio: the original first, then the preferred
-  languages (the playlist's `audio_languages` if sent, else the player's setting), then the rest by
-  language and dub name; subtitles: the preferred languages first, then the rest by language name, and
+- The audio menu lists the tracks in the media's order, so the index is a row's position there. The
+  subtitle menu shows another order: the preferred languages first, then the rest by language name, and
   within a language a forced track (by its flag or by "forced" / "signs" in its name) ahead of the
   others. That is display only: the index counts the media's order, not the menu's.
 - A track this device cannot decode keeps its number but an index on it does not apply.
@@ -536,7 +537,7 @@ why the caller's key did not apply — to see it, ask the viewer to send a repor
 | time keys (`position`, `report_interval`, `clip_start`, `clip_end` with `_sec` or `_ms`) | any number or numeric `String`; `position` and `report_interval` rounded down to a millisecond; anything else = absent, and then the other unit is read |
 | `boolean` keys (`selected`) | a `boolean`, or the `String` `"true"` exactly (case-sensitive) |
 | `Bundle[]` keys (`items`, `qualities`, `voices`, `subtitles`) | `Parcelable[]` or `ArrayList<Bundle>` |
-| `headers` | `String[]`, name / value pairs |
+| `headers` | `String[]`, name / value pairs or "Name: value" lines |
 
 ### 6.3 Bad input — nothing plays
 
@@ -581,7 +582,7 @@ and — when `result_callback` is given — the same extras to the callback on e
 | `position_sec` | `int` | Position in that item, seconds (relative to its clip). |
 | `duration_sec` | `int` | That item's duration, seconds; **`0` = not known**. |
 | `positions_sec` | `int[]` | One per item: `-1` = never opened (also in `positions_ms`); equal to the item's duration = watched to the end; otherwise the last position. Empty when the request was refused. |
-| `end_by` | `String` | `completion` — the playlist played to its end; `user` — the viewer left; `cancelled` — closed before anything played; `error` — see below. |
+| `end_by` | `String` | `completion` — the playlist played to its end; `user` — the viewer left; `cancelled` — closed before anything played; `error` — see below; `interval` — nothing ended, a report every `report_interval_sec` while something plays (section 8). A caller that does not ask for those never gets it. |
 | `error_message` | `String` | Only with `error`. |
 | `history` | `Bundle[]` | The session journal, section 7.4. Empty when the request was refused. |
 | `audio_language` | `String` | The audio track playing, its language as the media states it: `ru`, `rus`, `en-US` … — normalise before comparing (section 5.5). `null` when the track names none — also for a track tagged `und` that the player matched by its name. |
@@ -664,7 +665,8 @@ repeat is harmless:
 - every stop of the player but a recreate of its screen (screen off, a TV switched off, the task swiped
   away);
 - a new launch replacing the session — to the **old** session's callback;
-- every `report_interval_sec` while something plays (ignored for now, see section 2);
+- every `report_interval_sec` while something plays, with `end_by = interval`: the viewer is still
+  watching, nothing ended;
 - possibly when the player opens a screen of its own (settings, a file picker).
 
 A snapshot identical to the one sent before is not sent again (Home used to deliver one report twice,
@@ -804,3 +806,106 @@ fun read(extras: Bundle) {
     extras.getStringArray("warnings")?.forEach { log("player dropped: $it") }
 }
 ```
+
+---
+
+## 12. One video without a playlist
+
+The MX Player style: one video as the data URI, the rest as flat extras. Nuvio and other MX-style launchers
+open the player this way; a queue goes in the `playlist` extra above.
+
+An `ACTION_VIEW` intent addressed to `com.justplus.player`, with the video as the data URI:
+
+```java
+Intent intent = new Intent(Intent.ACTION_VIEW);
+intent.setPackage("com.justplus.player");                 // or the explicit component
+intent.setDataAndType(Uri.parse(url), "video/*");         // content:// also needs FLAG_GRANT_READ_URI_PERMISSION
+intent.putExtra("title", "Machines");
+startActivityForResult(intent, REQUEST_PLAY);             // startActivity if you do not want a result
+```
+
+Everything else is optional extras:
+
+| Extra | Type | Meaning |
+|---|---|---|
+| `title` | String / CharSequence | Title in the header. HTML entities are unescaped |
+| `thumbnail` | String | Poster shown next to the title |
+| `position` | int, ms | Where to start |
+| `return_result` | boolean | Report position and duration back on exit (see below) |
+| `headers` | String[] | Flat `name, value, name, value…` or whole `Name: value` lines, applied to every HTTP request |
+| `subs` | Parcelable[] of Uri | External subtitle files |
+| `subs.name` | String[] | Their labels, aligned by index with `subs` |
+| `subs.enable` | Parcelable[] of Uri | Its first element is the track to pre-select |
+| `segments` | String | Skip/ad segments as JSON — format below |
+| `skip_segments` | String | Read when `segments` is absent: a bare `[{"type", "start", "end"}]` array in seconds, all skipped except `post-credits` |
+| `season`, `episode` | int | Episode this file belongs to |
+| `imdb_id` | String | IMDb id, used to look segments up online |
+| `id` | String or int | TMDB id, same purpose |
+| `quality_levels` | String[] | Labels of the quality variants, e.g. `1080p` |
+| `quality_urls` | String[] or Parcelable[] of Uri | Their URLs, aligned by index with `quality_levels` |
+
+These extras carry one video.
+
+`quality_levels` and `quality_urls` are read leniently — `String[]`, `ArrayList<String>` and `CharSequence[]` all work, and `quality_urls` also takes a `Parcelable[]` of `Uri`. `subs`, `subs.name` and `headers` are not: they have to be exactly the types in the table above, or they are silently ignored.
+
+**Segments JSON** — `start` and `end` are seconds, `duration_ms` is the duration those timings were measured against, so the player can rescale them to the real file. `skip` is intro/recap/credits, `ad` is advertising:
+
+```json
+{ "duration_ms": 2696000,
+  "skip": [{ "start": 62, "end": 152 }],
+  "ad":   [{ "start": 0,  "end": 12  }] }
+```
+
+**Session mode.** The presence of `position`, `return_result`, `subs`, `subs.enable` or `quality_levels` puts the player in API mode: it keeps positions for that session only and writes nothing to its own resume store, so a launcher stays the owner of the watch state. `title` alone does not — the title is used and the state is still persisted.
+
+**Result** (only with `return_result`): `RESULT_OK` and an intent with action `com.mxtech.intent.result.VIEW` (MX Player's contract), whose data URI is the video that was playing. Extras: `end_by` is `playback_completion` or `user`, and on an early exit `position` and `duration` (both int, ms).
+
+The player is `singleTask`: a further `ACTION_VIEW` sent to the running instance replaces the extras rather than being ignored, which is how a source or an episode is switched without a restart.
+
+
+---
+
+## 13. Feeding it from a LAMPA plugin
+
+A plugin does not build the intent — LAMPA does, from the JSON handed to `Lampa.Player.play()`. Use these keys and LAMPA (1.13.3 and later) builds the `playlist` extra from them by itself:
+
+```js
+Lampa.Player.play({
+    url: 'https://host/s01e03-1080.mp4',        // required, and must be byte-identical to the playlist entry
+    title: 'Machines',
+    thumbnail: 'https://host/still.jpg',
+    quality: { '1080p': 'https://host/s01e03-1080.mp4', '720p': 'https://host/s01e03-720.mp4' },
+    subtitles: [{ url: 'https://host/en.srt', label: 'English', language: 'en' }],
+    segments: { duration_ms: 2696000, skip: [{ start: 62, end: 152 }], ad: [] },
+    season: 1, episode: 3,
+    imdb_id: 'tt14688458',
+    headers: { 'User-Agent': '…', Referer: '…' },
+    playlist: [ /* the same objects, one per episode */ ]
+})
+```
+
+| Plugin JSON | Becomes |
+|---|---|
+| `url` | The item's `uri` |
+| `title` | The item's `episode_title`; the playlist `title` is the card's name |
+| `thumbnail` | The item's `thumbnail` |
+| `quality` (`{label: url}`) | The item's `qualities` |
+| `subtitles` (`[{url, label, language}]`) | The item's `subtitles` |
+| `segments` | The item's `segments`, serialised verbatim |
+| `season`, `episode` | The item's `season`, `episode` |
+| `imdb_id`, or `card.imdb_id` from the open card | The item's `imdb_id` |
+| the card's `id` | The item's `tmdb_id` |
+| `headers` (`{name: value}`) | The playlist's `headers` |
+
+What actually decides whether it matches:
+
+ * **`url` must be identical** to the `playlist` entry it stands for. LAMPA finds the starting index by exact string comparison. One extra token or a trailing slash and the queue opens on episode 1.
+ * **`playlist` is only read when auto-next is on** in LAMPA; otherwise the payload itself is the only item. Put the episode's own metadata on the top-level object as well, not just inside `playlist`.
+ * **Name quality variants by resolution.** Both sides sort them by the number in the label, so `1080p`/`720p` order correctly while `HD`/`SD` do not.
+ * **`segments` is passed through untouched**, so it has to be the shape above — seconds, plus `duration_ms` for rescaling.
+ * **`imdb_id` and the card's `id` are what the online lookup keys on.** Without them only the segments you supply yourself are used; there is no title search.
+ * **Nothing is switched on for the viewer.** Subtitles arrive as selectable tracks and LAMPA sends no default, so one has to be picked from the subtitle panel. `language` goes along with each one.
+ * `subtitles[]` entries need both `url` and `label`; an entry without a label takes the whole list down with it.
+ * **The subtitle format is taken from the URL path**, falling back to SubRip. A WebVTT or ASS file served from an extension-less endpoint therefore arrives labelled as SRT and will not parse — keep the real extension in the URL.
+
+

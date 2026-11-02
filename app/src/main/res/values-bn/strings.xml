@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="video_resize_fit">ফিট</string>
-    <string name="video_resize_crop">ক্রপ</string>
-    <string name="video_orientation_video">ভিডিও অরিয়েন্টেশন</string>
-    <string name="video_orientation_sensor">অটো-রোটেট</string>
-    <string name="video_orientation_system">ডিভাইস অরিয়েন্টেশন</string>
-    <string name="delete_confirmation">মুছুন</string>
-</resources>

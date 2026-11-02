@@ -1,1 +1,0 @@
-Enkel videospiller basert på ExoPlayer-biblioteket

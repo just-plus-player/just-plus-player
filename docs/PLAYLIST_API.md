@@ -200,23 +200,26 @@ playlist : Bundle
 | `headers` | `String[]` | none | Name, value pairs, `{"User-Agent", "x", "Referer", "y"}`, or whole lines, `{"User-Agent: x", "Referer: y"}`, or both mixed: an element with a colon where a name is due is a line of its own. An item's `headers` override these name by name, case-insensitive. A name left without a value at the end is dropped silently; a pair with a `null` is skipped. Without them every request carries `Accept: */*`, `Accept-Language` of the device and `User-Agent: JustPlusPlayer/<version> (Linux;Android <n>) AndroidXMedia3/<version>`; a header of the same name sent here replaces the default. Cookies a server sets are sent back to it for the rest of the session, unless a `Cookie` header is given. |
 | `result_callback` | `PendingIntent` | none | Section 8. |
 | `report_interval_sec` | `int` | off | ≤ 0 or absent = off; below 30 counts as 30. Reports only while something plays, with `end_by = interval`. |
-| `ask_resume` | `boolean` | `false` | `true`: an item opening with a position asks "Resume / Start over" first — see below. |
+| `ask_resume` | `boolean` | the viewer's setting | `true`: an item opening with a position asks "Resume / Start over" first; `false`: it resumes without asking; absent: the player's "Resume playback" setting decides — see below. |
 | `items` | `Bundle[]` | — | Required, at least one. |
 
 **`ask_resume`** decides what happens when an item with a position opens: the start item, with its
 `position_sec` or the player's own saved position, and an item the viewer jumps to from the playlist
-panel. The viewer's "Resume playback" setting does not apply to a playlist. Moving on to the next item
-by itself always starts at its beginning.
+panel. Send it only to override the viewer: without it the player's own "Resume playback" setting
+applies, as it does to any file. Moving on to the next item by itself always starts at its beginning.
 
 `ask_resume` is read from Just+ Player 2.2.1. It replaces `resume_mode` (2.1.1–2.1.4), which is no
-longer read: a caller that still sends it gets no question and no error, the item resumes.
+longer read: a caller that still sends it gets no error, and the viewer's setting decides.
 
 | `ask_resume` | The start item | A jump in the playlist panel |
 |---|---|---|
-| absent or `false` | resumes without asking | resumes without asking |
+| absent | by the viewer's setting | by the viewer's setting |
+| `false` | resumes without asking | resumes without asking |
 | `true` | asks "Resume / Start over" | asks |
 
-When it asks, a position under 30 s is not worth a question: it starts at 0. Without `ask_resume` a
+Up to 2.8.1 an absent `ask_resume` meant `false`. A caller that relied on that sends `false` now.
+
+When it asks, a position under 30 s is not worth a question: it starts at 0. With `ask_resume` false a
 `position_sec` is taken as it is. Any other position that counts as watched starts at 0: one in the last 5 % of the file, or one past the start of the end credits in the item's
 `segments`. Credits count only when they reach into that last 5 % and take at most 15 % of the file —
 anything else is a wrong entry and is ignored. The length is the one the player saw the file play
